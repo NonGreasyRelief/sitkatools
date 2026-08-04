@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SitkaTools — Lot Management</title>
+    <!--
+        Tool: SitkaTools
+        Purpose: Central hub for lot management (create/close lots) and unified calendar viewing.
+        Database Keys: "lots" (object of all lots), "calendarEvents" (array of events from all tools)
+        Version: 0.1.0 — Lot creation only; calendar view placeholder
+    -->
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tab {
+            padding: 8px 20px;
+            border-radius: var(--radius) var(--radius) 0 0;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+            background: rgba(83, 216, 168, 0.1);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-bottom-color: var(--bg-primary);
+        }
+
+        .tab.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .tab.disabled:hover {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .header-right {
+            display: flex;
+            gap: 8px;
+        }
+
+        .db-btn {
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .db-btn:hover {
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.15);
+        }
+
+        .db-btn.import { color: var(--accent); }
+        .db-btn.export { color: var(--warning); }
+
+        /* Main Content */
+        .main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-bar.empty {
+            color: var(--text-secondary);
+        }
+
+        .status-bar.loaded {
+            border-color: var(--accent);
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+        }
+
+        .lot-count {
+            background: var(--bg-card);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--accent);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+
+        /* Form */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .form-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--text-secondary);
+        }
+
+        /* Lot List */
+        .lot-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .lot-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: border-color 0.2s;
+        }
+
+        .lot-item:hover {
+            border-color: var(--accent);
+        }
+
+        .lot-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .lot-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .lot-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .lot-type-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-new-lot { background: rgba(83, 216, 168, 0.2); color: var(--accent); }
+        .badge-sub-lot { background: rgba(52, 152, 219, 0.2); color: #3498db; }
+        .badge-split-lot { background: rgba(243, 156, 18, 0.2); color: var(--warning); }
+
+        /* Placeholder */
+        .placeholder {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .placeholder-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .placeholder h3 {
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        /* Hidden file input */
+        #dbImportInput {
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            .header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            .header-right {
+                width: 100%;
+            }
+            .db-btn {
+                flex: 1;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="dbImportInput" accept=".json">
+
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">🌿 SitkaTools</span>
+            <nav class="tabs">
+                <button class="tab active" data-tab="lot-management">Lot Management</button>
+                <button class="tab disabled" data-tab="calendar-view" title="Coming soon">Calendar View</button>
+            </nav>
+        </div>
+        <div class="header-right">
+            <button class="db-btn import" id="importBtn" title="Import database JSON file">
+                📂 Import DB
+            </button>
+            <button class="db-btn export" id="exportBtn" title="Export current database as JSON">
+                💾 Export DB
+            </button>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Lot Management Tab -->
+        <section class="tab-content active" id="lot-management">
+            <div class="status-bar empty" id="statusBar">
+                <span class="status-text">No database loaded. Import a DB file to begin.</span>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Create New Lot</h2>
+                <form id="lotForm" class="form-grid">
+                    <div class="form-group">
+                        <label for="lotType">Lot Type</label>
+                        <select id="lotType" required>
+                            <option value="">Select type…</option>
+                            <option value="new-lot">New Lot (purchased from nursery)</option>
+                            <option value="sub-lot">Sub-Lot (clones cut from existing)</option>
+                            <option value="split-lot">Split-Lot (plants removed from existing)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="lotId">Lot ID</label>
+                        <input type="text" id="lotId" placeholder="e.g., LOT-002" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lotName">Lot Name</label>
+                        <input type="text" id="lotName" placeholder="e.g., OG Kush — Room B" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lotStrain">Strain</label>
+                        <input type="text" id="lotStrain" placeholder="e.g., OG Kush">
+                    </div>
+                    <div class="form-group" id="parentLotGroup" style="display: none;">
+                        <label for="parentLot">Parent Lot</label>
+                        <select id="parentLot">
+                            <option value="">Select parent lot…</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="plantCountGroup" style="display: none;">
+                        <label for="plantCount">Plants Transferred</label>
+                        <input type="number" id="plantCount" min="1" placeholder="Number of plants">
+                    </div>
+                    <div class="form-group">
+                        <label for="lotDate">Created Date</label>
+                        <input type="date" id="lotDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lotStage">Initial Stage</label>
+                        <select id="lotStage">
+                            <option value="cloning">Cloning</option>
+                            <option value="veg">Vegetative</option>
+                            <option value="flower">Flowering</option>
+                            <option value="harvest">Harvest</option>
+                            <option value="drying">Drying</option>
+                            <option value="curing">Curing</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
+                        <button type="submit" class="btn btn-primary" id="createLotBtn">Create Lot</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card" id="lotListCard" style="display: none;">
+                <h2 class="card-title">Existing Lots</h2>
+                <div class="lot-list" id="lotList"></div>
+            </div>
+        </section>
+
+        <!-- Calendar View Tab (placeholder) -->
+        <section class="tab-content" id="calendar-view">
+            <div class="placeholder">
+                <div class="placeholder-icon">📅</div>
+                <h3>Calendar View</h3>
+                <p>This feature is coming soon. It will display all cultivation events from every tool in a unified calendar.</p>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // =====================================================
+        // SitkaTools — Lot Management Module
+        // Database Keys: "lots", "calendarEvents"
+        // =====================================================
+
+        const DB = {
+            data: null,
+            fileName: '',
+
+            get lots() {
+                return this.data?.lots || {};
+            },
+
+            ensureStructure() {
+                if (!this.data) {
+                    this.data = { lots: {}, calendarEvents: [] };
+                }
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                return this.data;
+            }
+        };
+
+        // ---- DOM References ----
+        const $ = id => document.getElementById(id);
+        const dbImportInput = $('dbImportInput');
+        const importBtn = $('importBtn');
+        const exportBtn = $('exportBtn');
+        const statusBar = $('statusBar');
+        const lotForm = $('lotForm');
+        const lotTypeSelect = $('lotType');
+        const lotIdInput = $('lotId');
+        const lotNameInput = $('lotName');
+        const lotStrainInput = $('lotStrain');
+        const parentLotGroup = $('parentLotGroup');
+        const parentLotSelect = $('parentLot');
+        const plantCountGroup = $('plantCountGroup');
+        const plantCountInput = $('plantCount');
+        const lotDateInput = $('lotDate');
+        const lotStageSelect = $('lotStage');
+        const clearFormBtn = $('clearFormBtn');
+        const lotListCard = $('lotListCard');
+        const lotListEl = $('lotList');
+
+        // ---- Initialize ----
+        function init() {
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            lotDateInput.value = today;
+
+            // Auto-generate Lot ID based on count
+            updateLotIdSuggestion();
+        }
+
+        function updateLotIdSuggestion() {
+            DB.ensureStructure();
+            const lotKeys = Object.keys(DB.lots);
+            const nextNum = lotKeys.length + 1;
+            lotIdInput.placeholder = `e.g., LOT-${String(nextNum).padStart(3, '0')}`;
+        }
+
+        // ---- Tab Navigation ----
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                if (tab.classList.contains('disabled')) return;
+
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+                tab.classList.add('active');
+                const targetId = tab.dataset.tab;
+                $(targetId).classList.add('active');
+            });
+        });
+
+        // ---- Database Import/Export ----
+        importBtn.addEventListener('click', () => dbImportInput.click());
+
+        dbImportInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    DB.data = parsed;
+                    DB.ensureStructure();
+                    DB.fileName = file.name.replace('.json', '');
+                    updateStatusBar();
+                    renderLotList();
+                    updateLotIdSuggestion();
+                } catch (err) {
+                    alert('Failed to parse JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            // Reset so the same file can be imported again
+            dbImportInput.value = '';
+        });
+
+        exportBtn.addEventListener('click', () => {
+            DB.ensureStructure();
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            // Generate filename from current date
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        function updateStatusBar() {
+            const count = Object.keys(DB.lots).length;
+            if (count === 0) {
+                statusBar.className = 'status-bar empty';
+                statusBar.innerHTML = `<span class="status-text">Database loaded. No lots yet — create your first lot below.</span>`;
+            } else {
+                statusBar.className = 'status-bar loaded';
+                statusBar.innerHTML = `
+                    <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                    <span class="lot-count">${count} lot${count !== 1 ? 's' : ''}</span>
+                `;
+            }
+        }
+
+        // ---- Lot Type Changes ----
+        lotTypeSelect.addEventListener('change', () => {
+            const type = lotTypeSelect.value;
+            const isNotNewLot = type === 'sub-lot' || type === 'split-lot';
+            const isSplitLot = type === 'split-lot';
+
+            // Show/hide parent lot selector
+            parentLotGroup.style.display = isNotNewLot ? 'flex' : 'none';
+            parentLotSelect.required = isNotNewLot;
+
+            // Show/hide plant count (only for split lots)
+            plantCountGroup.style.display = isSplitLot ? 'flex' : 'none';
+            plantCountInput.required = isSplitLot;
+
+            // Populate parent lot options
+            if (isNotNewLot) {
+                populateParentLots();
+            }
+        });
+
+        function populateParentLots() {
+            const lots = DB.lots;
+            const lotKeys = Object.keys(lots);
+
+            // Clear existing options except the first
+            parentLotSelect.innerHTML = '<option value="">Select parent lot…</option>';
+
+            if (lotKeys.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '(no lots available — import a DB with lots first)';
+                opt.disabled = true;
+                parentLotSelect.appendChild(opt);
+                return;
+            }
+
+            lotKeys.forEach(key => {
+                const lot = lots[key];
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = `${key} — ${lot.name || key}`;
+                parentLotSelect.appendChild(opt);
+            });
+        }
+
+        // ---- Create Lot ----
+        lotForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            DB.ensureStructure();
+
+            const type = lotTypeSelect.value;
+            const lotId = lotIdInput.value.trim();
+            const name = lotNameInput.value.trim();
+            const strain = lotStrainInput.value.trim();
+            const parentLotId = (type !== 'new-lot') ? parentLotSelect.value : null;
+            const plantCount = type === 'split-lot' ? parseInt(plantCountInput.value, 10) : null;
+            const createdDate = lotDateInput.value;
+            const stage = lotStageSelect.value;
+
+            // Validation
+            if (!lotId || !name || !createdDate) {
+                alert('Please fill in all required fields (Lot ID, Name, Date).');
+                return;
+            }
+
+            if (type !== 'new-lot' && !parentLotId) {
+                alert('Please select a parent lot.');
+                return;
+            }
+
+            if (DB.lots[lotId]) {
+                alert(`A lot with ID "${lotId}" already exists. Use a unique Lot ID.`);
+                return;
+            }
+
+            // Create the lot object
+            const newLot = {
+                name: name,
+                strain: strain || null,
+                type: type,
+                parentLotId: parentLotId,
+                plantCount: plantCount,
+                createdDate: createdDate,
+                closedDate: null,
+                stage: stage
+            };
+
+            // Add to database
+            DB.lots[lotId] = newLot;
+
+            // Success feedback
+            alert(`Lot "${lotId}" created successfully!\n\nRemember to export the database to save your changes.`);
+
+            // Reset form and refresh UI
+            lotForm.reset();
+            lotDateInput.value = new Date().toISOString().split('T')[0];
+            lotStageSelect.value = 'cloning';
+            parentLotGroup.style.display = 'none';
+            plantCountGroup.style.display = 'none';
+            updateStatusBar();
+            renderLotList();
+            updateLotIdSuggestion();
+        });
+
+        // ---- Clear Form ----
+        clearFormBtn.addEventListener('click', () => {
+            lotForm.reset();
+            lotDateInput.value = new Date().toISOString().split('T')[0];
+            lotStageSelect.value = 'cloning';
+            parentLotGroup.style.display = 'none';
+            plantCountGroup.style.display = 'none';
+        });
+
+        // ---- Render Lot List ----
+        function renderLotList() {
+            const lots = DB.lots;
+            const lotKeys = Object.keys(lots);
+
+            if (lotKeys.length === 0) {
+                lotListCard.style.display = 'none';
+                return;
+            }
+
+            lotListCard.style.display = 'block';
+            lotListEl.innerHTML = '';
+
+            // Sort by created date (newest first)
+            const sorted = lotKeys.sort((a, b) => {
+                return lots[b].createdDate.localeCompare(lots[a].createdDate);
+            });
+
+            sorted.forEach(key => {
+                const lot = lots[key];
+                const item = document.createElement('div');
+                item.className = 'lot-item';
+
+                const badgeClass = `badge-${lot.type}`;
+                const typeLabel = lot.type === 'new-lot' ? 'New' : lot.type === 'sub-lot' ? 'Sub-Lot' : 'Split';
+
+                const parentInfo = lot.parentLotId ? ` ← ${lot.parentLotId}` : '';
+                const countInfo = lot.plantCount ? ` (${lot.plantCount} plants)` : '';
+
+                item.innerHTML = `
+                    <div class="lot-info">
+                        <span class="lot-name">${escapeHtml(lot.name)}</span>
+                        <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate} · ${lot.stage}${countInfo}</span>
+                    </div>
+                    <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
+                `;
+
+                lotListEl.appendChild(item);
+            });
+        }
+
+        // ---- Utility ----
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---- Start ----
+        init();
+    </script>
+</body>
+</html>
