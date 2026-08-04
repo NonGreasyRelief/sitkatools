@@ -35,6 +35,18 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 - Tools never communicate with each other — only through the JSON file on disk
 - Dates in data use ISO format (`YYYY-MM-DD`); filenames use 2-digit year (`YY`)
 
+## UI Convention
+
+This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
+
+- **Selector type:** Active Lot (lot-focused tool — fertilizer usage is tracked per lot)
+- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
+- **Header:** Tool name "🧪 FertilizerHelper" on the left, Active Lot dropdown on the right
+- **Footer:** Save DB button (with popup link) + Close Tool button
+- **Theme:** Uses shared CSS custom properties from root UI Standards
+
+See the root `Agent.MD` → "UI Standards — All Tools" for complete HTML/CSS/JS patterns.
+
 ## Constraints
 
 - Single `.html` file, no build step, no external dependencies
