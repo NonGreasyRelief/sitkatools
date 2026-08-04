@@ -131,7 +131,17 @@
         }
 
         .db-btn.import { color: var(--accent); }
-        .db-btn.export { color: var(--warning); }
+        .db-btn.export {
+            color: var(--warning);
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .db-btn-hint {
+            font-size: 0.65rem;
+            color: #666;
+        }
 
         /* Main Content */
         .main {
@@ -737,6 +747,115 @@
             color: var(--accent);
         }
 
+        /* =====================================================
+           DB Session Overlay
+           ===================================================== */
+
+        .db-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .db-overlay.hidden {
+            display: none;
+        }
+
+        .db-overlay-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 40px 48px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            max-width: 480px;
+        }
+
+        .db-overlay-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .db-overlay-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .db-overlay-desc {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            line-height: 1.5;
+        }
+
+        .db-overlay-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .btn-load-db {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 12px 32px;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-load-db:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-cancel-db {
+            background: var(--danger);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel-db:hover {
+            background: var(--danger-hover);
+            transform: translateY(-1px);
+        }
+
+        /* DB Buttons — colored */
+        .db-btn.import {
+            color: var(--accent);
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.1);
+        }
+
+        .db-btn.import:hover {
+            background: rgba(83, 216, 168, 0.25);
+        }
+
+        .db-btn.export {
+            color: var(--danger);
+            border-color: var(--danger);
+            background: rgba(231, 76, 60, 0.1);
+        }
+
+        .db-btn.export:hover {
+            background: rgba(231, 76, 60, 0.25);
+        }
+
         .btn-sm {
             padding: 6px 12px;
             font-size: 0.85rem;
@@ -788,6 +907,21 @@
 <body>
     <input type="file" id="dbImportInput" accept=".json">
 
+    <!-- DB Session Overlay -->
+    <div class="db-overlay" id="dbOverlay">
+        <div class="db-overlay-card">
+            <div class="db-overlay-icon">🌿</div>
+            <div class="db-overlay-title">New Session or External Tool in Use</div>
+            <div class="db-overlay-desc">
+                No database is loaded. Import your DB file to continue working, or skip to view the calendar empty.
+            </div>
+            <div class="db-overlay-actions">
+                <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
+                <button class="btn-cancel-db" id="overlayCancelBtn">Skip</button>
+            </div>
+        </div>
+    </div>
+
     <header class="header">
         <div class="header-left">
             <span class="logo">🌿 SitkaTools</span>
@@ -800,9 +934,10 @@
             <button class="db-btn import" id="importBtn" title="Import database JSON file">
                 📂 Import DB
             </button>
-            <button class="db-btn export" id="exportBtn" title="Export current database as JSON">
-                💾 Export DB
-            </button>
+            <a class="db-btn export" id="exportBtn" title="Save current database as JSON" href="#" download>
+                💾 Save DB
+                <span class="db-btn-hint">Right click → Save as</span>
+            </a>
         </div>
     </header>
 
@@ -931,19 +1066,19 @@
         <section class="card" id="tools-directory">
             <h2 class="card-title">Cultivation Modules</h2>
             <div class="tools-grid">
-                <a class="tool-link" href="../IPMHelper/IPMHelper.html" target="_blank">
+                <a class="tool-link module-link" href="../IPMHelper/IPMHelper.html">
                     <span class="tool-link-name">🐛 IPM Helper</span>
                     <span class="tool-link-desc">Pesticide ordering and preventative bug release reminders</span>
                 </a>
-                <a class="tool-link" href="../FertilizerHelper/FertilizerHelper.html" target="_blank">
+                <a class="tool-link module-link" href="../FertilizerHelper/FertilizerHelper.html">
                     <span class="tool-link-name">🧪 Fertilizer Helper</span>
                     <span class="tool-link-desc">Fertilizer cost and usage tracking per lot</span>
                 </a>
-                <a class="tool-link" href="../CloningScheduler/CloningScheduler.html" target="_blank">
+                <a class="tool-link module-link" href="../CloningScheduler/CloningScheduler.html">
                     <span class="tool-link-name">✂️ Cloning Scheduler</span>
                     <span class="tool-link-desc">Clone cutting schedule based on lot progression</span>
                 </a>
-                <a class="tool-link" href="../LabourApps/LabourApps.html" target="_blank">
+                <a class="tool-link module-link" href="../LabourApps/LabourApps.html">
                     <span class="tool-link-name">👷 Labour Apps</span>
                     <span class="tool-link-desc">Labour hour and task tracking</span>
                 </a>
@@ -981,6 +1116,9 @@
         const importBtn = $('importBtn');
         const exportBtn = $('exportBtn');
         const statusBar = $('statusBar');
+        const dbOverlay = $('dbOverlay');
+        const overlayLoadBtn = $('overlayLoadBtn');
+        const overlayCancelBtn = $('overlayCancelBtn');
         const lotForm = $('lotForm');
         const lotTypeSelect = $('lotType');
         const lotIdInput = $('lotId');
@@ -1064,7 +1202,7 @@
             dbImportInput.value = '';
         });
 
-        exportBtn.addEventListener('click', () => {
+        exportBtn.addEventListener('click', (e) => {
             DB.ensureStructure();
             const json = JSON.stringify(DB.data, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
@@ -1077,11 +1215,11 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
+            // Update the link so both left-click and right-click "Save As" use the correct blob URL
+            exportBtn.href = url;
+            exportBtn.download = filename;
+
+            // Let the browser handle the click naturally — no preventDefault, no programmatic click
         });
 
         function updateStatusBar() {
@@ -1097,6 +1235,51 @@
                 `;
             }
         }
+
+        // ---- DB Session Overlay ----
+        overlayLoadBtn.addEventListener('click', () => dbImportInput.click());
+
+        overlayCancelBtn.addEventListener('click', () => {
+            hideOverlay();
+        });
+
+        function showOverlay() {
+            dbOverlay.classList.remove('hidden');
+        }
+
+        function hideOverlay() {
+            dbOverlay.classList.add('hidden');
+        }
+
+        // Hide overlay once a DB is imported
+        dbImportInput.addEventListener('change', () => {
+            setTimeout(() => {
+                if (DB.data) {
+                    hideOverlay();
+                }
+            }, 50);
+        }, true);
+
+        // ---- Module Link Handlers ----
+        document.querySelectorAll('.module-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+
+                // Open in a new window at half the current viewport size
+                const width = Math.floor(window.innerWidth / 2);
+                const height = Math.floor(window.innerHeight / 2);
+                const left = Math.floor((window.screen.width - width) / 2);
+                const top = Math.floor((window.screen.height - height) / 2);
+                window.open(
+                    link.href,
+                    '_blank',
+                    `width=${width},height=${height},left=${left},top=${top},resizable=yes`
+                );
+
+                // Show the DB session overlay as a reminder to re-import after using the tool
+                showOverlay();
+            });
+        });
 
         // ---- Lot Type Changes ----
         lotTypeSelect.addEventListener('change', () => {
@@ -1299,15 +1482,10 @@
                 $('closeEventPanel').addEventListener('click', () => this.closeEventPanel());
                 $('loadSampleEventsBtn').addEventListener('click', () => this.loadSampleEvents());
 
-                // Load saved view from localStorage
-                const saved = localStorage.getItem('calendarView');
-                if (saved) {
-                    try {
-                        const { month, year } = JSON.parse(saved);
-                        this.currentMonth = month;
-                        this.currentYear = year;
-                    } catch {}
-                }
+                // Always start at current month — no localStorage persistence
+                const now = new Date();
+                this.currentMonth = now.getMonth();
+                this.currentYear = now.getFullYear();
 
                 this.render();
             },
@@ -1321,7 +1499,6 @@
                     this.currentMonth = 12;
                     this.currentYear--;
                 }
-                this.saveView();
                 this.render();
             },
 
@@ -1329,15 +1506,7 @@
                 const today = new Date();
                 this.currentMonth = today.getMonth();
                 this.currentYear = today.getFullYear();
-                this.saveView();
                 this.render();
-            },
-
-            saveView() {
-                localStorage.setItem('calendarView', JSON.stringify({
-                    month: this.currentMonth,
-                    year: this.currentYear
-                }));
             },
 
             render() {

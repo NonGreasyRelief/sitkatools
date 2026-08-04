@@ -102,13 +102,14 @@ The central hub with two modes:
 ### Cultivation Modules Section (SitkaTools.html)
 - The bottom of `SitkaTools.html` contains a "Cultivation Modules" card that links to all sibling tools
 - All links use relative paths (`../<ToolName>/<ToolName>.html`) — never absolute or `file://` URLs
-- All links include `target="_blank"` so modules open in a new tab
-- When adding a new module, add a link entry with an emoji icon, tool name, and one-line description matching the Tool Registry
+- Links have class `module-link` and are handled by JS: they open in a new window at half the current viewport size (centered)
+- Clicking a module link calls `showOverlay()` to remind the user to re-import the DB after using the external tool
+- When adding a new module, add a link entry with class `module-link`, an emoji icon, tool name, and one-line description matching the Tool Registry
 - Clear file header comment with tool name, purpose, and database keys used
 
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
-- Use `localStorage` for tool-specific session state (UI preferences, temp drafts)
+- **NO localStorage or sessionStorage:** All state must come from explicitly imported DB files. Never persist data across sessions in the browser. Every new page load starts fresh — the user must import a DB to work.
 - File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting
 - No `async/await` on network calls — there are none
 
