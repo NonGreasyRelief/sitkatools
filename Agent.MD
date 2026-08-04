@@ -73,6 +73,91 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 - Tools only read/write their own keys — they do not modify other tools' data.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
+### TempDB.json — Cross-Window Database Swap Convention
+
+**Problem:** Subtools open as separate popup windows (`window.open()`). Because each window is an independent browser context, the subtool cannot access the main app's in-memory database. Without a shared mechanism, the user would need to manually re-import the DB file into every tool — defeating the purpose of a unified suite.
+
+**Solution:** Use `localStorage` as a **single-file swap store** keyed as `TempDB.json`. This is the **only permitted use of localStorage** in the entire suite. It acts as a clipboard: the main app writes the current database state before launching a subtool, and the subtool reads it on startup.
+
+#### Rules
+
+1. **localStorage is ONLY for `TempDB.json`** — no other keys, no session persistence, no preferences. This is strictly a swap file mechanism.
+2. **The main app (SitkaTools.html) WRITES** to `localStorage` before opening any subtool. It serializes the current in-memory `DB.data` as a JSON string and stores it under the key `TempDB.json`.
+3. **Subtools READ from `localStorage` on startup.** On page load, each subtool checks `localStorage.getItem('TempDB.json')`. If present, it parses the JSON and populates `DB.data`. If absent, the tool falls back to the manual file import UI.
+4. **The swap is write-once, read-once per session.** The main app writes when launching; the subtool reads when opening. After reading, the subtool works entirely in memory. When the user saves (via the footer Save DB button), the subtool exports its modified `DB.data` as a download — it does NOT write back to localStorage.
+5. **Stale data awareness:** If the swap exists but is older than the current session (e.g., the user left a tool open overnight), the subtool should still use it as the best available state. The Save DB flow is how the user commits changes back to disk.
+
+#### Main App Write Pattern (SitkaTools.html)
+
+In SitkaTools.html, whenever a subtool is launched (via `module-link` click handler), serialize and store the current database BEFORE calling `window.open()`:
+
+```js
+// ---- Module link handler (in SitkaTools.html) ----
+document.addEventListener('click', (e) => {
+    const moduleLink = e.target.closest('.module-link');
+    if (!moduleLink) return;
+    e.preventDefault();
+
+    // Write current DB state to the swap store BEFORE opening the subtool
+    if (DB.data) {
+        try {
+            localStorage.setItem('TempDB.json', JSON.stringify(DB.data));
+        } catch (err) {
+            console.warn('Could not write TempDB.json to localStorage:', err);
+        }
+    }
+
+    // Open the subtool popup window
+    const url = moduleLink.getAttribute('href');
+    const w = Math.floor(window.innerWidth / 2);
+    const h = Math.floor(window.innerHeight * 0.66);
+    const left = Math.floor((window.screen.width - w) / 2);
+    const top = Math.floor((window.screen.height - h) / 2);
+    window.open(url, '_blank', `width=${w},height=${h},left=${left},top=${top}`);
+
+    // Show overlay reminding user to re-import DB after using the tool
+    showOverlay();
+});
+```
+
+#### Subtool Read Pattern (All Wizard Tools)
+
+Every subtool includes this startup sequence at the top of its `<script>` block, BEFORE any UI rendering that depends on `DB.data`:
+
+```js
+// ---- TempDB.json swap retrieval (in all subtools) ----
+function loadFromSwap() {
+    try {
+        const raw = localStorage.getItem('TempDB.json');
+        if (raw) {
+            DB.data = JSON.parse(raw);
+            DB.ensureStructure();
+            return true;
+        }
+    } catch (err) {
+        console.warn('Could not read TempDB.json from localStorage:', err);
+    }
+    return false;
+}
+
+// Attempt swap load first; fall back to empty structure if unavailable.
+if (!loadFromSwap()) {
+    DB.ensureStructure();
+}
+```
+
+After loading (from swap or fallback), the subtool populates its selectors and renders UI as normal. The file import UI (`<input type="file">`) remains available as a manual override in case the swap is stale or missing.
+
+#### Why localStorage Is Permitted Here
+
+The suite's core principle is "browser sandbox only, no server." `localStorage` fits within this constraint:
+- It runs entirely client-side — no network calls, no external origins.
+- It persists across page loads within the same origin (including `file://` in most browsers).
+- It is the **only** mechanism for cross-window communication available without a server.
+- The key `TempDB.json` is treated as a temporary swap file — not persistent application state.
+
+> **Exception granted:** Using `localStorage` for the `TempDB.json` swap key is explicitly permitted despite the general "no localStorage" convention. No other use of localStorage is allowed without an explicit update to this specification.
+
 ### Main Tool — SitkaTools.html
 
 The central hub with two modes:
@@ -448,6 +533,9 @@ const DB = {
         return this.data;
     }
 };
+
+const $ = id => document.getElementById(id);
+```
 
 const $ = id => document.getElementById(id);
 ```

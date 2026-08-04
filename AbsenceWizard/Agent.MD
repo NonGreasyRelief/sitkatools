@@ -49,6 +49,41 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 - Tools never communicate with each other — only through the JSON file on disk
 - Dates in data use ISO format (`YYYY-MM-DD`); filenames use 2-digit year (`YY`)
 
+### Database Retrieval on Open — TempDB.json Swap
+
+AbsenceWizard retrieves the active database from the calendar when it opens, using the `TempDB.json` localStorage swap convention defined in the root `Agent.MD`.
+
+**How it works:**
+1. When SitkaTools.html launches AbsenceWizard, it writes the current in-memory `DB.data` to `localStorage` under the key `TempDB.json` — BEFORE calling `window.open()`.
+2. On page load, AbsenceWizard calls `loadFromSwap()` which reads `localStorage.getItem('TempDB.json')`, parses the JSON, and populates `DB.data`.
+3. If the swap is absent or corrupted, the tool falls back to an empty DB structure and shows the manual file import UI as a fallback.
+4. After loading, AbsenceWizard renders its UI normally (no selector dropdown needed — this is an independent tool).
+
+**Implementation:**
+```js
+// ---- TempDB.json swap retrieval ----
+function loadFromSwap() {
+    try {
+        const raw = localStorage.getItem('TempDB.json');
+        if (raw) {
+            DB.data = JSON.parse(raw);
+            DB.ensureStructure();
+            return true;
+        }
+    } catch (err) {
+        console.warn('Could not read TempDB.json from localStorage:', err);
+    }
+    return false;
+}
+
+// Load from swap on startup; fall back to empty structure.
+if (!loadFromSwap()) {
+    DB.ensureStructure();
+}
+```
+
+This is the **only** use of `localStorage` permitted in this tool. No other localStorage keys are used.
+
 ## UI Convention
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:

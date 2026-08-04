@@ -35,6 +35,44 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 - Tools never communicate with each other — only through the JSON file on disk
 - Dates in data use ISO format (`YYYY-MM-DD`); filenames use 2-digit year (`YY`)
 
+### Database Retrieval on Open — TempDB.json Swap
+
+IPMWizard retrieves the active database from the calendar when it opens, using the `TempDB.json` localStorage swap convention defined in the root `Agent.MD`.
+
+**How it works:**
+1. When SitkaTools.html launches IPMWizard, it writes the current in-memory `DB.data` to `localStorage` under the key `TempDB.json` — BEFORE calling `window.open()`.
+2. On page load, IPMWizard calls `loadFromSwap()` which reads `localStorage.getItem('TempDB.json')`, parses the JSON, and populates `DB.data`.
+3. If the swap is absent or corrupted, the tool falls back to an empty DB structure and shows the manual file import UI as a fallback.
+4. After loading, IPMWizard calls `populateLotSelector()` to fill the Active Lot dropdown from `DB.lots`, then renders its UI.
+
+**Implementation:**
+```js
+// ---- TempDB.json swap retrieval ----
+function loadFromSwap() {
+    try {
+        const raw = localStorage.getItem('TempDB.json');
+        if (raw) {
+            DB.data = JSON.parse(raw);
+            DB.ensureStructure();
+            return true;
+        }
+    } catch (err) {
+        console.warn('Could not read TempDB.json from localStorage:', err);
+    }
+    return false;
+}
+
+// Load from swap on startup; fall back to empty structure.
+if (!loadFromSwap()) {
+    DB.ensureStructure();
+}
+
+// Populate the lot selector after DB is loaded.
+populateLotSelector();
+```
+
+This is the **only** use of `localStorage` permitted in this tool. No other localStorage keys are used.
+
 ## UI Convention
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
