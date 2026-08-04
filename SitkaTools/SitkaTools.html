@@ -138,6 +138,11 @@
             max-width: 900px;
             margin: 0 auto;
             padding: 24px;
+            transition: max-width 0.3s ease;
+        }
+
+        .main.calendar-active {
+            max-width: 1400px;
         }
 
         .tab-content {
@@ -329,6 +334,27 @@
         .badge-sub-lot { background: rgba(52, 152, 219, 0.2); color: #3498db; }
         .badge-split-lot { background: rgba(243, 156, 18, 0.2); color: var(--warning); }
 
+        .lot-delete-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            margin-left: 12px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+        }
+
+        .lot-item:hover .lot-delete-btn {
+            opacity: 1;
+        }
+
+        .lot-delete-btn:hover {
+            background: rgba(231, 76, 60, 0.2);
+        }
+
         /* Placeholder */
         .placeholder {
             text-align: center;
@@ -347,14 +373,395 @@
             color: var(--text-primary);
         }
 
+        /* Tools Section */
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .tool-link {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: all 0.2s;
+        }
+
+        .tool-link:hover {
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.1);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
+
+        .tool-link:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .tool-link-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+            color: var(--accent);
+        }
+
+        .tool-link-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+
         /* Hidden file input */
         #dbImportInput {
             display: none;
         }
 
+        /* =====================================================
+           Calendar View Styles
+           ===================================================== */
+
+        /* Terminal Panel */
+        .terminal-panel {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .terminal-header {
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .terminal-title {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .terminal-status {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .terminal-body {
+            padding: 12px 16px;
+            max-height: 200px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .terminal-line {
+            padding: 4px 0;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--text-primary);
+            border-bottom: 1px solid #1a1a1a;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .terminal-line:hover {
+            background: rgba(83, 216, 168, 0.05);
+        }
+
+        .terminal-line.today {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .terminal-line.tomorrow {
+            color: #3498db;
+        }
+
+        .terminal-date {
+            color: var(--warning);
+            margin-right: 12px;
+        }
+
+        .terminal-time {
+            color: var(--text-secondary);
+            margin-right: 12px;
+        }
+
+        .terminal-type {
+            display: inline-block;
+            padding: 0 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            margin-right: 8px;
+            text-transform: uppercase;
+        }
+
+        /* Calendar Navigation */
+        .calendar-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+
+        .calendar-month-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+            min-width: 250px;
+            text-align: center;
+        }
+
+        /* Calendar Grid */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1px;
+            background: var(--border);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .calendar-day-header {
+            background: var(--bg-secondary);
+            padding: 12px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .calendar-day {
+            background: var(--bg-primary);
+            min-height: 140px;
+            padding: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .calendar-day:hover {
+            background: rgba(83, 216, 168, 0.05);
+        }
+
+        .calendar-day.other-month {
+            opacity: 0.3;
+        }
+
+        .calendar-day.today {
+            background: rgba(83, 216, 168, 0.1);
+            border: 2px solid var(--accent);
+        }
+
+        .calendar-day.selected {
+            background: rgba(83, 216, 168, 0.15);
+        }
+
+        .calendar-day.drag-over {
+            background: rgba(83, 216, 168, 0.25);
+            box-shadow: inset 0 0 0 2px var(--accent);
+        }
+
+        .day-number {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .calendar-day.today .day-number {
+            background: var(--accent);
+            color: var(--bg-primary);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .day-events {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: 100px;
+            contain: layout style paint;
+        }
+
+        .day-event {
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            cursor: grab;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .day-event:active {
+            cursor: grabbing;
+        }
+
+        .day-event:hover {
+            filter: brightness(1.2);
+            transform: translateX(2px);
+        }
+
+        .day-event.dragging {
+            opacity: 0.4;
+        }
+
+        .day-event.type-task { background: rgba(83, 216, 168, 0.3); color: var(--accent); }
+        .day-event.type-harvest { background: rgba(243, 156, 18, 0.3); color: var(--warning); }
+        .day-event.type-ipm { background: rgba(231, 76, 60, 0.3); color: var(--danger); }
+        .day-event.type-fertilizer { background: rgba(52, 152, 219, 0.3); color: #3498db; }
+        .day-event.type-cloning { background: rgba(155, 89, 182, 0.3); color: #9b59b6; }
+        .day-event.type-labour { background: rgba(241, 196, 15, 0.3); color: #f1c40f; }
+        .day-event.type-default { background: rgba(168, 168, 184, 0.2); color: var(--text-secondary); }
+
+        /* Event Details Panel */
+        .event-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .event-panel-header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .event-panel-title {
+            color: var(--accent);
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .event-panel-body {
+            padding: 20px;
+        }
+
+        .event-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .event-detail-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .event-detail-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .event-detail-value {
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .event-detail-input {
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .event-detail-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .event-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Sample events button */
+        .sample-events-bar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 8px;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px dashed var(--border);
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+
+        /* Text utilities */
+        .text-secondary {
+            color: var(--text-secondary);
+        }
+
         /* Responsive */
         @media (max-width: 640px) {
             .form-grid {
+                grid-template-columns: 1fr;
+            }
+            .tools-grid {
                 grid-template-columns: 1fr;
             }
             .header {
@@ -369,6 +776,12 @@
                 flex: 1;
                 justify-content: center;
             }
+            .calendar-day {
+                min-height: 80px;
+            }
+            .day-event {
+                font-size: 0.65rem;
+            }
         }
     </style>
 </head>
@@ -379,8 +792,8 @@
         <div class="header-left">
             <span class="logo">🌿 SitkaTools</span>
             <nav class="tabs">
-                <button class="tab active" data-tab="lot-management">Lot Management</button>
-                <button class="tab disabled" data-tab="calendar-view" title="Coming soon">Calendar View</button>
+                <button class="tab active" data-tab="calendar-view">Calendar View</button>
+                <button class="tab" data-tab="lot-management">Lot Management</button>
             </nav>
         </div>
         <div class="header-right">
@@ -394,8 +807,60 @@
     </header>
 
     <main class="main">
+        <!-- Calendar View Tab (default) -->
+        <section class="tab-content active" id="calendar-view">
+            <div class="status-bar empty" id="calendarStatusBar">
+                <span class="status-text">No database loaded. Import a DB file to see calendar events.</span>
+            </div>
+
+            <div class="sample-events-bar">
+                <button class="btn-ghost" id="loadSampleEventsBtn">🧪 Load Sample Events (for testing)</button>
+            </div>
+
+            <!-- Terminal-style upcoming events panel -->
+            <div class="terminal-panel" id="terminalPanel">
+                <div class="terminal-header">
+                    <span class="terminal-title">📋 UPCOMING EVENTS</span>
+                    <span class="terminal-status" id="terminalStatus">0 events</span>
+                </div>
+                <div class="terminal-body" id="terminalBody">
+                    <div class="terminal-line text-secondary">No events loaded. Import a database to begin.</div>
+                </div>
+            </div>
+
+            <!-- Calendar navigation -->
+            <div class="calendar-nav">
+                <button class="btn btn-secondary" id="prevMonthBtn">◀ Prev</button>
+                <h2 class="calendar-month-title" id="calendarTitle">August 2026</h2>
+                <button class="btn btn-secondary" id="nextMonthBtn">Next ▶</button>
+                <button class="btn btn-primary" id="todayBtn" style="margin-left: 16px;">Today</button>
+            </div>
+
+            <!-- Calendar grid -->
+            <div class="calendar-grid" id="calendarGrid">
+                <div class="calendar-day-header">Sun</div>
+                <div class="calendar-day-header">Mon</div>
+                <div class="calendar-day-header">Tue</div>
+                <div class="calendar-day-header">Wed</div>
+                <div class="calendar-day-header">Thu</div>
+                <div class="calendar-day-header">Fri</div>
+                <div class="calendar-day-header">Sat</div>
+            </div>
+
+            <!-- Event details/operations panel -->
+            <div class="event-panel" id="eventPanel">
+                <div class="event-panel-header">
+                    <span class="event-panel-title">📝 EVENT DETAILS</span>
+                    <button class="btn btn-secondary btn-sm" id="closeEventPanel">✕</button>
+                </div>
+                <div class="event-panel-body" id="eventPanelBody">
+                    <div class="text-secondary">Select a calendar event to view and edit its details.</div>
+                </div>
+            </div>
+        </section>
+
         <!-- Lot Management Tab -->
-        <section class="tab-content active" id="lot-management">
+        <section class="tab-content" id="lot-management">
             <div class="status-bar empty" id="statusBar">
                 <span class="status-text">No database loaded. Import a DB file to begin.</span>
             </div>
@@ -462,12 +927,26 @@
             </div>
         </section>
 
-        <!-- Calendar View Tab (placeholder) -->
-        <section class="tab-content" id="calendar-view">
-            <div class="placeholder">
-                <div class="placeholder-icon">📅</div>
-                <h3>Calendar View</h3>
-                <p>This feature is coming soon. It will display all cultivation events from every tool in a unified calendar.</p>
+        <!-- Tools Directory -->
+        <section class="card" id="tools-directory">
+            <h2 class="card-title">Cultivation Modules</h2>
+            <div class="tools-grid">
+                <a class="tool-link" href="../IPMHelper/IPMHelper.html" target="_blank">
+                    <span class="tool-link-name">🐛 IPM Helper</span>
+                    <span class="tool-link-desc">Pesticide ordering and preventative bug release reminders</span>
+                </a>
+                <a class="tool-link" href="../FertilizerHelper/FertilizerHelper.html" target="_blank">
+                    <span class="tool-link-name">🧪 Fertilizer Helper</span>
+                    <span class="tool-link-desc">Fertilizer cost and usage tracking per lot</span>
+                </a>
+                <a class="tool-link" href="../CloningScheduler/CloningScheduler.html" target="_blank">
+                    <span class="tool-link-name">✂️ Cloning Scheduler</span>
+                    <span class="tool-link-desc">Clone cutting schedule based on lot progression</span>
+                </a>
+                <a class="tool-link" href="../LabourApps/LabourApps.html" target="_blank">
+                    <span class="tool-link-name">👷 Labour Apps</span>
+                    <span class="tool-link-desc">Labour hour and task tracking</span>
+                </a>
             </div>
         </section>
     </main>
@@ -535,6 +1014,7 @@
         }
 
         // ---- Tab Navigation ----
+        const mainEl = document.querySelector('.main');
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 if (tab.classList.contains('disabled')) return;
@@ -545,8 +1025,18 @@
                 tab.classList.add('active');
                 const targetId = tab.dataset.tab;
                 $(targetId).classList.add('active');
+
+                // Toggle wider layout for calendar view
+                if (targetId === 'calendar-view') {
+                    mainEl.classList.add('calendar-active');
+                } else {
+                    mainEl.classList.remove('calendar-active');
+                }
             });
         });
+
+        // Start in calendar-active mode since calendar is the default tab
+        mainEl.classList.add('calendar-active');
 
         // ---- Database Import/Export ----
         importBtn.addEventListener('click', () => dbImportInput.click());
@@ -756,10 +1246,27 @@
                         <span class="lot-name">${escapeHtml(lot.name)}</span>
                         <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate} · ${lot.stage}${countInfo}</span>
                     </div>
-                    <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
+                        <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
+                    </div>
                 `;
 
                 lotListEl.appendChild(item);
+            });
+
+            // Attach delete handlers
+            lotListEl.querySelectorAll('.lot-delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const lotId = btn.dataset.lotId;
+                    const lotName = btn.dataset.lotName;
+                    if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?\n\nThis action cannot be undone.`)) {
+                        delete DB.lots[lotId];
+                        updateStatusBar();
+                        renderLotList();
+                    }
+                });
             });
         }
 
@@ -770,8 +1277,512 @@
             return div.innerHTML;
         }
 
+        // =====================================================
+        // SitkaTools — Calendar Module
+        // =====================================================
+        const Calendar = {
+            currentMonth: new Date().getMonth(),
+            currentYear: new Date().getFullYear(),
+            selectedDate: null,
+            selectedEvent: null,
+            draggedEvent: null,
+
+            get events() {
+                return DB.data?.calendarEvents || [];
+            },
+
+            init() {
+                // Calendar navigation
+                $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
+                $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
+                $('todayBtn').addEventListener('click', () => this.goToToday());
+                $('closeEventPanel').addEventListener('click', () => this.closeEventPanel());
+                $('loadSampleEventsBtn').addEventListener('click', () => this.loadSampleEvents());
+
+                // Load saved view from localStorage
+                const saved = localStorage.getItem('calendarView');
+                if (saved) {
+                    try {
+                        const { month, year } = JSON.parse(saved);
+                        this.currentMonth = month;
+                        this.currentYear = year;
+                    } catch {}
+                }
+
+                this.render();
+            },
+
+            navigateMonth(delta) {
+                this.currentMonth += delta;
+                if (this.currentMonth > 11) {
+                    this.currentMonth = 0;
+                    this.currentYear++;
+                } else if (this.currentMonth < 0) {
+                    this.currentMonth = 12;
+                    this.currentYear--;
+                }
+                this.saveView();
+                this.render();
+            },
+
+            goToToday() {
+                const today = new Date();
+                this.currentMonth = today.getMonth();
+                this.currentYear = today.getFullYear();
+                this.saveView();
+                this.render();
+            },
+
+            saveView() {
+                localStorage.setItem('calendarView', JSON.stringify({
+                    month: this.currentMonth,
+                    year: this.currentYear
+                }));
+            },
+
+            render() {
+                this.updateTitle();
+                this.renderGrid();
+                this.renderTerminal();
+            },
+
+            updateTitle() {
+                const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+                $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
+            },
+
+            renderGrid() {
+                const grid = $('calendarGrid');
+                // Keep headers, remove day cells
+                const headers = grid.querySelectorAll('.calendar-day-header');
+                grid.innerHTML = '';
+                headers.forEach(h => grid.appendChild(h));
+
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+
+                // First day of month
+                const firstDay = new Date(this.currentYear, this.currentMonth, 1).getDay();
+                // Days in month
+                const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+                // Days in previous month
+                const daysInPrevMonth = new Date(this.currentYear, this.currentMonth, 0).getDate();
+
+                // Previous month's trailing days
+                for (let i = firstDay - 1; i >= 0; i--) {
+                    const day = daysInPrevMonth - i;
+                    const prevMonth = this.currentMonth === 0 ? 11 : this.currentMonth - 1;
+                    const prevYear = this.currentMonth === 0 ? this.currentYear - 1 : this.currentYear;
+                    const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    grid.appendChild(this.createDayCell(day, dateStr, true, todayStr));
+                }
+
+                // Current month's days
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dateStr = `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    grid.appendChild(this.createDayCell(day, dateStr, false, todayStr));
+                }
+
+                // Next month's leading days
+                const totalCells = grid.querySelectorAll('.calendar-day').length;
+                const remaining = 42 - totalCells; // 6 rows max
+                for (let day = 1; day <= remaining; day++) {
+                    const nextMonth = this.currentMonth === 11 ? 0 : this.currentMonth + 1;
+                    const nextYear = this.currentMonth === 11 ? this.currentYear + 1 : this.currentYear;
+                    const dateStr = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    grid.appendChild(this.createDayCell(day, dateStr, true, todayStr));
+                }
+            },
+
+            createDayCell(day, dateStr, otherMonth, todayStr) {
+                const cell = document.createElement('div');
+                cell.className = 'calendar-day';
+                if (otherMonth) cell.classList.add('other-month');
+                if (dateStr === todayStr) cell.classList.add('today');
+                if (dateStr === this.selectedDate) cell.classList.add('selected');
+                cell.dataset.date = dateStr;
+
+                // Day number
+                const numEl = document.createElement('div');
+                numEl.className = 'day-number';
+                numEl.textContent = day;
+                cell.appendChild(numEl);
+
+                // Events for this day
+                const dayEvents = this.events.filter(e => e.date === dateStr);
+                if (dayEvents.length > 0) {
+                    const eventsContainer = document.createElement('div');
+                    eventsContainer.className = 'day-events';
+
+                    dayEvents.forEach((event, idx) => {
+                        const eventEl = document.createElement('div');
+                        const typeClass = event.type ? `type-${event.type.toLowerCase().replace(/\s+/g, '-')}` : 'type-default';
+                        eventEl.className = `day-event ${typeClass}`;
+                        eventEl.textContent = event.title || event.type || 'Event';
+                        eventEl.draggable = true;
+                        eventEl.dataset.eventIndex = this.events.indexOf(event);
+
+                        // Drag events
+                        eventEl.addEventListener('dragstart', (e) => {
+                            this.draggedEvent = event;
+                            eventEl.classList.add('dragging');
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', JSON.stringify({
+                                eventIndex: this.events.indexOf(event),
+                                fromDate: dateStr
+                            }));
+                        });
+
+                        eventEl.addEventListener('dragend', () => {
+                            eventEl.classList.remove('dragging');
+                            this.draggedEvent = null;
+                            document.querySelectorAll('.calendar-day.drag-over').forEach(d => d.classList.remove('drag-over'));
+                        });
+
+                        // Click to select event
+                        eventEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.selectEvent(event);
+                        });
+
+                        eventsContainer.appendChild(eventEl);
+                    });
+
+                    cell.appendChild(eventsContainer);
+                }
+
+                // Drop target on day cell
+                cell.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    cell.classList.add('drag-over');
+                });
+
+                cell.addEventListener('dragleave', () => {
+                    cell.classList.remove('drag-over');
+                });
+
+                cell.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    cell.classList.remove('drag-over');
+                    try {
+                        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                        this.moveEvent(data.eventIndex, dateStr);
+                    } catch {}
+                });
+
+                // Click day to select it
+                cell.addEventListener('click', () => {
+                    this.selectedDate = dateStr;
+                    this.renderGrid();
+                });
+
+                return cell;
+            },
+
+            moveEvent(eventIndex, newDate) {
+                if (eventIndex < 0 || eventIndex >= DB.data.calendarEvents.length) return;
+
+                const oldDate = DB.data.calendarEvents[eventIndex].date;
+                DB.data.calendarEvents[eventIndex].date = newDate;
+
+                // Visual feedback
+                alert(`Event moved!\n\n"${DB.data.calendarEvents[eventIndex].title}"\nFrom: ${oldDate}\nTo: ${newDate}\n\nRemember to export the database to save.`);
+
+                this.render();
+            },
+
+            selectEvent(event) {
+                this.selectedEvent = event;
+                this.renderEventPanel(event);
+            },
+
+            renderEventPanel(event) {
+                const body = $('eventPanelBody');
+
+                // Determine which fields are modifiable
+                const MODIFIABLE_FIELDS = ['date', 'title', 'type', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                const READONLY_FIELDS = ['sourceTool', 'createdBy', 'eventId'];
+
+                // Build field list from the event
+                const fields = Object.keys(event);
+
+                let html = '<div class="event-detail-grid">';
+
+                fields.forEach(key => {
+                    const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                    const isModifiable = MODIFIABLE_FIELDS.includes(key);
+                    const isReadonly = READONLY_FIELDS.includes(key);
+
+                    html += `<div class="event-detail-group">`;
+                    html += `<label class="event-detail-label">${escapeHtml(label)}</label>`;
+
+                    if (isModifiable) {
+                        if (key === 'date') {
+                            html += `<input type="date" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                        } else if (key === 'type') {
+                            html += `<select class="event-detail-input" data-field="${key}">
+                                <option value="task" ${event[key] === 'task' ? 'selected' : ''}>Task</option>
+                                <option value="harvest" ${event[key] === 'harvest' ? 'selected' : ''}>Harvest</option>
+                                <option value="ipm" ${event[key] === 'ipm' ? 'selected' : ''}>IPM</option>
+                                <option value="fertilizer" ${event[key] === 'fertilizer' ? 'selected' : ''}>Fertilizer</option>
+                                <option value="cloning" ${event[key] === 'cloning' ? 'selected' : ''}>Cloning</option>
+                                <option value="labour" ${event[key] === 'labour' ? 'selected' : ''}>Labour</option>
+                                <option value="other" ${event[key] === 'other' ? 'selected' : ''}>Other</option>
+                            </select>`;
+                        } else if (key === 'estimatedHours') {
+                            html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                        } else {
+                            html += `<input type="text" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                        }
+                    } else {
+                        html += `<div class="event-detail-value">${escapeHtml(String(event[key] || '—'))}</div>`;
+                    }
+
+                    html += `</div>`;
+                });
+
+                html += '</div>';
+
+                // Action buttons
+                html += `<div class="event-actions">`;
+                html += `<button class="btn btn-primary" id="saveEventBtn">💾 Save Changes</button>`;
+                html += `<button class="btn btn-secondary" id="duplicateEventBtn">📋 Duplicate</button>`;
+                html += `<button class="btn btn-danger" id="deleteEventBtn">🗑 Delete</button>`;
+                html += `</div>`;
+
+                body.innerHTML = html;
+
+                // Bind events
+                $('saveEventBtn').addEventListener('click', () => this.saveEventChanges());
+                $('duplicateEventBtn').addEventListener('click', () => this.duplicateEvent());
+                $('deleteEventBtn').addEventListener('click', () => this.deleteEvent());
+
+                // Live update on input change
+                body.querySelectorAll('.event-detail-input').forEach(input => {
+                    input.addEventListener('change', () => this.saveEventChanges());
+                });
+            },
+
+            saveEventChanges() {
+                if (!this.selectedEvent) return;
+
+                const inputs = $('eventPanelBody').querySelectorAll('.event-detail-input');
+                inputs.forEach(input => {
+                    const field = input.dataset.field;
+                    let value = input.value;
+
+                    // Type coercion
+                    if (field === 'estimatedHours' && value) {
+                        value = parseFloat(value);
+                    }
+
+                    this.selectedEvent[field] = value;
+                    // Update in DB array too
+                    const idx = DB.data.calendarEvents.indexOf(this.selectedEvent);
+                    if (idx >= 0) {
+                        DB.data.calendarEvents[idx][field] = value;
+                    }
+                });
+
+                this.render();
+            },
+
+            duplicateEvent() {
+                if (!this.selectedEvent) return;
+
+                const copy = JSON.parse(JSON.stringify(this.selectedEvent));
+                // Remove unique ID if present
+                delete copy.eventId;
+                copy.title = `${copy.title} (copy)`;
+                DB.data.calendarEvents.push(copy);
+                this.selectedEvent = copy;
+                this.render();
+            },
+
+            deleteEvent() {
+                if (!this.selectedEvent) return;
+
+                if (!confirm(`Delete event "${this.selectedEvent.title}"?`)) return;
+
+                const idx = DB.data.calendarEvents.indexOf(this.selectedEvent);
+                if (idx >= 0) {
+                    DB.data.calendarEvents.splice(idx, 1);
+                }
+                this.selectedEvent = null;
+                this.closeEventPanel();
+                this.render();
+            },
+
+            closeEventPanel() {
+                this.selectedEvent = null;
+                $('eventPanelBody').innerHTML = '<div class="text-secondary">Select a calendar event to view and edit its details.</div>';
+            },
+
+            renderTerminal() {
+                const body = $('terminalBody');
+                const status = $('terminalStatus');
+
+                if (!DB.data || this.events.length === 0) {
+                    body.innerHTML = '<div class="terminal-line text-secondary">No events found. Create events in your tools or add them to the database.</div>';
+                    status.textContent = '0 events';
+                    return;
+                }
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayStr = today.toISOString().split('T')[0];
+
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+                // Sort events by date, then show upcoming ones first
+                const sorted = [...this.events].sort((a, b) => {
+                    const dateCompare = (a.date || '').localeCompare(b.date || '');
+                    if (dateCompare !== 0) return dateCompare;
+                    return (a.title || '').localeCompare(b.title || '');
+                });
+
+                // Group by proximity to today
+                const todayEvents = sorted.filter(e => e.date === todayStr);
+                const tomorrowEvents = sorted.filter(e => e.date === tomorrowStr);
+                const upcomingEvents = sorted.filter(e => e.date > tomorrowStr).slice(0, 10);
+
+                let lines = [];
+
+                // Today's events
+                if (todayEvents.length > 0) {
+                    lines.push('<div class="terminal-line" style="color: var(--accent); font-weight: bold; border-bottom: 2px solid var(--accent);">▸ TODAY</div>');
+                    todayEvents.forEach(event => {
+                        lines.push(this.createTerminalLine(event, 'today', todayStr));
+                    });
+                }
+
+                // Tomorrow's events
+                if (tomorrowEvents.length > 0) {
+                    lines.push('<div class="terminal-line" style="color: #3498db; font-weight: bold; border-bottom: 2px solid #3498db;">▸ TOMORROW</div>');
+                    tomorrowEvents.forEach(event => {
+                        lines.push(this.createTerminalLine(event, 'tomorrow', tomorrowStr));
+                    });
+                }
+
+                // Upcoming events
+                if (upcomingEvents.length > 0) {
+                    lines.push('<div class="terminal-line" style="color: var(--warning); font-weight: bold; border-bottom: 2px solid var(--warning);">▸ UPCOMING</div>');
+                    upcomingEvents.forEach(event => {
+                        lines.push(this.createTerminalLine(event, '', event.date));
+                    });
+                }
+
+                if (lines.length === 0) {
+                    lines.push('<div class="terminal-line text-secondary">No upcoming events in the next 7 days.</div>');
+                }
+
+                body.innerHTML = lines.join('');
+                status.textContent = `${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+
+                // Click terminal line to select event
+                body.querySelectorAll('.terminal-line[data-event-index]').forEach(line => {
+                    line.addEventListener('click', () => {
+                        const idx = parseInt(line.dataset.eventIndex);
+                        if (DB.data.calendarEvents[idx]) {
+                            this.selectEvent(DB.data.calendarEvents[idx]);
+                        }
+                    });
+                });
+            },
+
+            createTerminalLine(event, proximityClass, dateStr) {
+                const typeBadge = event.type ? `<span class="terminal-type" style="background: rgba(83,216,168,0.2); color: var(--accent);">${escapeHtml(event.type)}</span>` : '';
+                const lotInfo = event.lotId ? ` [${escapeHtml(event.lotId)}]` : '';
+                const title = escapeHtml(event.title || 'Untitled Event');
+
+                return `<div class="terminal-line ${proximityClass}" data-event-index="${DB.data.calendarEvents.indexOf(event)}">
+                    <span class="terminal-date">${dateStr}</span>
+                    ${typeBadge}
+                    <span class="terminal-title">${title}${lotInfo}</span>
+                </div>`;
+            },
+
+            loadSampleEvents() {
+                DB.ensureStructure();
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const dateOffset = (days) => {
+                    const d = new Date(today);
+                    d.setDate(d.getDate() + days);
+                    return d.toISOString().split('T')[0];
+                };
+
+                // Only load if no events exist yet
+                if (DB.data.calendarEvents.length > 0) {
+                    if (!confirm('This will add sample events to your existing events. Continue?')) return;
+                }
+
+                const samples = [
+                    // Today
+                    { lotId: 'LOT-001', date: dateOffset(0), type: 'task', title: 'Water Room A — OG Kush', sourceTool: 'SitkaTools', notes: 'Deep water cycle, 2 hours per zone', status: 'pending', estimatedHours: 2 },
+                    { lotId: 'LOT-003', date: dateOffset(0), type: 'fertilizer', title: 'Feed Room B — Flower Stage', sourceTool: 'FertilizerHelper', notes: 'Bloom formula A+B, 2.0 EC target', status: 'pending', estimatedHours: 1.5 },
+                    { lotId: 'LOT-002', date: dateOffset(0), type: 'ipm', title: 'Release Predatory Mites — Room C', sourceTool: 'IPMHelper', notes: 'Phytoseiulus persimilis, 5 mites per plant', status: 'pending', estimatedHours: 1 },
+
+                    // Tomorrow
+                    { lotId: 'LOT-004', date: dateOffset(1), type: 'cloning', title: 'Cut Clones — Sour Diesel Mother Block', sourceTool: 'CloningScheduler', notes: 'Target 40 clones, 4-inch cuttings', status: 'pending', estimatedHours: 3 },
+                    { lotId: 'LOT-001', date: dateOffset(1), type: 'task', title: 'Trim Lower Colas — OG Kush', sourceTool: 'SitkaTools', notes: 'Lollipopping below light plane', status: 'pending', estimatedHours: 2 },
+
+                    // This week
+                    { lotId: 'LOT-005', date: dateOffset(3), type: 'harvest', title: 'Harvest — Blue Dream Room D', sourceTool: 'SitkaTools', notes: 'Trichomes 70% cloudy, check morning after lights off', status: 'pending', estimatedHours: 4 },
+                    { lotId: 'LOT-003', date: dateOffset(4), type: 'fertilizer', title: 'Flush Begin — Room B Final Feed', sourceTool: 'FertilizerHelper', notes: 'Start 7-day flush cycle with RO water only', status: 'pending', estimatedHours: 1 },
+                    { lotId: 'LOT-002', date: dateOffset(5), type: 'ipm', title: 'Neem Oil Spray — Room C Preventative', sourceTool: 'IPMHelper', notes: 'Diluted neem, evening application only', status: 'pending', estimatedHours: 1.5 },
+
+                    // Next week
+                    { lotId: 'LOT-006', date: dateOffset(7), type: 'task', title: 'Dry Room A — Hang Harvest', sourceTool: 'SitkaTools', notes: 'Whole plant hang, 60°F 40% RH target', status: 'pending', estimatedHours: 3 },
+                    { lotId: 'LOT-004', date: dateOffset(8), type: 'cloning', title: 'Check Clone Prop — Mist Cycle Review', sourceTool: 'CloningScheduler', notes: 'Verify root formation on batch from day 1', status: 'pending', estimatedHours: 0.5 },
+                    { lotId: 'LOT-007', date: dateOffset(10), type: 'labour', title: 'Team Training — Pruning Techniques', sourceTool: 'LabourApps', notes: '4-hour workshop for new staff, Room E', status: 'pending', estimatedHours: 4 },
+                    { lotId: 'LOT-005', date: dateOffset(12), type: 'task', title: 'Begin Dry — Blue Dream Room D', sourceTool: 'SitkaTools', notes: 'Move to dry room, tag and log weights', status: 'pending', estimatedHours: 3 },
+                ];
+
+                DB.data.calendarEvents.push(...samples);
+                this.render();
+                updateCalendarStatusBar();
+
+                alert(`Loaded ${samples.length} sample events!\n\nThese span from today to 2 weeks out.\nRemember to export the database to save.`);
+            }
+        };
+
+        // ---- Update import handler to refresh calendar ----
+        const originalImportHandler = dbImportInput.onchange;
+        dbImportInput.addEventListener('change', () => {
+            setTimeout(() => {
+                if (DB.data) {
+                    Calendar.render();
+                    updateCalendarStatusBar();
+                }
+            }, 50);
+        }, true);
+
+        function updateCalendarStatusBar() {
+            const bar = $('calendarStatusBar');
+            if (!DB.data) {
+                bar.className = 'status-bar empty';
+                bar.innerHTML = '<span class="status-text">No database loaded. Import a DB file to see calendar events.</span>';
+                return;
+            }
+
+            const eventCount = DB.data.calendarEvents?.length || 0;
+            bar.className = 'status-bar loaded';
+            bar.innerHTML = `
+                <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
+            `;
+        }
+
         // ---- Start ----
         init();
+        Calendar.init();
     </script>
 </body>
 </html>

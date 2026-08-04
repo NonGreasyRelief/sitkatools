@@ -98,6 +98,12 @@ The central hub with two modes:
 - Self-contained: all CSS in `<style>` tags, all JS in `<script>` tags
 - Semantic HTML5 elements where appropriate
 - Responsive-friendly layout (tools may be used on tablets in grow rooms)
+
+### Cultivation Modules Section (SitkaTools.html)
+- The bottom of `SitkaTools.html` contains a "Cultivation Modules" card that links to all sibling tools
+- All links use relative paths (`../<ToolName>/<ToolName>.html`) — never absolute or `file://` URLs
+- All links include `target="_blank"` so modules open in a new tab
+- When adding a new module, add a link entry with an emoji icon, tool name, and one-line description matching the Tool Registry
 - Clear file header comment with tool name, purpose, and database keys used
 
 ### JavaScript
@@ -123,11 +129,15 @@ The central hub with two modes:
 - [x] Define project structure and conventions in Agent.MD
 - [x] SitkaTools.html — Lot creation form (new-lot, sub-lot, split-lot types with parent lot selection)
 - [x] SitkaTools.html — Import/export DB buttons (top right, user-managed file I/O)
-- [x] SitkaTools.html — Calendar view tab placeholder (non-functional)
+- [x] SitkaTools.html — Calendar view (default view, full implementation)
+  - [x] Terminal-style upcoming events panel (today/tomorrow/upcoming grouping)
+  - [x] Full month calendar grid with multi-event day cells
+  - [x] Drag-and-drop event rescheduling (updates DB directly)
+  - [x] Event details/operations panel (view, edit modifiable fields, duplicate, delete)
+  - [x] Sample events loader for testing
 
 ### Backlog
 - [ ] SitkaTools.html — Lot close-out functionality
-- [ ] SitkaTools.html — Calendar view implementation (read events from DB and render)
 - [ ] IPMHelper — Initial setup and Agent.MD documentation
 - [ ] IPMHelper — Full tool implementation
 - [ ] FertilizerHelper — Initial setup and Agent.MD documentation
