@@ -89,6 +89,7 @@ The central hub with two modes:
 | FertilizerHelper | `FertilizerHelper/` | Starting | Fertilizer cost and usage tracking per lot |
 | CloningScheduler | `CloningScheduler/` | Starting | Clone cutting schedule based on lot progression |
 | LabourApps | `LabourApps/` | Starting | Labour hour and task tracking |
+| EquipmentMaintenance | `EquipmentMaintenance/` | Starting | Equipment maintenance scheduling and tracking |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
 
@@ -102,7 +103,7 @@ The central hub with two modes:
 ### Cultivation Modules Section (SitkaTools.html)
 - The bottom of `SitkaTools.html` contains a "Cultivation Modules" card that links to all sibling tools
 - All links use relative paths (`../<ToolName>/<ToolName>.html`) — never absolute or `file://` URLs
-- Links have class `module-link` and are handled by JS: they open in a new window at half the current viewport size (centered)
+- Links have class `module-link` and are handled by JS: they open in a new window at half the current viewport width and 66% taller than half the viewport height (centered)
 - Clicking a module link calls `showOverlay()` to remind the user to re-import the DB after using the external tool
 - When adding a new module, add a link entry with class `module-link`, an emoji icon, tool name, and one-line description matching the Tool Registry
 - Clear file header comment with tool name, purpose, and database keys used
@@ -143,4 +144,6 @@ The central hub with two modes:
 - [ ] IPMHelper — Full tool implementation
 - [ ] FertilizerHelper — Initial setup and Agent.MD documentation
 - [ ] FertilizerHelper — Full tool implementation
+- [ ] EquipmentMaintenance — Initial setup and Agent.MD documentation
+- [ ] EquipmentMaintenance — Full tool implementation
 - [ ] Design and implement individual tools as requested
