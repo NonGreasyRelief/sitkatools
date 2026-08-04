@@ -96,15 +96,7 @@
             border-bottom-color: var(--bg-primary);
         }
 
-        .tab.disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
 
-        .tab.disabled:hover {
-            background: transparent;
-            color: var(--text-secondary);
-        }
 
         .header-right {
             display: flex;
@@ -1406,28 +1398,28 @@
         <section class="card" id="tools-directory">
             <h2 class="card-title">Cultivation Modules</h2>
             <div class="tools-grid">
-                <a class="tool-link module-link" href="../IPMHelper/IPMHelper.html">
-                    <span class="tool-link-name">🐛 IPM Helper</span>
-                    <span class="tool-link-desc">Pesticide ordering and preventative bug release reminders</span>
+                <a class="tool-link module-link" href="../IPMWizard/IPMWizard.html">
+                    <span class="tool-link-name">🐛 IPM Wizard</span>
+                    <span class="tool-link-desc">Quickly populate your calendar with IPM order and application dates</span>
                 </a>
-                <a class="tool-link module-link" href="../FertilizerHelper/FertilizerHelper.html">
-                    <span class="tool-link-name">🧪 Fertilizer Helper</span>
+                <a class="tool-link module-link" href="../FertilizerWizard/FertilizerWizard.html">
+                    <span class="tool-link-name">🧪 Fertilizer Wizard</span>
                     <span class="tool-link-desc">Fertilizer cost and usage tracking per lot</span>
                 </a>
-                <a class="tool-link module-link" href="../CloningScheduler/CloningScheduler.html">
-                    <span class="tool-link-name">✂️ Cloning Scheduler</span>
+                <a class="tool-link module-link" href="../CloningWizard/CloningWizard.html">
+                    <span class="tool-link-name">✂️ Cloning Wizard</span>
                     <span class="tool-link-desc">Clone cutting schedule based on lot progression</span>
                 </a>
-                <a class="tool-link module-link" href="../LabourApps/LabourApps.html">
-                    <span class="tool-link-name">👷 Labour Apps</span>
+                <a class="tool-link module-link" href="../LabourWizard/LabourWizard.html">
+                    <span class="tool-link-name">👷 Labour Wizard</span>
                     <span class="tool-link-desc">Labour hour and task tracking</span>
                 </a>
-                <a class="tool-link module-link" href="../EquipmentMaintenance/EquipmentMaintenance.html">
-                    <span class="tool-link-name">🔧 Equipment Maintenance</span>
+                <a class="tool-link module-link" href="../EquipmentWizard/EquipmentWizard.html">
+                    <span class="tool-link-name">🔧 Equipment Wizard</span>
                     <span class="tool-link-desc">Equipment maintenance scheduling and tracking</span>
                 </a>
-                <a class="tool-link module-link" href="../AbsenceManager/AbsenceManager.html">
-                    <span class="tool-link-name">🏖️ Absence Manager</span>
+                <a class="tool-link module-link" href="../AbsenceWizard/AbsenceWizard.html">
+                    <span class="tool-link-name">🏖️ Absence Wizard</span>
                     <span class="tool-link-desc">Staff absence and vacation calendar notifications</span>
                 </a>
             </div>
@@ -1552,6 +1544,9 @@
                     RoomManager.renderRoomList();
                     updateRoomStatusBar();
                     RoomManager.updateRoomDatalist();
+                    Calendar.render();
+                    updateCalendarStatusBar();
+                    hideOverlay();
                 } catch (err) {
                     alert('Failed to parse JSON file: ' + err.message);
                 }
@@ -1646,14 +1641,7 @@
             dbOverlay.classList.add('hidden');
         }
 
-        // Hide overlay once a DB is imported
-        dbImportInput.addEventListener('change', () => {
-            setTimeout(() => {
-                if (DB.data) {
-                    hideOverlay();
-                }
-            }, 50);
-        }, true);
+
 
         // ---- Module Link Handlers ----
         document.querySelectorAll('.module-link').forEach(link => {
@@ -1772,10 +1760,10 @@
             // Add to database
             DB.lots[lotId] = newLot;
 
-            // Assign to room if destRoom matches an existing room (by name or ID)
+            // Assign to room if destRoom matches an existing room by name
             if (destRoom && DB.data.rooms) {
                 const match = Object.entries(DB.data.rooms).find(([id, r]) =>
-                    r.name === destRoom || id === destRoom
+                    r.name === destRoom
                 );
                 if (match) {
                     const [roomId] = match;
@@ -2349,8 +2337,8 @@
         // SitkaTools — Calendar Module
         // =====================================================
         const Calendar = {
-            currentMonth: new Date().getMonth(),
-            currentYear: new Date().getFullYear(),
+            currentMonth: 0,
+            currentYear: 0,
             selectedDate: null,
             selectedEvent: null,
             draggedEvent: null,
@@ -2379,7 +2367,7 @@
                     this.currentMonth = 0;
                     this.currentYear++;
                 } else if (this.currentMonth < 0) {
-                    this.currentMonth = 12;
+                    this.currentMonth = 11;
                     this.currentYear--;
                 }
                 this.render();
@@ -2562,7 +2550,6 @@
 
                 // Determine which fields are modifiable
                 const MODIFIABLE_FIELDS = ['date', 'title', 'type', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
-                const READONLY_FIELDS = ['sourceTool', 'createdBy', 'eventId'];
 
                 // Build field list from the event
                 const fields = Object.keys(event);
@@ -2640,11 +2627,6 @@
 
                     if (this.selectedEvent[field] !== value) {
                         this.selectedEvent[field] = value;
-                        // Update in DB array too
-                        const idx = DB.data.calendarEvents.indexOf(this.selectedEvent);
-                        if (idx >= 0) {
-                            DB.data.calendarEvents[idx][field] = value;
-                        }
                         changed = true;
                     }
                 });
@@ -2777,16 +2759,7 @@
             }
         };
 
-        // ---- Update import handler to refresh calendar ----
-        const originalImportHandler = dbImportInput.onchange;
-        dbImportInput.addEventListener('change', () => {
-            setTimeout(() => {
-                if (DB.data) {
-                    Calendar.render();
-                    updateCalendarStatusBar();
-                }
-            }, 50);
-        }, true);
+
 
         function updateCalendarStatusBar() {
             const bar = $('calendarStatusBar');

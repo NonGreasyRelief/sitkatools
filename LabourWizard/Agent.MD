@@ -1,8 +1,8 @@
-# CloningScheduler — Tool Context
+# LabourWizard — Tool Context
 
 ## What This Tool Does
 
-CloningScheduler is a clone cutting scheduler for licensed cannabis cultivation. It helps growers know when it's time to cut clones based on how far along a given lot is in its lifecycle.
+LabourWizard is a labour hour and task tracking tool for licensed cannabis cultivation. It helps growers monitor time spent on various tasks across their cultivation lots, enabling better labour planning and cost analysis.
 
 ## Relationship to SitkaTools
 
@@ -10,22 +10,22 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 
 ### How Data Fits Into the Database
 
-CloningScheduler reads and writes its own keys within the shared database, following the suite's decoupled convention:
+LabourWizard reads and writes its own keys within the shared database, following the suite's decoupled convention:
 
 **Per-lot data** (inside `lots.<LotID>`):
 ```
-_tool_CloningScheduler: { ... }
+_tool_LabourWizard: { ... }
 ```
-Each lot can have its own cloning-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
+Each lot can have its own labour-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
 
 **Top-level data** (root of database):
 ```
-_CloningScheduler: { ... }
+_LabourWizard: { ... }
 ```
 Tool-wide state that isn't scoped to a specific lot lives under this top-level key.
 
 **Calendar events:**
-When CloningScheduler generates reminders (e.g., "time to cut clones", "clone readiness check"), it appends events to the shared `calendarEvents` array using `"sourceTool": "CloningScheduler"`. The main SitkaTools calendar view will render these alongside events from all other tools.
+When LabourWizard generates reminders (e.g., "scheduled maintenance", "task deadline"), it appends events to the shared `calendarEvents` array using `"sourceTool": "LabourWizard"`. The main SitkaTools calendar view will render these alongside events from all other tools.
 
 ### Full Database Context
 
@@ -39,9 +39,9 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
-- **Selector type:** Active Lot (lot-focused tool — clone cutting schedules are tracked per lot)
+- **Selector type:** Active Room (room-focused tool — labour hours are tracked per room)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
-- **Header:** Tool name "✂️ CloningScheduler" on the left, Active Lot dropdown on the right
+- **Header:** Tool name "👷 LabourWizard" on the left, Active Room dropdown on the right
 - **Footer:** Save DB button (with popup link) + Close Tool button
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 

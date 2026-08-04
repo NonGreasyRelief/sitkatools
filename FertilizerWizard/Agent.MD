@@ -1,8 +1,8 @@
-# IPMHelper — Tool Context
+# FertilizerWizard — Tool Context
 
 ## What This Tool Does
 
-IPMHelper is an Integrated Pest Management reminder tool for licensed cannabis cultivation. It helps growers track when to order pesticides and when to release preventative beneficial insects across their cultivation lots.
+FertilizerWizard is a fertilizer cost and usage tracking tool for licensed cannabis cultivation. It helps growers monitor fertilizer consumption, costs, and application rates across their cultivation lots.
 
 ## Relationship to SitkaTools
 
@@ -10,22 +10,22 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 
 ### How Data Fits Into the Database
 
-IPMHelper reads and writes its own keys within the shared database, following the suite's decoupled convention:
+FertilizerWizard reads and writes its own keys within the shared database, following the suite's decoupled convention:
 
 **Per-lot data** (inside `lots.<LotID>`):
 ```
-_tool_IPMHelper: { ... }
+_tool_FertilizerWizard: { ... }
 ```
-Each lot can have its own IPM-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
+Each lot can have its own fertilizer-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
 
 **Top-level data** (root of database):
 ```
-_IPMHelper: { ... }
+_FertilizerWizard: { ... }
 ```
 Tool-wide state that isn't scoped to a specific lot lives under this top-level key.
 
 **Calendar events:**
-When IPMHelper generates reminders (e.g., "order pesticide", "release beneficials"), it appends events to the shared `calendarEvents` array using `"sourceTool": "IPMHelper"`. The main SitkaTools calendar view will render these alongside events from all other tools.
+When FertilizerWizard generates reminders (e.g., "reorder fertilizer", "scheduled feeding"), it appends events to the shared `calendarEvents` array using `"sourceTool": "FertilizerWizard"`. The main SitkaTools calendar view will render these alongside events from all other tools.
 
 ### Full Database Context
 
@@ -39,9 +39,9 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
-- **Selector type:** Active Lot (lot-focused tool — IPM activities are tracked per lot)
+- **Selector type:** Active Lot (lot-focused tool — fertilizer usage is tracked per lot)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
-- **Header:** Tool name "🐛 IPMHelper" on the left, Active Lot dropdown on the right
+- **Header:** Tool name "🧪 FertilizerWizard" on the left, Active Lot dropdown on the right
 - **Footer:** Save DB button (with popup link) + Close Tool button
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 

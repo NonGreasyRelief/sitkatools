@@ -1,8 +1,8 @@
-# AbsenceManager — Tool Context
+# AbsenceWizard — Tool Context
 
 ## What This Tool Does
 
-AbsenceManager is a staff absence and vacation tracking tool for licensed cannabis cultivation operations. It helps growers and managers record upcoming staff absences, vacations, and time-off periods, then generates calendar events to notify the team of reduced staffing ahead of time.
+AbsenceWizard is a staff absence and vacation tracking tool for licensed cannabis cultivation operations. It helps growers and managers record upcoming staff absences, vacations, and time-off periods, then generates calendar events to notify the team of reduced staffing ahead of time.
 
 ### Intended Use
 
@@ -13,7 +13,7 @@ AbsenceManager is a staff absence and vacation tracking tool for licensed cannab
 
 ### Calendar Events Generated
 
-AbsenceManager appends events to the shared `calendarEvents` array using `"sourceTool": "AbsenceManager"`. Typical event types include:
+AbsenceWizard appends events to the shared `calendarEvents` array using `"sourceTool": "AbsenceWizard"`. Typical event types include:
 - **"Staff Absence Start"** — Marks the first day a team member is out.
 - **"Staff Absence End"** — Marks the day a team member returns.
 - **"Staffing Alert"** — Warns when multiple absences overlap during a critical period (e.g., harvest window).
@@ -24,22 +24,22 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 
 ### How Data Fits Into the Database
 
-AbsenceManager reads and writes its own keys within the shared database, following the suite's decoupled convention:
+AbsenceWizard reads and writes its own keys within the shared database, following the suite's decoupled convention:
 
 **Per-lot data** (inside `lots.<LotID>`):
 ```
-_tool_AbsenceManager: { ... }
+_tool_AbsenceWizard: { ... }
 ```
 Each lot can have absence-related notes if staffing is tracked per lot. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
 
 **Top-level data** (root of database):
 ```
-_AbsenceManager: { ... }
+_AbsenceWizard: { ... }
 ```
 Tool-wide state that isn't scoped to a specific lot lives under this top-level key. This includes the master list of staff members, their absence records, and any configuration for alert thresholds.
 
 **Calendar events:**
-When AbsenceManager generates reminders (e.g., "staff vacation starts", "return date", "staffing conflict"), it appends events to the shared `calendarEvents` array using `"sourceTool": "AbsenceManager"`. The main SitkaTools calendar view will render these alongside events from all other tools.
+When AbsenceWizard generates reminders (e.g., "staff vacation starts", "return date", "staffing conflict"), it appends events to the shared `calendarEvents` array using `"sourceTool": "AbsenceWizard"`. The main SitkaTools calendar view will render these alongside events from all other tools.
 
 ### Full Database Context
 

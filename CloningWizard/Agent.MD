@@ -1,8 +1,8 @@
-# EquipmentMaintenance — Tool Context
+# CloningWizard — Tool Context
 
 ## What This Tool Does
 
-EquipmentMaintenance is an equipment maintenance tracking tool for licensed cannabis cultivation. It helps growers schedule, log, and track maintenance tasks for grow room equipment across their cultivation lots.
+CloningWizard is a clone cutting scheduler for licensed cannabis cultivation. It helps growers know when it's time to cut clones based on how far along a given lot is in its lifecycle.
 
 ## Relationship to SitkaTools
 
@@ -10,22 +10,22 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 
 ### How Data Fits Into the Database
 
-EquipmentMaintenance reads and writes its own keys within the shared database, following the suite's decoupled convention:
+CloningWizard reads and writes its own keys within the shared database, following the suite's decoupled convention:
 
 **Per-lot data** (inside `lots.<LotID>`):
 ```
-_tool_EquipmentMaintenance: { ... }
+_tool_CloningWizard: { ... }
 ```
-Each lot can have its own equipment-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
+Each lot can have its own cloning-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
 
 **Top-level data** (root of database):
 ```
-_EquipmentMaintenance: { ... }
+_CloningWizard: { ... }
 ```
 Tool-wide state that isn't scoped to a specific lot lives under this top-level key.
 
 **Calendar events:**
-When EquipmentMaintenance generates reminders (e.g., "scheduled maintenance", "equipment inspection due"), it appends events to the shared `calendarEvents` array using `"sourceTool": "EquipmentMaintenance"`. The main SitkaTools calendar view will render these alongside events from all other tools.
+When CloningWizard generates reminders (e.g., "time to cut clones", "clone readiness check"), it appends events to the shared `calendarEvents` array using `"sourceTool": "CloningWizard"`. The main SitkaTools calendar view will render these alongside events from all other tools.
 
 ### Full Database Context
 
@@ -39,9 +39,9 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
-- **Selector type:** Active Room (room-focused tool — equipment maintenance is tracked per room)
+- **Selector type:** Active Lot (lot-focused tool — clone cutting schedules are tracked per lot)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
-- **Header:** Tool name "🔧 EquipmentMaintenance" on the left, Active Room dropdown on the right
+- **Header:** Tool name "✂️ CloningWizard" on the left, Active Lot dropdown on the right
 - **Footer:** Save DB button (with popup link) + Close Tool button
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 
