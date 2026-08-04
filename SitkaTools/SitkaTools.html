@@ -724,29 +724,6 @@
             border-top: 1px solid var(--border);
         }
 
-        /* Sample events button */
-        .sample-events-bar {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 8px;
-        }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px dashed var(--border);
-            padding: 6px 12px;
-            border-radius: var(--radius);
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-ghost:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
         /* =====================================================
            DB Session Overlay
            ===================================================== */
@@ -948,10 +925,6 @@
                 <span class="status-text">No database loaded. Import a DB file to see calendar events.</span>
             </div>
 
-            <div class="sample-events-bar">
-                <button class="btn-ghost" id="loadSampleEventsBtn">🧪 Load Sample Events (for testing)</button>
-            </div>
-
             <!-- Terminal-style upcoming events panel -->
             <div class="terminal-panel" id="terminalPanel">
                 <div class="terminal-header">
@@ -1017,12 +990,12 @@
                         <input type="text" id="lotId" placeholder="e.g., LOT-002" required>
                     </div>
                     <div class="form-group">
-                        <label for="lotName">Lot Name</label>
-                        <input type="text" id="lotName" placeholder="e.g., OG Kush — Room B" required>
-                    </div>
-                    <div class="form-group">
                         <label for="lotStrain">Strain</label>
                         <input type="text" id="lotStrain" placeholder="e.g., OG Kush">
+                    </div>
+                    <div class="form-group">
+                        <label for="destRoom">Destination Room</label>
+                        <input type="text" id="destRoom" placeholder="e.g., Room B">
                     </div>
                     <div class="form-group" id="parentLotGroup" style="display: none;">
                         <label for="parentLot">Parent Lot</label>
@@ -1122,8 +1095,8 @@
         const lotForm = $('lotForm');
         const lotTypeSelect = $('lotType');
         const lotIdInput = $('lotId');
-        const lotNameInput = $('lotName');
         const lotStrainInput = $('lotStrain');
+        const destRoomInput = $('destRoom');
         const parentLotGroup = $('parentLotGroup');
         const parentLotSelect = $('parentLot');
         const plantCountGroup = $('plantCountGroup');
@@ -1218,6 +1191,9 @@
             // Update the link so both left-click and right-click "Save As" use the correct blob URL
             exportBtn.href = url;
             exportBtn.download = filename;
+
+            // Clear unsaved flag — the user is about to download the current state
+            clearUnsaved();
 
             // Let the browser handle the click naturally — no preventDefault, no programmatic click
         });
@@ -1334,16 +1310,20 @@
 
             const type = lotTypeSelect.value;
             const lotId = lotIdInput.value.trim();
-            const name = lotNameInput.value.trim();
             const strain = lotStrainInput.value.trim();
+            const destRoom = destRoomInput.value.trim();
             const parentLotId = (type !== 'new-lot') ? parentLotSelect.value : null;
             const plantCount = type === 'split-lot' ? parseInt(plantCountInput.value, 10) : null;
             const createdDate = lotDateInput.value;
             const stage = lotStageSelect.value;
 
+            // Auto-generate Lot Name from LotID + first 6 letters of strain
+            const strainPrefix = (strain || '').substring(0, 6).toUpperCase();
+            const name = strainPrefix ? `${lotId} ${strainPrefix}` : lotId;
+
             // Validation
-            if (!lotId || !name || !createdDate) {
-                alert('Please fill in all required fields (Lot ID, Name, Date).');
+            if (!lotId || !createdDate) {
+                alert('Please fill in all required fields (Lot ID, Date).');
                 return;
             }
 
@@ -1361,6 +1341,7 @@
             const newLot = {
                 name: name,
                 strain: strain || null,
+                destRoom: destRoom || null,
                 type: type,
                 parentLotId: parentLotId,
                 plantCount: plantCount,
@@ -1371,9 +1352,10 @@
 
             // Add to database
             DB.lots[lotId] = newLot;
+            markUnsaved();
 
             // Success feedback
-            alert(`Lot "${lotId}" created successfully!\n\nRemember to export the database to save your changes.`);
+            alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${destRoom ? '\nRoom: ' + destRoom : ''}\n\nRemember to export the database to save your changes.`);
 
             // Reset form and refresh UI
             lotForm.reset();
@@ -1423,10 +1405,11 @@
 
                 const parentInfo = lot.parentLotId ? ` ← ${lot.parentLotId}` : '';
                 const countInfo = lot.plantCount ? ` (${lot.plantCount} plants)` : '';
+                const roomInfo = lot.destRoom ? ` → ${lot.destRoom}` : '';
 
                 item.innerHTML = `
                     <div class="lot-info">
-                        <span class="lot-name">${escapeHtml(lot.name)}</span>
+                        <span class="lot-name">${escapeHtml(lot.name)}${roomInfo ? ' <span style="color: var(--text-secondary); font-weight: 400;">' + escapeHtml(roomInfo) + '</span>' : ''}</span>
                         <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate} · ${lot.stage}${countInfo}</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -1446,12 +1429,32 @@
                     const lotName = btn.dataset.lotName;
                     if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?\n\nThis action cannot be undone.`)) {
                         delete DB.lots[lotId];
+                        markUnsaved();
                         updateStatusBar();
                         renderLotList();
                     }
                 });
             });
         }
+
+        // ---- Unsaved Changes Tracking ----
+        let hasUnsavedChanges = false;
+
+        function markUnsaved() {
+            hasUnsavedChanges = true;
+        }
+
+        function clearUnsaved() {
+            hasUnsavedChanges = false;
+        }
+
+        // Warn before closing if there are unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
 
         // ---- Utility ----
         function escapeHtml(text) {
@@ -1480,7 +1483,6 @@
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
                 $('closeEventPanel').addEventListener('click', () => this.closeEventPanel());
-                $('loadSampleEventsBtn').addEventListener('click', () => this.loadSampleEvents());
 
                 // Always start at current month — no localStorage persistence
                 const now = new Date();
@@ -1655,6 +1657,13 @@
 
                 const oldDate = DB.data.calendarEvents[eventIndex].date;
                 DB.data.calendarEvents[eventIndex].date = newDate;
+                markUnsaved();
+
+                // If the moved event is currently selected in the panel, re-render the panel
+                // so the date input reflects the new date (prevents stale values from overwriting)
+                if (this.selectedEvent === DB.data.calendarEvents[eventIndex]) {
+                    this.renderEventPanel(this.selectedEvent);
+                }
 
                 // Visual feedback
                 alert(`Event moved!\n\n"${DB.data.calendarEvents[eventIndex].title}"\nFrom: ${oldDate}\nTo: ${newDate}\n\nRemember to export the database to save.`);
@@ -1738,6 +1747,7 @@
                 if (!this.selectedEvent) return;
 
                 const inputs = $('eventPanelBody').querySelectorAll('.event-detail-input');
+                let changed = false;
                 inputs.forEach(input => {
                     const field = input.dataset.field;
                     let value = input.value;
@@ -1747,14 +1757,21 @@
                         value = parseFloat(value);
                     }
 
-                    this.selectedEvent[field] = value;
-                    // Update in DB array too
-                    const idx = DB.data.calendarEvents.indexOf(this.selectedEvent);
-                    if (idx >= 0) {
-                        DB.data.calendarEvents[idx][field] = value;
+                    if (this.selectedEvent[field] !== value) {
+                        this.selectedEvent[field] = value;
+                        // Update in DB array too
+                        const idx = DB.data.calendarEvents.indexOf(this.selectedEvent);
+                        if (idx >= 0) {
+                            DB.data.calendarEvents[idx][field] = value;
+                        }
+                        changed = true;
                     }
                 });
 
+                if (changed) markUnsaved();
+
+                // Re-render the panel so inputs reflect current data (prevents stale values)
+                this.renderEventPanel(this.selectedEvent);
                 this.render();
             },
 
@@ -1766,7 +1783,9 @@
                 delete copy.eventId;
                 copy.title = `${copy.title} (copy)`;
                 DB.data.calendarEvents.push(copy);
+                markUnsaved();
                 this.selectedEvent = copy;
+                this.renderEventPanel(this.selectedEvent);
                 this.render();
             },
 
@@ -1779,6 +1798,7 @@
                 if (idx >= 0) {
                     DB.data.calendarEvents.splice(idx, 1);
                 }
+                markUnsaved();
                 this.selectedEvent = null;
                 this.closeEventPanel();
                 this.render();
@@ -1873,52 +1893,6 @@
                     ${typeBadge}
                     <span class="terminal-title">${title}${lotInfo}</span>
                 </div>`;
-            },
-
-            loadSampleEvents() {
-                DB.ensureStructure();
-
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                const dateOffset = (days) => {
-                    const d = new Date(today);
-                    d.setDate(d.getDate() + days);
-                    return d.toISOString().split('T')[0];
-                };
-
-                // Only load if no events exist yet
-                if (DB.data.calendarEvents.length > 0) {
-                    if (!confirm('This will add sample events to your existing events. Continue?')) return;
-                }
-
-                const samples = [
-                    // Today
-                    { lotId: 'LOT-001', date: dateOffset(0), type: 'task', title: 'Water Room A — OG Kush', sourceTool: 'SitkaTools', notes: 'Deep water cycle, 2 hours per zone', status: 'pending', estimatedHours: 2 },
-                    { lotId: 'LOT-003', date: dateOffset(0), type: 'fertilizer', title: 'Feed Room B — Flower Stage', sourceTool: 'FertilizerHelper', notes: 'Bloom formula A+B, 2.0 EC target', status: 'pending', estimatedHours: 1.5 },
-                    { lotId: 'LOT-002', date: dateOffset(0), type: 'ipm', title: 'Release Predatory Mites — Room C', sourceTool: 'IPMHelper', notes: 'Phytoseiulus persimilis, 5 mites per plant', status: 'pending', estimatedHours: 1 },
-
-                    // Tomorrow
-                    { lotId: 'LOT-004', date: dateOffset(1), type: 'cloning', title: 'Cut Clones — Sour Diesel Mother Block', sourceTool: 'CloningScheduler', notes: 'Target 40 clones, 4-inch cuttings', status: 'pending', estimatedHours: 3 },
-                    { lotId: 'LOT-001', date: dateOffset(1), type: 'task', title: 'Trim Lower Colas — OG Kush', sourceTool: 'SitkaTools', notes: 'Lollipopping below light plane', status: 'pending', estimatedHours: 2 },
-
-                    // This week
-                    { lotId: 'LOT-005', date: dateOffset(3), type: 'harvest', title: 'Harvest — Blue Dream Room D', sourceTool: 'SitkaTools', notes: 'Trichomes 70% cloudy, check morning after lights off', status: 'pending', estimatedHours: 4 },
-                    { lotId: 'LOT-003', date: dateOffset(4), type: 'fertilizer', title: 'Flush Begin — Room B Final Feed', sourceTool: 'FertilizerHelper', notes: 'Start 7-day flush cycle with RO water only', status: 'pending', estimatedHours: 1 },
-                    { lotId: 'LOT-002', date: dateOffset(5), type: 'ipm', title: 'Neem Oil Spray — Room C Preventative', sourceTool: 'IPMHelper', notes: 'Diluted neem, evening application only', status: 'pending', estimatedHours: 1.5 },
-
-                    // Next week
-                    { lotId: 'LOT-006', date: dateOffset(7), type: 'task', title: 'Dry Room A — Hang Harvest', sourceTool: 'SitkaTools', notes: 'Whole plant hang, 60°F 40% RH target', status: 'pending', estimatedHours: 3 },
-                    { lotId: 'LOT-004', date: dateOffset(8), type: 'cloning', title: 'Check Clone Prop — Mist Cycle Review', sourceTool: 'CloningScheduler', notes: 'Verify root formation on batch from day 1', status: 'pending', estimatedHours: 0.5 },
-                    { lotId: 'LOT-007', date: dateOffset(10), type: 'labour', title: 'Team Training — Pruning Techniques', sourceTool: 'LabourApps', notes: '4-hour workshop for new staff, Room E', status: 'pending', estimatedHours: 4 },
-                    { lotId: 'LOT-005', date: dateOffset(12), type: 'task', title: 'Begin Dry — Blue Dream Room D', sourceTool: 'SitkaTools', notes: 'Move to dry room, tag and log weights', status: 'pending', estimatedHours: 3 },
-                ];
-
-                DB.data.calendarEvents.push(...samples);
-                this.render();
-                updateCalendarStatusBar();
-
-                alert(`Loaded ${samples.length} sample events!\n\nThese span from today to 2 weeks out.\nRemember to export the database to save.`);
             }
         };
 
