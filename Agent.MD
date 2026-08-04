@@ -85,10 +85,10 @@ The central hub with two modes:
 | Tool | Directory | Status | Description |
 |------|-----------|--------|-------------|
 | SitkaTools | `SitkaTools/` | Core | Lot management + unified calendar viewer |
-| IPM Reminder | — | Planned | Pesticide ordering and preventative bug release reminders |
-| Cloning Scheduler | — | Planned | Clone cutting schedule based on lot progression |
-| Fertilizer Tracker | — | Planned | Fertilizer cost and usage tracking per lot |
-| Labour Apps | — | Planned | Labour hour and task tracking |
+| IPMHelper | `IPMHelper/` | Starting | Pesticide ordering and preventative bug release reminders |
+| FertilizerHelper | `FertilizerHelper/` | Starting | Fertilizer cost and usage tracking per lot |
+| CloningScheduler | `CloningScheduler/` | Starting | Clone cutting schedule based on lot progression |
+| LabourApps | `LabourApps/` | Starting | Labour hour and task tracking |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
 
@@ -128,4 +128,8 @@ The central hub with two modes:
 ### Backlog
 - [ ] SitkaTools.html — Lot close-out functionality
 - [ ] SitkaTools.html — Calendar view implementation (read events from DB and render)
+- [ ] IPMHelper — Initial setup and Agent.MD documentation
+- [ ] IPMHelper — Full tool implementation
+- [ ] FertilizerHelper — Initial setup and Agent.MD documentation
+- [ ] FertilizerHelper — Full tool implementation
 - [ ] Design and implement individual tools as requested
