@@ -847,6 +847,71 @@
             background: var(--danger-hover);
         }
 
+        /* =====================================================
+           Save DB Popup
+           ===================================================== */
+
+        .export-wrapper {
+            position: relative;
+        }
+
+        .save-popup {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 300px;
+        }
+
+        .save-popup.hidden {
+            display: none;
+        }
+
+        .save-popup-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .save-link {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .save-link:hover {
+            text-decoration: underline;
+            color: var(--accent-hover);
+        }
+
+        .save-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+
+        .save-close:hover {
+            color: var(--danger);
+            background: rgba(231, 76, 60, 0.15);
+        }
+
         /* Text utilities */
         .text-secondary {
             color: var(--text-secondary);
@@ -890,7 +955,7 @@
             <div class="db-overlay-icon">🌿</div>
             <div class="db-overlay-title">New Session or External Tool in Use</div>
             <div class="db-overlay-desc">
-                No database is loaded. Import your DB file to continue working, or skip to view the calendar empty.
+                Database is currently being modified by a tool OR no database loaded.  Re-load your database if changes were made, or press skip to return to calendaranges were made, or press skip to return to calendar.
             </div>
             <div class="db-overlay-actions">
                 <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
@@ -901,7 +966,7 @@
 
     <header class="header">
         <div class="header-left">
-            <span class="logo">🌿 SitkaTools</span>
+            <span class="logo"><img src="SitkaLogo.png" alt="Sitka" style="height: 28px; vertical-align: middle;">itkaTools</span>
             <nav class="tabs">
                 <button class="tab active" data-tab="calendar-view">Calendar View</button>
                 <button class="tab" data-tab="lot-management">Lot Management</button>
@@ -911,10 +976,17 @@
             <button class="db-btn import" id="importBtn" title="Import database JSON file">
                 📂 Import DB
             </button>
-            <a class="db-btn export" id="exportBtn" title="Save current database as JSON" href="#" download>
-                💾 Save DB
-                <span class="db-btn-hint">Right click → Save as</span>
-            </a>
+            <div class="export-wrapper">
+                <button class="db-btn export" id="exportBtn" title="Generate save link">
+                    💾 Save DB
+                </button>
+                <div class="save-popup hidden" id="savePopup">
+                    <div class="save-popup-inner">
+                        <a class="save-link" id="saveLink" href="#" download>📄 Right-click → Save As…</a>
+                    </div>
+                    <button class="save-close" id="saveCloseBtn" title="Close">✕</button>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -959,7 +1031,6 @@
             <div class="event-panel" id="eventPanel">
                 <div class="event-panel-header">
                     <span class="event-panel-title">📝 EVENT DETAILS</span>
-                    <button class="btn btn-secondary btn-sm" id="closeEventPanel">✕</button>
                 </div>
                 <div class="event-panel-body" id="eventPanelBody">
                     <div class="text-secondary">Select a calendar event to view and edit its details.</div>
@@ -987,15 +1058,15 @@
                     </div>
                     <div class="form-group">
                         <label for="lotId">Lot ID</label>
-                        <input type="text" id="lotId" placeholder="e.g., LOT-002" required>
+                        <input type="text" id="lotId" placeholder="e.g., 001" required>
                     </div>
                     <div class="form-group">
                         <label for="lotStrain">Strain</label>
-                        <input type="text" id="lotStrain" placeholder="e.g., OG Kush">
+                        <input type="text" id="lotStrain" placeholder="e.g., Kush Mints">
                     </div>
                     <div class="form-group">
                         <label for="destRoom">Destination Room</label>
-                        <input type="text" id="destRoom" placeholder="e.g., Room B">
+                        <input type="text" id="destRoom" placeholder="e.g., Albatross 1">
                     </div>
                     <div class="form-group" id="parentLotGroup" style="display: none;">
                         <label for="parentLot">Parent Lot</label>
@@ -1121,7 +1192,7 @@
             DB.ensureStructure();
             const lotKeys = Object.keys(DB.lots);
             const nextNum = lotKeys.length + 1;
-            lotIdInput.placeholder = `e.g., LOT-${String(nextNum).padStart(3, '0')}`;
+            lotIdInput.placeholder = `e.g., 0${String(nextNum).padStart(3, '0')}`;
         }
 
         // ---- Tab Navigation ----
@@ -1175,11 +1246,25 @@
             dbImportInput.value = '';
         });
 
+        // ---- Save DB Popup ----
+        const savePopup = $('savePopup');
+        const saveLink = $('saveLink');
+        const saveCloseBtn = $('saveCloseBtn');
+        let currentBlobUrl = null;
+
         exportBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Don't trigger document click handler that closes popup
+
             DB.ensureStructure();
+
+            // Revoke previous blob URL to free memory
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+            }
+
             const json = JSON.stringify(DB.data, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            currentBlobUrl = URL.createObjectURL(blob);
 
             // Generate filename from current date
             const now = new Date();
@@ -1188,14 +1273,33 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            // Update the link so both left-click and right-click "Save As" use the correct blob URL
-            exportBtn.href = url;
-            exportBtn.download = filename;
+            saveLink.href = currentBlobUrl;
+            saveLink.download = filename;
+            saveLink.textContent = `📄 ${filename} — Right-click → Save As…`;
 
-            // Clear unsaved flag — the user is about to download the current state
+            // Clear unsaved flag
             clearUnsaved();
 
-            // Let the browser handle the click naturally — no preventDefault, no programmatic click
+            // Show popup
+            savePopup.classList.remove('hidden');
+        });
+
+        saveCloseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeSavePopup();
+        });
+
+        function closeSavePopup() {
+            savePopup.classList.add('hidden');
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+                currentBlobUrl = null;
+            }
+        }
+
+        // Close popup when clicking elsewhere on the page
+        document.addEventListener('click', () => {
+            closeSavePopup();
         });
 
         function updateStatusBar() {
@@ -1482,7 +1586,6 @@
                 $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
-                $('closeEventPanel').addEventListener('click', () => this.closeEventPanel());
 
                 // Always start at current month — no localStorage persistence
                 const now = new Date();
