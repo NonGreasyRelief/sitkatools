@@ -60,7 +60,6 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
     {
       "lotId": "string",
       "date": "YYYY-MM-DD",
-      "type": "string",
       "title": "string",
       "sourceTool": "string"
     }

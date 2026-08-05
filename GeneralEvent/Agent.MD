@@ -20,10 +20,11 @@ No lots, no rooms, no sub-fields. Just a quick way to drop arbitrary reminders o
 
 GeneralEvent appends events to the shared `calendarEvents` array using `"sourceTool": "GeneralEvent"`. Each event has:
 
-- **Type:** `"General"`
 - **Title:** The emoji followed by the user's text (e.g., `"📋 License renewal due"`)
 - **Date:** The date selected by the user
-- **LotId:** `null` (independent — not tied to any lot)
+- **SourceTool:** `"GeneralEvent"`
+
+No `lotId` or other lot-related fields are included — GeneralEvent is independent and not tied to any lot.
 
 ## Relationship to SitkaTools
 

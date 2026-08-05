@@ -467,6 +467,8 @@
         }
 
         .terminal-line {
+            display: flex;
+            align-items: center;
             padding: 4px 0;
             font-size: 0.85rem;
             line-height: 1.5;
@@ -505,7 +507,6 @@
             margin-right: 12px;
         }
 
-        .terminal-type {
             display: inline-block;
             padding: 0 6px;
             border-radius: 3px;
@@ -517,7 +518,7 @@
         .terminal-delete-btn {
             background: none;
             border: none;
-            color: var(--danger);
+            color: #e74c3c !important;
             font-size: 1rem;
             font-weight: 700;
             cursor: pointer;
@@ -664,13 +665,7 @@
             opacity: 0.4;
         }
 
-        .day-event.type-task { background: rgba(83, 216, 168, 0.3); color: var(--accent); }
-        .day-event.type-harvest { background: rgba(243, 156, 18, 0.3); color: var(--warning); }
-        .day-event.type-ipm { background: rgba(231, 76, 60, 0.3); color: var(--danger); }
-        .day-event.type-fertilizer { background: rgba(52, 152, 219, 0.3); color: #3498db; }
-        .day-event.type-cloning { background: rgba(155, 89, 182, 0.3); color: #9b59b6; }
-        .day-event.type-labour { background: rgba(241, 196, 15, 0.3); color: #f1c40f; }
-        .day-event.type-default { background: rgba(168, 168, 184, 0.2); color: var(--text-secondary); }
+        .day-event { background: rgba(168, 168, 184, 0.2); color: var(--text-secondary); }
 
         .day-event.selected {
             outline: 2px solid var(--accent);
@@ -856,6 +851,9 @@
             display: flex;
             align-items: center;
             gap: 16px;
+        }
+
+        .sync-toast.show {
             animation: slideInToast 0.3s ease-out;
         }
 
@@ -1744,6 +1742,17 @@
         // ---- Sync Toast — auto-dismiss after 3 seconds (no button needed, sync is automatic) ----
         const syncToast = $('syncToast');
         const syncToastText = $('syncToastText');
+        let syncToastTimer;
+
+        function showSyncToast(message) {
+            syncToastText.textContent = message;
+            syncToast.classList.remove('hidden', 'show');
+            // Force reflow so the animation restarts on next frame
+            void syncToast.offsetHeight;
+            syncToast.classList.add('show');
+            clearTimeout(syncToastTimer);
+            syncToastTimer = setTimeout(() => syncToast.classList.add('hidden'), 3000);
+        }
 
         // Open subtool as a centered popup window and send DB via postMessage
         function openModuleInTab(url) {
@@ -1814,10 +1823,7 @@
             Calendar.render();
             updateCalendarStatusBar();
 
-            syncToastText.textContent = 'Subtool has updated data — views refreshed automatically';
-            syncToast.classList.remove('hidden');
-            // Auto-dismiss after 3 seconds
-            setTimeout(() => syncToast.classList.add('hidden'), 3000);
+            showSyncToast('Subtool has updated data — views refreshed automatically');
         });
 
         // ---- Lot Type Changes ----
@@ -2613,10 +2619,9 @@
 
                     dayEvents.forEach((event, idx) => {
                         const eventEl = document.createElement('div');
-                        const typeClass = event.type ? `type-${event.type.toLowerCase().replace(/\s+/g, '-')}` : 'type-default';
                         const isSelected = this.selectedEvent === event;
-                        eventEl.className = `day-event ${typeClass}${isSelected ? ' selected' : ''}`;
-                        eventEl.textContent = event.title || event.type || 'Event';
+                        eventEl.className = `day-event${isSelected ? ' selected' : ''}`;
+                        eventEl.textContent = event.title || 'Event';
                         eventEl.draggable = true;
                         eventEl.dataset.eventIndex = this.events.indexOf(event);
 
@@ -2691,13 +2696,20 @@
                     this.renderEventPanel(this.selectedEvent);
                 }
 
-                // Visual feedback
-                alert(`Event moved!\n\n"${DB.data.calendarEvents[eventIndex].title}"\nFrom: ${oldDate}\nTo: ${newDate}\n\nRemember to export the database to save.`);
+                // Defer render until after all drag-related events (dragend) have fired.
+                // Use requestAnimationFrame + setTimeout for a bulletproof refresh that
+                // doesn't interfere with browser drag state or toast animations.
+                const movedEvent = DB.data.calendarEvents[eventIndex];
 
-                // Use requestAnimationFrame to ensure the render happens after all drag-related
-                // DOM operations (dragend, class cleanup) have completed, so the calendar
-                // refreshes immediately even when dropping onto an already-selected cell.
-                requestAnimationFrame(() => this.render());
+                // Show toast immediately so it's visible before any DOM re-rendering
+                showSyncToast(`"${movedEvent.title}" moved from ${oldDate} to ${newDate}`);
+
+                // Wait for next animation frame then render — ensures drag cleanup is done
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        this.render();
+                    }, 50);
+                });
             },
 
             selectEvent(event) {
@@ -2710,7 +2722,8 @@
                 const body = $('eventPanelBody');
 
                 // Determine which fields are modifiable
-                const MODIFIABLE_FIELDS = ['date', 'title', 'type', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                const MODIFIABLE_FIELDS = ['date', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                const HIDDEN_FIELDS = ['type'];
                 const READONLY_FIELDS = [];
 
                 // Build field list from the event
@@ -2719,6 +2732,7 @@
                 let html = '<div class="event-detail-grid">';
 
                 fields.forEach(key => {
+                    if (HIDDEN_FIELDS.includes(key)) return;
                     const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
                     const isModifiable = MODIFIABLE_FIELDS.includes(key);
                     const isReadonly = READONLY_FIELDS.includes(key);
@@ -2729,16 +2743,6 @@
                     if (isModifiable) {
                         if (key === 'date') {
                             html += `<input type="date" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
-                        } else if (key === 'type') {
-                            html += `<select class="event-detail-input" data-field="${key}">
-                                <option value="task" ${event[key] === 'task' ? 'selected' : ''}>Task</option>
-                                <option value="harvest" ${event[key] === 'harvest' ? 'selected' : ''}>Harvest</option>
-                                <option value="ipm" ${event[key] === 'ipm' ? 'selected' : ''}>IPM</option>
-                                <option value="fertilizer" ${event[key] === 'fertilizer' ? 'selected' : ''}>Fertilizer</option>
-                                <option value="cloning" ${event[key] === 'cloning' ? 'selected' : ''}>Cloning</option>
-                                <option value="labour" ${event[key] === 'labour' ? 'selected' : ''}>Labour</option>
-                                <option value="other" ${event[key] === 'other' ? 'selected' : ''}>Other</option>
-                            </select>`;
                         } else if (key === 'estimatedHours') {
                             html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else {
@@ -2755,7 +2759,6 @@
 
                 // Action buttons
                 html += `<div class="event-actions">`;
-                html += `<button class="btn btn-primary" id="saveEventBtn">💾 Save Changes</button>`;
                 html += `<button class="btn btn-secondary" id="duplicateEventBtn">📋 Duplicate</button>`;
                 html += `<button class="btn btn-danger" id="deleteEventBtn">🗑 Delete</button>`;
                 html += `</div>`;
@@ -2763,7 +2766,6 @@
                 body.innerHTML = html;
 
                 // Bind events
-                $('saveEventBtn').addEventListener('click', () => this.saveEventChanges());
                 $('duplicateEventBtn').addEventListener('click', () => this.duplicateEvent());
                 $('deleteEventBtn').addEventListener('click', () => this.deleteEvent());
 
@@ -2931,14 +2933,12 @@
             },
 
             createTerminalLine(event, proximityClass, dateStr) {
-                const typeBadge = event.type ? `<span class="terminal-type" style="background: rgba(83,216,168,0.2); color: var(--accent);">${escapeHtml(event.type)}</span>` : '';
                 const lotInfo = event.lotId ? ` [${escapeHtml(event.lotId)}]` : '';
                 const title = escapeHtml(event.title || 'Untitled Event');
 
                 const isSelected = this.selectedEvent === event;
-                return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" data-event-index="${DB.data.calendarEvents.indexOf(event)}" style="display: flex; align-items: center;">
+                return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" data-event-index="${DB.data.calendarEvents.indexOf(event)}">
                     <span class="terminal-date">${dateStr}</span>
-                    ${typeBadge}
                     <span class="terminal-title">${title}${lotInfo}</span>
                     <button class="terminal-delete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Delete event">✕</button>
                 </div>`;
