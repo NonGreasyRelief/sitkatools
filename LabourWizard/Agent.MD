@@ -89,7 +89,29 @@ This tool follows the shared UI Standards defined in the root `Agent.MD`. Key sp
 - **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 
-See the root `Agent.MD` → "UI Standards — All Tools" for complete HTML/CSS/JS patterns.
+**Footer implementation:**
+```html
+<footer class="footer">
+    <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+</footer>
+```
+```css
+.footer {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+}
+```
+```js
+// ---- Close Tool ----
+$('closeToolBtn').addEventListener('click', () => window.close());
+```
 
 ## Constraints
 

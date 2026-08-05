@@ -226,9 +226,7 @@ window.addEventListener('message', (e) => {
             window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
         }
 
-        // Reconcile and render with fresh data
-        reconcileLog();
-        renderEventList();
+        // Reconcile and render with fresh data (tool-specific calls vary by subtool)
         updateStatusBar();
         showToast('Database loaded from SitkaTools');
     }
@@ -273,20 +271,6 @@ Include these styles in SitkaTools.html:
 .sync-toast-icon { font-size: 1.5rem; }
 
 .sync-toast-text { color: var(--text-primary); font-size: 0.9rem; }
-
-.sync-toast-btn {
-    background: var(--accent);
-    color: var(--bg-primary);
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius);
-    font-size: 0.9rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.sync-toast-btn:hover { background: var(--accent-hover); }
 ```
 
 #### Why This Workflow Is Preferred
@@ -361,9 +345,11 @@ Every tool follows this layout (top to bottom):
 │     Tool-specific content       │
 │                                 │
 ├─────────────────────────────────┤
-│  Footer (Close Tool)            │  ← Sticky bottom bar
+│  Footer (buttons)               │  ← Sticky bottom bar
 └─────────────────────────────────┘
 ```
+
+**All tools use the same footer:** Close Tool button only (subtools auto-sync via postMessage).
 
 ### Header — Active Lot / Room Selector (or None for Independent Tools)
 
@@ -437,27 +423,13 @@ The header is a sticky top bar that contains:
 .header-right { display: flex; gap: 8px; align-items: flex-end; }
 ```
 
-### Footer — Save DB + Close Tool Buttons
+### Footer — All Tools
 
-The footer is a sticky bottom bar with two buttons:
-
-1. **Save DB** — Opens a small popup containing a generated download link (same behavior as the main app). The user right-clicks the link to "Save Link As…".
-2. **Close Tool** — Closes the popup window (`window.close()`).
+All tools use the same footer: a sticky bottom bar with only the Close Tool button. Changes auto-sync to SitkaTools via postMessage.
 
 **Footer HTML pattern:**
 ```html
 <footer class="footer">
-    <div class="export-wrapper">
-        <button class="db-btn export" id="exportBtn" title="Generate save link">
-            💾 Save DB
-        </button>
-        <div class="save-popup hidden" id="savePopup">
-            <div class="save-popup-inner">
-                <a class="save-link" id="saveLink" href="#" download>📄 Click to generate DB</a>
-            </div>
-            <button class="save-close" id="saveCloseBtn" title="Close">✕</button>
-        </div>
-    </div>
     <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
 </footer>
 ```
@@ -475,88 +447,10 @@ The footer is a sticky bottom bar with two buttons:
     bottom: 0;
     z-index: 100;
 }
-
-.export-wrapper { position: relative; }
-
-.save-popup {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: calc(100% + 8px);
-    background: var(--bg-secondary);
-    border: 1px solid var(--accent);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 200;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 300px;
-}
-
-.save-popup.hidden { display: none; }
-
-.save-popup-inner {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-}
-
-.save-link {
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-decoration: none;
-    word-break: break-all;
-    line-height: 1.4;
-}
-
-.save-link:hover { text-decoration: underline; color: var(--accent-hover); }
-
-.save-close {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: all 0.15s;
-}
-
-.save-close:hover { color: var(--danger); background: rgba(231, 76, 60, 0.15); }
 ```
 
 **Footer JavaScript pattern:**
 ```js
-// ---- Save DB Popup ----
-const savePopup = $('savePopup');
-const saveLink = $('saveLink');
-const saveCloseBtn = $('saveCloseBtn');
-let currentBlobUrl = null;
-
-$('exportBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    // Sync all in-memory changes BEFORE serializing
-    DB.sync();
-    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-    const json = JSON.stringify(DB.data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    currentBlobUrl = URL.createObjectURL(blob);
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    saveLink.href = currentBlobUrl;
-    saveLink.download = `DB-${yy}-${mm}-${dd}.json`;
-    saveLink.textContent = `📄 DB-${yy}-${mm}-${dd}.json — Right-click → Save Link As…`;
-    savePopup.classList.remove('hidden');
-});
-
-saveCloseBtn.addEventListener('click', () => savePopup.classList.add('hidden'));
-document.addEventListener('click', () => savePopup.classList.add('hidden'));
-
 // ---- Close Tool ----
 $('closeToolBtn').addEventListener('click', () => window.close());
 ```
@@ -736,7 +630,6 @@ function populateRoomSelector() {
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
 - **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used.
-- **Manual Save DB still exists as backup persistence:** Both main app and subtools have a footer "💾 Save DB" button for explicit file downloads (localStorage is volatile across browser restarts).
 - File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting
 - No `async/await` on network calls — there are none
 

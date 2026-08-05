@@ -804,7 +804,7 @@
             transform: translateY(-1px);
         }
 
-        /* Sync Toast — appears when subtool updates localStorage */
+        /* Sync Toast — appears when a subtool sends a postMessage update */
         .sync-toast {
             position: fixed;
             bottom: 24px;
@@ -1239,9 +1239,9 @@
     <div class="db-overlay hidden" id="dbOverlay">
         <div class="db-overlay-card">
             <div class="db-overlay-icon">🌿</div>
-            <div class="db-overlay-title">New Session or External Tool in Use</div>
+            <div class="db-overlay-title">New Session</div>
             <div class="db-overlay-desc">
-                Re-load your database if changes were made, or press skip to return to calendar.
+                Load your database to continue where you left off, or press skip to start a fresh session.
             </div>
             <div class="db-overlay-actions">
                 <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
@@ -1526,6 +1526,11 @@
             const today = new Date().toISOString().split('T')[0];
             lotDateInput.value = today;
 
+            // Show session overlay if no DB is loaded (check before ensureStructure populates it)
+            if (!DB.data) {
+                showOverlay();
+            }
+
             // Auto-generate Lot ID based on count
             updateLotIdSuggestion();
         }
@@ -1704,9 +1709,9 @@
 
         // Open subtool as a centered popup window and send DB via postMessage
         function openModuleInTab(url) {
-            // Popup size: half viewport width, 66% taller than viewport height
+            // Popup size: half viewport width, 66% taller than half viewport height
             const width = Math.round(window.innerWidth / 2);
-            const height = Math.round(window.innerHeight * 1.66);
+            const height = Math.round(window.innerHeight * 0.5 * 1.66); // 83% of viewport
             const left = Math.round((window.innerWidth - width) / 2);
             const top = Math.round((window.innerHeight - height) / 2);
 
@@ -2466,7 +2471,7 @@
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
 
-                // Always start at current month — no localStorage persistence
+                // Always start at current month
                 const now = new Date();
                 this.currentMonth = now.getMonth();
                 this.currentYear = now.getFullYear();
@@ -2650,7 +2655,10 @@
                 // Visual feedback
                 alert(`Event moved!\n\n"${DB.data.calendarEvents[eventIndex].title}"\nFrom: ${oldDate}\nTo: ${newDate}\n\nRemember to export the database to save.`);
 
-                this.render();
+                // Use requestAnimationFrame to ensure the render happens after all drag-related
+                // DOM operations (dragend, class cleanup) have completed, so the calendar
+                // refreshes immediately even when dropping onto an already-selected cell.
+                requestAnimationFrame(() => this.render());
             },
 
             selectEvent(event) {
@@ -2663,6 +2671,7 @@
 
                 // Determine which fields are modifiable
                 const MODIFIABLE_FIELDS = ['date', 'title', 'type', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                const READONLY_FIELDS = [];
 
                 // Build field list from the event
                 const fields = Object.keys(event);
