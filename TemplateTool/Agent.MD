@@ -107,7 +107,7 @@ This tool follows the shared UI Standards defined in the root `Agent.MD`. Key sp
   - ~~Active Lot~~ — lot-focused tool (e.g., IPMWizard, FertilizerWizard, CloningWizard)
   - ~~Active Room~~ — room-focused tool (e.g., LabourWizard, EquipmentWizard)
   - ~~Independent~~ — no selector (e.g., AbsenceWizard)
-- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
+- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height
 - **Header:** Tool name with emoji on the left, dropdown selector on the right (or no selector for independent tools)
 - **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
@@ -449,7 +449,7 @@ function populateRoomSelector() {
 These are the governing rules for transferring the database between windows:
 
 1. **postMessage is the primary cross-window data channel.** SitkaTools sends the full DB payload to the subtool via postMessage after opening; subtools receive it and acknowledge with `sitkaGit_ready`.
-2. **Subtools open as centered popup windows, not new tabs.** Use `window.open(url, '_blank', features)` with width/height/left/top to create a centered popup at half viewport width and 66% taller than viewport height.
+2. **Subtools open as centered popup windows, not new tabs.** Use `window.open(url, '_blank', features)` with width/height/left/top to create a centered popup at half the main app's viewport width and 83% of the viewport height.
 3. **Main app auto-refreshes on updates.** When SitkaTools receives a `sitkaGit_db_update` message, it replaces its DB data and re-renders all views automatically. A toast appears confirming the sync (auto-dismisses after 3 seconds).
 4. **Subtools notify after every mutation.** After adding/deleting/editing data, call `notifySitkaTools()` which posts the updated DB back to the opener window.
 5. **Retry mechanism for initial DB delivery.** SitkaTools retries sending the DB up to 5 times at 200ms intervals until the subtool acknowledges with `sitkaGit_ready`.

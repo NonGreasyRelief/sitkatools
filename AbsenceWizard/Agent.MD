@@ -98,7 +98,7 @@ This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any bro
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
 - **Selector type:** Independent (no lot or room selector — staff absences are not tied to any specific lot or room; calendar events are scoped solely to the AbsenceWizard tool's own `_AbsenceWizard` dictionary in the DB)
-- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
+- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height
 - **Header:** Tool name "🏖️ AbsenceManager" on the left, no dropdown selector (header contains only the tool name)
 - **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards

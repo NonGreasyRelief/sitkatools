@@ -290,7 +290,7 @@ The central hub with two modes:
 
 ### Subtools — Popup Window Convention
 
-All subtools (IPMWizard, FertilizerWizard, CloningWizard, LabourWizard, EquipmentWizard, AbsenceWizard) open as centered popup windows from SitkaTools.html. They launch at **half the main app's viewport width** and **66% taller than the viewport height**. Each subtool's UI should be designed to fit comfortably within this window size.
+All subtools (IPMWizard, FertilizerWizard, CloningWizard, LabourWizard, EquipmentWizard, AbsenceWizard) open as centered popup windows from SitkaTools.html. They launch at **half the main app's viewport width** and **83% of the viewport height**. Each subtool's UI should be designed to fit comfortably within this window size.
 
 ## Tool Registry
 
@@ -545,7 +545,7 @@ body {
 
 ### Popup Window Size
 
-All subtools open as centered popup windows from SitkaTools.html at **half the main app's viewport width** and **66% taller than the viewport height**. Design the UI to fit comfortably within this window size.
+All subtools open as centered popup windows from SitkaTools.html at **half the main app's viewport width** and **83% of the viewport height**. Design the UI to fit comfortably within this window size.
 
 ### Shared Database Object Pattern
 

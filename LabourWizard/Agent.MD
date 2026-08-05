@@ -84,7 +84,7 @@ This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any bro
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
 - **Selector type:** Active Room (room-focused tool — labour hours are tracked per room)
-- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
+- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height
 - **Header:** Tool name "👷 LabourWizard" on the left, Active Room dropdown on the right
 - **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
