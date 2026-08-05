@@ -489,6 +489,12 @@
             color: #3498db;
         }
 
+        .terminal-line.selected {
+            background: rgba(83, 216, 168, 0.15);
+            border-left: 3px solid var(--accent);
+            padding-left: 13px;
+        }
+
         .terminal-date {
             color: var(--warning);
             margin-right: 12px;
@@ -506,6 +512,30 @@
             font-size: 0.75rem;
             margin-right: 8px;
             text-transform: uppercase;
+        }
+
+        .terminal-delete-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0 6px;
+            margin-left: auto;
+            border-radius: 3px;
+            line-height: 1;
+            opacity: 0.5;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .terminal-line:hover .terminal-delete-btn {
+            opacity: 1;
+        }
+
+        .terminal-delete-btn:hover {
+            background: rgba(231, 76, 60, 0.2);
         }
 
         /* Calendar Navigation */
@@ -641,6 +671,13 @@
         .day-event.type-cloning { background: rgba(155, 89, 182, 0.3); color: #9b59b6; }
         .day-event.type-labour { background: rgba(241, 196, 15, 0.3); color: #f1c40f; }
         .day-event.type-default { background: rgba(168, 168, 184, 0.2); color: var(--text-secondary); }
+
+        .day-event.selected {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+            filter: brightness(1.3);
+            font-weight: 700;
+        }
 
         /* Event Details Panel */
         .event-panel {
@@ -2577,7 +2614,8 @@
                     dayEvents.forEach((event, idx) => {
                         const eventEl = document.createElement('div');
                         const typeClass = event.type ? `type-${event.type.toLowerCase().replace(/\s+/g, '-')}` : 'type-default';
-                        eventEl.className = `day-event ${typeClass}`;
+                        const isSelected = this.selectedEvent === event;
+                        eventEl.className = `day-event ${typeClass}${isSelected ? ' selected' : ''}`;
                         eventEl.textContent = event.title || event.type || 'Event';
                         eventEl.draggable = true;
                         eventEl.dataset.eventIndex = this.events.indexOf(event);
@@ -2664,6 +2702,7 @@
 
             selectEvent(event) {
                 this.selectedEvent = event;
+                this.render();
                 this.renderEventPanel(event);
             },
 
@@ -2793,6 +2832,7 @@
             closeEventPanel() {
                 this.selectedEvent = null;
                 $('eventPanelBody').innerHTML = '<div class="text-secondary">Select a calendar event to view and edit its details.</div>';
+                this.render();
             },
 
             renderTerminal() {
@@ -2860,11 +2900,32 @@
 
                 // Click terminal line to select event
                 body.querySelectorAll('.terminal-line[data-event-index]').forEach(line => {
-                    line.addEventListener('click', () => {
+                    line.addEventListener('click', (e) => {
+                        // Don't trigger selection when clicking the delete button
+                        if (e.target.closest('.terminal-delete-btn')) return;
                         const idx = parseInt(line.dataset.eventIndex);
                         if (DB.data.calendarEvents[idx]) {
                             this.selectEvent(DB.data.calendarEvents[idx]);
                         }
+                    });
+                });
+
+                // Click terminal delete button to delete event
+                body.querySelectorAll('.terminal-delete-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const idx = parseInt(btn.dataset.eventIndex);
+                        const event = DB.data.calendarEvents[idx];
+                        if (!event) return;
+                        if (!confirm(`Delete event "${event.title}"?`)) return;
+                        DB.data.calendarEvents.splice(idx, 1);
+                        markUnsaved();
+                        // Clear selection if the deleted event was selected
+                        if (this.selectedEvent === event) {
+                            this.selectedEvent = null;
+                            this.closeEventPanel();
+                        }
+                        this.render();
                     });
                 });
             },
@@ -2874,10 +2935,12 @@
                 const lotInfo = event.lotId ? ` [${escapeHtml(event.lotId)}]` : '';
                 const title = escapeHtml(event.title || 'Untitled Event');
 
-                return `<div class="terminal-line ${proximityClass}" data-event-index="${DB.data.calendarEvents.indexOf(event)}">
+                const isSelected = this.selectedEvent === event;
+                return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" data-event-index="${DB.data.calendarEvents.indexOf(event)}" style="display: flex; align-items: center;">
                     <span class="terminal-date">${dateStr}</span>
                     ${typeBadge}
                     <span class="terminal-title">${title}${lotInfo}</span>
+                    <button class="terminal-delete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Delete event">✕</button>
                 </div>`;
             }
         };
