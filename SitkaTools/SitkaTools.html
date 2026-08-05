@@ -804,6 +804,41 @@
             transform: translateY(-1px);
         }
 
+        /* Sync Toast — appears when subtool updates localStorage */
+        .sync-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--accent);
+            border-radius: 10px;
+            padding: 16px 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            animation: slideInToast 0.3s ease-out;
+        }
+
+        .sync-toast.hidden {
+            display: none;
+        }
+
+        @keyframes slideInToast {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .sync-toast-icon {
+            font-size: 1.5rem;
+        }
+
+        .sync-toast-text {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
         /* DB Buttons — colored */
         .db-btn.import {
             color: var(--accent);
@@ -1201,7 +1236,7 @@
     <input type="file" id="dbImportInput" accept=".json">
 
     <!-- DB Session Overlay -->
-    <div class="db-overlay" id="dbOverlay">
+    <div class="db-overlay hidden" id="dbOverlay">
         <div class="db-overlay-card">
             <div class="db-overlay-icon">🌿</div>
             <div class="db-overlay-title">New Session or External Tool in Use</div>
@@ -1213,6 +1248,12 @@
                 <button class="btn-cancel-db" id="overlayCancelBtn">Skip</button>
             </div>
         </div>
+    </div>
+
+    <!-- Sync Toast — appears when a subtool updates the database (auto-synced) -->
+    <div class="sync-toast hidden" id="syncToast">
+        <span class="sync-toast-icon">🔄</span>
+        <span class="sync-toast-text" id="syncToastText">Subtool has updated data — views refreshed automatically</span>
     </div>
 
     <header class="header">
@@ -1398,6 +1439,10 @@
         <section class="card" id="tools-directory">
             <h2 class="card-title">Cultivation Modules</h2>
             <div class="tools-grid">
+                <a class="tool-link module-link" href="../GeneralEvent/GeneralEvent.html">
+                    <span class="tool-link-name">📅 General Event</span>
+                    <span class="tool-link-desc">Create standalone calendar events with text, date, and emoji</span>
+                </a>
                 <a class="tool-link module-link" href="../IPMWizard/IPMWizard.html">
                     <span class="tool-link-name">🐛 IPM Wizard</span>
                     <span class="tool-link-desc">Quickly populate your calendar with IPM order and application dates</span>
@@ -1643,25 +1688,93 @@
 
 
 
-        // ---- Module Link Handlers ----
+        // ---- Module Link Handlers — postMessage Convention ----
+        let openSubtools = [];
+
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-
-                // Open in a new window at half viewport width, 66% taller than half viewport height
-                const width = Math.floor(window.innerWidth / 2);
-                const height = Math.floor(window.innerHeight / 2 * 1.66);
-                const left = Math.floor((window.screen.width - width) / 2);
-                const top = Math.floor((window.screen.height - height) / 2);
-                window.open(
-                    link.href,
-                    '_blank',
-                    `width=${width},height=${height},left=${left},top=${top},resizable=yes`
-                );
-
-                // Show the DB session overlay as a reminder to re-import after using the tool
-                showOverlay();
+                openModuleInTab(link.href);
             });
+        });
+
+        // ---- Sync Toast — auto-dismiss after 3 seconds (no button needed, sync is automatic) ----
+        const syncToast = $('syncToast');
+        const syncToastText = $('syncToastText');
+
+        // Open subtool as a centered popup window and send DB via postMessage
+        function openModuleInTab(url) {
+            // Popup size: half viewport width, 66% taller than viewport height
+            const width = Math.round(window.innerWidth / 2);
+            const height = Math.round(window.innerHeight * 1.66);
+            const left = Math.round((window.innerWidth - width) / 2);
+            const top = Math.round((window.innerHeight - height) / 2);
+
+            const newWindow = window.open(
+                url,
+                '_blank',
+                `width=${width},height=${height},left=${left},top=${top}`
+            );
+            if (!newWindow) return;
+
+            openSubtools.push(newWindow);
+
+            // Track close with interval fallback (close event unreliable on file://)
+            const closeCheck = setInterval(() => {
+                if (newWindow.closed) {
+                    openSubtools = openSubtools.filter(w => w !== newWindow);
+                    clearInterval(closeCheck);
+                }
+            }, 1000);
+
+            // Send DB via postMessage with retry mechanism
+            const dbPayload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+            let attempts = 0, acknowledged = false;
+
+            function trySend() {
+                if (acknowledged || newWindow.closed || attempts >= 5) return;
+                attempts++;
+                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, '*');
+            }
+
+            // Listen for acknowledgment from subtool
+            const ackHandler = (e) => {
+                if (e.source === newWindow && e.data?.type === 'sitkaGit_ready') {
+                    acknowledged = true;
+                    window.removeEventListener('message', ackHandler);
+                }
+            };
+            window.addEventListener('message', ackHandler);
+
+            // Initial send + retry at 200ms intervals
+            trySend();
+            const retryTimer = setInterval(() => {
+                if (acknowledged || newWindow.closed) clearInterval(retryTimer);
+                else trySend();
+            }, 200);
+        }
+
+        // Listen for subtool updates via postMessage
+        window.addEventListener('message', (e) => {
+            if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
+
+            DB.data = e.data.payload;
+            DB.ensureStructure();
+
+            // Re-render all views with fresh data
+            updateStatusBar();
+            renderLotList();
+            updateLotIdSuggestion();
+            RoomManager.renderRoomList();
+            updateRoomStatusBar();
+            RoomManager.updateRoomDatalist();
+            Calendar.render();
+            updateCalendarStatusBar();
+
+            syncToastText.textContent = 'Subtool has updated data — views refreshed automatically';
+            syncToast.classList.remove('hidden');
+            // Auto-dismiss after 3 seconds
+            setTimeout(() => syncToast.classList.add('hidden'), 3000);
         });
 
         // ---- Lot Type Changes ----

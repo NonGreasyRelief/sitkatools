@@ -49,49 +49,58 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 - Tools never communicate with each other — only through the JSON file on disk
 - Dates in data use ISO format (`YYYY-MM-DD`); filenames use 2-digit year (`YY`)
 
-### Database Retrieval on Open — TempDB.json Swap
+### Database Import on Open — postMessage Convention
 
-AbsenceWizard retrieves the active database from the calendar when it opens, using the `TempDB.json` localStorage swap convention defined in the root `Agent.MD`.
+AbsenceWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `Agent.MD`.
 
 **How it works:**
-1. When SitkaTools.html launches AbsenceWizard, it writes the current in-memory `DB.data` to `localStorage` under the key `TempDB.json` — BEFORE calling `window.open()`.
-2. On page load, AbsenceWizard calls `loadFromSwap()` which reads `localStorage.getItem('TempDB.json')`, parses the JSON, and populates `DB.data`.
-3. If the swap is absent or corrupted, the tool falls back to an empty DB structure and shows the manual file import UI as a fallback.
-4. After loading, AbsenceWizard renders its UI normally (no selector dropdown needed — this is an independent tool).
+1. When SitkaTools.html launches AbsenceWizard, it opens the subtool in a new window then sends the current DB via `postMessage` with type `sitkaGit_db`.
+2. On page load, AbsenceWizard listens for this message — no overlay, no file dialog, no manual import step.
+3. After receiving the DB, AbsenceWizard acknowledges with `{ type: 'sitkaGit_ready' }` so SitkaTools stops retrying.
+4. After every mutation (add/delete/edit), AbsenceWizard calls `notifySitkaTools()` which sends the updated DB back via `postMessage` with type `sitkaGit_db_update`.
+5. The main app auto-refreshes all views and shows a toast notification that auto-dismisses after 3 seconds.
+6. On init, AbsenceWizard renders its UI normally (no selector dropdown needed — this is an independent tool).
 
 **Implementation:**
 ```js
-// ---- TempDB.json swap retrieval ----
-function loadFromSwap() {
-    try {
-        const raw = localStorage.getItem('TempDB.json');
-        if (raw) {
-            DB.data = JSON.parse(raw);
-            DB.ensureStructure();
-            return true;
-        }
-    } catch (err) {
-        console.warn('Could not read TempDB.json from localStorage:', err);
+// ---- postMessage Convention ----
+DB.ensureStructure();
+
+function notifySitkaTools() {
+    if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+            type: 'sitkaGit_db_update',
+            payload: DB.data
+        }, '*');
     }
-    return false;
 }
 
-// Load from swap on startup; fall back to empty structure.
-if (!loadFromSwap()) {
-    DB.ensureStructure();
-}
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+        DB.data = e.data.payload;
+        DB.ensureStructure();
+        if (window.opener && !window.opener.closed) {
+            window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+        }
+        // Reconcile and render with fresh data
+        showToast('Database loaded from SitkaTools');
+    }
+});
+
+// After every mutation:
+notifySitkaTools();
 ```
 
-This is the **only** use of `localStorage` permitted in this tool. No other localStorage keys are used.
+This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**. All cross-window state flows through postMessage.
 
 ## UI Convention
 
 This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
 
-- **Selector type:** Independent (no lot or room selector — staff absences are not tied to any specific lot or room; calendar events are scoped solely to the AbsenceManager tool's own `_AbsenceManager` dictionary in the DB)
+- **Selector type:** Independent (no lot or room selector — staff absences are not tied to any specific lot or room; calendar events are scoped solely to the AbsenceWizard tool's own `_AbsenceWizard` dictionary in the DB)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
 - **Header:** Tool name "🏖️ AbsenceManager" on the left, no dropdown selector (header contains only the tool name)
-- **Footer:** Save DB button (with popup link) + Close Tool button
+- **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 
 See the root `Agent.MD` → "UI Standards — All Tools" for complete HTML/CSS/JS patterns.

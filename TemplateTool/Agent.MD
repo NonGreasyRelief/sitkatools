@@ -53,45 +53,49 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 ---
 
-### Database Retrieval on Open — TempDB.json Swap
+### Database Import on Open — postMessage Convention
 
-TemplateTool retrieves the active database from the calendar when it opens, using the `TempDB.json` localStorage swap convention defined in the root `Agent.MD`.
+TemplateTool receives its database from SitkaTools via `postMessage`, following the convention defined in the root `Agent.MD`.
 
 **How it works:**
-1. When SitkaTools.html launches TemplateTool, it writes the current in-memory `DB.data` to `localStorage` under the key `TempDB.json` — BEFORE calling `window.open()`.
-2. On page load, TemplateTool calls `loadFromSwap()` which reads `localStorage.getItem('TempDB.json')`, parses the JSON, and populates `DB.data`.
-3. If the swap is absent or corrupted, the tool falls back to an empty DB structure and shows the manual file import UI as a fallback.
-4. After loading, TemplateTool calls `populateLotSelector()` (or `populateRoomSelector()`, or nothing for independent tools) to fill dropdowns, then renders its UI.
+1. When SitkaTools.html launches TemplateTool, it opens the subtool in a new window then sends the current DB via `postMessage` with type `sitkaGit_db`.
+2. On page load, TemplateTool listens for this message — no overlay, no file dialog, no manual import step.
+3. After receiving the DB, TemplateTool acknowledges with `{ type: 'sitkaGit_ready' }` so SitkaTools stops retrying.
+4. After every mutation (add/delete/edit), TemplateTool calls `notifySitkaTools()` which sends the updated DB back via `postMessage` with type `sitkaGit_db_update`.
+5. The main app auto-refreshes all views and shows a toast notification that auto-dismisses after 3 seconds.
+6. On init, TemplateTool calls `populateLotSelector()` (or `populateRoomSelector()`, or nothing for independent tools) to fill dropdowns, then renders its UI.
 
 **Implementation:**
 ```js
-// ---- TempDB.json swap retrieval ----
-function loadFromSwap() {
-    try {
-        const raw = localStorage.getItem('TempDB.json');
-        if (raw) {
-            DB.data = JSON.parse(raw);
-            DB.ensureStructure();
-            return true;
-        }
-    } catch (err) {
-        console.warn('Could not read TempDB.json from localStorage:', err);
+// ---- postMessage Convention ----
+DB.ensureStructure();
+
+function notifySitkaTools() {
+    if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+            type: 'sitkaGit_db_update',
+            payload: DB.data
+        }, '*');
     }
-    return false;
 }
 
-// Load from swap on startup; fall back to empty structure.
-if (!loadFromSwap()) {
-    DB.ensureStructure();
-}
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+        DB.data = e.data.payload;
+        DB.ensureStructure();
+        if (window.opener && !window.opener.closed) {
+            window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+        }
+        // populateLotSelector() or populateRoomSelector() as needed
+        showToast('Database loaded from SitkaTools');
+    }
+});
 
-// Populate the selector after DB is loaded (choose ONE based on tool type):
-// populateLotSelector();   // For lot-focused tools
-// populateRoomSelector();  // For room-focused tools
-// (nothing needed)         // For independent tools
+// After every mutation:
+notifySitkaTools();
 ```
 
-This is the **only** use of `localStorage` permitted in this tool. No other localStorage keys are used.
+This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**. All cross-window state flows through postMessage.
 
 ---
 
@@ -105,10 +109,10 @@ This tool follows the shared UI Standards defined in the root `Agent.MD`. Key sp
   - ~~Independent~~ — no selector (e.g., AbsenceWizard)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 66% taller than half the viewport height
 - **Header:** Tool name with emoji on the left, dropdown selector on the right (or no selector for independent tools)
-- **Footer:** Save DB button (with popup link) + Close Tool button
+- **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
 
-See the "Standards Reference" section below for complete HTML/CSS/JS patterns.
+See the root `Agent.MD` → "UI Standards — All Tools" for complete HTML/CSS/JS patterns.
 
 ---
 
@@ -382,8 +386,8 @@ The footer is a sticky bottom bar with two buttons:
 
 .save-popup {
     position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    bottom: calc(100% + 8px);
+    left: calc(100% + 8px);
     background: var(--bg-secondary);
     border: 1px solid var(--accent);
     border-radius: var(--radius);
@@ -441,7 +445,8 @@ let currentBlobUrl = null;
 
 $('exportBtn').addEventListener('click', (e) => {
     e.stopPropagation();
-    DB.ensureStructure();
+    // Sync all in-memory changes BEFORE serializing
+    DB.sync();
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     const json = JSON.stringify(DB.data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -483,6 +488,14 @@ const DB = {
         if (!this.data.rooms) this.data.rooms = {};
         if (!this.data.calendarEvents) this.data.calendarEvents = [];
         return this.data;
+    },
+
+    // Sync all in-memory changes before export.
+    // Call this BEFORE serializing DB.data for save.
+    // Subtools override or extend this to flush any pending state (e.g., staged events, buffered edits).
+    sync() {
+        this.ensureStructure();
+        return this.data;
     }
 };
 
@@ -523,29 +536,60 @@ function populateRoomSelector() {
 
 ---
 
-### TempDB.json Swap Rules (Complete Reference)
+### postMessage Convention Rules (Complete Reference)
 
-These are the governing rules for reading from the temporary database swap:
+These are the governing rules for transferring the database between windows:
 
-1. **localStorage is ONLY for `TempDB.json`** — no other keys, no session persistence, no preferences. This is strictly a swap file mechanism.
-2. **The main app (SitkaTools.html) WRITES** to localStorage before opening any subtool. It serializes the current in-memory `DB.data` as a JSON string under the key `TempDB.json`.
-3. **Subtools READ from localStorage on startup.** On page load, each subtool checks `localStorage.getItem('TempDB.json')`. If present, it parses the JSON and populates `DB.data`. If absent, the tool falls back to the manual file import UI.
-4. **The swap is write-once, read-once per session.** The main app writes when launching; the subtool reads when opening. After reading, the subtool works entirely in memory. When the user saves (via the footer Save DB button), the subtool exports its modified `DB.data` as a download — it does NOT write back to localStorage.
-5. **Stale data awareness:** If the swap exists but is older than the current session, the subtool should still use it as the best available state. The Save DB flow is how the user commits changes back to disk.
+1. **postMessage is the primary cross-window data channel.** SitkaTools sends the full DB payload to the subtool via postMessage after opening; subtools receive it and acknowledge with `sitkaGit_ready`.
+2. **Subtools open as centered popup windows, not new tabs.** Use `window.open(url, '_blank', features)` with width/height/left/top to create a centered popup at half viewport width and 66% taller than viewport height.
+3. **Main app auto-refreshes on updates.** When SitkaTools receives a `sitkaGit_db_update` message, it replaces its DB data and re-renders all views automatically. A toast appears confirming the sync (auto-dismisses after 3 seconds).
+4. **Subtools notify after every mutation.** After adding/deleting/editing data, call `notifySitkaTools()` which posts the updated DB back to the opener window.
+5. **Retry mechanism for initial DB delivery.** SitkaTools retries sending the DB up to 5 times at 200ms intervals until the subtool acknowledges with `sitkaGit_ready`.
+6. **No import overlay needed.** Subtools receive DB via postMessage on load automatically — no blocking overlay, no file dialog, no manual step.
 
 ---
 
-### Popup Window Size Convention
+### Popup Window Convention
 
-All subtools open as popup windows from SitkaTools.html, centered on screen at **half the main app's viewport width** and **66% taller than half the viewport height**. Design the UI to fit comfortably within this window size.
+All subtools open as centered popup windows from SitkaTools.html (not new tabs). The main app sends the current DB to the subtool via postMessage after opening.
 
 The launch pattern in SitkaTools.html:
 ```js
-const w = Math.floor(window.innerWidth / 2);
-const h = Math.floor(window.innerHeight * 0.66);
-const left = Math.floor((window.screen.width - w) / 2);
-const top = Math.floor((window.screen.height - h) / 2);
-window.open(url, '_blank', `width=${w},height=${h},left=${left},top=${top}`);
+// Open as centered popup window
+const width = Math.round(window.innerWidth / 2);
+const height = Math.round(window.innerHeight * 1.66);
+const left = Math.round((window.innerWidth - width) / 2);
+const top = Math.round((window.innerHeight - height) / 2);
+
+const newWindow = window.open(
+    url,
+    '_blank',
+    `width=${width},height=${height},left=${left},top=${top}`
+);
+
+// Send DB via postMessage with retry mechanism
+const dbPayload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+let attempts = 0, acknowledged = false;
+
+function trySend() {
+    if (acknowledged || newWindow.closed || attempts >= 5) return;
+    attempts++;
+    newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, '*');
+}
+
+const ackHandler = (e) => {
+    if (e.source === newWindow && e.data?.type === 'sitkaGit_ready') {
+        acknowledged = true;
+        window.removeEventListener('message', ackHandler);
+    }
+};
+window.addEventListener('message', ackHandler);
+
+trySend();
+const retryTimer = setInterval(() => {
+    if (acknowledged || newWindow.closed) clearInterval(retryTimer);
+    else trySend();
+}, 200);
 ```
 
 ---
@@ -556,13 +600,14 @@ window.open(url, '_blank', `width=${w},height=${h},left=${left},top=${top}`);
 - [ ] File named after the directory (`TemplateTool/TemplateTool.html`)
 - [ ] Theme variables match `:root` values exactly
 - [ ] Header is sticky top bar with tool name + appropriate selector (or none)
-- [ ] Footer is sticky bottom bar with Save DB popup + Close Tool button
-- [ ] Save DB generates a download link via `URL.createObjectURL` — user right-clicks to save
-- [ ] TempDB.json swap loaded on startup before any UI rendering
-- [ ] Manual file import UI available as fallback if swap is missing
+- [ ] Footer is sticky bottom bar with Close Tool button only (no Save DB — changes auto-sync via postMessage)
+- [ ] Receives DB from SitkaTools via postMessage on load
+- [ ] Sends updates back to SitkaTools via `notifySitkaTools()` after every mutation
+- [ ] No import overlay — database loads automatically via postMessage
 - [ ] `DB.ensureStructure()` called after loading data
+- [ ] `DB.sync()` called before saving/exporting — flushes all in-memory changes to `DB.data`
 - [ ] Tool only reads/writes its own `_tool_TemplateTool` and `_TemplateTool` keys
 - [ ] Calendar events use `"sourceTool": "TemplateTool"`
-- [ ] No localStorage except for the `TempDB.json` swap key
+- [ ] No localStorage, sessionStorage, IndexedDB, cookies, or URL parameters for data transfer (postMessage is used for cross-window sharing)
 - [ ] No network calls, no external dependencies, no frameworks
 - [ ] Dates in data use ISO format (`YYYY-MM-DD`)

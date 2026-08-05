@@ -1,0 +1,774 @@
+<!-- GeneralEvent.html — Independent calendar event creator for SitkaGit suite -->
+<!-- Tool: GeneralEvent | Purpose: Create standalone calendar events (text + date + emoji) -->
+<!-- Database Keys: "_GeneralEvent" (top-level), "calendarEvents" (append-only) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeneralEvent</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left { display: flex; align-items: center; gap: 24px; }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+        }
+
+        /* ---- Main Content ---- */
+        .main {
+            flex: 1;
+            max-width: 640px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* ---- Status Bar ---- */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-bar.loaded { border-color: var(--accent); }
+
+        .status-badge {
+            background: var(--bg-card);
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: var(--accent);
+        }
+
+        /* ---- Card ---- */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+
+        /* ---- Form ---- */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* ---- Emoji Picker Row ---- */
+        .emoji-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .emoji-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius);
+            border: 2px solid transparent;
+            background: var(--input-bg);
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .emoji-btn:hover {
+            background: var(--bg-card);
+            border-color: var(--border);
+        }
+
+        .emoji-btn.selected {
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.15);
+        }
+
+        /* ---- Buttons ---- */
+        .btn {
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { border-color: var(--text-secondary); }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        /* ---- Event List ---- */
+        .event-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .event-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            transition: border-color 0.2s;
+        }
+
+        .event-item:hover { border-color: var(--accent); }
+
+        .event-text {
+            flex: 1;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .event-date-badge {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            background: var(--input-bg);
+            padding: 3px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .event-delete-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .event-item:hover .event-delete-btn { opacity: 1; }
+        .event-delete-btn:hover { background: rgba(231, 76, 60, 0.2); }
+
+        /* ---- Footer ---- */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .export-wrapper { position: relative; }
+
+        .db-btn {
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .db-btn:hover {
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.15);
+        }
+
+        .db-btn.export { color: var(--warning); }
+
+        .save-popup {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: calc(100% + 8px);
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 300px;
+        }
+
+        .save-popup.hidden { display: none; }
+
+        .save-popup-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .save-link {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .save-link:hover { text-decoration: underline; color: var(--accent-hover); }
+
+        .save-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+
+        .save-close:hover { color: var(--danger); background: rgba(231, 76, 60, 0.15); }
+
+        /* ---- Hidden file input ---- */
+        #dbImportInput { display: none; }
+
+        /* ---- Toast notification ---- */
+        .toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 300;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="dbImportInput" accept=".json">
+
+    <!-- Header (independent tool — no dropdown selector) -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">📌 GeneralEvent</span>
+        </div>
+        <div class="header-right"></div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <span id="statusText">No database loaded. Import a DB file or open from SitkaTools.</span>
+        </div>
+
+        <!-- Create Event Form -->
+        <div class="card">
+            <h2 class="card-title">Create New Event</h2>
+            <form id="eventForm">
+                <!-- Emoji Picker -->
+                <div class="form-group">
+                    <label>Emoji</label>
+                    <div class="emoji-row" id="emojiRow">
+                        <button type="button" class="emoji-btn selected" data-emoji="📌">📌</button>
+                        <button type="button" class="emoji-btn" data-emoji="📋">📋</button>
+                        <button type="button" class="emoji-btn" data-emoji="📅">📅</button>
+                        <button type="button" class="emoji-btn" data-emoji="⚠️">⚠️</button>
+                        <button type="button" class="emoji-btn" data-emoji="✅">✅</button>
+                        <button type="button" class="emoji-btn" data-emoji="🔧">🔧</button>
+                        <button type="button" class="emoji-btn" data-emoji="💡">💡</button>
+                        <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                        <button type="button" class="emoji-btn" data-emoji="📞">📞</button>
+                        <button type="button" class="emoji-btn" data-emoji="🏖️">🏖️</button>
+                        <button type="button" class="emoji-btn" data-emoji="🌱">🌱</button>
+                        <button type="button" class="emoji-btn" data-emoji="🔬">🔬</button>
+                    </div>
+                </div>
+
+                <!-- Event Text -->
+                <div class="form-group">
+                    <label for="eventText">Event Text</label>
+                    <input type="text" id="eventText" placeholder="e.g., Employee Appreciation Pizza Party" required autocomplete="off">
+                </div>
+
+                <!-- Date -->
+                <div class="form-group">
+                    <label for="eventDate">Date</label>
+                    <input type="date" id="eventDate" required>
+                </div>
+
+                <!-- Actions -->
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
+                    <button type="submit" class="btn btn-primary">Add Event</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Existing Events List -->
+        <div class="card" id="eventListCard" style="display:none;">
+            <h2 class="card-title">General Events</h2>
+            <div class="event-list" id="eventList"></div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // =====================================================
+        // GeneralEvent — Independent Calendar Event Creator
+        // Database Keys: "_GeneralEvent", "calendarEvents"
+        // =====================================================
+
+        const DB = {
+            data: null,
+            fileName: '',
+
+            get lots() { return this.data?.lots || {}; },
+            get rooms() { return this.data?.rooms || {}; },
+
+            ensureStructure() {
+                if (!this.data) this.data = { lots: {}, rooms: {}, calendarEvents: [] };
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                return this.data;
+            },
+
+            // Sync all in-memory changes before export.
+            // Call this BEFORE serializing DB.data for save.
+            // Subtools override or extend this to flush any pending state.
+            sync() {
+                this.ensureStructure();
+                // GeneralEvent writes directly to DB.data on every add/delete,
+                // so no extra flush is needed — but the method exists as convention.
+                return this.data;
+            }
+        };
+
+        const $ = id => document.getElementById(id);
+
+        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        DB.ensureStructure();
+
+        // Notify SitkaTools of changes via postMessage
+        function notifySitkaTools() {
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'sitkaGit_db_update',
+                    payload: DB.data
+                }, '*');
+            }
+        }
+
+        // Listen for DB from SitkaTools via postMessage
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+
+                // Acknowledge receipt so SitkaTools stops retrying
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                }
+
+                // Reconcile and render with fresh data
+                reconcileLog();
+                renderEventList();
+                updateStatusBar();
+                showToast('Database loaded from SitkaTools');
+            }
+        });
+
+        // Reconcile: REBUILD _GeneralEvent.events log ENTIRELY from calendarEvents.
+        // This ensures the tool's event list exactly matches what is in calendarEvents
+        // and prevents stale/residual events from previous sessions from persisting.
+        function reconcileLog() {
+            DB.ensureStructure();
+
+            const calendarEvents = DB.data.calendarEvents || [];
+            const rebuilt = [];
+            const seenIds = new Set();
+
+            for (const ev of calendarEvents) {
+                if (ev.sourceTool === 'GeneralEvent' && ev.type === 'General') {
+                    // Parse title to extract emoji and text
+                    const title = ev.title || '';
+                    let emoji = '📌';
+                    let text = title;
+                    // Try to split off the first emoji character(s)
+                    const match = title.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/su);
+                    if (match) {
+                        emoji = match[1];
+                        text = match[2] || '';
+                    }
+
+                    // Create a stable ID from date + text for deduplication
+                    const id = ev.date + '|' + text;
+
+                    if (!seenIds.has(id)) {
+                        rebuilt.push({
+                            id: id,
+                            text: text,
+                            date: ev.date,
+                            emoji: emoji,
+                            createdAt: new Date().toISOString()
+                        });
+                        seenIds.add(id);
+                    }
+                }
+            }
+
+            // Replace the entire log — no merging with stale entries
+            DB.data._GeneralEvent = { events: rebuilt };
+        }
+
+        // ---- DOM References ----
+        const eventForm = $('eventForm');
+        const eventTextInput = $('eventText');
+        const eventDateInput = $('eventDate');
+        const clearFormBtn = $('clearFormBtn');
+        const eventListCard = $('eventListCard');
+        const eventListEl = $('eventList');
+        const statusBar = $('statusBar');
+        const statusText = $('statusText');
+
+        // ---- Emoji Picker ----
+        document.querySelectorAll('.emoji-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+            });
+        });
+
+        function getSelectedEmoji() {
+            const sel = document.querySelector('.emoji-btn.selected');
+            return sel ? sel.dataset.emoji : '📌';
+        }
+
+        // ---- Create Event ----
+        eventForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            DB.ensureStructure();
+
+            const emoji = getSelectedEmoji();
+            const text = eventTextInput.value.trim();
+            const date = eventDateInput.value;
+
+            if (!text || !date) {
+                alert('Please fill in all fields.');
+                return;
+            }
+
+            // Build the calendar event
+            const newEvent = {
+                lotId: null,
+                date: date,
+                type: 'General',
+                title: `${emoji} ${text}`,
+                sourceTool: 'GeneralEvent'
+            };
+
+            // Append to calendarEvents
+            DB.data.calendarEvents.push(newEvent);
+
+            // Track in _GeneralEvent log (use stable ID for deduplication)
+            if (!DB.data._GeneralEvent) DB.data._GeneralEvent = { events: [] };
+            DB.data._GeneralEvent.events.push({
+                id: date + '|' + text,
+                text: text,
+                date: date,
+                emoji: emoji,
+                createdAt: new Date().toISOString()
+            });
+
+            // Re-render and clear form
+            renderEventList();
+            updateStatusBar();
+            eventForm.reset();
+            eventDateInput.value = new Date().toISOString().split('T')[0];
+            document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+            document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
+
+            // Notify SitkaTools via postMessage (replaces localStorage sync)
+            notifySitkaTools();
+
+            showToast('Event added');
+        });
+
+        // ---- Clear Form ----
+        clearFormBtn.addEventListener('click', () => {
+            eventForm.reset();
+            eventDateInput.value = new Date().toISOString().split('T')[0];
+            document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+            document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
+        });
+
+        // ---- Render Event List (from _GeneralEvent log) ----
+        function renderEventList() {
+            const log = DB.data?._GeneralEvent?.events || [];
+
+            if (log.length === 0) {
+                eventListCard.style.display = 'none';
+                return;
+            }
+
+            eventListCard.style.display = 'block';
+            eventListEl.innerHTML = '';
+
+            // Sort by date, then creation time
+            const sorted = [...log].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+
+            sorted.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'event-item';
+                item.dataset.id = entry.id;
+
+                item.innerHTML = `
+                    <span class="event-date-badge">${entry.date}</span>
+                    <span class="event-text">${escapeHtml(entry.emoji + ' ' + entry.text)}</span>
+                    <button class="event-delete-btn" title="Remove event">✕</button>
+                `;
+
+                eventListEl.appendChild(item);
+            });
+
+            // Attach delete handlers
+            eventListEl.querySelectorAll('.event-delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const item = btn.closest('.event-item');
+                    const id = item.dataset.id;
+                    deleteEvent(id);
+                });
+            });
+        }
+
+        // ---- Delete Event ----
+        function deleteEvent(id) {
+            if (!confirm('Remove this event from the calendar?')) return;
+
+            DB.ensureStructure();
+
+            // First, find the log entry so we know what title/date to remove from calendarEvents
+            const logEntry = (DB.data._GeneralEvent?.events || []).find(e => e.id === id);
+
+            // Remove matching event from calendarEvents (by sourceTool + title + date)
+            if (logEntry) {
+                const targetTitle = `${logEntry.emoji} ${logEntry.text}`;
+                DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
+                    if (ev.sourceTool === 'GeneralEvent' && ev.title === targetTitle && ev.date === logEntry.date) {
+                        return false; // Remove this calendar event
+                    }
+                    return true;
+                });
+            }
+
+            // Remove from _GeneralEvent log
+            if (DB.data._GeneralEvent?.events) {
+                DB.data._GeneralEvent.events = DB.data._GeneralEvent.events.filter(e => e.id !== id);
+            }
+
+            // Notify SitkaTools via postMessage (replaces localStorage sync)
+            notifySitkaTools();
+
+            renderEventList();
+            updateStatusBar();
+            showToast('Event removed');
+        }
+
+        // ---- Update Status Bar ----
+        function updateStatusBar() {
+            const count = (DB.data?._GeneralEvent?.events || []).length;
+            const totalCalendar = (DB.data?.calendarEvents || []).length;
+
+            if (!DB.data) {
+                statusBar.className = 'status-bar';
+                statusText.textContent = 'No database loaded. Import a DB file to begin.';
+                return;
+            }
+
+            if (totalCalendar === 0) {
+                statusBar.className = 'status-bar';
+                statusBar.style.borderColor = 'var(--warning)';
+                statusText.innerHTML = `Database loaded — no events yet. <strong>Click 📂 Load DB</strong> to load a database with events.`;
+                return;
+            }
+
+            statusBar.className = 'status-bar loaded';
+            statusText.textContent = `Database loaded — ${totalCalendar} total calendar events`;
+        }
+
+        // ---- Close Tool ----
+        $('closeToolBtn').addEventListener('click', () => window.close());
+
+        // ---- Toast ----
+        function showToast(msg) {
+            const toast = $('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+
+        // ---- Utility ----
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---- Start ----
+        function init() {
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            eventDateInput.value = today;
+
+            // Wait for postMessage delivery from SitkaTools — render empty state initially
+            reconcileLog();
+            renderEventList();
+            updateStatusBar();
+        }
+        init();
+    </script>
+</body>
+</html>

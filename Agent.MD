@@ -73,90 +73,229 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 - Tools only read/write their own keys — they do not modify other tools' data.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
-### TempDB.json — Cross-Window Database Swap Convention
+### Cross-Window Database Workflow — postMessage Convention
 
-**Problem:** Subtools open as separate popup windows (`window.open()`). Because each window is an independent browser context, the subtool cannot access the main app's in-memory database. Without a shared mechanism, the user would need to manually re-import the DB file into every tool — defeating the purpose of a unified suite.
+**Mechanism:** Subtools open as new browser windows via `window.open()`. The main app sends the current database to the subtool via `postMessage` immediately after opening. The subtool receives the DB, acknowledges with a ready message, and sends updates back via `postMessage` after every mutation. The main app auto-refreshes all views when it receives an update — no manual sync needed.
 
-**Solution:** Use `localStorage` as a **single-file swap store** keyed as `TempDB.json`. This is the **only permitted use of localStorage** in the entire suite. It acts as a clipboard: the main app writes the current database state before launching a subtool, and the subtool reads it on startup.
+**Why postMessage instead of localStorage:** On `file://` protocol, browsers (especially Firefox) give each file path a unique origin sandbox, so localStorage at `/SitkaTools/SitkaTools.html` cannot be read from `/GeneralEvent/GeneralEvent.html`. The `storage` event also never fires across different origins. `postMessage` works reliably across `file://` windows.
+
+**Message protocol (all tools use these exact message types):**
+```js
+// SitkaTools → Subtool: Send database on open
+{ type: 'sitkaGit_db', payload: DB.data }
+
+// Subtool → SitkaTools: Acknowledge receipt
+{ type: 'sitkaGit_ready' }
+
+// Subtool → SitkaTools: Send database after mutation
+{ type: 'sitkaGit_db_update', payload: DB.data }
+```
 
 #### Rules
 
-1. **localStorage is ONLY for `TempDB.json`** — no other keys, no session persistence, no preferences. This is strictly a swap file mechanism.
-2. **The main app (SitkaTools.html) WRITES** to `localStorage` before opening any subtool. It serializes the current in-memory `DB.data` as a JSON string and stores it under the key `TempDB.json`.
-3. **Subtools READ from `localStorage` on startup.** On page load, each subtool checks `localStorage.getItem('TempDB.json')`. If present, it parses the JSON and populates `DB.data`. If absent, the tool falls back to the manual file import UI.
-4. **The swap is write-once, read-once per session.** The main app writes when launching; the subtool reads when opening. After reading, the subtool works entirely in memory. When the user saves (via the footer Save DB button), the subtool exports its modified `DB.data` as a download — it does NOT write back to localStorage.
-5. **Stale data awareness:** If the swap exists but is older than the current session (e.g., the user left a tool open overnight), the subtool should still use it as the best available state. The Save DB flow is how the user commits changes back to disk.
+1. **postMessage is the primary cross-window data channel.** SitkaTools sends the full DB payload when opening a subtool; subtools receive it via a `message` event listener and acknowledge with `sitkaGit_ready`.
+2. **Subtools open as new windows.** Use `window.open(url, '_blank')` — keep a reference to the returned window object for sending messages.
+3. **Main app auto-refreshes on updates.** When SitkaTools receives a `sitkaGit_db_update` message, it replaces its DB data and re-renders all views automatically. A toast appears confirming the sync (auto-dismisses after 3 seconds).
+4. **Subtools notify after every mutation.** After adding/deleting/editing data, call `notifySitkaTools()` which posts the updated DB back to the opener window.
+5. **Retry mechanism for initial DB delivery.** SitkaTools retries sending the DB up to 5 times at 200ms intervals until the subtool acknowledges with `sitkaGit_ready`.
+6. **No localStorage, sessionStorage, IndexedDB, or cookies in subtools.** All cross-window state flows through postMessage.
 
-#### Main App Write Pattern (SitkaTools.html)
+#### SitkaTools Module Link Handler Pattern
 
-In SitkaTools.html, whenever a subtool is launched (via `module-link` click handler), serialize and store the current database BEFORE calling `window.open()`:
+In SitkaTools.html, when a module link is clicked:
 
 ```js
-// ---- Module link handler (in SitkaTools.html) ----
-document.addEventListener('click', (e) => {
-    const moduleLink = e.target.closest('.module-link');
-    if (!moduleLink) return;
-    e.preventDefault();
+// ---- Module Link Handlers — postMessage Convention ----
+let openSubtools = [];
 
-    // Write current DB state to the swap store BEFORE opening the subtool
-    if (DB.data) {
-        try {
-            localStorage.setItem('TempDB.json', JSON.stringify(DB.data));
-        } catch (err) {
-            console.warn('Could not write TempDB.json to localStorage:', err);
+document.querySelectorAll('.module-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        openModuleInTab(link.href);
+    });
+});
+
+function openModuleInTab(url) {
+    const newWindow = window.open(url, '_blank');
+    if (!newWindow) return;
+
+    openSubtools.push(newWindow);
+
+    // Track close with interval fallback (close event unreliable on file://)
+    const closeCheck = setInterval(() => {
+        if (newWindow.closed) {
+            openSubtools = openSubtools.filter(w => w !== newWindow);
+            clearInterval(closeCheck);
         }
+    }, 1000);
+
+    // Send DB via postMessage with retry mechanism
+    const dbPayload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+    let attempts = 0, acknowledged = false;
+
+    function trySend() {
+        if (acknowledged || newWindow.closed || attempts >= 5) return;
+        attempts++;
+        newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, '*');
     }
 
-    // Open the subtool popup window
-    const url = moduleLink.getAttribute('href');
-    const w = Math.floor(window.innerWidth / 2);
-    const h = Math.floor(window.innerHeight * 0.66);
-    const left = Math.floor((window.screen.width - w) / 2);
-    const top = Math.floor((window.screen.height - h) / 2);
-    window.open(url, '_blank', `width=${w},height=${h},left=${left},top=${top}`);
+    // Listen for acknowledgment from subtool
+    const ackHandler = (e) => {
+        if (e.source === newWindow && e.data?.type === 'sitkaGit_ready') {
+            acknowledged = true;
+            window.removeEventListener('message', ackHandler);
+        }
+    };
+    window.addEventListener('message', ackHandler);
 
-    // Show overlay reminding user to re-import DB after using the tool
-    showOverlay();
+    // Initial send + retry at 200ms intervals
+    trySend();
+    const retryTimer = setInterval(() => {
+        if (acknowledged || newWindow.closed) clearInterval(retryTimer);
+        else trySend();
+    }, 200);
+}
+```
+
+#### SitkaTools Sync Toast Pattern
+
+In SitkaTools.html, listen for subtool updates via postMessage:
+
+```html
+<!-- Sync Toast — appears when a subtool updates the database (auto-synced) -->
+<div class="sync-toast hidden" id="syncToast">
+    <span class="sync-toast-icon">🔄</span>
+    <span class="sync-toast-text" id="syncToastText">Subtool has updated data — views refreshed automatically</span>
+</div>
+```
+
+```js
+const syncToast = $('syncToast');
+const syncToastText = $('syncToastText');
+
+// Listen for subtool updates via postMessage
+window.addEventListener('message', (e) => {
+    if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
+
+    DB.data = e.data.payload;
+    DB.ensureStructure();
+
+    // Re-render all views with fresh data
+    updateStatusBar();
+    renderLotList();
+    updateLotIdSuggestion();
+    RoomManager.renderRoomList();
+    updateRoomStatusBar();
+    RoomManager.updateRoomDatalist();
+    Calendar.render();
+    updateCalendarStatusBar();
+
+    syncToastText.textContent = 'Subtool has updated data — views refreshed automatically';
+    syncToast.classList.remove('hidden');
+    // Auto-dismiss after 3 seconds
+    setTimeout(() => syncToast.classList.add('hidden'), 3000);
 });
 ```
 
-#### Subtool Read Pattern (All Wizard Tools)
+#### Subtool postMessage Pattern
 
-Every subtool includes this startup sequence at the top of its `<script>` block, BEFORE any UI rendering that depends on `DB.data`:
+Every subtool includes this pattern at the top of its script block:
 
 ```js
-// ---- TempDB.json swap retrieval (in all subtools) ----
-function loadFromSwap() {
-    try {
-        const raw = localStorage.getItem('TempDB.json');
-        if (raw) {
-            DB.data = JSON.parse(raw);
-            DB.ensureStructure();
-            return true;
-        }
-    } catch (err) {
-        console.warn('Could not read TempDB.json from localStorage:', err);
+// ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+DB.ensureStructure();
+
+// Notify SitkaTools of changes via postMessage
+function notifySitkaTools() {
+    if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+            type: 'sitkaGit_db_update',
+            payload: DB.data
+        }, '*');
     }
-    return false;
 }
 
-// Attempt swap load first; fall back to empty structure if unavailable.
-if (!loadFromSwap()) {
-    DB.ensureStructure();
-}
+// Listen for DB from SitkaTools via postMessage
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+        DB.data = e.data.payload;
+        DB.ensureStructure();
+
+        // Acknowledge receipt so SitkaTools stops retrying
+        if (window.opener && !window.opener.closed) {
+            window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+        }
+
+        // Reconcile and render with fresh data
+        reconcileLog();
+        renderEventList();
+        updateStatusBar();
+        showToast('Database loaded from SitkaTools');
+    }
+});
 ```
 
-After loading (from swap or fallback), the subtool populates its selectors and renders UI as normal. The file import UI (`<input type="file">`) remains available as a manual override in case the swap is stale or missing.
+**After every mutation (add/delete/edit), call:**
+```js
+notifySitkaTools();
+```
 
-#### Why localStorage Is Permitted Here
+This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**. All cross-window state flows through postMessage.
 
-The suite's core principle is "browser sandbox only, no server." `localStorage` fits within this constraint:
-- It runs entirely client-side — no network calls, no external origins.
-- It persists across page loads within the same origin (including `file://` in most browsers).
-- It is the **only** mechanism for cross-window communication available without a server.
-- The key `TempDB.json` is treated as a temporary swap file — not persistent application state.
+#### Sync Toast CSS (Shared Across All Tools)
 
-> **Exception granted:** Using `localStorage` for the `TempDB.json` swap key is explicitly permitted despite the general "no localStorage" convention. No other use of localStorage is allowed without an explicit update to this specification.
+Include these styles in SitkaTools.html:
+
+```css
+.sync-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 16px 24px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    animation: slideInToast 0.3s ease-out;
+}
+
+.sync-toast.hidden { display: none; }
+
+@keyframes slideInToast {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.sync-toast-icon { font-size: 1.5rem; }
+
+.sync-toast-text { color: var(--text-primary); font-size: 0.9rem; }
+
+.sync-toast-btn {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    padding: 8px 20px;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.sync-toast-btn:hover { background: var(--accent-hover); }
+```
+
+#### Why This Workflow Is Preferred
+
+- **Zero manual steps** — no overlays, no file dialogs, no "Save Link As" popups for data transfer
+- **Real-time awareness** — main app auto-refreshes all views when subtool sends postMessage update
+- **Auto-dismiss toast** — confirmation toast appears and disappears after 3 seconds
+- **postMessage works on `file://` protocol** — reliable cross-window communication even in browser sandbox
+- **Retry mechanism** ensures DB delivery to subtool even if it loads slowly
 
 ### Main Tool — SitkaTools.html
 
@@ -167,7 +306,7 @@ The central hub with two modes:
 
 ### Subtools — Popup Window Convention
 
-All subtools (IPMWizard, FertilizerWizard, CloningWizard, LabourWizard, EquipmentWizard, AbsenceWizard) open as popup windows from SitkaTools.html. They launch centered on screen at **half the main app's viewport width** and **66% taller than half the viewport height**. Each subtool's UI should be designed to fit comfortably within this window size.
+All subtools (IPMWizard, FertilizerWizard, CloningWizard, LabourWizard, EquipmentWizard, AbsenceWizard) open as centered popup windows from SitkaTools.html. They launch at **half the main app's viewport width** and **66% taller than the viewport height**. Each subtool's UI should be designed to fit comfortably within this window size.
 
 ## Tool Registry
 
@@ -222,7 +361,7 @@ Every tool follows this layout (top to bottom):
 │     Tool-specific content       │
 │                                 │
 ├─────────────────────────────────┤
-│  Footer (Save DB + Close Tool)  │  ← Sticky bottom bar
+│  Footer (Close Tool)            │  ← Sticky bottom bar
 └─────────────────────────────────┘
 ```
 
@@ -341,8 +480,8 @@ The footer is a sticky bottom bar with two buttons:
 
 .save-popup {
     position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    bottom: calc(100% + 8px);
+    left: calc(100% + 8px);
     background: var(--bg-secondary);
     border: 1px solid var(--accent);
     border-radius: var(--radius);
@@ -399,7 +538,8 @@ let currentBlobUrl = null;
 
 $('exportBtn').addEventListener('click', (e) => {
     e.stopPropagation();
-    DB.ensureStructure();
+    // Sync all in-memory changes BEFORE serializing
+    DB.sync();
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     const json = JSON.stringify(DB.data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -511,7 +651,7 @@ body {
 
 ### Popup Window Size
 
-All subtools open as popup windows from SitkaTools.html, centered on screen at **half the main app's viewport width** and **66% taller than half the viewport height**. Design the UI to fit comfortably within this window size.
+All subtools open as centered popup windows from SitkaTools.html at **half the main app's viewport width** and **66% taller than the viewport height**. Design the UI to fit comfortably within this window size.
 
 ### Shared Database Object Pattern
 
@@ -530,6 +670,14 @@ const DB = {
         if (!this.data.lots) this.data.lots = {};
         if (!this.data.rooms) this.data.rooms = {};
         if (!this.data.calendarEvents) this.data.calendarEvents = [];
+        return this.data;
+    },
+
+    // Sync all in-memory changes before export.
+    // Call this BEFORE serializing DB.data for save.
+    // Subtools override or extend this to flush any pending state (e.g., staged events, buffered edits).
+    sync() {
+        this.ensureStructure();
         return this.data;
     }
 };
@@ -580,14 +728,15 @@ function populateRoomSelector() {
 ### Cultivation Modules Section (SitkaTools.html)
 - The bottom of `SitkaTools.html` contains a "Cultivation Modules" card that links to all sibling tools
 - All links use relative paths (`../<ToolName>/<ToolName>.html`) — never absolute or `file://` URLs
-- Links have class `module-link` and are handled by JS: they open in a new window at half the current viewport width and 66% taller than half the viewport height (centered)
-- Clicking a module link calls `showOverlay()` to remind the user to re-import the DB after using the external tool
+- Links have class `module-link` and are handled by JS: they open as centered popup windows via `window.open(url, '_blank', features)`
+- Clicking a module link sends the current DB to the subtool via `postMessage` (type `sitkaGit_db`) after opening
 - When adding a new module, add a link entry with class `module-link`, an emoji icon, tool name, and one-line description matching the Tool Registry
 - Clear file header comment with tool name, purpose, and database keys used
 
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
-- **NO localStorage or sessionStorage:** All state must come from explicitly imported DB files. Never persist data across sessions in the browser. Every new page load starts fresh — the user must import a DB to work.
+- **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used.
+- **Manual Save DB still exists as backup persistence:** Both main app and subtools have a footer "💾 Save DB" button for explicit file downloads (localStorage is volatile across browser restarts).
 - File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting
 - No `async/await` on network calls — there are none
 
