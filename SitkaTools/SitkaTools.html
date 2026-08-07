@@ -1742,29 +1742,14 @@
                     <span class="tool-link-name">📅 General Event</span>
                     <span class="tool-link-desc">Create standalone calendar events with text, date, and emoji</span>
                 </a>
-                <a class="tool-link module-link" href="../IPMWizard/IPMWizard.html">
-                    <span class="tool-link-name">🐛 IPM Wizard</span>
-                    <span class="tool-link-desc">Quickly populate your calendar with IPM order and application dates</span>
-                </a>
-                <a class="tool-link module-link" href="../FertilizerWizard/FertilizerWizard.html">
-                    <span class="tool-link-name">🧪 Fertilizer Wizard</span>
-                    <span class="tool-link-desc">Fertilizer cost and usage tracking per lot</span>
-                </a>
-                <a class="tool-link module-link" href="../CloningWizard/CloningWizard.html">
-                    <span class="tool-link-name">✂️ Cloning Wizard</span>
-                    <span class="tool-link-desc">Clone cutting schedule based on lot progression</span>
-                </a>
-                <a class="tool-link module-link" href="../LabourWizard/LabourWizard.html">
-                    <span class="tool-link-name">👷 Labour Wizard</span>
-                    <span class="tool-link-desc">Labour hour and task tracking</span>
+
+                <a class="tool-link module-link" href="../CropLabourWizard/CropLabourWizard.html">
+                    <span class="tool-link-name">👷 Crop Labour Wizard</span>
+                    <span class="tool-link-desc">Quickly schedule all tasks related to a single lot</span>
                 </a>
                 <a class="tool-link module-link" href="../EquipmentWizard/EquipmentWizard.html">
                     <span class="tool-link-name">🔧 Equipment Wizard</span>
                     <span class="tool-link-desc">Equipment maintenance scheduling and tracking</span>
-                </a>
-                <a class="tool-link module-link" href="../AbsenceWizard/AbsenceWizard.html">
-                    <span class="tool-link-name">🏖️ Absence Wizard</span>
-                    <span class="tool-link-desc">Staff absence and vacation calendar notifications</span>
                 </a>
             </div>
         </section>
@@ -1779,6 +1764,12 @@
         // ---- Utility: local date string (avoids UTC shift from toISOString) ----
         function localDate(d = new Date()) {
             return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        // Parse "YYYY-MM-DD" as a local-time Date (avoids UTC midnight from new Date(string))
+        function parseLocalDate(str) {
+            const parts = str.split('-').map(Number);
+            return new Date(parts[0], parts[1] - 1, parts[2]);
         }
 
         const DB = {
@@ -2080,8 +2071,14 @@
         window.addEventListener('message', (e) => {
             if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
 
+            console.log('[SitkaTools] Received sitkaGit_db_update');
+            console.log('[SitkaTools] Incoming calendarEvents count:', e.data.payload.calendarEvents?.length || 0);
+            console.log('[SitkaTools] First 3 events:', e.data.payload.calendarEvents?.slice(0, 3));
+
             DB.data = e.data.payload;
             DB.ensureStructure();
+
+            console.log('[SitkaTools] After assign - calendarEvents count:', DB.data.calendarEvents?.length || 0);
 
             // Re-render all views with fresh data
             updateStatusBar();
@@ -2872,6 +2869,10 @@
             },
 
             render() {
+                console.log('[Calendar] Rendering - events count:', this.events.length);
+                if (this.events.length > 0) {
+                    console.log('[Calendar] First 3 events:', this.events.slice(0, 3));
+                }
                 this.updateTitle();
                 this.renderGrid();
                 this.renderTerminal();
@@ -2944,7 +2945,11 @@
                 const dayEvents = this.events.filter(e => {
                     const start = e.date;
                     const end = e.endDate || e.date;
-                    return dateStr >= start && dateStr <= end;
+                    const match = dateStr >= start && dateStr <= end;
+                    if (match) {
+                        console.log(`[Calendar] Event matches ${dateStr}:`, e.title, `(start=${start}, end=${end})`);
+                    }
+                    return match;
                 });
                 if (dayEvents.length > 0) {
                     const eventsContainer = document.createElement('div');
@@ -3035,13 +3040,13 @@
                 // Preserve duration when moving multi-day events
                 let endDateOffset = null;
                 if (event.endDate && event.endDate !== event.date) {
-                    const startMs = new Date(event.date).getTime();
-                    const endMs = new Date(event.endDate).getTime();
+                    const startMs = parseLocalDate(event.date).getTime();
+                    const endMs = parseLocalDate(event.endDate).getTime();
                     endDateOffset = endMs - startMs;
                 }
                 event.date = newDate;
                 if (endDateOffset !== null) {
-                    const endD = new Date(new Date(newDate).getTime() + endDateOffset);
+                    const endD = new Date(parseLocalDate(newDate).getTime() + endDateOffset);
                     event.endDate = localDate(endD);
                 }
                 markUnsaved();
@@ -3083,8 +3088,9 @@
                 const HIDDEN_FIELDS = ['type'];
                 const READONLY_FIELDS = [];
 
-                // Build field list from the event
-                const fields = Object.keys(event);
+                // Build field list from the event, ensuring all modifiable fields are always present
+                // so users can add missing fields (e.g., add endDate to convert a single-day task to multi-day)
+                const fields = [...new Set([...MODIFIABLE_FIELDS, ...Object.keys(event)])];
 
                 // Completed toggle row at top
                 const isCompleted = event.completed === true;
@@ -3400,13 +3406,13 @@
                     // Preserve duration for multi-day events
                     let endDateOffset = null;
                     if (event.endDate && event.endDate !== event.date) {
-                        const startMs = new Date(event.date).getTime();
-                        const endMs = new Date(event.endDate).getTime();
+                        const startMs = parseLocalDate(event.date).getTime();
+                        const endMs = parseLocalDate(event.endDate).getTime();
                         endDateOffset = endMs - startMs;
                     }
                     event.date = newDate;
                     if (endDateOffset !== null) {
-                        const endD = new Date(new Date(newDate).getTime() + endDateOffset);
+                        const endD = new Date(parseLocalDate(newDate).getTime() + endDateOffset);
                         event.endDate = localDate(endD);
                     }
                     markUnsaved();

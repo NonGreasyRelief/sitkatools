@@ -1,0 +1,834 @@
+<!-- CropLabourWizard.html — Crop schedule calculator for SitkaGit suite -->
+<!-- Tool: CropLabourWizard | Purpose: Auto-generate full cultivation timeline as calendar events per lot -->
+<!-- Database Keys: "_tool_CropLabourWizard" (per-lot), "_CropLabourWizard" (top-level), "calendarEvents" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crop Labour Wizard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left { display: flex; align-items: center; gap: 24px; }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+        }
+
+        .header-right { display: flex; gap: 8px; align-items: flex-end; }
+
+        /* ---- Main Content ---- */
+        .main {
+            flex: 1;
+            max-width: 640px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* ---- Status Bar ---- */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-bar.loaded { border-color: var(--accent); }
+
+        /* ---- Card ---- */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+
+        /* ---- Form (kept for future use) ---- */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* ---- Buttons ---- */
+        .btn {
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { border-color: var(--text-secondary); }
+
+        /* ---- Footer ---- */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        /* ---- Toast notification ---- */
+        .toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 300;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ---- Form Row (side-by-side fields) ---- */
+        .form-row {
+            display: flex;
+            gap: 16px;
+        }
+
+        .form-row .form-group { flex: 1; }
+
+        /* ---- Task List ---- */
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .task-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: border-color 0.2s;
+        }
+
+        .task-item:hover { border-color: var(--accent); }
+
+        .task-emoji {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            width: 28px;
+            text-align: center;
+        }
+
+        .task-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .task-type-badge {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            background: var(--input-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .task-date-badge {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            background: var(--input-bg);
+            padding: 3px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .task-delete-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .task-item:hover .task-delete-btn { opacity: 1; }
+        .task-delete-btn:hover { background: rgba(231, 76, 60, 0.2); }
+
+        /* ---- Schedule Config Summary ---- */
+        .config-summary {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .config-summary span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .config-summary strong {
+            color: var(--accent);
+        }
+
+        /* ---- Empty State ---- */
+        .empty-state {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header (lot-focused tool — Active Lot selector) -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">👷 Crop Labour Wizard</span>
+        </div>
+        <div class="header-right">
+            <div class="form-group">
+                <label for="activeLot">Active Lot</label>
+                <select id="activeLot">
+                    <option value="">— Select a lot —</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <span id="statusText">No database loaded. Open from SitkaTools.</span>
+        </div>
+
+        <!-- Generate Schedule Form -->
+        <div class="card">
+            <h2 class="card-title">Generate Schedule</h2>
+            <form id="scheduleForm">
+                <!-- Planting Date -->
+                <div class="form-group">
+                    <label for="plantingDate">Planting Date (Day 0)</label>
+                    <input type="date" id="plantingDate" required>
+                </div>
+
+                <!-- Bloom Duration & Trim Days -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bloomDuration">Bloom Duration</label>
+                        <select id="bloomDuration">
+                            <option value="8" selected>8 weeks (56 days)</option>
+                            <option value="9">9 weeks (63 days)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="trimDays">Trim Duration (days)</label>
+                        <input type="number" id="trimDays" min="2" max="5" value="3" required>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
+                    <button type="submit" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Existing Schedule List -->
+        <div class="card" id="scheduleListCard" style="display:none;">
+            <h2 class="card-title">Crop Schedule</h2>
+            <div id="configSummary" class="config-summary" style="display:none;"></div>
+            <div id="scheduleList"></div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // =====================================================
+        // CropLabourWizard — Crop Schedule Calculator
+        // Database Keys: "_tool_CropLabourWizard" (per-lot), "_CropLabourWizard" (top-level), "calendarEvents"
+        // =====================================================
+
+        const DB = {
+            data: null,
+
+            get lots() { return this.data?.lots || {} },
+
+            ensureStructure() {
+                if (!this.data) this.data = { lots: {}, rooms: {}, calendarEvents: [] };
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                return this.data;
+            }
+        };
+
+        const $ = id => document.getElementById(id);
+
+        // ---- Task Definitions (offsets from planting date) ----
+        const TASK_DEFS = [
+            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', dayOffset: 0 },
+            { name: 'Topping', emoji: '✂️', taskType: 'topping', dayOffset: 3 },
+            { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', dayOffset: 7 },
+            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', dayOffset: 14 },
+            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', dayOffset: 15 },
+            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', dayOffset: 20 },
+            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', dayOffset: 21 },
+            // Bloom-relative tasks (offset from flip day = day 21)
+            // bloomWeek * 7 = days from flip; matches spec table computed dates
+            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', bloomWeek: 3 },   // +21 from flip → Day 42
+            { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', bloomWeek: 4 },    // +28 from flip → Day 49
+            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', bloomWeek: 6 },        // +42 from flip → Day 63
+            // Harvest-relative (bloomWeek determines harvest, then post-harvest offsets)
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', isHarvest: true },
+            { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', postHarvestOffset: 1 },
+            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', postHarvestOffset: 10 },
+            // Trim is multi-day, starts day after bucking ends
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', isMultiDay: true }
+        ];
+
+        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        DB.ensureStructure();
+
+        function notifySitkaTools() {
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'sitkaGit_db_update',
+                    payload: DB.data
+                }, '*');
+            }
+        }
+
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                }
+
+                populateLotSelector();
+                renderScheduleList();
+                updateStatusBar();
+                showToast('Database loaded from SitkaTools');
+            }
+        });
+
+        // ---- DOM References ----
+        const scheduleForm = $('scheduleForm');
+        const plantingDateInput = $('plantingDate');
+        const bloomDurationSelect = $('bloomDuration');
+        const trimDaysInput = $('trimDays');
+        const clearFormBtn = $('clearFormBtn');
+        const generateBtn = $('generateBtn');
+        const scheduleListCard = $('scheduleListCard');
+        const scheduleListEl = $('scheduleList');
+        const configSummaryEl = $('configSummary');
+        const activeLotSelect = $('activeLot');
+
+        // ---- Populate Lot Selector ----
+        function populateLotSelector() {
+            const sel = $('activeLot');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">— Select a lot —</option>';
+            for (const [id, lot] of Object.entries(DB.lots)) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                sel.appendChild(opt);
+            }
+        }
+
+        // ---- Lot Selector Change Handler ----
+        activeLotSelect.addEventListener('change', () => {
+            renderScheduleList();
+            updateFormFromStoredConfig();
+        });
+
+        // ---- Update Form from Stored Config ----
+        function updateFormFromStoredConfig() {
+            const lotId = activeLotSelect.value;
+            if (!lotId) return;
+
+            const config = DB.lots[lotId]?._tool_CropLabourWizard;
+            if (config) {
+                plantingDateInput.value = config.plantingDate || '';
+                bloomDurationSelect.value = config.bloomDuration || '8';
+                trimDaysInput.value = config.trimDays || 3;
+            }
+        }
+
+        // ---- Compute Schedule Tasks ----
+        function computeTasks(plantingDateStr, bloomWeeks, trimDays) {
+            const plantingDate = new Date(plantingDateStr + 'T00:00:00');
+            const flipDay = 21; // Fixed vegetative period
+            const bloomWeekDays = bloomWeeks * 7;
+
+            // Helper: add days to a date
+            const addDays = (date, days) => {
+                const d = new Date(date);
+                d.setDate(d.getDate() + days);
+                return d.toISOString().split('T')[0];
+            };
+
+            const tasks = [];
+
+            for (const def of TASK_DEFS) {
+                let dateStr;
+
+                if ('dayOffset' in def && def.dayOffset !== undefined) {
+                    // Fixed offset from planting
+                    dateStr = addDays(plantingDate, def.dayOffset);
+                } else if ('bloomWeek' in def) {
+                    // Offset from flip (start of bloom week N = flip + N*7 days into bloom)
+                    const daysFromFlip = def.bloomWeek * 7;
+                    dateStr = addDays(plantingDate, flipDay + daysFromFlip);
+                } else if (def.isHarvest) {
+                    // Harvest = bloom duration from flip
+                    dateStr = addDays(plantingDate, flipDay + bloomWeekDays);
+                } else if ('postHarvestOffset' in def) {
+                    // Post-harvest offset from harvest date
+                    const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
+                    const harvestD = new Date(harvestDate + 'T00:00:00');
+                    const d = new Date(harvestD);
+                    d.setDate(d.getDate() + def.postHarvestOffset);
+                    dateStr = d.toISOString().split('T')[0];
+                } else if (def.isMultiDay) {
+                    // Trim starts day after bucking ends (bucking = harvest + 10, trim = harvest + 11)
+                    const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
+                    const harvestD = new Date(harvestDate + 'T00:00:00');
+                    const d = new Date(harvestD);
+                    d.setDate(d.getDate() + 11);
+                    dateStr = d.toISOString().split('T')[0];
+                    const endDate = addDaysFromISO(dateStr, trimDays - 1);
+                    tasks.push({ ...def, date: dateStr, endDate: endDate });
+                    continue;
+                }
+
+                if (dateStr) {
+                    tasks.push({ ...def, date: dateStr });
+                }
+            }
+
+            return tasks;
+        }
+
+        function addDaysFromISO(dateStr, days) {
+            const d = new Date(dateStr + 'T00:00:00');
+            d.setDate(d.getDate() + days);
+            return d.toISOString().split('T')[0];
+        }
+
+        // ---- Reconcile: Remove existing CropLabourWizard events for a lot ----
+        function reconcileLotSchedule(lotId) {
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
+                if (ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId) {
+                    return false; // Remove stale events for this lot
+                }
+                return true;
+            });
+        }
+
+        // ---- Generate Schedule ----
+        scheduleForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const lotId = activeLotSelect.value;
+            if (!lotId) {
+                alert('Please select a lot first.');
+                return;
+            }
+
+            const plantingDate = plantingDateInput.value;
+            const bloomWeeks = parseInt(bloomDurationSelect.value);
+            const trimDays = parseInt(trimDaysInput.value);
+
+            if (!plantingDate) {
+                alert('Please set a planting date.');
+                return;
+            }
+
+            DB.ensureStructure();
+
+            // Reconcile: remove existing schedule for this lot
+            reconcileLotSchedule(lotId);
+
+            // Compute all tasks
+            const tasks = computeTasks(plantingDate, bloomWeeks, trimDays);
+
+            // Build calendar events
+            const newEvents = [];
+            for (const task of tasks) {
+                const event = {
+                    date: task.date,
+                    title: `${task.emoji} ${task.name} — ${lotId}`,
+                    sourceTool: 'CropLabourWizard',
+                    lotId: lotId,
+                    taskType: task.taskType
+                };
+
+                // Multi-day events get endDate
+                if (task.endDate) {
+                    event.endDate = task.endDate;
+                }
+
+                newEvents.push(event);
+            }
+
+            // Append to calendarEvents
+            DB.data.calendarEvents.push(...newEvents);
+
+            // Store config per-lot
+            DB.data.lots[lotId]._tool_CropLabourWizard = {
+                plantingDate: plantingDate,
+                bloomDuration: bloomWeeks,
+                trimDays: trimDays,
+                taskCount: tasks.length,
+                generatedAt: new Date().toISOString()
+            };
+
+            // Update top-level metadata
+            if (!DB.data._CropLabourWizard) {
+                DB.data._CropLabourWizard = { generations: [] };
+            }
+            DB.data._CropLabourWizard.generations.push({
+                lotId: lotId,
+                plantingDate: plantingDate,
+                bloomDuration: bloomWeeks,
+                trimDays: trimDays,
+                taskCount: tasks.length,
+                generatedAt: new Date().toISOString()
+            });
+
+            // Re-render
+            renderScheduleList();
+            updateStatusBar();
+
+            // Notify SitkaTools via postMessage
+            notifySitkaTools();
+
+            showToast(`Schedule generated — ${tasks.length} tasks for ${lotId}`);
+        });
+
+        // ---- Clear Form ----
+        clearFormBtn.addEventListener('click', () => {
+            scheduleForm.reset();
+            plantingDateInput.value = new Date().toISOString().split('T')[0];
+            bloomDurationSelect.value = '8';
+            trimDaysInput.value = 3;
+        });
+
+        // ---- Render Schedule List ----
+        function renderScheduleList() {
+            const lotId = activeLotSelect.value;
+
+            if (!lotId) {
+                scheduleListCard.style.display = 'none';
+                return;
+            }
+
+            // Get stored config
+            const config = DB.lots[lotId]?._tool_CropLabourWizard;
+
+            if (!config) {
+                scheduleListCard.style.display = 'none';
+                return;
+            }
+
+            scheduleListCard.style.display = 'block';
+
+            // Show config summary
+            configSummaryEl.style.display = 'flex';
+            configSummaryEl.innerHTML = `
+                <span>📅 Planting: <strong>${config.plantingDate}</strong></span>
+                <span>🌸 Bloom: <strong>${config.bloomDuration} weeks</strong></span>
+                <span>✂️ Trim: <strong>${config.trimDays} days</strong></span>
+                <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
+            `;
+
+            // Get calendar events for this lot from CropLabourWizard
+            const lotEvents = (DB.data.calendarEvents || []).filter(
+                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
+            ).sort((a, b) => a.date.localeCompare(b.date));
+
+            if (lotEvents.length === 0) {
+                scheduleListEl.innerHTML = '<div class="empty-state">No tasks found. Schedule may have been cleared.</div>';
+                return;
+            }
+
+            scheduleListEl.innerHTML = '';
+            const listWrapper = document.createElement('div');
+            listWrapper.className = 'task-list';
+
+            lotEvents.forEach((ev, idx) => {
+                const item = document.createElement('div');
+                item.className = 'task-item';
+
+                const displayDate = ev.endDate && ev.endDate !== ev.date
+                    ? `${ev.date} → ${ev.endDate}`
+                    : ev.date;
+
+                // Extract emoji from title
+                const emojiMatch = ev.title.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?)\s*/su);
+                const emoji = emojiMatch ? emojiMatch[1] : '📋';
+                const nameWithoutEmoji = ev.title.replace(emoji + ' ', '');
+
+                item.innerHTML = `
+                    <span class="task-emoji">${emoji}</span>
+                    <div class="task-info">
+                        <div class="task-name">${escapeHtml(nameWithoutEmoji)}</div>
+                        <span class="task-type-badge">${escapeHtml(ev.taskType || '')}</span>
+                    </div>
+                    <span class="task-date-badge">${displayDate}</span>
+                    <button class="task-delete-btn" title="Delete entire schedule for this lot">✕</button>
+                `;
+
+                listWrapper.appendChild(item);
+            });
+
+            scheduleListEl.appendChild(listWrapper);
+
+            // Attach delete handlers (deletes ENTIRE schedule for the lot)
+            scheduleListEl.querySelectorAll('.task-delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    deleteLotSchedule(lotId);
+                });
+            });
+        }
+
+        // ---- Delete Lot Schedule ----
+        function deleteLotSchedule(lotId) {
+            const taskCount = getLotTaskCount(lotId);
+            if (!confirm(`Delete the entire crop schedule for ${lotId}?\nThis will remove all ${taskCount} tasks from the calendar.`)) return;
+
+            DB.ensureStructure();
+
+            // Remove all CropLabourWizard events for this lot
+            reconcileLotSchedule(lotId);
+
+            // Clear per-lot config
+            if (DB.data.lots[lotId]?._tool_CropLabourWizard) {
+                delete DB.data.lots[lotId]._tool_CropLabourWizard;
+            }
+
+            // Remove generation record
+            if (DB.data._CropLabourWizard?.generations) {
+                DB.data._CropLabourWizard.generations = DB.data._CropLabourWizard.generations.filter(
+                    g => g.lotId !== lotId
+                );
+            }
+
+            // Notify SitkaTools via postMessage
+            notifySitkaTools();
+
+            renderScheduleList();
+            updateStatusBar();
+            showToast(`Schedule deleted for ${lotId}`);
+        }
+
+        function getLotTaskCount(lotId) {
+            return (DB.data.calendarEvents || []).filter(
+                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
+            ).length;
+        }
+
+        // ---- Update Status Bar ----
+        function updateStatusBar() {
+            const statusBar = $('statusBar');
+            const statusText = $('statusText');
+            if (!statusBar || !statusText) return;
+
+            if (!DB.data) {
+                statusBar.className = 'status-bar';
+                statusText.textContent = 'No database loaded. Open from SitkaTools.';
+                return;
+            }
+
+            statusBar.className = 'status-bar loaded';
+            const lotCount = Object.keys(DB.lots).length;
+            const scheduledLots = Object.values(DB.lots).filter(l => l._tool_CropLabourWizard).length;
+            statusText.textContent = `Database loaded — ${lotCount} lots, ${scheduledLots} with schedules`;
+        }
+
+        // ---- Close Tool ----
+        $('closeToolBtn').addEventListener('click', () => window.close());
+
+        // ---- Toast ----
+        function showToast(msg) {
+            const toast = $('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+
+        // ---- Utility ----
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---- Start ----
+        function init() {
+            // Set default planting date to today
+            plantingDateInput.value = new Date().toISOString().split('T')[0];
+
+            populateLotSelector();
+            renderScheduleList();
+            updateStatusBar();
+        }
+        init();
+    </script>
+</body>
+</html>

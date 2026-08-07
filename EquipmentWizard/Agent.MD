@@ -2,7 +2,67 @@
 
 ## What This Tool Does
 
-EquipmentWizard is an equipment maintenance tracking tool for licensed cannabis cultivation. It helps growers schedule, log, and track maintenance tasks for grow room equipment across their cultivation lots.
+EquipmentWizard is a **cyclical equipment maintenance scheduler** for licensed cannabis cultivation facilities. It automatically populates the shared calendar with recurring maintenance events for grow-room equipment, infrastructure, and systems on a per-room basis.
+
+### Intended Use
+
+- **Track equipment per room:** Assign equipment items (dehumidifiers, air conditioners, plumbing systems, irrigation layouts, drip lines, tables, etc.) to specific grow rooms. Each room maintains its own independent equipment inventory.
+- **Define sub-tasks with intervals:** Under each equipment item, create maintenance sub-tasks (e.g., "replace filter", "clean drain pan", "tighten connections") with a configurable recurrence interval — measured in either **days** or **months**.
+- **Auto-populate the calendar:** When a schedule is generated (or regenerated), the tool computes every occurrence of each sub-task over a **12-month forward window** from today and writes them as individual calendar events. This gives the grower full visibility into upcoming maintenance demand.
+- **Retroactive scheduling:** When adding equipment mid-cycle, the user can set a "start date" in the past (retroactively). The tool will back-fill any occurrences from that start date up to today, then continue projecting forward 12 months. This ensures the schedule reflects the true maintenance cadence even if tracking starts late.
+- **Regenerate on demand:** The user can regenerate the schedule at any time — the tool purges all existing EquipmentWizard events for the selected room and recomputes from scratch. This keeps the calendar clean when intervals change or equipment is removed.
+
+### Equipment & Maintenance Model
+
+The data model has three levels:
+
+1. **Room** — a grow room from `DB.rooms` (e.g., "Flower Room A", "Clone Room B"). Equipment is scoped to rooms, not lots.
+2. **Equipment** — an item or system installed in a room. Each equipment entry has:
+   - A name (free text) or a type selected from a dropdown of common types
+   - A unique ID for tracking
+   - An optional "installed date" for reference
+3. **Maintenance Sub-Task** — a recurring task under an equipment item. Each sub-task has:
+   - A name (e.g., "Replace Filter", "Clean Drain Pan")
+   - An interval value (number) and unit (`days` or `months`)
+   - A start date (the first occurrence; can be in the past for retroactive scheduling)
+   - An emoji icon for calendar display
+
+### Common Equipment Types (Dropdown)
+
+The tool provides a dropdown of pre-defined equipment types for quick selection, but also allows free-text entry for custom types:
+
+| Category | Examples |
+|----------|----------|
+| **Dehumidifier** | Dehumidifier — Filter Replacement, Dehumidifier — Drain Cleaning, Dehumidifier — Annual Performance Measurement, Dehumidifier — Coil Cleaning |
+| **Air Conditioner** | AC — Filter Replacement, AC — Condenser Cleaning, AC — Drain Line Cleaning, AC — Refrigerant Check |
+| **Plumbing** | Plumbing — Tighten Connections, Plumbing — Leak Inspection, Plumbing — Valve Service |
+| **Irrigation** | Irrigation — Dripper Replacement, Irrigation — Layout Inspection, Irrigation — Line Flush, Irrigation — Timer Calibration |
+| **Infrastructure** | Table — Leak Check, Table — Level Adjustment, HVAC — General Inspection |
+
+### Calendar Events Generated
+
+EquipmentWizard appends events to the shared `calendarEvents` array using `"sourceTool": "EquipmentWizard"`. Each event has:
+
+- **Title:** Emoji + sub-task name + equipment name + room name (e.g., `"🔧 Replace Filter — Dehumidifier #1 — Flower Room A"`)
+- **Date:** The computed date for this maintenance occurrence (`YYYY-MM-DD`)
+- **SourceTool:** `"EquipmentWizard"`
+- **RoomId:** Always set to the room ID — every event is scoped to a room
+- **EquipmentId:** The ID of the parent equipment item, used during reconciliation
+- **TaskType:** `"equipment_maintenance"` — used during reconciliation to detect and replace stale schedules
+
+### Schedule Reconciliation
+
+When a user generates (or regenerates) a schedule for a room, the tool first **removes all existing EquipmentWizard events** for that room from `calendarEvents` before inserting the new batch. This prevents duplicate or stale events when intervals change, equipment is removed, or the 12-month window rolls forward. The reconciliation logic matches on `sourceTool === 'EquipmentWizard'` AND `roomId === selectedRoom`.
+
+### Scheduling Algorithm
+
+For each sub-task in a room:
+1. Start from the sub-task's `startDate`
+2. Compute occurrences by adding the interval (days or months) repeatedly
+3. Collect all occurrences that fall within `[startDate, today + 12 months]`
+4. Each occurrence becomes a calendar event
+
+Month-based intervals use calendar-month arithmetic (e.g., Jan 15 + 3 months = Apr 15). Day-based intervals use simple day addition.
 
 ## Relationship to SitkaTools
 
