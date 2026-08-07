@@ -354,8 +354,14 @@
 
                 <!-- Date -->
                 <div class="form-group">
-                    <label for="eventDate">Date</label>
+                    <label for="eventDate">Start Date</label>
                     <input type="date" id="eventDate" required>
+                </div>
+
+                <!-- End Date (optional for multi-day events) -->
+                <div class="form-group">
+                    <label for="eventEndDate">End Date <span style="color: var(--text-secondary); font-weight: 400;">(optional, for multi-day events)</span></label>
+                    <input type="date" id="eventEndDate">
                 </div>
 
                 <!-- Actions -->
@@ -478,6 +484,7 @@
                             id: id,
                             text: text,
                             date: ev.date,
+                            endDate: ev.endDate || null,
                             emoji: emoji,
                             createdAt: new Date().toISOString()
                         });
@@ -494,6 +501,7 @@
         const eventForm = $('eventForm');
         const eventTextInput = $('eventText');
         const eventDateInput = $('eventDate');
+        const eventEndDateInput = $('eventEndDate');
         const clearFormBtn = $('clearFormBtn');
         const eventListCard = $('eventListCard');
         const eventListEl = $('eventList');
@@ -522,9 +530,16 @@
             const emoji = getSelectedEmoji();
             const text = eventTextInput.value.trim();
             const date = eventDateInput.value;
+            const endDate = eventEndDateInput.value || null;
 
             if (!text || !date) {
                 alert('Please fill in all fields.');
+                return;
+            }
+
+            // Validate end date is after start date if provided
+            if (endDate && endDate < date) {
+                alert('End date must be on or after the start date.');
                 return;
             }
 
@@ -536,6 +551,11 @@
                 sourceTool: 'GeneralEvent'
             };
 
+            // Only set endDate if it's a multi-day event (different from start)
+            if (endDate && endDate !== date) {
+                newEvent.endDate = endDate;
+            }
+
             // Append to calendarEvents
             DB.data.calendarEvents.push(newEvent);
 
@@ -545,6 +565,7 @@
                 id: date + '|' + text,
                 text: text,
                 date: date,
+                endDate: endDate,
                 emoji: emoji,
                 createdAt: new Date().toISOString()
             });
@@ -560,7 +581,7 @@
             // Notify SitkaTools via postMessage
             notifySitkaTools();
 
-            showToast('Event added');
+            showToast(endDate && endDate !== date ? 'Multi-day event added' : 'Event added');
         });
 
         // ---- Clear Form ----
@@ -569,6 +590,14 @@
             eventDateInput.value = new Date().toISOString().split('T')[0];
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
             document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
+        });
+
+        // Auto-set minimum end date to start date when it changes
+        eventDateInput.addEventListener('change', () => {
+            if (eventEndDateInput.value && eventEndDateInput.value < eventDateInput.value) {
+                eventEndDateInput.value = '';
+            }
+            eventEndDateInput.min = eventDateInput.value;
         });
 
         // ---- Render Event List (from _GeneralEvent log) ----
@@ -591,8 +620,12 @@
                 item.className = 'event-item';
                 item.dataset.id = entry.id;
 
+                const displayDate = entry.endDate && entry.endDate !== entry.date
+                    ? `${entry.date} → ${entry.endDate}`
+                    : entry.date;
+
                 item.innerHTML = `
-                    <span class="event-date-badge">${entry.date}</span>
+                    <span class="event-date-badge">${displayDate}</span>
                     <span class="event-text">${escapeHtml(entry.emoji + ' ' + entry.text)}</span>
                     <button class="event-delete-btn" title="Remove event">✕</button>
                 `;

@@ -60,6 +60,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
     {
       "lotId": "string",
       "date": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD | null",
       "title": "string",
       "sourceTool": "string"
     }
@@ -71,6 +72,18 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
 - Tools only read/write their own keys — they do not modify other tools' data.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
+
+#### Multi-Day Events
+
+Calendar events support an optional `endDate` field for events that span consecutive days:
+
+- **`date`** (required): The start date of the event (`YYYY-MM-DD`).
+- **`endDate`** (optional): The end date of the event (`YYYY-MM-DD`). If omitted or equal to `date`, the event is a single-day event.
+- **Calendar rendering:** The calendar grid displays the event on every day within the `[date, endDate]` range (inclusive). Multi-day events receive visual styling: the start day has a left border and bold text, the end day has a right border, and intermediate days have no rounded corners.
+- **Drag-and-drop:** When a multi-day event is dragged to a new date, the duration (offset between `date` and `endDate`) is preserved.
+- **Event panel:** The event detail panel exposes both `date` and `endDate` as modifiable date inputs.
+- **Terminal view:** Multi-day events display as `start → end` in the terminal list.
+- **Subtools:** When creating a multi-day event, only set `endDate` if it differs from `date`. Tools like GeneralEvent provide an optional "End Date" input for this purpose.
 
 ### Cross-Window Database Workflow — postMessage Convention
 
