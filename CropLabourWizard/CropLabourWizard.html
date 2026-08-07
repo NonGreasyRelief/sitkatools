@@ -318,6 +318,131 @@
             color: var(--text-secondary);
             font-size: 0.9rem;
         }
+
+        /* ---- Form Actions Row ---- */
+        .form-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* ---- Preview Task List ---- */
+        .preview-task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .preview-task-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: border-color 0.2s;
+        }
+
+        .preview-task-item:hover { border-color: var(--accent); }
+
+        .preview-task-emoji {
+            font-size: 1.1rem;
+            flex-shrink: 0;
+            width: 24px;
+            text-align: center;
+        }
+
+        .preview-task-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .preview-task-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .preview-task-reference {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-top: 1px;
+        }
+
+        .preview-task-reference strong {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* ---- Offset input group ---- */
+        .preview-offset-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .preview-offset-group label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .preview-offset-group input[type="number"] {
+            width: 52px;
+            padding: 4px 6px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.82rem;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+
+        .preview-offset-group input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .preview-offset-group input[type="number"]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Remove number spinners */
+        .preview-offset-group input[type="number"]::-webkit-inner-spinner,
+        .preview-offset-group input[type="number"]::-webkit-outer-spinner {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .preview-offset-group input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        /* ---- Computed date badge ---- */
+        .preview-computed-date {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            background: var(--input-bg);
+            padding: 3px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-width: 90px;
+            text-align: center;
+        }
+
+        .preview-computed-date.multi {
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
     </style>
 </head>
 <body>
@@ -343,18 +468,15 @@
             <span id="statusText">No database loaded. Open from SitkaTools.</span>
         </div>
 
-        <!-- Generate Schedule Form -->
+        <!-- Config Form -->
         <div class="card">
-            <h2 class="card-title">Generate Schedule</h2>
+            <h2 class="card-title">Schedule Config</h2>
             <form id="scheduleForm">
-                <!-- Planting Date -->
-                <div class="form-group">
-                    <label for="plantingDate">Planting Date (Day 0)</label>
-                    <input type="date" id="plantingDate" required>
-                </div>
-
-                <!-- Bloom Duration & Trim Days -->
                 <div class="form-row">
+                    <div class="form-group">
+                        <label for="plantingDate">Planting Date (Day 0)</label>
+                        <input type="date" id="plantingDate" required>
+                    </div>
                     <div class="form-group">
                         <label for="bloomDuration">Bloom Duration</label>
                         <select id="bloomDuration">
@@ -362,18 +484,21 @@
                             <option value="9">9 weeks (63 days)</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="trimDays">Trim Duration (days)</label>
-                        <input type="number" id="trimDays" min="2" max="5" value="3" required>
-                    </div>
-                </div>
-
-                <!-- Actions -->
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
-                    <button type="submit" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
                 </div>
             </form>
+        </div>
+
+        <!-- Preview / Editable Task List (always visible) -->
+        <div class="card" id="previewCard">
+            <h2 class="card-title">Task Schedule</h2>
+            <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:14px;">
+                Adjust day offsets below. Dates update automatically.
+            </p>
+            <div id="previewTaskList"></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
+                <button type="submit" form="scheduleForm" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
+            </div>
         </div>
 
         <!-- Existing Schedule List -->
@@ -414,26 +539,29 @@
 
         const $ = id => document.getElementById(id);
 
-        // ---- Task Definitions (offsets from planting date) ----
+        // ---- Task Definitions (reference + default offset) ----
+        // reference: 'planting' | 'flip' | 'harvest'
+        // defaultOffset: days from the reference point
+        // isBloomDuration: harvest follows bloom duration select (56 or 63 days from flip)
         const TASK_DEFS = [
-            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', dayOffset: 0 },
-            { name: 'Topping', emoji: '✂️', taskType: 'topping', dayOffset: 3 },
-            { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', dayOffset: 7 },
-            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', dayOffset: 14 },
-            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', dayOffset: 15 },
-            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', dayOffset: 20 },
-            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', dayOffset: 21 },
-            // Bloom-relative tasks (offset from flip day = day 21)
-            // bloomWeek * 7 = days from flip; matches spec table computed dates
-            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', bloomWeek: 3 },   // +21 from flip → Day 42
-            { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', bloomWeek: 4 },    // +28 from flip → Day 49
-            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', bloomWeek: 6 },        // +42 from flip → Day 63
-            // Harvest-relative (bloomWeek determines harvest, then post-harvest offsets)
-            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', isHarvest: true },
-            { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', postHarvestOffset: 1 },
-            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', postHarvestOffset: 10 },
-            // Trim is multi-day, starts day after bucking ends
-            { name: 'Trim', emoji: '✂️', taskType: 'trim', isMultiDay: true }
+            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'planting', defaultOffset: 0 },
+            { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
+            { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
+            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
+            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
+            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 21 },
+            // Bloom-relative tasks (offset from flip)
+            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
+            { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 28 },
+            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42 },
+            // Harvest — follows bloom duration (56 or 63 days from flip)
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', isBloomDuration: true },
+            // Post-harvest tasks (offset from harvest)
+            { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
+            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
+            // Trim is multi-day (7 days), offset from harvest
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true }
         ];
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
@@ -457,10 +585,21 @@
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
                 }
 
+                buildDefaultOffsets();
                 populateLotSelector();
                 renderScheduleList();
                 updateStatusBar();
+                refreshPreview();
                 showToast('Database loaded from SitkaTools');
+            }
+
+            // Handle live DB updates (e.g., new lots created in SitkaTools)
+            // Only refresh the lot selector to avoid disrupting active editing
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                populateLotSelector();
+                updateStatusBar();
             }
         });
 
@@ -468,13 +607,19 @@
         const scheduleForm = $('scheduleForm');
         const plantingDateInput = $('plantingDate');
         const bloomDurationSelect = $('bloomDuration');
-        const trimDaysInput = $('trimDays');
         const clearFormBtn = $('clearFormBtn');
         const generateBtn = $('generateBtn');
         const scheduleListCard = $('scheduleListCard');
         const scheduleListEl = $('scheduleList');
         const configSummaryEl = $('configSummary');
         const activeLotSelect = $('activeLot');
+        const previewTaskList = $('previewTaskList');
+
+        // Trim is fixed at 7 days
+        const TRIM_DAYS = 7;
+
+        // ---- Preview State: array of { def, offset } — offset is user-editable days from reference ----
+        let taskOffsets = [];
 
         // ---- Populate Lot Selector ----
         function populateLotSelector() {
@@ -489,10 +634,139 @@
             }
         }
 
+        // ---- Build task offsets from defaults (called on init / lot change) ----
+        function buildDefaultOffsets() {
+            taskOffsets = TASK_DEFS.map(def => ({
+                def,
+                offset: def.defaultOffset ?? 0
+            }));
+        }
+
+        // ---- Reference date labels ----
+        const REF_LABELS = {
+            planting: 'Planting',
+            flip: 'Flip to Flower',
+            harvest: 'Harvest'
+        };
+
+        // ---- Compute anchor dates (flip day, harvest day) from config ----
+        function computeAnchors(plantingDateStr, bloomWeeks) {
+            const plantingDate = new Date(plantingDateStr + 'T00:00:00');
+            const flipDay = 21;
+            const bloomWeekDays = bloomWeeks * 7;
+
+            const addDays = (date, days) => {
+                const d = new Date(date);
+                d.setDate(d.getDate() + days);
+                return d.toISOString().split('T')[0];
+            };
+
+            const flipDate = addDays(plantingDate, flipDay);
+            const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
+
+            return { planting: plantingDateStr, flip: flipDate, harvest: harvestDate };
+        }
+
+        // ---- Compute a task's date from its reference anchor + offset ----
+        function computeTaskDate(anchorDateStr, offset) {
+            const d = new Date(anchorDateStr + 'T00:00:00');
+            d.setDate(d.getDate() + offset);
+            return d.toISOString().split('T')[0];
+        }
+
+        // ---- Re-render preview whenever config changes ----
+        function refreshPreview() {
+            const plantingDate = plantingDateInput.value;
+            const bloomWeeks = parseInt(bloomDurationSelect.value);
+
+            if (!plantingDate) {
+                previewTaskList.innerHTML = '<div class="empty-state">Set a planting date to see the schedule.</div>';
+                return;
+            }
+
+            const anchors = computeAnchors(plantingDate, bloomWeeks);
+
+            previewTaskList.innerHTML = '';
+            const listWrapper = document.createElement('div');
+            listWrapper.className = 'preview-task-list';
+
+            taskOffsets.forEach((entry, idx) => {
+                const def = entry.def;
+                const ref = def.reference;
+                const label = REF_LABELS[ref] || ref;
+
+                // For bloom-duration tasks (harvest), offset is determined by bloom select
+                const effectiveOffset = def.isBloomDuration ? (parseInt(bloomDurationSelect.value) * 7) : entry.offset;
+
+                // Compute date from anchor + offset
+                const anchorDate = anchors[ref];
+                let startDate = computeTaskDate(anchorDate, effectiveOffset);
+                let endDate = null;
+
+                if (def.isMultiDay) {
+                    const d = new Date(startDate + 'T00:00:00');
+                    d.setDate(d.getDate() + TRIM_DAYS - 1);
+                    endDate = d.toISOString().split('T')[0];
+                }
+
+                // Build display date string
+                const displayDate = endDate ? `${startDate} → ${endDate}` : startDate;
+
+                const item = document.createElement('div');
+                item.className = 'preview-task-item';
+
+                const offsetInputId = `offset_${idx}`;
+
+                // Offset input: editable unless it's bloom-duration controlled (harvest)
+                let offsetGroupHtml = '';
+                if (def.isBloomDuration) {
+                    offsetGroupHtml = `
+                        <div class="preview-offset-group">
+                            <label>Bloom</label>
+                            <input type="number" value="${effectiveOffset}" disabled title="Set by Bloom Duration" />
+                        </div>
+                    `;
+                } else {
+                    offsetGroupHtml = `
+                        <div class="preview-offset-group">
+                            <label for="${offsetInputId}">Days:</label>
+                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="0" max="200" data-idx="${idx}" />
+                        </div>
+                    `;
+                }
+
+                item.innerHTML = `
+                    <span class="preview-task-emoji">${def.emoji}</span>
+                    <div class="preview-task-info">
+                        <div class="preview-task-name">${escapeHtml(def.name)}</div>
+                        <div class="preview-task-reference"><strong>+${effectiveOffset}d</strong> from ${label}</div>
+                    </div>
+                    ${offsetGroupHtml}
+                    <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}">${displayDate}</span>
+                `;
+
+                listWrapper.appendChild(item);
+            });
+
+            previewTaskList.appendChild(listWrapper);
+
+            // Attach live-update listeners to all offset inputs
+            listWrapper.querySelectorAll('input[type="number"]').forEach(input => {
+                input.addEventListener('input', () => {
+                    const i = parseInt(input.dataset.idx);
+                    taskOffsets[i].offset = parseInt(input.value) || 0;
+                    // Re-render to update computed dates and labels
+                    refreshPreview();
+                });
+            });
+        }
+
         // ---- Lot Selector Change Handler ----
         activeLotSelect.addEventListener('change', () => {
             renderScheduleList();
             updateFormFromStoredConfig();
+            buildDefaultOffsets();
+            refreshPreview();
         });
 
         // ---- Update Form from Stored Config ----
@@ -504,70 +778,12 @@
             if (config) {
                 plantingDateInput.value = config.plantingDate || '';
                 bloomDurationSelect.value = config.bloomDuration || '8';
-                trimDaysInput.value = config.trimDays || 3;
             }
         }
 
-        // ---- Compute Schedule Tasks ----
-        function computeTasks(plantingDateStr, bloomWeeks, trimDays) {
-            const plantingDate = new Date(plantingDateStr + 'T00:00:00');
-            const flipDay = 21; // Fixed vegetative period
-            const bloomWeekDays = bloomWeeks * 7;
-
-            // Helper: add days to a date
-            const addDays = (date, days) => {
-                const d = new Date(date);
-                d.setDate(d.getDate() + days);
-                return d.toISOString().split('T')[0];
-            };
-
-            const tasks = [];
-
-            for (const def of TASK_DEFS) {
-                let dateStr;
-
-                if ('dayOffset' in def && def.dayOffset !== undefined) {
-                    // Fixed offset from planting
-                    dateStr = addDays(plantingDate, def.dayOffset);
-                } else if ('bloomWeek' in def) {
-                    // Offset from flip (start of bloom week N = flip + N*7 days into bloom)
-                    const daysFromFlip = def.bloomWeek * 7;
-                    dateStr = addDays(plantingDate, flipDay + daysFromFlip);
-                } else if (def.isHarvest) {
-                    // Harvest = bloom duration from flip
-                    dateStr = addDays(plantingDate, flipDay + bloomWeekDays);
-                } else if ('postHarvestOffset' in def) {
-                    // Post-harvest offset from harvest date
-                    const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
-                    const harvestD = new Date(harvestDate + 'T00:00:00');
-                    const d = new Date(harvestD);
-                    d.setDate(d.getDate() + def.postHarvestOffset);
-                    dateStr = d.toISOString().split('T')[0];
-                } else if (def.isMultiDay) {
-                    // Trim starts day after bucking ends (bucking = harvest + 10, trim = harvest + 11)
-                    const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
-                    const harvestD = new Date(harvestDate + 'T00:00:00');
-                    const d = new Date(harvestD);
-                    d.setDate(d.getDate() + 11);
-                    dateStr = d.toISOString().split('T')[0];
-                    const endDate = addDaysFromISO(dateStr, trimDays - 1);
-                    tasks.push({ ...def, date: dateStr, endDate: endDate });
-                    continue;
-                }
-
-                if (dateStr) {
-                    tasks.push({ ...def, date: dateStr });
-                }
-            }
-
-            return tasks;
-        }
-
-        function addDaysFromISO(dateStr, days) {
-            const d = new Date(dateStr + 'T00:00:00');
-            d.setDate(d.getDate() + days);
-            return d.toISOString().split('T')[0];
-        }
+        // ---- Auto-refresh preview when planting date or bloom duration changes ----
+        plantingDateInput.addEventListener('input', () => refreshPreview());
+        bloomDurationSelect.addEventListener('change', () => refreshPreview());
 
         // ---- Reconcile: Remove existing CropLabourWizard events for a lot ----
         function reconcileLotSchedule(lotId) {
@@ -579,7 +795,7 @@
             });
         }
 
-        // ---- Generate Schedule ----
+        // ---- Generate Schedule (uses current offsets to compute final dates) ----
         scheduleForm.addEventListener('submit', (e) => {
             e.preventDefault();
 
@@ -591,7 +807,6 @@
 
             const plantingDate = plantingDateInput.value;
             const bloomWeeks = parseInt(bloomDurationSelect.value);
-            const trimDays = parseInt(trimDaysInput.value);
 
             if (!plantingDate) {
                 alert('Please set a planting date.');
@@ -603,23 +818,29 @@
             // Reconcile: remove existing schedule for this lot
             reconcileLotSchedule(lotId);
 
-            // Compute all tasks
-            const tasks = computeTasks(plantingDate, bloomWeeks, trimDays);
+            const anchors = computeAnchors(plantingDate, bloomWeeks);
 
-            // Build calendar events
+            // Build calendar events from current offsets
             const newEvents = [];
-            for (const task of tasks) {
+            for (const entry of taskOffsets) {
+                const def = entry.def;
+                const anchorDate = anchors[def.reference];
+                const effectiveOffset = def.isBloomDuration ? (bloomWeeks * 7) : entry.offset;
+                const startDate = computeTaskDate(anchorDate, effectiveOffset);
+
                 const event = {
-                    date: task.date,
-                    title: `${task.emoji} ${task.name} — ${lotId}`,
+                    date: startDate,
+                    title: `${def.emoji} ${def.name} — ${lotId}`,
                     sourceTool: 'CropLabourWizard',
                     lotId: lotId,
-                    taskType: task.taskType
+                    taskType: def.taskType
                 };
 
                 // Multi-day events get endDate
-                if (task.endDate) {
-                    event.endDate = task.endDate;
+                if (def.isMultiDay) {
+                    const d = new Date(startDate + 'T00:00:00');
+                    d.setDate(d.getDate() + TRIM_DAYS - 1);
+                    event.endDate = d.toISOString().split('T')[0];
                 }
 
                 newEvents.push(event);
@@ -632,8 +853,8 @@
             DB.data.lots[lotId]._tool_CropLabourWizard = {
                 plantingDate: plantingDate,
                 bloomDuration: bloomWeeks,
-                trimDays: trimDays,
-                taskCount: tasks.length,
+                trimDays: TRIM_DAYS,
+                taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
             };
 
@@ -645,8 +866,8 @@
                 lotId: lotId,
                 plantingDate: plantingDate,
                 bloomDuration: bloomWeeks,
-                trimDays: trimDays,
-                taskCount: tasks.length,
+                trimDays: TRIM_DAYS,
+                taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
             });
 
@@ -657,7 +878,7 @@
             // Notify SitkaTools via postMessage
             notifySitkaTools();
 
-            showToast(`Schedule generated — ${tasks.length} tasks for ${lotId}`);
+            showToast(`Schedule generated — ${newEvents.length} tasks for ${lotId}`);
         });
 
         // ---- Clear Form ----
@@ -665,7 +886,8 @@
             scheduleForm.reset();
             plantingDateInput.value = new Date().toISOString().split('T')[0];
             bloomDurationSelect.value = '8';
-            trimDaysInput.value = 3;
+            buildDefaultOffsets();
+            refreshPreview();
         });
 
         // ---- Render Schedule List ----
@@ -824,9 +1046,11 @@
             // Set default planting date to today
             plantingDateInput.value = new Date().toISOString().split('T')[0];
 
+            buildDefaultOffsets();
             populateLotSelector();
             renderScheduleList();
             updateStatusBar();
+            refreshPreview();
         }
         init();
     </script>

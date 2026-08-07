@@ -7,8 +7,9 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 ### Intended Use
 
 - **Auto-schedule a full crop cycle:** Select a lot, enter the planting date, and the tool calculates every downstream task — transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, and room clean.
+- **Preview & edit before committing:** Click "Preview Schedule" to see all computed tasks with their default dates, then adjust any task's date before generating the final schedule.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
-- **Adjust per-lot variables:** Bloom duration (8 or 9 weeks) and trim length are configurable per lot since they vary by strain and yield.
+- **Adjust per-lot variables:** Bloom duration (8 or 9 weeks) is configurable per lot since it varies by strain. Trim is fixed at 7 days.
 
 ### Crop Schedule — Task Offsets from Planting Date
 
@@ -24,12 +25,12 @@ All dates are computed from the user-provided **planting date** (Day 0). The veg
 | 6 | Flip to Flower | 🌸 | +7 days from transplanting (= +21 days from planting) | Day 21 | No |
 | 7 | Two-Node / Lollipop Prune | 🔪 | 1 day before flip to flower | Day 20 | No |
 | 8 | Early Flower Leaf Pick | 🍃 | 3 weeks into bloom (= +21 days from flip) | Day 42 | No |
-| 9 | Cutting Clones to Replace Lot | 🌿 | Start of week 6 of bloom (= +28 days from flip) | Day 49 | No |
+| 9 | Cutting Clones to Replace Lot | 🌿 | Start of week 6 of bloom (= +42 days from flip) | Day 63 | No |
 | 10 | Late Flower Leaf Pick | 🍂 | 6 weeks into bloom (= +42 days from flip) | Day 63 | No |
 | 11 | Harvest | 🌾 | User-selectable: 8 or 9 weeks into bloom (= +56 or +63 days from flip) | Day 77 or 84 | No |
 | 12 | Grow-Room Clean | 🧹 | Day after harvest starts | Harvest + 1 day | No |
 | 13 | Dry Room Take-Down / Bucking | 📦 | 10 days after harvest start date | Harvest + 10 days | No |
-| 14 | Trim | ✂️ | Starts the day after bucking ends; duration set by user (range: 2–5 days, default 3) | Bucking + 1 day → +N days | **Yes** (multi-day event) |
+| 14 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) |
 
 ### Calendar Events Generated
 
@@ -58,7 +59,7 @@ CropLabourWizard reads and writes its own keys within the shared database, follo
 ```
 _tool_CropLabourWizard: { ... }
 ```
-Stores the lot's schedule configuration: planting date, bloom duration (8 or 9 weeks), trim days range, and a list of generated task IDs. This lets the tool re-render its UI from stored state and detect stale schedules during reconciliation.
+Stores the lot's schedule configuration: planting date, bloom duration (8 or 9 weeks), and a list of generated task IDs. Trim is fixed at 7 days. This lets the tool re-render its UI from stored state and detect stale schedules during reconciliation.
 
 **Top-level data** (root of database):
 ```
