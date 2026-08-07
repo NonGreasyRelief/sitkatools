@@ -1525,10 +1525,84 @@
             background: rgba(155, 89, 182, 0.2);
             color: #9b59b6;
         }
+
+        /* =====================================================
+           Calendar Import/Export Tab Styles
+           ===================================================== */
+
+        .io-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .io-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .io-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .io-card-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .io-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .io-result {
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .io-result.hidden {
+            display: none;
+        }
+
+        .io-result.success {
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+
+        .io-result.error {
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+
+        #icsImportInput {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <input type="file" id="dbImportInput" accept=".json">
+    <input type="file" id="icsImportInput" accept=".ics,text/calendar">
 
     <!-- DB Session Overlay -->
     <div class="db-overlay hidden" id="dbOverlay">
@@ -1558,6 +1632,7 @@
                 <button class="tab active" data-tab="calendar-view">Calendar View</button>
                 <button class="tab" data-tab="lot-management">Lot Manager</button>
                 <button class="tab" data-tab="room-management">Room Manager</button>
+                <button class="tab" data-tab="calendar-io">Calendar Import/Export</button>
             </nav>
         </div>
         <div class="header-right">
@@ -1734,6 +1809,39 @@
             </div>
         </section>
 
+        <!-- Calendar Import/Export Tab -->
+        <section class="tab-content" id="calendar-io">
+            <div class="status-bar empty" id="ioStatusBar">
+                <span class="status-text">No database loaded. Import a DB file to use calendar import/export.</span>
+            </div>
+
+            <div class="io-grid">
+                <!-- Export Card -->
+                <div class="io-card">
+                    <h2 class="io-card-title">📤 Export Calendar</h2>
+                    <p class="io-card-desc">
+                        Export all calendar events to a standard .ICS file. Import this file into Google Calendar, Apple Calendar, Outlook, or any other calendar application that supports iCalendar format.
+                    </p>
+                    <div class="io-actions">
+                        <button class="btn btn-primary" id="exportIcsBtn">Export .ICS File</button>
+                    </div>
+                    <div class="io-result hidden" id="exportResult"></div>
+                </div>
+
+                <!-- Import Card -->
+                <div class="io-card">
+                    <h2 class="io-card-title">📥 Import Calendar</h2>
+                    <p class="io-card-desc">
+                        Import events from a standard .ICS file. Imported events will be created as GeneralEvent-type events in your calendar.
+                    </p>
+                    <div class="io-actions">
+                        <button class="btn btn-primary" id="importIcsBtn">Select .ICS File</button>
+                    </div>
+                    <div class="io-result hidden" id="importResult"></div>
+                </div>
+            </div>
+        </section>
+
         <!-- Tools Directory -->
         <section class="card" id="tools-directory">
             <h2 class="card-title">Calendar Tools</h2>
@@ -1893,6 +2001,7 @@
                     RoomManager.updateRoomDatalist();
                     Calendar.render();
                     updateCalendarStatusBar();
+                    updateIOStatusBar();
                     hideOverlay();
                 } catch (err) {
                     alert('Failed to parse JSON file: ' + err.message);
@@ -2089,6 +2198,7 @@
             RoomManager.updateRoomDatalist();
             Calendar.render();
             updateCalendarStatusBar();
+            updateIOStatusBar();
 
             showSyncToast('Subtool has updated data — views refreshed automatically');
         });
@@ -3484,10 +3594,305 @@
             `;
         }
 
+        // =====================================================
+        // SitkaTools — Calendar Import/Export Module
+        // Exports/imports calendar events to/from standard .ICS (iCalendar) format
+        // =====================================================
+        const CalendarIO = {
+            init() {
+                $('exportIcsBtn').addEventListener('click', () => this.exportICS());
+                $('importIcsBtn').addEventListener('click', () => $('icsImportInput').click());
+                $('icsImportInput').addEventListener('change', (e) => this.importICS(e));
+            },
+
+            // ---- Export to ICS ----
+            exportICS() {
+                DB.ensureStructure();
+                const events = DB.data.calendarEvents || [];
+
+                if (events.length === 0) {
+                    this.showResult('export', 'No calendar events to export.', 'error');
+                    return;
+                }
+
+                // Build ICS content
+                let ics = this.icsHeader();
+
+                events.forEach((event, idx) => {
+                    const uid = `sitka-${idx}-${Date.now()}@sitkatools.local`;
+                    const dtstart = this.toICSDate(event.date);
+                    const dtend = this.calcEndDate(event.date, event.endDate);
+
+                    // Build DESCRIPTION from all event properties
+                    const descLines = [];
+                    const SKIP_KEYS = ['date']; // date is already in DTSTART/DTEND
+                    for (const [key, value] of Object.entries(event)) {
+                        if (SKIP_KEYS.includes(key)) continue;
+                        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                        descLines.push(`${label}: ${value}`);
+                    }
+
+                    const summary = this.escapeICS(event.title || 'Untitled Event');
+                    const description = this.escapeICS(descLines.join('\n'));
+
+                    ics += `BEGIN:VEVENT\r\n`;
+                    ics += `UID:${uid}\r\n`;
+                    ics += `DTSTAMP:${this.toICSTimestamp(new Date())}\r\n`;
+                    ics += `DTSTART;VALUE=DATE:${dtstart}\r\n`;
+                    ics += `DTEND;VALUE=DATE:${dtend}\r\n`;
+                    ics += `SUMMARY:${summary}\r\n`;
+                    ics += `DESCRIPTION:${description}\r\n`;
+                    ics += `END:VEVENT\r\n`;
+                });
+
+                ics += 'END:VCALENDAR';
+
+                // Download the file
+                const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+
+                const now = new Date();
+                const yy = String(now.getFullYear()).slice(-2);
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const dd = String(now.getDate()).padStart(2, '0');
+                a.download = `SitkaCalendar-${yy}${mm}${dd}.ics`;
+
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                this.showResult('export',
+                    `Exported ${events.length} event${events.length !== 1 ? 's' : ''} to .ICS file successfully.`,
+                    'success');
+            },
+
+            // ---- Import from ICS ----
+            importICS(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const text = ev.target.result;
+                        const imported = this.parseICS(text);
+
+                        if (imported.length === 0) {
+                            this.showResult('import', 'No events found in the .ICS file.', 'error');
+                            return;
+                        }
+
+                        DB.ensureStructure();
+                        let added = 0;
+
+                        imported.forEach(event => {
+                            // Check for duplicates by SUMMARY + DTSTART
+                            const exists = DB.data.calendarEvents.some(existing => {
+                                return existing.title === event.title && existing.date === event.date;
+                            });
+
+                            if (!exists) {
+                                DB.data.calendarEvents.push(event);
+                                added++;
+                            }
+                        });
+
+                        markUnsaved();
+                        Calendar.render();
+                        updateCalendarStatusBar();
+
+                        const skipped = imported.length - added;
+                        let msg = `Imported ${added} new event${added !== 1 ? 's' : ''} from .ICS file.`;
+                        if (skipped > 0) {
+                            msg += ` (${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped.)`;
+                        }
+                        this.showResult('import', msg, 'success');
+
+                        // Show toast to indicate calendar was updated
+                        showSyncToast(`Imported ${added} event${added !== 1 ? 's' : ''} from .ICS file`);
+                    } catch (err) {
+                        this.showResult('import', `Failed to parse .ICS file: ${err.message}`, 'error');
+                    }
+                };
+                reader.readAsText(file);
+
+                // Reset so the same file can be imported again
+                e.target.value = '';
+            },
+
+            // ---- ICS Parsing ----
+            parseICS(text) {
+                const events = [];
+                // Split into VEVENT blocks
+                const veventRegex = /BEGIN:VEVENT(.*?)END:VEVENT/gs;
+                let match;
+
+                while ((match = veventRegex.exec(text)) !== null) {
+                    const block = match[1];
+                    const event = this.parseVEVENT(block);
+                    if (event) events.push(event);
+                }
+
+                return events;
+            },
+
+            parseVEVENT(block) {
+                const lines = this.foldLines(block).split(/\r?\n/).filter(l => l.trim());
+                const event = {
+                    sourceTool: 'GeneralEvent'
+                };
+
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+
+                    // DTSTART;VALUE=DATE:20260115
+                    const dtstartMatch = line.match(/^DTSTART(?:;[^:]+)?:(\d{8})/);
+                    if (dtstartMatch) {
+                        event.date = this.fromICSDate(dtstartMatch[1]);
+                        continue;
+                    }
+
+                    // DTEND;VALUE=DATE:20260117
+                    const dtendMatch = line.match(/^DTEND(?:;[^:]+)?:(\d{8})/);
+                    if (dtendMatch) {
+                        const endDate = this.fromICSDate(dtendMatch[1]);
+                        // ICS DTEND is exclusive (day after last day), so subtract 1 day
+                        const endD = parseLocalDate(endDate);
+                        endD.setDate(endD.getDate() - 1);
+                        const adjustedEnd = localDate(endD);
+                        if (adjustedEnd !== event.date) {
+                            event.endDate = adjustedEnd;
+                        }
+                        continue;
+                    }
+
+                    // SUMMARY:Event Title
+                    const summaryMatch = line.match(/^SUMMARY:(.*)/);
+                    if (summaryMatch) {
+                        event.title = this.unescapeICS(summaryMatch[1].trim());
+                        continue;
+                    }
+
+                    // DESCRIPTION:details...
+                    const descMatch = line.match(/^DESCRIPTION:(.*)/);
+                    if (descMatch) {
+                        // We store the raw description in notes for reference
+                        event.notes = this.unescapeICS(descMatch[1].trim());
+                        continue;
+                    }
+                }
+
+                // Require at least a date
+                if (!event.date) return null;
+                if (!event.title) event.title = 'Imported Event';
+
+                return event;
+            },
+
+            // ---- ICS Helpers ----
+            icsHeader() {
+                return [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'PRODID:-//SitkaTools//Cannabis Cultivation Calendar//EN',
+                    'CALSCALE:GREGORIAN',
+                    'METHOD:PUBLISH'
+                ].join('\r\n') + '\r\n';
+            },
+
+            toICSDate(dateStr) {
+                // "2026-01-15" -> "20260115"
+                return dateStr.replace(/-/g, '');
+            },
+
+            fromICSDate(icsDate) {
+                // "20260115" -> "2026-01-15"
+                return `${icsDate.slice(0, 4)}-${icsDate.slice(4, 6)}-${icsDate.slice(6, 8)}`;
+            },
+
+            toICSTimestamp(date) {
+                // "20260115T123045Z"
+                return date.getUTCFullYear() +
+                    String(date.getUTCMonth() + 1).padStart(2, '0') +
+                    String(date.getUTCDate()).padStart(2, '0') +
+                    'T' +
+                    String(date.getUTCHours()).padStart(2, '0') +
+                    String(date.getUTCMinutes()).padStart(2, '0') +
+                    String(date.getUTCSeconds()).padStart(2, '0') +
+                    'Z';
+            },
+
+            calcEndDate(startStr, endStr) {
+                // For date-only events, DTEND is the day after the last day
+                const lastDay = endStr || startStr;
+                const d = parseLocalDate(lastDay);
+                d.setDate(d.getDate() + 1);
+                return this.toICSDate(localDate(d));
+            },
+
+            escapeICS(str) {
+                // RFC 5545: backslash, semicolon, comma, newline
+                return str
+                    .replace(/\\/g, '\\\\')
+                    .replace(/;/g, '\\;')
+                    .replace(/,/g, '\\,')
+                    .replace(/\n/g, '\\n');
+            },
+
+            unescapeICS(str) {
+                // Unescape ICS special characters (handle escaped sequences properly)
+                let result = '';
+                let i = 0;
+                while (i < str.length) {
+                    if (str[i] === '\\' && i + 1 < str.length) {
+                        const next = str[i + 1];
+                        if (next === ';') { result += ';'; i += 2; continue; }
+                        if (next === ',') { result += ','; i += 2; continue; }
+                        if (next === '\\') { result += '\\'; i += 2; continue; }
+                        if (next === 'n' || next === 'N') { result += '\n'; i += 2; continue; }
+                    }
+                    result += str[i];
+                    i++;
+                }
+                return result;
+            },
+
+            foldLines(text) {
+                // Unfold CRLF+space/wsp continuations per RFC 5545
+                return text.replace(/\r?\n[ \t]/g, '');
+            },
+
+            showResult(type, message, className) {
+                const el = $(`${type}Result`);
+                el.textContent = message;
+                el.className = `io-result ${className}`;
+            }
+        };
+
+        function updateIOStatusBar() {
+            const bar = $('ioStatusBar');
+            if (!DB.data) {
+                bar.className = 'status-bar empty';
+                bar.innerHTML = '<span class="status-text">No database loaded. Import a DB file to use calendar import/export.</span>';
+                return;
+            }
+
+            const eventCount = DB.data.calendarEvents?.length || 0;
+            bar.className = 'status-bar loaded';
+            bar.innerHTML = `
+                <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
+            `;
+        }
+
         // ---- Start ----
         init();
         RoomManager.init();
         Calendar.init();
+        CalendarIO.init();
     </script>
 </body>
 </html>
