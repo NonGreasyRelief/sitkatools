@@ -15,23 +15,24 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 All dates are computed from the user-provided **planting date** (Day 0). The vegetative period is fixed at 21 days (transplant at day 14, flip at day 21). Bloom events are offset from the flip-to-flower date. Post-harvest events are offset from the harvest date.
 
-| # | Task | Emoji | Offset From | Computed Date | Multi-Day? |
-|---|------|-------|-------------|---------------|------------|
-| 1 | Planting clones | 🌱 | — | User-set anchor date | No |
-| 2 | Topping | ✂️ | 3 days after planting clones | Day 3 | No |
-| 3 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | 7 days after planting | Day 7 | No |
-| 4 | Transplanting to Flower Room | 🪴 | +14 days from planting | Day 14 | No |
-| 5 | Deploy IPM to Flower Room | 🛡️ | Day after transplant to flower room | Day 15 | No |
-| 6 | Flip to Flower | 🌸 | +7 days from transplanting (= +21 days from planting) | Day 21 | No |
-| 7 | Two-Node / Lollipop Prune | 🔪 | 1 day before flip to flower | Day 20 | No |
-| 8 | Early Flower Leaf Pick | 🍃 | 3 weeks into bloom (= +21 days from flip) | Day 42 | No |
-| 9 | Cutting Clones to Replace Lot | 🌿 | Start of week 6 of bloom (= +42 days from flip) | Day 63 | No |
-| 10 | Late Flower Leaf Pick | 🍂 | 6 weeks into bloom (= +42 days from flip) | Day 63 | No |
-| 11 | Harvest | 🌾 | User-selectable: 8 or 9 weeks into bloom (= +56 or +63 days from flip) | Day 77 or 84 | No |
-| 12 | Grow-Room Clean | 🧹 | Day after harvest starts | Harvest + 1 day | No |
-| 13 | Dry Room Take-Down / Bucking | 📦 | 10 days after harvest start date | Harvest + 10 days | No |
-| 14 | Prepare Sample for Lab Testing | 🔬 | Same day as bucking | Harvest + 10 days | No |
-| 15 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) |
+| # | Task | Emoji | Offset From | Computed Date | Multi-Day? | Toggleable? |
+|---|------|-------|-------------|---------------|------------|-------------|
+| 0 | Cutting Clones | ✂️ | -14 days from planting | Day -14 (2 weeks before planting) | No | **Yes** (enabled by default) |
+| 1 | Planting clones | 🌱 | — | User-set anchor date | No | — |
+| 2 | Topping | ✂️ | 3 days after planting clones | Day 3 | No | — |
+| 3 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | 7 days after planting | Day 7 | No | — |
+| 4 | Transplanting to Flower Room | 🪴 | +14 days from planting | Day 14 | No | — |
+| 5 | Deploy IPM to Flower Room | 🛡️ | Day after transplant to flower room | Day 15 | No | — |
+| 6 | Flip to Flower | 🌸 | +7 days from transplanting (= +21 days from planting) | Day 21 | No | — |
+| 7 | Two-Node / Lollipop Prune | 🔪 | 1 day before flip to flower | Day 20 | No | — |
+| 8 | Early Flower Leaf Pick | 🍃 | 3 weeks into bloom (= +21 days from flip) | Day 42 | No | — |
+| 9 | Cutting Clones to Replace Lot | 🌿 | Start of week 6 of bloom (= +42 days from flip) | Day 63 | No | — |
+| 10 | Late Flower Leaf Pick | 🍂 | 6 weeks into bloom (= +42 days from flip) | Day 63 | No | — |
+| 11 | Harvest | 🌾 | User-selectable: 8 or 9 weeks into bloom (= +56 or +63 days from flip) | Day 77 or 84 | No | — |
+| 12 | Grow-Room Clean | 🧹 | Day after harvest starts | Harvest + 1 day | No | — |
+| 13 | Dry Room Take-Down / Bucking | 📦 | 10 days after harvest start date | Harvest + 10 days | No | — |
+| 14 | Prepare Sample for Lab Testing | 🔬 | Same day as bucking | Harvest + 10 days | No | — |
+| 15 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) | — |
 
 ### Calendar Events Generated
 

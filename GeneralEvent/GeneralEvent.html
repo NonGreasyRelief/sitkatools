@@ -243,7 +243,9 @@
             background: var(--input-bg);
             padding: 3px 8px;
             border-radius: 4px;
-            white-space: nowrap;
+            white-space: normal;
+            text-align: center;
+            line-height: 1.4;
             flex-shrink: 0;
         }
 
@@ -362,6 +364,18 @@
                 <div class="form-group">
                     <label for="eventEndDate">End Date <span style="color: var(--text-secondary); font-weight: 400;">(optional, for multi-day events)</span></label>
                     <input type="date" id="eventEndDate">
+                </div>
+
+                <!-- Start Time (optional) -->
+                <div class="form-group">
+                    <label for="eventStartTime">Start Time <span style="color: var(--text-secondary); font-weight: 400;">(optional, leave blank for all-day)</span></label>
+                    <input type="time" id="eventStartTime">
+                </div>
+
+                <!-- End Time (optional) -->
+                <div class="form-group">
+                    <label for="eventEndTime">End Time <span style="color: var(--text-secondary); font-weight: 400;">(optional)</span></label>
+                    <input type="time" id="eventEndTime">
                 </div>
 
                 <!-- Actions -->
@@ -485,6 +499,8 @@
                             text: text,
                             date: ev.date,
                             endDate: ev.endDate || null,
+                            startTime: ev.startTime || null,
+                            endTime: ev.endTime || null,
                             emoji: emoji,
                             createdAt: new Date().toISOString()
                         });
@@ -502,6 +518,8 @@
         const eventTextInput = $('eventText');
         const eventDateInput = $('eventDate');
         const eventEndDateInput = $('eventEndDate');
+        const eventStartTimeInput = $('eventStartTime');
+        const eventEndTimeInput = $('eventEndTime');
         const clearFormBtn = $('clearFormBtn');
         const eventListCard = $('eventListCard');
         const eventListEl = $('eventList');
@@ -531,6 +549,8 @@
             const text = eventTextInput.value.trim();
             const date = eventDateInput.value;
             const endDate = eventEndDateInput.value || null;
+            const startTime = eventStartTimeInput.value || null;
+            const endTime = eventEndTimeInput.value || null;
 
             if (!text || !date) {
                 alert('Please fill in all fields.');
@@ -556,6 +576,10 @@
                 newEvent.endDate = endDate;
             }
 
+            // Set optional times
+            if (startTime) newEvent.startTime = startTime;
+            if (endTime) newEvent.endTime = endTime;
+
             // Append to calendarEvents
             DB.data.calendarEvents.push(newEvent);
 
@@ -566,6 +590,8 @@
                 text: text,
                 date: date,
                 endDate: endDate,
+                startTime: startTime,
+                endTime: endTime,
                 emoji: emoji,
                 createdAt: new Date().toISOString()
             });
@@ -581,7 +607,12 @@
             // Notify SitkaTools via postMessage
             notifySitkaTools();
 
-            showToast(endDate && endDate !== date ? 'Multi-day event added' : 'Event added');
+            const hasTime = startTime || endTime;
+            const isMultiDay = endDate && endDate !== date;
+            if (isMultiDay && hasTime) showToast('Timed multi-day event added');
+            else if (isMultiDay) showToast('Multi-day event added');
+            else if (hasTime) showToast('Timed event added');
+            else showToast('Event added');
         });
 
         // ---- Clear Form ----
@@ -590,6 +621,14 @@
             eventDateInput.value = new Date().toISOString().split('T')[0];
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
             document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
+        });
+
+        // Auto-clear end time if start time changes
+        eventStartTimeInput.addEventListener('change', () => {
+            // Reset end time if it's now before start time
+            if (eventEndTimeInput.value && eventEndTimeInput.value <= eventStartTimeInput.value) {
+                eventEndTimeInput.value = '';
+            }
         });
 
         // Auto-set minimum end date to start date when it changes
@@ -624,8 +663,23 @@
                     ? `${entry.date} → ${entry.endDate}`
                     : entry.date;
 
+                // Build time display
+                let timeDisplay = '';
+                if (entry.startTime) {
+                    const formatTime = (t) => {
+                        const [h, m] = t.split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const displayHour = hour % 12 || 12;
+                        return `${displayHour}:${m} ${ampm}`;
+                    };
+                    timeDisplay = entry.endTime
+                        ? `${formatTime(entry.startTime)} – ${formatTime(entry.endTime)}`
+                        : `from ${formatTime(entry.startTime)}`;
+                }
+
                 item.innerHTML = `
-                    <span class="event-date-badge">${displayDate}</span>
+                    <span class="event-date-badge">${displayDate}${timeDisplay ? '<br>' + timeDisplay : ''}</span>
                     <span class="event-text">${escapeHtml(entry.emoji + ' ' + entry.text)}</span>
                     <button class="event-delete-btn" title="Remove event">✕</button>
                 `;

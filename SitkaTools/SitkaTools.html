@@ -3158,7 +3158,19 @@
                         }
                         if (isCompleted) cssClass += ' completed';
                         eventEl.className = cssClass;
-                        eventEl.textContent = event.title || 'Event';
+
+                        // Build display text with optional time prefix
+                        let displayText = event.title || 'Event';
+                        if (event.startTime) {
+                            const [h, m] = event.startTime.split(':');
+                            const hour = parseInt(h, 10);
+                            const ampm = hour >= 12 ? 'PM' : 'AM';
+                            const displayHour = hour % 12 || 12;
+                            const timeStr = `${displayHour}:${m}${ampm}`;
+                            displayText = `${timeStr} ${displayText}`;
+                        }
+                        eventEl.textContent = displayText;
+
                         eventEl.draggable = true;
                         eventEl.dataset.eventIndex = this.events.indexOf(event);
 
@@ -3272,7 +3284,7 @@
                 const body = $('eventPanelBody');
 
                 // Determine which fields are modifiable
-                const MODIFIABLE_FIELDS = ['date', 'endDate', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                const MODIFIABLE_FIELDS = ['date', 'endDate', 'startTime', 'endTime', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
                 const HIDDEN_FIELDS = ['type'];
                 const READONLY_FIELDS = [];
 
@@ -3303,6 +3315,8 @@
                     if (isModifiable) {
                         if (key === 'date' || key === 'endDate') {
                             html += `<input type="date" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                        } else if (key === 'startTime' || key === 'endTime') {
+                            html += `<input type="time" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else if (key === 'estimatedHours') {
                             html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else {
@@ -3634,6 +3648,21 @@
                     ? `${event.date} → ${event.endDate}`
                     : event.date;
 
+                // Build time display for terminal
+                let timeDisplay = '';
+                if (event.startTime) {
+                    const formatTime = (t) => {
+                        const [h, m] = t.split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const displayHour = hour % 12 || 12;
+                        return `${displayHour}:${m}${ampm}`;
+                    };
+                    timeDisplay = event.endTime
+                        ? ` ${formatTime(event.startTime)}-${formatTime(event.endTime)}`
+                        : ` ${formatTime(event.startTime)}`;
+                }
+
                 const isSelected = this.selectedEvent === event;
                 const isCompleted = event.completed === true;
                 const checkClass = isCompleted ? 'terminal-check' : 'terminal-check unchecked';
@@ -3646,7 +3675,7 @@
 
                 return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" data-event-index="${DB.data.calendarEvents.indexOf(event)}">
                     <span class="${checkClass}" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="${isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
-                    <span class="terminal-date">${displayDate}</span>
+                    <span class="terminal-date">${displayDate}${timeDisplay}</span>
                     <span class="terminal-title">${title}${lotInfo}</span>
                     ${showReschedule ? `<button class="terminal-complete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Mark complete">✓</button><button class="terminal-reschedule-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Reschedule">↻ Reschedule</button>` : ''}
                     <button class="terminal-delete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Delete event">✕</button>
@@ -3698,12 +3727,26 @@
 
                 events.forEach((event, idx) => {
                     const uid = `sitka-${idx}-${Date.now()}@sitkatools.local`;
-                    const dtstart = this.toICSDate(event.date);
-                    const dtend = this.calcEndDate(event.date, event.endDate);
+
+                    // Determine if this is a timed event or all-day event
+                    const hasTime = !!event.startTime;
+
+                    let dtstart, dtend;
+                    if (hasTime) {
+                        // Timed event — use DATETIME format
+                        dtstart = this.toICSTimestamp(new Date(`${event.date}T${event.startTime}:00`));
+                        const endDateBase = event.endDate || event.date;
+                        const endTime = event.endTime || '23:59';
+                        dtend = this.toICSTimestamp(new Date(`${endDateBase}T${endTime}:00`));
+                    } else {
+                        // All-day event — use DATE format
+                        dtstart = this.toICSDate(event.date);
+                        dtend = this.calcEndDate(event.date, event.endDate);
+                    }
 
                     // Build DESCRIPTION from all event properties
                     const descLines = [];
-                    const SKIP_KEYS = ['date']; // date is already in DTSTART/DTEND
+                    const SKIP_KEYS = ['date', 'startTime', 'endTime']; // already in DTSTART/DTEND
                     for (const [key, value] of Object.entries(event)) {
                         if (SKIP_KEYS.includes(key)) continue;
                         const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
@@ -3716,8 +3759,13 @@
                     ics += `BEGIN:VEVENT\r\n`;
                     ics += `UID:${uid}\r\n`;
                     ics += `DTSTAMP:${this.toICSTimestamp(new Date())}\r\n`;
-                    ics += `DTSTART;VALUE=DATE:${dtstart}\r\n`;
-                    ics += `DTEND;VALUE=DATE:${dtend}\r\n`;
+                    if (hasTime) {
+                        ics += `DTSTART:${dtstart}\r\n`;
+                        ics += `DTEND:${dtend}\r\n`;
+                    } else {
+                        ics += `DTSTART;VALUE=DATE:${dtstart}\r\n`;
+                        ics += `DTEND;VALUE=DATE:${dtend}\r\n`;
+                    }
                     ics += `SUMMARY:${summary}\r\n`;
                     ics += `DESCRIPTION:${description}\r\n`;
                     ics += `END:VEVENT\r\n`;
