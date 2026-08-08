@@ -516,6 +516,89 @@
             border-color: var(--accent);
             background: rgba(83, 216, 168, 0.15);
         }
+
+        /* ---- Additional Maintenance Tracker ---- */
+        .tracker-section {
+            margin-top: 16px;
+            border-top: 1px solid var(--border);
+            padding-top: 12px;
+        }
+
+        .tracker-title {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .tracker-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 12px;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .tracker-item {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .tracker-date {
+            font-size: 0.78rem;
+            color: var(--warning);
+            background: var(--bg-card);
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-weight: 600;
+        }
+
+        .tracker-name {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tracker-delete-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .tracker-item:hover .tracker-delete-btn { opacity: 1; }
+        .tracker-delete-btn:hover { background: rgba(231, 76, 60, 0.2); }
+
+        .add-tracker-form {
+            background: var(--input-bg);
+            border: 1px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+        }
+
+        .add-tracker-form .form-group:last-child { margin-bottom: 0; }
+
+        .tracker-list::-webkit-scrollbar { width: 4px; }
+        .tracker-list::-webkit-scrollbar-track { background: var(--bg-primary); border-radius: 2px; }
+        .tracker-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     </style>
 </head>
 <body>
@@ -776,6 +859,30 @@
                     </div>
                     <div class="equipment-body" id="eqBody_${idx}">
                         <div class="subtask-list" id="subtaskList_${idx}"></div>
+
+                        <!-- Additional Maintenance Tracker -->
+                        <div class="tracker-section">
+                            <div class="tracker-title">Additional Maintenance Tracker</div>
+                            <div class="tracker-list" id="trackerList_${idx}"></div>
+                            <div class="add-tracker-form">
+                                <form class="add-tracker-inner" data-idx="${idx}">
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex:2;">
+                                            <label>Description</label>
+                                            <input type="text" class="tracker-name-input" placeholder="e.g., Compressor replaced" required autocomplete="off">
+                                        </div>
+                                        <div class="form-group" style="flex:1;">
+                                            <label>Date</label>
+                                            <input type="date" class="tracker-date-input" value="${todayStr()}" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn btn-primary btn-small">Log Entry</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
                         <div class="add-subtask-form">
                             <form class="add-subtask-inner" data-idx="${idx}">
                                 <div class="form-group">
@@ -840,6 +947,22 @@
                         subtaskList.appendChild(taskEl);
                     });
                 }
+
+                // Render additional maintenance tracker entries
+                const trackerList = $(`trackerList_${idx}`);
+                if (eq.additionalMaintenance && eq.additionalMaintenance.length > 0) {
+                    const sorted = [...eq.additionalMaintenance].sort((a, b) => b.date.localeCompare(a.date));
+                    sorted.forEach((entry, sIdx) => {
+                        const entryEl = document.createElement('div');
+                        entryEl.className = 'tracker-item';
+                        entryEl.innerHTML = `
+                            <span class="tracker-date">${entry.date}</span>
+                            <span class="tracker-name">${entry.name}</span>
+                            <button class="tracker-delete-btn" data-eq-idx="${idx}" data-tracker-id="${entry.id}" title="Remove entry">✕</button>
+                        `;
+                        trackerList.appendChild(entryEl);
+                    });
+                }
             });
 
             // Bind expand/collapse headers
@@ -888,6 +1011,24 @@
                     });
                 });
             });
+
+            // Bind tracker delete buttons
+            equipmentListEl.querySelectorAll('.tracker-delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const eqIdx = parseInt(btn.dataset.eqIdx);
+                    const trackerId = btn.dataset.trackerId;
+                    deleteTrackerEntry(eqIdx, trackerId);
+                });
+            });
+
+            // Bind add tracker forms
+            equipmentListEl.querySelectorAll('.add-tracker-inner').forEach(form => {
+                form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const idx = parseInt(form.dataset.idx);
+                    addTrackerEntry(idx, form);
+                });
+            });
         }
 
         // ---- Add Equipment ----
@@ -915,7 +1056,8 @@
                 name: name,
                 emoji: eqEmoji,
                 installedDate: todayStr(),
-                tasks: []
+                tasks: [],
+                additionalMaintenance: []
             });
 
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
@@ -1003,6 +1145,57 @@
             notifySitkaTools();
             renderEquipmentList();
             showToast(`Removed task "${removed?.name}"`);
+        }
+
+        // ---- Add Tracker Entry ----
+        function addTrackerEntry(eqIdx, form) {
+            const roomId = getActiveRoomId();
+            if (!roomId) return;
+
+            const nameInput = form.querySelector('.tracker-name-input');
+            const dateInput = form.querySelector('.tracker-date-input');
+
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            const equipment = getRoomEquipment(roomId);
+            const eq = equipment[eqIdx];
+            if (!eq) return;
+
+            if (!eq.additionalMaintenance) eq.additionalMaintenance = [];
+            eq.additionalMaintenance.push({
+                id: uid(),
+                name: name,
+                date: dateInput.value || todayStr()
+            });
+
+            DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
+            notifySitkaTools();
+            renderEquipmentList();
+            showToast(`Logged "${name}"`);
+        }
+
+        // ---- Delete Tracker Entry ----
+        function deleteTrackerEntry(eqIdx, trackerId) {
+            const roomId = getActiveRoomId();
+            if (!roomId) return;
+
+            const equipment = getRoomEquipment(roomId);
+            const eq = equipment[eqIdx];
+            if (!eq || !eq.additionalMaintenance) return;
+
+            const before = eq.additionalMaintenance.length;
+            eq.additionalMaintenance = eq.additionalMaintenance.filter(e => e.id !== trackerId);
+
+            if (eq.additionalMaintenance.length === before) {
+                showToast('Entry not found.');
+                return;
+            }
+
+            DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
+            notifySitkaTools();
+            renderEquipmentList();
+            showToast('Removed entry');
         }
 
         // ---- Compute Calendar Events for a Room ----

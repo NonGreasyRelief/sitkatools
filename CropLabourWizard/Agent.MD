@@ -30,7 +30,8 @@ All dates are computed from the user-provided **planting date** (Day 0). The veg
 | 11 | Harvest | 🌾 | User-selectable: 8 or 9 weeks into bloom (= +56 or +63 days from flip) | Day 77 or 84 | No |
 | 12 | Grow-Room Clean | 🧹 | Day after harvest starts | Harvest + 1 day | No |
 | 13 | Dry Room Take-Down / Bucking | 📦 | 10 days after harvest start date | Harvest + 10 days | No |
-| 14 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) |
+| 14 | Prepare Sample for Lab Testing | 🔬 | Same day as bucking | Harvest + 10 days | No |
+| 15 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) |
 
 ### Calendar Events Generated
 

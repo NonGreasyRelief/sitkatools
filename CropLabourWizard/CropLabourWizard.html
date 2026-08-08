@@ -443,6 +443,47 @@
             color: var(--warning);
             border: 1px solid var(--warning);
         }
+
+        /* ---- Custom Checkbox ---- */
+        .task-enabled-check {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            cursor: pointer;
+            flex-shrink: 0;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .task-enabled-check:checked {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .task-enabled-check:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--bg-primary);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .task-enabled-check:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Disabled task styling */
+        .preview-task-item.disabled {
+            opacity: 0.35;
+        }
     </style>
 </head>
 <body>
@@ -544,6 +585,7 @@
         // defaultOffset: days from the reference point
         // isBloomDuration: harvest follows bloom duration select (56 or 63 days from flip)
         const TASK_DEFS = [
+            { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'planting', defaultOffset: -14, hasToggle: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'planting', defaultOffset: 0 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
@@ -553,13 +595,14 @@
             { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 21 },
             // Bloom-relative tasks (offset from flip)
             { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
-            { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 28 },
+            { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 42 },
             { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42 },
             // Harvest — follows bloom duration (56 or 63 days from flip)
             { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', isBloomDuration: true },
             // Post-harvest tasks (offset from harvest)
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
+            { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 10 },
             // Trim is multi-day (7 days), offset from harvest
             { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true }
         ];
@@ -638,7 +681,8 @@
         function buildDefaultOffsets() {
             taskOffsets = TASK_DEFS.map(def => ({
                 def,
-                offset: def.defaultOffset ?? 0
+                offset: def.defaultOffset ?? 0,
+                enabled: def.hasToggle !== undefined ? (def.hasToggle === true ? true : true) : true
             }));
         }
 
@@ -694,6 +738,7 @@
                 const def = entry.def;
                 const ref = def.reference;
                 const label = REF_LABELS[ref] || ref;
+                const isEnabled = entry.enabled !== false;
 
                 // For bloom-duration tasks (harvest), offset is determined by bloom select
                 const effectiveOffset = def.isBloomDuration ? (parseInt(bloomDurationSelect.value) * 7) : entry.offset;
@@ -703,7 +748,7 @@
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
                 let endDate = null;
 
-                if (def.isMultiDay) {
+                if (def.isMultiDay && isEnabled) {
                     const d = new Date(startDate + 'T00:00:00');
                     d.setDate(d.getDate() + TRIM_DAYS - 1);
                     endDate = d.toISOString().split('T')[0];
@@ -713,11 +758,17 @@
                 const displayDate = endDate ? `${startDate} → ${endDate}` : startDate;
 
                 const item = document.createElement('div');
-                item.className = 'preview-task-item';
+                item.className = 'preview-task-item' + (isEnabled ? '' : ' disabled');
 
                 const offsetInputId = `offset_${idx}`;
+                const checkInputId = `check_${idx}`;
 
-                // Offset input: editable unless it's bloom-duration controlled (harvest)
+                // Checkbox for tasks with toggle
+                const checkboxHtml = def.hasToggle
+                    ? `<input type="checkbox" class="task-enabled-check" id="${checkInputId}" ${isEnabled ? 'checked' : ''} data-idx="${idx}" title="Enable/disable this task" />`
+                    : '';
+
+                // Offset input: editable unless it's bloom-duration controlled (harvest) or disabled
                 let offsetGroupHtml = '';
                 if (def.isBloomDuration) {
                     offsetGroupHtml = `
@@ -727,22 +778,27 @@
                         </div>
                     `;
                 } else {
+                    const minVal = def.defaultOffset && def.defaultOffset < 0 ? '-30' : '0';
                     offsetGroupHtml = `
                         <div class="preview-offset-group">
                             <label for="${offsetInputId}">Days:</label>
-                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="0" max="200" data-idx="${idx}" />
+                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="${minVal}" max="200" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
                         </div>
                     `;
                 }
 
+                // Offset label: show sign for negative offsets
+                const offsetLabel = effectiveOffset >= 0 ? `+${effectiveOffset}d` : `${effectiveOffset}d`;
+
                 item.innerHTML = `
+                    ${checkboxHtml}
                     <span class="preview-task-emoji">${def.emoji}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
-                        <div class="preview-task-reference"><strong>+${effectiveOffset}d</strong> from ${label}</div>
+                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${label}</div>
                     </div>
                     ${offsetGroupHtml}
-                    <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}">${displayDate}</span>
+                    <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}" ${!isEnabled ? 'style="opacity:0.4"' : ''}>${displayDate}</span>
                 `;
 
                 listWrapper.appendChild(item);
@@ -756,6 +812,16 @@
                     const i = parseInt(input.dataset.idx);
                     taskOffsets[i].offset = parseInt(input.value) || 0;
                     // Re-render to update computed dates and labels
+                    refreshPreview();
+                });
+            });
+
+            // Attach listeners to enable/disable checkboxes
+            listWrapper.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    const i = parseInt(checkbox.dataset.idx);
+                    taskOffsets[i].enabled = checkbox.checked;
+                    // Re-render to update disabled state and styling
                     refreshPreview();
                 });
             });
@@ -820,9 +886,12 @@
 
             const anchors = computeAnchors(plantingDate, bloomWeeks);
 
-            // Build calendar events from current offsets
+            // Build calendar events from current offsets (skip disabled tasks)
             const newEvents = [];
             for (const entry of taskOffsets) {
+                // Skip disabled tasks
+                if (entry.enabled === false) continue;
+
                 const def = entry.def;
                 const anchorDate = anchors[def.reference];
                 const effectiveOffset = def.isBloomDuration ? (bloomWeeks * 7) : entry.offset;

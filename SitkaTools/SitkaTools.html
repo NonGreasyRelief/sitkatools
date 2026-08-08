@@ -738,6 +738,17 @@
             margin-bottom: 16px;
         }
 
+        .calendar-grid-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 16px;
+        }
+
+        .calendar-grid-wrapper .calendar-grid {
+            min-width: 280px;
+            margin-bottom: 0;
+        }
+
         .calendar-day-header {
             background: var(--bg-secondary);
             padding: 12px;
@@ -1259,11 +1270,59 @@
                 flex: 1;
                 justify-content: center;
             }
-            .calendar-day {
-                min-height: 80px;
+
+            /* === Calendar mobile fixes === */
+            .main.calendar-active {
+                max-width: 100%;
             }
+
+            .calendar-nav {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .calendar-month-title {
+                min-width: auto;
+                font-size: 1.2rem;
+                width: 100%;
+                order: -1;
+                margin-bottom: 4px;
+            }
+
+            .calendar-day {
+                height: auto;
+                min-height: 56px;
+                max-height: 80px;
+                padding: 4px;
+            }
+
+            .calendar-day-header {
+                padding: 4px;
+                font-size: 0.7rem;
+            }
+
             .day-event {
-                font-size: 0.65rem;
+                font-size: 0.7rem;
+                padding: 6px 8px;
+            }
+
+            .event-detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .completed-checkbox {
+                width: 36px;
+                height: 36px;
+                font-size: 1.1rem;
+            }
+
+            /* Touch-friendly active states instead of hover */
+            .calendar-day:active {
+                background: rgba(83, 216, 168, 0.1);
+            }
+
+            .day-event:active {
+                filter: brightness(1.2);
             }
         }
 
@@ -1680,14 +1739,16 @@
             </div>
 
             <!-- Calendar grid -->
-            <div class="calendar-grid" id="calendarGrid">
-                <div class="calendar-day-header">Sun</div>
-                <div class="calendar-day-header">Mon</div>
-                <div class="calendar-day-header">Tue</div>
-                <div class="calendar-day-header">Wed</div>
-                <div class="calendar-day-header">Thu</div>
-                <div class="calendar-day-header">Fri</div>
-                <div class="calendar-day-header">Sat</div>
+            <div class="calendar-grid-wrapper">
+                <div class="calendar-grid" id="calendarGrid">
+                    <div class="calendar-day-header">Sun</div>
+                    <div class="calendar-day-header">Mon</div>
+                    <div class="calendar-day-header">Tue</div>
+                    <div class="calendar-day-header">Wed</div>
+                    <div class="calendar-day-header">Thu</div>
+                    <div class="calendar-day-header">Fri</div>
+                    <div class="calendar-day-header">Sat</div>
+                </div>
             </div>
 
             <!-- Event details/operations panel -->
@@ -2950,6 +3011,23 @@
                 $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
+
+                // Swipe gesture for month navigation (mobile)
+                let touchStartX = 0;
+                let touchStartY = 0;
+                const grid = $('calendarGrid');
+                grid.addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                }, { passive: true });
+                grid.addEventListener('touchend', (e) => {
+                    const dx = e.changedTouches[0].clientX - touchStartX;
+                    const dy = e.changedTouches[0].clientY - touchStartY;
+                    // Only trigger if horizontal swipe is dominant and >50px
+                    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+                        this.navigateMonth(dx < 0 ? 1 : -1);
+                    }
+                }, { passive: true });
 
                 // Always start at current month
                 const now = new Date();
