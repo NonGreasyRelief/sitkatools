@@ -665,6 +665,7 @@
                 renderScheduleList();
                 updateStatusBar();
                 refreshPreview();
+                updateGenerateBtnLabel();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -913,12 +914,20 @@
             });
         }
 
+        // ---- Update Generate Button Label ----
+        function updateGenerateBtnLabel() {
+            const lotId = activeLotSelect.value;
+            const hasSchedule = lotId && DB.lots[lotId]?._tool_CropLabourWizard;
+            generateBtn.textContent = hasSchedule ? 'Overwrite Schedule' : 'Generate Schedule';
+        }
+
         // ---- Lot Selector Change Handler ----
         activeLotSelect.addEventListener('change', () => {
             renderScheduleList();
             updateFormFromStoredConfig();
             buildDefaultOffsets();
             refreshPreview();
+            updateGenerateBtnLabel();
         });
 
         // ---- Update Form from Stored Config ----
@@ -1049,6 +1058,7 @@
             // Re-render
             renderScheduleList();
             updateStatusBar();
+            updateGenerateBtnLabel();
 
             // Notify SitkaTools via postMessage
             notifySitkaTools();
@@ -1092,6 +1102,7 @@
             buildDefaultOffsets();
             refreshPreview();
             renderScheduleList();
+            updateGenerateBtnLabel();
 
             showToast(`Cleared ${existingCount} schedule events from ${lotId}`);
         });
