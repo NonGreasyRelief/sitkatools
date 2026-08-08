@@ -373,6 +373,21 @@
             border-color: var(--accent-hover);
         }
 
+        /* Hide native spinner arrows on all number inputs (they only step by ±1) */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        .form-group input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
         .lot-delete-btn {
             background: none;
             border: none;
@@ -1107,6 +1122,24 @@
             transform: translateY(-1px);
         }
 
+        /* Mobile Tool Launch Overlay — secondary button style */
+        .btn-launch-tool {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-launch-tool:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+
         /* Sync Toast — appears when a subtool sends a postMessage update */
         .sync-toast {
             position: fixed;
@@ -1323,6 +1356,22 @@
 
             .day-event:active {
                 filter: brightness(1.2);
+            }
+
+            /* =====================================================
+               Mobile: Make hover-only buttons always visible on touch
+               ===================================================== */
+
+            /* Lot list delete button — always visible on mobile */
+            .lot-delete-btn {
+                opacity: 1;
+            }
+
+            /* Terminal panel buttons — always visible on mobile */
+            .terminal-delete-btn,
+            .terminal-reschedule-btn,
+            .terminal-complete-btn {
+                opacity: 1;
             }
         }
 
@@ -1678,6 +1727,20 @@
         </div>
     </div>
 
+    <!-- Mobile Tool Launch Overlay — appears when launching a subtool on mobile -->
+    <div class="db-overlay hidden" id="mobileToolOverlay">
+        <div class="db-overlay-card">
+            <div class="db-overlay-icon">📱</div>
+            <div class="db-overlay-title" id="mobileToolTitle">Save Before Launch?</div>
+            <div class="db-overlay-desc" id="mobileToolDesc">
+                On mobile, subtools can't sync data automatically. Save your database first, then launch the tool.
+            </div>
+            <div class="db-overlay-actions" id="mobileToolActions">
+                <!-- Phase 1 buttons (injected by JS) -->
+            </div>
+        </div>
+    </div>
+
     <!-- Sync Toast — appears when a subtool updates the database (auto-synced) -->
     <div class="sync-toast hidden" id="syncToast">
         <span class="sync-toast-icon">🔄</span>
@@ -1802,11 +1865,19 @@
                     </div>
                     <div class="form-group" id="plantCountGroup">
                         <label for="plantCount">Plant Count</label>
-                        <input type="number" id="plantCount" min="0" placeholder="Number of plants">
+                        <div class="spinbox-group">
+                            <button type="button" class="spinbox-btn minus" data-target="plantCount" title="Decrease by 1">−</button>
+                            <input type="number" id="plantCount" min="0" max="10000" step="any" placeholder="Number of plants">
+                            <button type="button" class="spinbox-btn plus" data-target="plantCount" title="Increase by 1">+</button>
+                        </div>
                     </div>
                     <div class="form-group" id="plantsTransferredGroup" style="display: none;">
                         <label for="plantsTransferred">Plants Transferred</label>
-                        <input type="number" id="plantsTransferred" min="1" placeholder="Number of plants transferred">
+                        <div class="spinbox-group">
+                            <button type="button" class="spinbox-btn minus" data-target="plantsTransferred" title="Decrease by 1">−</button>
+                            <input type="number" id="plantsTransferred" min="0" max="10000" step="any" placeholder="Number of plants transferred">
+                            <button type="button" class="spinbox-btn plus" data-target="plantsTransferred" title="Increase by 1">+</button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="lotDate">Created Date</label>
@@ -1986,6 +2057,21 @@
         const lotListCard = $('lotListCard');
         const lotListEl = $('lotList');
 
+        // ---- Spinbox +/- Button Handlers ----
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.spinbox-btn[data-target]');
+            if (!btn) return;
+            const inputId = btn.dataset.target;
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const delta = btn.classList.contains('plus') ? 1 : -1;
+            const min = parseFloat(input.min) || 0;
+            const max = parseFloat(input.max) || 10000;
+            let val = parseFloat(input.value) || 0;
+            val = Math.max(min, Math.min(max, val + delta));
+            input.value = val;
+        });
+
         // ---- Initialize ----
         function init() {
             // Set default date to today (local timezone)
@@ -2064,6 +2150,7 @@
                     updateCalendarStatusBar();
                     updateIOStatusBar();
                     hideOverlay();
+                    hideMobileToolOverlay();
                 } catch (err) {
                     alert('Failed to parse JSON file: ' + err.message);
                 }
@@ -2102,7 +2189,10 @@
 
             saveLink.href = currentBlobUrl;
             saveLink.download = filename;
-            saveLink.textContent = `📄 ${filename} — Right-click → Save Link As…`;
+            const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            saveLink.textContent = isTouchDevice
+                ? `📄 ${filename} — Press to download`
+                : `📄 ${filename} — Right-click → Save Link As…`;
 
             // Clear unsaved flag
             clearUnsaved();
@@ -2158,15 +2248,153 @@
             dbOverlay.classList.add('hidden');
         }
 
+        // ---- Mobile Tool Launch Overlay ----
+        const mobileToolOverlay = $('mobileToolOverlay');
+        const mobileToolTitle = $('mobileToolTitle');
+        const mobileToolDesc = $('mobileToolDesc');
+        const mobileToolActions = $('mobileToolActions');
+
+        function showMobileToolOverlay(toolUrl) {
+            pendingToolUrl = toolUrl;
+
+            // Phase 1: Save prompt + Launch button
+            mobileToolTitle.textContent = 'Save Before Launch?';
+            mobileToolDesc.innerHTML = `
+                On mobile, subtools can't sync data automatically.<br><br>
+                <strong>Step 1:</strong> Save your database below.<br>
+                <strong>Step 2:</strong> Launch the tool — it will load your saved DB.
+            `;
+
+            mobileToolActions.innerHTML = '';
+
+            // Left button: Save DB (generates save link inline)
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn-load-db';
+            saveBtn.textContent = '💾 Save DB';
+            saveBtn.addEventListener('click', () => {
+                handleMobileSaveDb();
+            });
+
+            // Right button: Launch Tool
+            const launchBtn = document.createElement('button');
+            launchBtn.className = 'btn-launch-tool';
+            launchBtn.textContent = '🚀 Launch Tool';
+            launchBtn.addEventListener('click', () => {
+                handleMobileLaunchTool(toolUrl);
+            });
+
+            mobileToolActions.appendChild(saveBtn);
+            mobileToolActions.appendChild(launchBtn);
+
+            mobileToolOverlay.classList.remove('hidden');
+        }
+
+        function hideMobileToolOverlay() {
+            mobileToolOverlay.classList.add('hidden');
+            pendingToolUrl = null;
+        }
+
+        function handleMobileSaveDb() {
+            DB.ensureStructure();
+
+            // Revoke previous blob URL to free memory
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+            }
+
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            currentBlobUrl = URL.createObjectURL(blob);
+
+            // Generate filename from current date
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            // Update the save button to become a download link
+            mobileToolDesc.innerHTML = `
+                <span style="color: var(--accent);">✓ Database ready!</span><br><br>
+                <a href="${currentBlobUrl}" download="${filename}" class="save-link" style="display: inline-block; margin-bottom: 8px;">📄 ${filename} — Press to download</a><br><br>
+                <strong>Now tap Launch Tool → then import this file in the subtool.</strong>
+            `;
+
+            // Clear unsaved flag
+            clearUnsaved();
+        }
+
+        function handleMobileLaunchTool(toolUrl) {
+            // Open tool in a new tab (full window on mobile)
+            const newWindow = window.open(toolUrl, '_blank');
+            if (!newWindow) return;
+
+            openSubtools.push(newWindow);
+
+            // Track close with interval fallback
+            const closeCheck = setInterval(() => {
+                if (newWindow.closed) {
+                    openSubtools = openSubtools.filter(w => w !== newWindow);
+                    clearInterval(closeCheck);
+                }
+            }, 1000);
+
+            // Short delay then switch overlay to "Load DB" phase
+            setTimeout(() => {
+                mobileToolTitle.textContent = 'Load Updated Data';
+                mobileToolDesc.innerHTML = `
+                    The tool is now open in a new tab.<br><br>
+                    After you make changes, <strong>reload your database here</strong> to see the updates.
+                `;
+
+                mobileToolActions.innerHTML = '';
+
+                // Load DB button
+                const loadBtn = document.createElement('button');
+                loadBtn.className = 'btn-load-db';
+                loadBtn.textContent = '📂 Load DB';
+                loadBtn.addEventListener('click', () => {
+                    dbImportInput.click();
+                });
+
+                // Done button to close overlay
+                const doneBtn = document.createElement('button');
+                doneBtn.className = 'btn-cancel-db';
+                doneBtn.textContent = 'Done';
+                doneBtn.addEventListener('click', () => {
+                    hideMobileToolOverlay();
+                });
+
+                mobileToolActions.appendChild(loadBtn);
+                mobileToolActions.appendChild(doneBtn);
+            }, 800);
+        }
+
 
 
         // ---- Module Link Handlers — postMessage Convention ----
         let openSubtools = [];
 
+        // Detect mobile devices — require both small viewport AND touch hardware
+        // 'ontouchstart' in window alone is unreliable (exists in modern desktop browsers even without touch)
+        const isMobileDevice = window.innerWidth < 768 && navigator.maxTouchPoints > 0;
+
+        // Mobile tool launch overlay state
+        let pendingToolUrl = null;
+
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                openModuleInTab(link.href);
+                const href = link.href;
+
+                if (isMobileDevice) {
+                    // On mobile: show save-then-launch overlay
+                    pendingToolUrl = href;
+                    showMobileToolOverlay(href);
+                } else {
+                    // On desktop: existing behavior — open popup with postMessage
+                    openModuleInTab(href);
+                }
             });
         });
 
@@ -2489,8 +2717,8 @@
                     // Replace display with input
                     const currentCount = lot.plantCount || 0;
                     span.innerHTML = `
-                        <input type="number" class="plant-count-input" data-lot-id="${lotId}" 
-                               min="0" max="10000" value="${currentCount}" title="Enter plant count (0–10,000)">
+                        <input type="number" class="plant-count-input" data-lot-id="${lotId}"
+                               min="0" max="10000" step="any" value="${currentCount}" title="Enter plant count (0–10,000)">
                     `;
                     const input = span.querySelector('input');
                     input.focus();

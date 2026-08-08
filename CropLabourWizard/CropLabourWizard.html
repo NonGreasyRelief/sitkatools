@@ -426,6 +426,41 @@
             -moz-appearance: textfield;
         }
 
+        /* ---- Spinbox +/- Buttons ---- */
+        .spinbox-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .spinbox-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--input-bg);
+        }
+
+        .spinbox-btn:active {
+            transform: scale(0.92);
+        }
+
+        .spinbox-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
         /* ---- Computed date badge ---- */
         .preview-computed-date {
             font-size: 0.78rem;
@@ -774,7 +809,9 @@
                     offsetGroupHtml = `
                         <div class="preview-offset-group">
                             <label>Bloom</label>
-                            <input type="number" value="${effectiveOffset}" disabled title="Set by Bloom Duration" />
+                            <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" disabled title="Decrease by 1">−</button>
+                            <input type="number" id="${offsetInputId}" value="${effectiveOffset}" disabled title="Set by Bloom Duration" />
+                            <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" disabled title="Increase by 1">+</button>
                         </div>
                     `;
                 } else {
@@ -782,7 +819,9 @@
                     offsetGroupHtml = `
                         <div class="preview-offset-group">
                             <label for="${offsetInputId}">Days:</label>
+                            <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Decrease by 1">−</button>
                             <input type="number" id="${offsetInputId}" value="${entry.offset}" min="${minVal}" max="200" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
+                            <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Increase by 1">+</button>
                         </div>
                     `;
                 }
@@ -823,6 +862,23 @@
                     taskOffsets[i].enabled = checkbox.checked;
                     // Re-render to update disabled state and styling
                     refreshPreview();
+                });
+            });
+
+            // Attach spinbox +/- button handlers
+            listWrapper.querySelectorAll('.spinbox-btn[data-target]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const inputId = btn.dataset.target;
+                    const input = document.getElementById(inputId);
+                    if (!input || input.disabled) return;
+                    const delta = btn.classList.contains('plus') ? 1 : -1;
+                    const min = parseFloat(input.min) || -30;
+                    const max = parseFloat(input.max) || 200;
+                    let val = parseInt(input.value) || 0;
+                    val = Math.max(min, Math.min(max, val + delta));
+                    input.value = val;
+                    // Trigger the input event to update state and re-render
+                    input.dispatchEvent(new Event('input'));
                 });
             });
         }
