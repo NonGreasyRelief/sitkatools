@@ -343,18 +343,12 @@
             gap: 4px;
         }
 
-        .plant-count-display {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 4px;
-            transition: all 0.2s;
-        }
-
-        .plant-count-display:hover {
-            background: rgba(83, 216, 168, 0.1);
-            color: var(--accent);
+        .plant-count-emoji {
+            font-size: 1rem;
+            line-height: 1;
+            flex-shrink: 0;
+            width: 20px;
+            text-align: center;
         }
 
         .plant-count-input {
@@ -371,6 +365,70 @@
         .plant-count-input:focus {
             outline: none;
             border-color: var(--accent-hover);
+        }
+
+        /* Spinbox +/- Buttons */
+        .spinbox-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .spinbox-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .spinbox-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--input-bg);
+        }
+
+        .spinbox-btn:active {
+            transform: scale(0.92);
+        }
+
+        .spinbox-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Stage selector in lot list */
+        .lot-stage-editor {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .lot-stage-select {
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .lot-stage-select:focus {
+            outline: none;
+            border-color: var(--accent);
         }
 
         /* Hide native spinner arrows on all number inputs (they only step by ±1) */
@@ -2127,11 +2185,28 @@
         mainEl.classList.add('calendar-active');
 
         // ---- Database Import/Export ----
-        importBtn.addEventListener('click', () => dbImportInput.click());
+        let fileDialogSource = null; // Tracks which UI triggered the file dialog ('overlay', 'mobileOverlay', 'toolbar', or null)
+
+        importBtn.addEventListener('click', () => {
+            fileDialogSource = 'toolbar';
+            dbImportInput.click();
+        });
 
         dbImportInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file) {
+                // User cancelled the file dialog
+                // On Edge, cancelling a file picker triggered from behind a full-screen overlay
+                // can leave the UI in a hung/frozen state. We temporarily hide overlays before
+                // triggering the dialog (see below), so we restore them here on cancel.
+                if (fileDialogSource === 'overlay') {
+                    showOverlay();
+                } else if (fileDialogSource === 'mobileOverlay') {
+                    showMobileToolOverlay();
+                }
+                fileDialogSource = null;
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = (ev) => {
@@ -2158,6 +2233,7 @@
             reader.readAsText(file);
             // Reset so the same file can be imported again
             dbImportInput.value = '';
+            fileDialogSource = null;
         });
 
         // ---- Save DB Popup ----
@@ -2234,7 +2310,15 @@
         }
 
         // ---- DB Session Overlay ----
-        overlayLoadBtn.addEventListener('click', () => dbImportInput.click());
+        overlayLoadBtn.addEventListener('click', () => {
+            // Temporarily hide the overlay before triggering the file dialog.
+            // On Edge, opening a native file picker from behind a full-screen overlay
+            // can cause the UI to hang if the user cancels the browser dialog.
+            // We hide the overlay, trigger the picker, and restore it on cancel (see change handler).
+            hideOverlay();
+            fileDialogSource = 'overlay';
+            dbImportInput.click();
+        });
 
         overlayCancelBtn.addEventListener('click', () => {
             hideOverlay();
@@ -2354,6 +2438,10 @@
                 loadBtn.className = 'btn-load-db';
                 loadBtn.textContent = '📂 Load DB';
                 loadBtn.addEventListener('click', () => {
+                    // Same Edge fix: hide overlay before triggering file dialog,
+                    // restore on cancel (see change handler).
+                    hideMobileToolOverlay();
+                    fileDialogSource = 'mobileOverlay';
                     dbImportInput.click();
                 });
 
@@ -2668,20 +2756,45 @@
                 const parentInfo = lot.parentLotId ? ` ← ${lot.parentLotId}` : '';
                 const roomInfo = lot.destRoom ? ` → ${lot.destRoom}` : '';
 
-                // Build plant count display - clickable to edit
-                let plantCountHtml = '';
-                if (lot.plantCount !== null && lot.plantCount !== undefined) {
-                    plantCountHtml = `<span class="plant-count-display" data-lot-id="${key}" title="Click to edit plant count">🌱 ${lot.plantCount}</span>`;
-                } else {
-                    plantCountHtml = `<span class="plant-count-display" data-lot-id="${key}" title="Click to set plant count">🌱 —</span>`;
-                }
+                // Build stage selector dropdown
+                const stageSelectId = `stage_${key}`;
+                const stages = ['cloning', 'veg', 'flower', 'harvest', 'drying', 'curing'];
+                const stageOptions = stages.map(s => {
+                    const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Veg' : s === 'flower' ? 'Flower' :
+                                  s === 'harvest' ? 'Harvest' : s === 'drying' ? 'Drying' : 'Curing';
+                    const selected = lot.stage === s ? 'selected' : '';
+                    return `<option value="${s}" ${selected}>${label}</option>`;
+                }).join('');
+                const stageHtml = `
+                    <div class="lot-stage-editor">
+                        <select class="lot-stage-select" id="${stageSelectId}" data-lot-id="${key}" title="Change stage">
+                            ${stageOptions}
+                        </select>
+                    </div>
+                `;
+
+                // Build plant count spinbox — always visible
+                const currentCount = lot.plantCount !== null && lot.plantCount !== undefined ? lot.plantCount : 0;
+                const inputId = `plantCount_${key}`;
+                const plantCountHtml = `
+                    <div class="plant-count-editor">
+                        <span class="plant-count-emoji">🌱</span>
+                        <div class="spinbox-group">
+                            <button type="button" class="spinbox-btn minus" data-target="${inputId}" title="Decrease by 1">−</button>
+                            <input type="number" class="plant-count-input" id="${inputId}" data-lot-id="${key}"
+                                   min="0" max="10000" step="any" value="${currentCount}" title="Plant count">
+                            <button type="button" class="spinbox-btn plus" data-target="${inputId}" title="Increase by 1">+</button>
+                        </div>
+                    </div>
+                `;
 
                 item.innerHTML = `
                     <div class="lot-info">
                         <span class="lot-name">${escapeHtml(lot.name)}${roomInfo ? ' <span style="color: var(--text-secondary); font-weight: 400;">' + escapeHtml(roomInfo) + '</span>' : ''}</span>
-                        <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate} · ${lot.stage}</span>
+                        <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate}</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
+                        ${stageHtml}
                         ${plantCountHtml}
                         <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
                         <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
@@ -2706,44 +2819,31 @@
                 });
             });
 
-            // Attach plant count edit handlers
-            lotListEl.querySelectorAll('.plant-count-display').forEach(span => {
-                span.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const lotId = span.dataset.lotId;
+            // Attach stage change handlers
+            lotListEl.querySelectorAll('.lot-stage-select').forEach(select => {
+                select.addEventListener('change', () => {
+                    const lotId = select.dataset.lotId;
                     const lot = DB.lots[lotId];
                     if (!lot) return;
+                    lot.stage = select.value;
+                    markUnsaved();
+                    renderLotList();
+                });
+            });
 
-                    // Replace display with input
-                    const currentCount = lot.plantCount || 0;
-                    span.innerHTML = `
-                        <input type="number" class="plant-count-input" data-lot-id="${lotId}"
-                               min="0" max="10000" step="any" value="${currentCount}" title="Enter plant count (0–10,000)">
-                    `;
-                    const input = span.querySelector('input');
-                    input.focus();
-                    input.select();
-
-                    // Save on blur or enter
-                    const saveCount = () => {
-                        const newValue = parseInt(input.value, 10);
-                        if (!isNaN(newValue) && newValue >= 0) {
-                            lot.plantCount = newValue;
-                        } else {
-                            lot.plantCount = null;
-                        }
-                        markUnsaved();
-                        renderLotList();
-                    };
-
-                    input.addEventListener('blur', saveCount);
-                    input.addEventListener('keydown', (ke) => {
-                        if (ke.key === 'Enter') {
-                            input.blur(); // Trigger save
-                        } else if (ke.key === 'Escape') {
-                            renderLotList(); // Cancel edit
-                        }
-                    });
+            // Attach plant count change handlers (always-visible spinboxes)
+            lotListEl.querySelectorAll('.plant-count-input').forEach(input => {
+                input.addEventListener('change', () => {
+                    const lotId = input.dataset.lotId;
+                    const lot = DB.lots[lotId];
+                    if (!lot) return;
+                    const newValue = parseInt(input.value, 10);
+                    if (!isNaN(newValue) && newValue >= 0) {
+                        lot.plantCount = newValue;
+                    } else {
+                        lot.plantCount = null;
+                    }
+                    markUnsaved();
                 });
             });
         }

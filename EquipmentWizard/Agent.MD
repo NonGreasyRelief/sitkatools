@@ -54,6 +54,13 @@ EquipmentWizard appends events to the shared `calendarEvents` array using `"sour
 
 When a user generates (or regenerates) a schedule for a room, the tool first **removes all existing EquipmentWizard events** for that room from `calendarEvents` before inserting the new batch. This prevents duplicate or stale events when intervals change, equipment is removed, or the 12-month window rolls forward. The reconciliation logic matches on `sourceTool === 'EquipmentWizard'` AND `roomId === selectedRoom`.
 
+**Incremental reconciliation (auto-purge):** Calendar events are also automatically purged in these scenarios:
+- **Delete equipment:** All calendar events with matching `equipmentId` are immediately removed from the calendar.
+- **Delete sub-task:** All calendar events for the parent equipment item are purged (the task list changed, so the schedule is stale).
+- **Add sub-task:** Old events for that equipment are purged and regenerated to include the new task's occurrences.
+
+This ensures the main SitkaTools calendar never shows orphaned EquipmentWizard events — even when users modify equipment or tasks without clicking "Generate Schedule".
+
 ### Scheduling Algorithm
 
 For each sub-task in a room:

@@ -258,6 +258,12 @@
             letter-spacing: 0.5px;
         }
 
+        .equipment-details {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
         .equipment-task-count {
             font-size: 0.75rem;
             color: var(--text-secondary);
@@ -337,6 +343,19 @@
             flex-shrink: 0;
         }
 
+        .subtask-edit-btn {
+            background: none;
+            border: none;
+            color: var(--warning);
+            font-size: 1rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
         .subtask-delete-btn {
             background: none;
             border: none;
@@ -350,7 +369,9 @@
             flex-shrink: 0;
         }
 
+        .subtask-item:hover .subtask-edit-btn { opacity: 1; }
         .subtask-item:hover .subtask-delete-btn { opacity: 1; }
+        .subtask-edit-btn:hover { background: rgba(243, 156, 18, 0.2); }
         .subtask-delete-btn:hover { background: rgba(231, 76, 60, 0.2); }
 
         /* ---- Add Sub-task Form (inside equipment body) ---- */
@@ -657,6 +678,18 @@
                         <input type="text" id="equipmentName" placeholder="e.g., Dehumidifier #1, North Wall AC" required autocomplete="off">
                     </div>
                 </div>
+                <div id="dehumidifierFields" style="display:none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="equipmentSerial">Serial Number</label>
+                            <input type="text" id="equipmentSerial" placeholder="e.g., SN-2024-00123" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="equipmentFilterSize">Filter Size</label>
+                            <input type="text" id="equipmentFilterSize" placeholder="e.g., 12x12x1 in" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Equipment</button>
                 </div>
@@ -669,21 +702,8 @@
             <div class="equipment-list" id="equipmentList"></div>
         </div>
 
-        <!-- Generate Schedule Section -->
-        <div class="card" id="scheduleCard" style="display:none;">
-            <h2 class="card-title">Generate Maintenance Schedule</h2>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
-                This will purge existing maintenance events for this room and auto-populate the calendar 
-                with all recurring tasks for the next 12 months.
-            </p>
-            <div class="form-actions">
-                <button type="button" class="btn btn-secondary" id="previewBtn">Preview Events</button>
-                <button type="button" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
-            </div>
-        </div>
-
-        <!-- Calendar Events Preview -->
-        <div class="card" id="previewCard" style="display:none;">
+        <!-- Calendar Events Preview (always visible) -->
+        <div class="card" id="previewCard">
             <h2 class="card-title">Upcoming Maintenance Events <span id="previewCount" style="font-weight:400; font-size:0.85rem; color:var(--text-secondary);"></span></h2>
             <div class="event-preview-list" id="previewList"></div>
         </div>
@@ -772,23 +792,32 @@
                 populateRoomSelector();
                 renderEquipmentList();
                 updateStatusBar();
-                showToast('Database loaded from SitkaTools');
+                // On every load: purge all EquipmentWizard events and regenerate from ALL rooms
+                syncAllRooms();
+                showToast('Database loaded — calendar synced across all rooms');
             }
         });
+
+        // ---- Expanded State Tracking ----
+        const expandedSet = new Set();
 
         // ---- DOM References ----
         const activeRoomSelect = $('activeRoom');
         const equipmentForm = $('equipmentForm');
         const equipmentTypeSelect = $('equipmentType');
         const equipmentNameInput = $('equipmentName');
+        const dehumidifierFieldsDiv = $('dehumidifierFields');
         const equipmentListCard = $('equipmentListCard');
         const equipmentListEl = $('equipmentList');
-        const scheduleCard = $('scheduleCard');
         const previewCard = $('previewCard');
         const previewListEl = $('previewList');
         const previewCountEl = $('previewCount');
-        const generateBtn = $('generateBtn');
-        const previewBtn = $('previewBtn');
+
+        // ---- Toggle Dehumidifier Fields ----
+        equipmentTypeSelect.addEventListener('change', () => {
+            const type = equipmentTypeSelect.value;
+            dehumidifierFieldsDiv.style.display = type === 'Dehumidifier' ? 'block' : 'none';
+        });
 
         // ---- Populate Room Selector ----
         function populateRoomSelector() {
@@ -816,13 +845,82 @@
             return DB.data._EquipmentWizard.rooms[roomId].equipment || [];
         }
 
+        // ---- Sync ALL rooms: purge every EquipmentWizard event, regenerate from all rooms ----
+        function syncAllRooms() {
+            // Purge ALL existing EquipmentWizard events across every room
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => ev.sourceTool !== 'EquipmentWizard');
+
+            let totalEvents = 0;
+            for (const roomId of Object.keys(DB.rooms)) {
+                const events = computeCalendarEvents(roomId);
+                DB.data.calendarEvents.push(...events);
+                totalEvents += events.length;
+            }
+
+            // Update preview for active room
+            const activeRoom = getActiveRoomId();
+            if (activeRoom) {
+                renderPreview(computeCalendarEvents(activeRoom));
+            }
+
+            notifySitkaTools();
+            console.log(`[EquipmentWizard] Synced all rooms — ${totalEvents} total events`);
+        }
+
+        // ---- Auto-sync: purge old room events, regenerate, update preview, notify ----
+        function autoSyncCalendar(roomId) {
+            if (!roomId) roomId = getActiveRoomId();
+            if (!roomId) return;
+
+            // Purge all existing EquipmentWizard events for this room
+            reconcileRoomSchedule(roomId);
+
+            // Compute and append fresh events
+            const events = computeCalendarEvents(roomId);
+            DB.data.calendarEvents.push(...events);
+
+            // Update preview
+            renderPreview(events);
+
+            // Notify SitkaTools
+            notifySitkaTools();
+        }
+
+        // ---- Render Preview List ----
+        function renderPreview(events) {
+            if (!events) events = computeCalendarEvents(getActiveRoomId());
+            events.sort((a, b) => a.date.localeCompare(b.date));
+
+            previewCountEl.textContent = `(${events.length} events)`;
+            previewListEl.innerHTML = '';
+
+            if (events.length === 0) {
+                previewListEl.innerHTML = '<div class="empty-state">No scheduled maintenance tasks yet. Add tasks to equipment above.</div>';
+                return;
+            }
+
+            events.forEach(ev => {
+                const item = document.createElement('div');
+                item.className = 'event-preview-item';
+                const parts = ev.title.split(' — ');
+                const equipBadge = parts[1] || '';
+
+                item.innerHTML = `
+                    <span class="event-preview-date">${ev.date}</span>
+                    <span class="event-preview-text">${ev.title}</span>
+                    <span class="event-preview-equipment">${equipBadge}</span>
+                `;
+                previewListEl.appendChild(item);
+            });
+        }
+
         // ---- Render Equipment List ----
         function renderEquipmentList() {
             const roomId = getActiveRoomId();
             if (!roomId) {
                 equipmentListCard.style.display = 'none';
-                scheduleCard.style.display = 'none';
-                previewCard.style.display = 'none';
+                previewListEl.innerHTML = '<div class="empty-state">Select a room to see scheduled maintenance.</div>';
+                previewCountEl.textContent = '';
                 return;
             }
 
@@ -830,14 +928,19 @@
 
             if (equipment.length === 0) {
                 equipmentListCard.style.display = 'block';
-                scheduleCard.style.display = 'none';
-                previewCard.style.display = 'none';
                 equipmentListEl.innerHTML = '<div class="empty-state">No equipment added yet. Use the form above to add your first item.</div>';
+                renderPreview([]);
                 return;
             }
 
             equipmentListCard.style.display = 'block';
-            scheduleCard.style.display = 'block';
+
+            // Capture which items are currently expanded
+            const beforeExpand = new Set();
+            equipmentListEl.querySelectorAll('.equipment-body.open').forEach(body => {
+                const m = body.id.match(/eqBody_(\d+)/);
+                if (m) beforeExpand.add(parseInt(m[1]));
+            });
 
             equipmentListEl.innerHTML = '';
             equipment.forEach((eq, idx) => {
@@ -847,12 +950,24 @@
                 const emoji = eq.emoji || '🔧';
                 const taskCount = eq.tasks?.length || 0;
 
+                // Build dehumidifier details badge
+                let dehumDetails = '';
+                if (eq.type === 'Dehumidifier') {
+                    const parts = [];
+                    if (eq.serialNumber) parts.push(`SN: ${eq.serialNumber}`);
+                    if (eq.filterSize) parts.push(`Filter: ${eq.filterSize}`);
+                    if (parts.length > 0) {
+                        dehumDetails = `<div class="equipment-details">${parts.join(' · ')}</div>`;
+                    }
+                }
+
                 item.innerHTML = `
                     <div class="equipment-header" data-idx="${idx}">
                         <span class="equipment-emoji">${emoji}</span>
                         <div class="equipment-info">
                             <div class="equipment-name">${eq.name}</div>
                             ${eq.type ? `<span class="equipment-type-badge">${eq.type}</span>` : ''}
+                            ${dehumDetails}
                         </div>
                         <span class="equipment-task-count">${taskCount} task${taskCount !== 1 ? 's' : ''}</span>
                         <button class="equipment-delete-btn" data-idx="${idx}" title="Remove equipment">✕</button>
@@ -860,29 +975,8 @@
                     <div class="equipment-body" id="eqBody_${idx}">
                         <div class="subtask-list" id="subtaskList_${idx}"></div>
 
-                        <!-- Maintenance/Repair Log -->
-                        <div class="tracker-section" style="margin-bottom: 16px;">
-                            <div class="tracker-title">Maintenance/Repair Log</div>
-                            <div class="tracker-list" id="trackerList_${idx}"></div>
-                            <div class="add-tracker-form">
-                                <form class="add-tracker-inner" data-idx="${idx}">
-                                    <div class="form-row">
-                                        <div class="form-group" style="flex:2;">
-                                            <label>Description</label>
-                                            <input type="text" class="tracker-name-input" placeholder="e.g., Compressor replaced" required autocomplete="off">
-                                        </div>
-                                        <div class="form-group" style="flex:1;">
-                                            <label>Date</label>
-                                            <input type="date" class="tracker-date-input" value="${todayStr()}" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-actions">
-                                        <button type="submit" class="btn btn-primary btn-small">Log Entry</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-
+                        <!-- Scheduled Maintenance Header -->
+                        <div class="tracker-title">Scheduled Maintenance</div>
                         <div class="add-subtask-form">
                             <form class="add-subtask-inner" data-idx="${idx}">
                                 <div class="form-group">
@@ -924,10 +1018,39 @@
                                 </div>
                             </form>
                         </div>
+
+                        <!-- Repair Log -->
+                        <div class="tracker-section" style="margin-top: 16px;">
+                            <div class="tracker-title">Repair Log</div>
+                            <div class="tracker-list" id="trackerList_${idx}"></div>
+                            <div class="add-tracker-form">
+                                <form class="add-tracker-inner" data-idx="${idx}">
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex:2;">
+                                            <label>Description</label>
+                                            <input type="text" class="tracker-name-input" placeholder="e.g., Compressor replaced" required autocomplete="off">
+                                        </div>
+                                        <div class="form-group" style="flex:1;">
+                                            <label>Date</label>
+                                            <input type="date" class="tracker-date-input" value="${todayStr()}" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn btn-primary btn-small">Log Entry</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 `;
 
                 equipmentListEl.appendChild(item);
+
+                // Restore expanded state for this item
+                const body = $(`eqBody_${idx}`);
+                if (expandedSet.has(idx) || beforeExpand.has(idx)) {
+                    body.classList.add('open');
+                }
 
                 // Render subtasks
                 const subtaskList = $(`subtaskList_${idx}`);
@@ -942,6 +1065,7 @@
                                 <div class="subtask-interval">Every ${task.intervalValue} ${task.intervalUnit}</div>
                             </div>
                             <span class="subtask-start">Start: ${task.startDate}</span>
+                            <button class="subtask-edit-btn" data-eq-idx="${idx}" data-task-idx="${tIdx}" title="Edit task">✎</button>
                             <button class="subtask-delete-btn" data-eq-idx="${idx}" data-task-idx="${tIdx}" title="Remove task">✕</button>
                         `;
                         subtaskList.appendChild(taskEl);
@@ -968,10 +1092,15 @@
             // Bind expand/collapse headers
             equipmentListEl.querySelectorAll('.equipment-header').forEach(header => {
                 header.addEventListener('click', (e) => {
-                    if (e.target.closest('.equipment-delete-btn')) return;
-                    const idx = header.dataset.idx;
+                    if (e.target.closest('.equipment-delete-btn') || e.target.closest('.subtask-edit-btn')) return;
+                    const idx = parseInt(header.dataset.idx);
                     const body = $(`eqBody_${idx}`);
                     body.classList.toggle('open');
+                    if (body.classList.contains('open')) {
+                        expandedSet.add(idx);
+                    } else {
+                        expandedSet.delete(idx);
+                    }
                 });
             });
 
@@ -981,6 +1110,15 @@
                     e.stopPropagation();
                     const idx = parseInt(btn.dataset.idx);
                     deleteEquipment(idx);
+                });
+            });
+
+            // Bind subtask edit buttons
+            equipmentListEl.querySelectorAll('.subtask-edit-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const eqIdx = parseInt(btn.dataset.eqIdx);
+                    const taskIdx = parseInt(btn.dataset.taskIdx);
+                    loadTaskIntoForm(eqIdx, taskIdx);
                 });
             });
 
@@ -1049,6 +1187,10 @@
 
             const eqEmoji = getEmojiForType(type);
 
+            // Capture dehumidifier-specific fields
+            const serialNumber = type === 'Dehumidifier' ? $('equipmentSerial').value.trim() : undefined;
+            const filterSize = type === 'Dehumidifier' ? $('equipmentFilterSize').value.trim() : undefined;
+
             const equipment = getRoomEquipment(roomId);
             equipment.push({
                 id: uid(),
@@ -1056,18 +1198,68 @@
                 name: name,
                 emoji: eqEmoji,
                 installedDate: todayStr(),
+                serialNumber: serialNumber || undefined,
+                filterSize: filterSize || undefined,
                 tasks: [],
                 additionalMaintenance: []
             });
 
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
-            notifySitkaTools();
 
             equipmentNameInput.value = '';
             equipmentTypeSelect.value = '';
+            $('equipmentSerial').value = '';
+            $('equipmentFilterSize').value = '';
             renderEquipmentList();
+            autoSyncCalendar(roomId);
             showToast(`Added "${name}" to room`);
         });
+
+        // ---- Load Task Into Form (for editing) ----
+        function loadTaskIntoForm(eqIdx, taskIdx) {
+            const roomId = getActiveRoomId();
+            if (!roomId) return;
+
+            const equipment = getRoomEquipment(roomId);
+            const eq = equipment[eqIdx];
+            if (!eq || !eq.tasks || !eq.tasks[taskIdx]) return;
+
+            const task = eq.tasks[taskIdx];
+
+            // Find the add-subtask form for this equipment item
+            const body = $(`eqBody_${eqIdx}`);
+            if (!body) return;
+
+            // Ensure the body is expanded so the user can see the form
+            body.classList.add('open');
+            expandedSet.add(eqIdx);
+
+            // Populate form fields
+            const form = body.querySelector('.add-subtask-inner');
+            if (!form) return;
+
+            form.querySelector('.subtask-name-input').value = task.name;
+            form.querySelector('.subtask-interval-value').value = task.intervalValue;
+            form.querySelector('.subtask-interval-unit').value = task.intervalUnit;
+            form.querySelector('.subtask-start-date').value = task.startDate;
+
+            // Select the matching emoji button
+            const emojiRow = form.querySelector('.emoji-row');
+            if (emojiRow) {
+                emojiRow.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+                const match = emojiRow.querySelector(`.emoji-btn[data-emoji="${task.emoji}"]`);
+                if (match) {
+                    match.classList.add('selected');
+                } else {
+                    emojiRow.querySelector('.emoji-btn')?.classList.add('selected');
+                }
+            }
+
+            // Scroll the form into view
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            showToast(`Editing "${task.name}" — submit to update`);
+        }
 
         // ---- Get emoji for equipment type ----
         function getEmojiForType(type) {
@@ -1090,9 +1282,10 @@
 
             const equipment = getRoomEquipment(roomId);
             const removed = equipment.splice(idx, 1)[0];
+
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
-            notifySitkaTools();
             renderEquipmentList();
+            autoSyncCalendar(roomId);
             showToast(`Removed "${removed?.name}"`);
         }
 
@@ -1116,19 +1309,30 @@
             if (!eq) return;
 
             if (!eq.tasks) eq.tasks = [];
-            eq.tasks.push({
+
+            // Check for a task with the same name — replace it instead of duplicating
+            const existingIdx = eq.tasks.findIndex(t => t.name === name);
+            const isNew = existingIdx === -1;
+
+            const newTask = {
                 id: uid(),
                 name: name,
                 intervalValue: parseInt(intervalValueInput.value),
                 intervalUnit: intervalUnitSelect.value,
                 startDate: startDateInput.value || todayStr(),
                 emoji: selectedEmojiBtn?.dataset.emoji || '🔧'
-            });
+            };
+
+            if (isNew) {
+                eq.tasks.push(newTask);
+            } else {
+                eq.tasks[existingIdx] = newTask;
+            }
 
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
-            notifySitkaTools();
             renderEquipmentList();
-            showToast(`Added task "${name}"`);
+            autoSyncCalendar(roomId);
+            showToast(isNew ? `Added task "${name}"` : `Updated task "${name}"`);
         }
 
         // ---- Delete Sub-task ----
@@ -1141,9 +1345,10 @@
             if (!eq || !eq.tasks) return;
 
             const removed = eq.tasks.splice(taskIdx, 1)[0];
+
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
-            notifySitkaTools();
             renderEquipmentList();
+            autoSyncCalendar(roomId);
             showToast(`Removed task "${removed?.name}"`);
         }
 
@@ -1198,39 +1403,47 @@
             showToast('Removed entry');
         }
 
-        // ---- Compute Calendar Events for a Room ----
-        function computeCalendarEvents(roomId) {
-            const equipment = getRoomEquipment(roomId);
+        // ---- Compute Calendar Events for a Single Equipment Item ----
+        function computeEquipmentEvents(eq, roomId) {
             const roomName = DB.rooms[roomId]?.name || roomId;
             const today = todayStr();
             const endDate = addMonths(today, 12);
             const events = [];
 
-            for (const eq of equipment) {
-                if (!eq.tasks) continue;
-                for (const task of eq.tasks) {
-                    let current = task.startDate;
+            if (!eq.tasks) return events;
+            for (const task of eq.tasks) {
+                let current = task.startDate;
 
-                    // Generate occurrences from start date through end of 12-month window
-                    while (current <= endDate) {
-                        events.push({
-                            id: uid(),
-                            date: current,
-                            title: `${task.emoji || '🔧'} ${task.name} — ${eq.name} — ${roomName}`,
-                            sourceTool: 'EquipmentWizard',
-                            roomId: roomId,
-                            equipmentId: eq.id,
-                            taskType: 'equipment_maintenance'
-                        });
+                while (current <= endDate) {
+                    events.push({
+                        id: uid(),
+                        date: current,
+                        title: `${task.emoji || '🔧'} ${task.name} — ${eq.name} — ${roomName}`,
+                        sourceTool: 'EquipmentWizard',
+                        roomId: roomId,
+                        equipmentId: eq.id,
+                        taskType: 'equipment_maintenance'
+                    });
 
-                        // Advance to next occurrence
-                        if (task.intervalUnit === 'months') {
-                            current = addMonths(current, task.intervalValue);
-                        } else {
-                            current = addDays(current, task.intervalValue);
-                        }
+                    if (task.intervalUnit === 'months') {
+                        current = addMonths(current, task.intervalValue);
+                    } else {
+                        current = addDays(current, task.intervalValue);
                     }
                 }
+            }
+
+            return events;
+        }
+
+        // ---- Compute Calendar Events for a Room ----
+        function computeCalendarEvents(roomId) {
+            const equipment = getRoomEquipment(roomId);
+            const events = [];
+
+            for (const eq of equipment) {
+                if (!eq.tasks) continue;
+                events.push(...computeEquipmentEvents(eq, roomId));
             }
 
             return events;
@@ -1246,102 +1459,20 @@
             });
         }
 
-        // ---- Preview Events ----
-        previewBtn.addEventListener('click', () => {
-            const roomId = getActiveRoomId();
-            if (!roomId) {
-                showToast('Please select a room first.');
-                return;
-            }
-
-            const equipment = getRoomEquipment(roomId);
-            let hasTasks = false;
-            for (const eq of equipment) {
-                if (eq.tasks && eq.tasks.length > 0) {
-                    hasTasks = true;
-                    break;
+        // ---- Purge calendar events for a specific equipment item ----
+        function purgeEquipmentEvents(equipmentId) {
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
+                if (ev.sourceTool === 'EquipmentWizard' && ev.equipmentId === equipmentId) {
+                    return false;
                 }
-            }
-
-            if (!hasTasks) {
-                showToast('Add maintenance tasks to equipment first.');
-                return;
-            }
-
-            const events = computeCalendarEvents(roomId);
-
-            // Sort by date
-            events.sort((a, b) => a.date.localeCompare(b.date));
-
-            previewCard.style.display = 'block';
-            previewCountEl.textContent = `(${events.length} events)`;
-
-            previewListEl.innerHTML = '';
-            events.forEach(ev => {
-                const item = document.createElement('div');
-                item.className = 'event-preview-item';
-                // Extract equipment name from title for badge
-                const parts = ev.title.split(' — ');
-                const equipBadge = parts[1] || '';
-
-                item.innerHTML = `
-                    <span class="event-preview-date">${ev.date}</span>
-                    <span class="event-preview-text">${ev.title}</span>
-                    <span class="event-preview-equipment">${equipBadge}</span>
-                `;
-                previewListEl.appendChild(item);
+                return true;
             });
+        }
 
-            showToast(`Preview: ${events.length} events over 12 months`);
-        });
-
-        // ---- Generate Schedule ----
-        generateBtn.addEventListener('click', () => {
-            const roomId = getActiveRoomId();
-            if (!roomId) {
-                showToast('Please select a room first.');
-                return;
-            }
-
-            const equipment = getRoomEquipment(roomId);
-            let hasTasks = false;
-            for (const eq of equipment) {
-                if (eq.tasks && eq.tasks.length > 0) {
-                    hasTasks = true;
-                    break;
-                }
-            }
-
-            if (!hasTasks) {
-                showToast('Add maintenance tasks to equipment first.');
-                return;
-            }
-
-            // Reconcile: purge old events for this room
-            reconcileRoomSchedule(roomId);
-
-            // Compute and append new events
-            const events = computeCalendarEvents(roomId);
-            DB.data.calendarEvents.push(...events);
-
-            // DEBUG: Log events before sending
-            console.log('[EquipmentWizard] Generated', events.length, 'events');
-            console.log('[EquipmentWizard] Total calendarEvents:', DB.data.calendarEvents.length);
-            console.log('[EquipmentWizard] First 3 events:', DB.data.calendarEvents.slice(0, 3));
-
-            notifySitkaTools();
-            showToast(`Generated ${events.length} maintenance events for ${DB.rooms[roomId]?.name || roomId}`);
-
-            // Also refresh preview if visible
-            if (previewCard.style.display !== 'none') {
-                previewBtn.click();
-            }
-        });
-
-        // ---- Room Selector Change Handler ----
+        // ---- Room Selector Change Handler — auto-sync on room switch ----
         activeRoomSelect.addEventListener('change', () => {
             renderEquipmentList();
-            previewCard.style.display = 'none';
+            autoSyncCalendar();
         });
 
         // ---- Update Status Bar ----

@@ -2,37 +2,43 @@
 
 ## What This Tool Does
 
-CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultivation. Given a selected lot and a desired planting date, it automatically computes and schedules every major cultivation task as calendar events based on fixed offsets from the anchor date. The user picks a lot, sets the planting date, configures a few variables (bloom duration, trim length), and the tool generates the entire grow-out timeline.
+CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultivation. Given a selected lot and an anchor date, it automatically computes and schedules every major cultivation task as calendar events based on editable day offsets from reference points. The user picks a lot, sets the anchor date, adjusts any task's day offset in the preview, and generates the entire grow-out timeline.
 
 ### Intended Use
 
-- **Auto-schedule a full crop cycle:** Select a lot, enter the planting date, and the tool calculates every downstream task — transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, and room clean.
-- **Preview & edit before committing:** Click "Preview Schedule" to see all computed tasks with their default dates, then adjust any task's date before generating the final schedule.
+- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, and room clean.
+- **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) before generating the final schedule.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
-- **Adjust per-lot variables:** Bloom duration (8 or 9 weeks) is configurable per lot since it varies by strain. Trim is fixed at 7 days.
+- **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
 
-### Crop Schedule — Task Offsets from Planting Date
+### Crop Schedule — Task Offsets from Reference Points
 
-All dates are computed from the user-provided **planting date** (Day 0). The vegetative period is fixed at 21 days (transplant at day 14, flip at day 21). Bloom events are offset from the flip-to-flower date. Post-harvest events are offset from the harvest date.
+All dates cascade from reference points. The **Day 0 anchor** is dynamic:
+- **Clones enabled:** Cloning date = Day 0, Planting offsets from cloning (default +14 days, editable)
+- **Clones disabled:** Planting date = Day 0, Cutting Clones hidden
 
-| # | Task | Emoji | Offset From | Computed Date | Multi-Day? | Toggleable? |
-|---|------|-------|-------------|---------------|------------|-------------|
-| 0 | Cutting Clones | ✂️ | -14 days from planting | Day -14 (2 weeks before planting) | No | **Yes** (enabled by default) |
-| 1 | Planting clones | 🌱 | — | User-set anchor date | No | — |
-| 2 | Topping | ✂️ | 3 days after planting clones | Day 3 | No | — |
-| 3 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | 7 days after planting | Day 7 | No | — |
-| 4 | Transplanting to Flower Room | 🪴 | +14 days from planting | Day 14 | No | — |
-| 5 | Deploy IPM to Flower Room | 🛡️ | Day after transplant to flower room | Day 15 | No | — |
-| 6 | Flip to Flower | 🌸 | +7 days from transplanting (= +21 days from planting) | Day 21 | No | — |
-| 7 | Two-Node / Lollipop Prune | 🔪 | 1 day before flip to flower | Day 20 | No | — |
-| 8 | Early Flower Leaf Pick | 🍃 | 3 weeks into bloom (= +21 days from flip) | Day 42 | No | — |
-| 9 | Cutting Clones to Replace Lot | 🌿 | Start of week 6 of bloom (= +42 days from flip) | Day 63 | No | — |
-| 10 | Late Flower Leaf Pick | 🍂 | 6 weeks into bloom (= +42 days from flip) | Day 63 | No | — |
-| 11 | Harvest | 🌾 | User-selectable: 8 or 9 weeks into bloom (= +56 or +63 days from flip) | Day 77 or 84 | No | — |
-| 12 | Grow-Room Clean | 🧹 | Day after harvest starts | Harvest + 1 day | No | — |
-| 13 | Dry Room Take-Down / Bucking | 📦 | 10 days after harvest start date | Harvest + 10 days | No | — |
-| 14 | Prepare Sample for Lab Testing | 🔬 | Same day as bucking | Harvest + 10 days | No | — |
-| 15 | Trim | ✂️ | Starts the day after bucking ends; fixed at 7 days | Bucking + 1 day → +7 days | **Yes** (multi-day event) | — |
+All day offsets are user-editable in the preview. Changing a reference point's offset (e.g., Flip to Flower or Harvest) cascades to all downstream tasks by the same delta.
+
+| # | Task | Emoji | Reference Point | Default Offset | Editable? | Toggleable? |
+|---|------|-------|-----------------|----------------|-----------|-------------|
+| 0 | Cutting Clones | ✂️ | Cloning (Day 0) | Day 0 (locked) | No | **Yes** (enabled by default) |
+| 1 | Planting Clones | 🌱 | Cloning (when clones on) / Planting (when clones off) | +14 from cloning / Day 0 (locked when clones off) | Yes (when clones on) | — |
+| 2 | Topping | ✂️ | Planting | +3 days | Yes | — |
+| 3 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
+| 4 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
+| 5 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
+| 6 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
+| 7 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
+| 8 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
+| 9 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
+| 10 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
+| 11 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks) | — |
+| 12 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
+| 13 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
+| 14 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
+| 15 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
+
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks.
 
 ### Calendar Events Generated
 
@@ -61,7 +67,7 @@ CropLabourWizard reads and writes its own keys within the shared database, follo
 ```
 _tool_CropLabourWizard: { ... }
 ```
-Stores the lot's schedule configuration: planting date, bloom duration (8 or 9 weeks), and a list of generated task IDs. Trim is fixed at 7 days. This lets the tool re-render its UI from stored state and detect stale schedules during reconciliation.
+Stores the lot's schedule configuration: anchor date, task count, and trim days. Trim is fixed at 7 days. This lets the tool re-render its UI from stored state and detect stale schedules during reconciliation.
 
 **Top-level data** (root of database):
 ```

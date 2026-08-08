@@ -166,6 +166,13 @@
 
         .btn-secondary:hover { border-color: var(--text-secondary); }
 
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn-danger:hover { background: var(--danger-hover); }
+
         /* ---- Footer ---- */
         .footer {
             background: var(--bg-secondary);
@@ -548,18 +555,9 @@
         <div class="card">
             <h2 class="card-title">Schedule Config</h2>
             <form id="scheduleForm">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="plantingDate">Planting Date (Day 0)</label>
-                        <input type="date" id="plantingDate" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="bloomDuration">Bloom Duration</label>
-                        <select id="bloomDuration">
-                            <option value="8" selected>8 weeks (56 days)</option>
-                            <option value="9">9 weeks (63 days)</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label id="anchorDateLabel" for="plantingDate">Planting Date (Day 0)</label>
+                    <input type="date" id="plantingDate" required>
                 </div>
             </form>
         </div>
@@ -572,7 +570,7 @@
             </p>
             <div id="previewTaskList"></div>
             <div class="form-actions">
-                <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear</button>
+                <button type="button" class="btn btn-danger" id="clearFormBtn">Clear Schedule</button>
                 <button type="submit" form="scheduleForm" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
             </div>
         </div>
@@ -616,12 +614,11 @@
         const $ = id => document.getElementById(id);
 
         // ---- Task Definitions (reference + default offset) ----
-        // reference: 'planting' | 'flip' | 'harvest'
+        // reference: 'cloning' | 'planting' | 'flip' | 'harvest'
         // defaultOffset: days from the reference point
-        // isBloomDuration: harvest follows bloom duration select (56 or 63 days from flip)
         const TASK_DEFS = [
-            { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'planting', defaultOffset: -14, hasToggle: true },
-            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'planting', defaultOffset: 0 },
+            { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
+            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
             { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
@@ -632,8 +629,8 @@
             { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
             { name: 'Cutting Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 42 },
             { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42 },
-            // Harvest — follows bloom duration (56 or 63 days from flip)
-            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', isBloomDuration: true },
+            // Harvest — user-editable offset from flip (default 56 days = 8 weeks bloom)
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 56 },
             // Post-harvest tasks (offset from harvest)
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
@@ -684,7 +681,6 @@
         // ---- DOM References ----
         const scheduleForm = $('scheduleForm');
         const plantingDateInput = $('plantingDate');
-        const bloomDurationSelect = $('bloomDuration');
         const clearFormBtn = $('clearFormBtn');
         const generateBtn = $('generateBtn');
         const scheduleListCard = $('scheduleListCard');
@@ -723,27 +719,31 @@
 
         // ---- Reference date labels ----
         const REF_LABELS = {
+            cloning: 'Cloning',
             planting: 'Planting',
             flip: 'Flip to Flower',
             harvest: 'Harvest'
         };
 
-        // ---- Compute anchor dates (flip day, harvest day) from config ----
-        function computeAnchors(plantingDateStr, bloomWeeks) {
-            const plantingDate = new Date(plantingDateStr + 'T00:00:00');
-            const flipDay = 21;
-            const bloomWeekDays = bloomWeeks * 7;
-
-            const addDays = (date, days) => {
-                const d = new Date(date);
+        // ---- Compute anchor dates from config ----
+        // topDate: the date from the top picker (cloning date when clones enabled, planting date otherwise)
+        // clonesEnabled: whether Cutting Clones is toggled on
+        // plantingOffset: days from cloning to planting (only used when clonesEnabled)
+        // flipOffset: days from planting to flip (defaults to 21)
+        // harvestOffset: days from flip to harvest (defaults to 56 = 8 weeks bloom)
+        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56) {
+            const addDays = (dateStr, days) => {
+                const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
                 return d.toISOString().split('T')[0];
             };
 
-            const flipDate = addDays(plantingDate, flipDay);
-            const harvestDate = addDays(plantingDate, flipDay + bloomWeekDays);
+            const cloningDate = topDate;
+            const plantingDate = clonesEnabled ? addDays(topDate, plantingOffset) : topDate;
+            const flipDate = addDays(plantingDate, flipOffset);
+            const harvestDate = addDays(flipDate, harvestOffset);
 
-            return { planting: plantingDateStr, flip: flipDate, harvest: harvestDate };
+            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate };
         }
 
         // ---- Compute a task's date from its reference anchor + offset ----
@@ -756,14 +756,35 @@
         // ---- Re-render preview whenever config changes ----
         function refreshPreview() {
             const plantingDate = plantingDateInput.value;
-            const bloomWeeks = parseInt(bloomDurationSelect.value);
 
             if (!plantingDate) {
-                previewTaskList.innerHTML = '<div class="empty-state">Set a planting date to see the schedule.</div>';
+                previewTaskList.innerHTML = '<div class="empty-state">Set a date to see the schedule.</div>';
                 return;
             }
 
-            const anchors = computeAnchors(plantingDate, bloomWeeks);
+            // Determine if clones are enabled
+            const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
+            const clonesEnabled = clonePrepEntry?.enabled !== false;
+
+            // Get planting offset (only matters when clones are enabled)
+            const plantingEntry = taskOffsets.find(e => e.def.taskType === 'planting');
+            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
+
+            // Get the actual flip offset from taskOffsets (may differ from default 21)
+            const flipEntry = taskOffsets.find(e => e.def.taskType === 'flip');
+            const flipOffset = flipEntry ? flipEntry.offset : 21;
+
+            // Get the actual harvest offset from taskOffsets (may differ from default 56)
+            const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
+            const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
+
+            // Update date picker label based on clone state
+            const anchorLabel = $('anchorDateLabel');
+            if (anchorLabel) {
+                anchorLabel.textContent = clonesEnabled ? 'Cloning Date (Day 0)' : 'Planting Date (Day 0)';
+            }
+
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset);
 
             previewTaskList.innerHTML = '';
             const listWrapper = document.createElement('div');
@@ -771,15 +792,24 @@
 
             taskOffsets.forEach((entry, idx) => {
                 const def = entry.def;
-                const ref = def.reference;
-                const label = REF_LABELS[ref] || ref;
                 const isEnabled = entry.enabled !== false;
 
-                // For bloom-duration tasks (harvest), offset is determined by bloom select
-                const effectiveOffset = def.isBloomDuration ? (parseInt(bloomDurationSelect.value) * 7) : entry.offset;
+                // Determine display reference, label, offset, and locked state
+                let displayRef = def.reference;
+                let displayLabel = REF_LABELS[displayRef] || displayRef;
+                let effectiveOffset = entry.offset;
+                let isLockedDisplay = def.isLocked;
+
+                // When clones disabled, planting becomes Day 0 (locked, references planting anchor)
+                if (def.taskType === 'planting' && !clonesEnabled) {
+                    displayRef = 'planting';
+                    displayLabel = REF_LABELS[displayRef];
+                    effectiveOffset = 0;
+                    isLockedDisplay = true;
+                }
 
                 // Compute date from anchor + offset
-                const anchorDate = anchors[ref];
+                const anchorDate = anchors[displayRef];
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
                 let endDate = null;
 
@@ -803,15 +833,15 @@
                     ? `<input type="checkbox" class="task-enabled-check" id="${checkInputId}" ${isEnabled ? 'checked' : ''} data-idx="${idx}" title="Enable/disable this task" />`
                     : '';
 
-                // Offset input: editable unless it's bloom-duration controlled (harvest) or disabled
+                // Offset input: editable unless it's locked or disabled
                 let offsetGroupHtml = '';
-                if (def.isBloomDuration) {
+                if (isLockedDisplay) {
                     offsetGroupHtml = `
                         <div class="preview-offset-group">
-                            <label>Bloom</label>
-                            <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" disabled title="Decrease by 1">−</button>
-                            <input type="number" id="${offsetInputId}" value="${effectiveOffset}" disabled title="Set by Bloom Duration" />
-                            <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" disabled title="Increase by 1">+</button>
+                            <label>Day</label>
+                            <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" disabled title="Locked">−</button>
+                            <input type="number" id="${offsetInputId}" value="${effectiveOffset}" disabled title="Locked to this day" />
+                            <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" disabled title="Locked">+</button>
                         </div>
                     `;
                 } else {
@@ -834,7 +864,7 @@
                     <span class="preview-task-emoji">${def.emoji}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
-                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${label}</div>
+                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}</div>
                     </div>
                     ${offsetGroupHtml}
                     <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}" ${!isEnabled ? 'style="opacity:0.4"' : ''}>${displayDate}</span>
@@ -899,13 +929,11 @@
             const config = DB.lots[lotId]?._tool_CropLabourWizard;
             if (config) {
                 plantingDateInput.value = config.plantingDate || '';
-                bloomDurationSelect.value = config.bloomDuration || '8';
             }
         }
 
-        // ---- Auto-refresh preview when planting date or bloom duration changes ----
+        // ---- Auto-refresh preview when planting date changes ----
         plantingDateInput.addEventListener('input', () => refreshPreview());
-        bloomDurationSelect.addEventListener('change', () => refreshPreview());
 
         // ---- Reconcile: Remove existing CropLabourWizard events for a lot ----
         function reconcileLotSchedule(lotId) {
@@ -928,7 +956,6 @@
             }
 
             const plantingDate = plantingDateInput.value;
-            const bloomWeeks = parseInt(bloomDurationSelect.value);
 
             if (!plantingDate) {
                 alert('Please set a planting date.');
@@ -940,7 +967,22 @@
             // Reconcile: remove existing schedule for this lot
             reconcileLotSchedule(lotId);
 
-            const anchors = computeAnchors(plantingDate, bloomWeeks);
+            // Determine if clones are enabled
+            const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
+            const clonesEnabled = clonePrepEntry?.enabled !== false;
+
+            // Get planting offset (only matters when clones are enabled)
+            const plantingEntry = taskOffsets.find(e => e.def.taskType === 'planting');
+            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
+
+            // Get the actual flip offset from taskOffsets (may differ from default 21)
+            const flipEntry = taskOffsets.find(e => e.def.taskType === 'flip');
+            const flipOffset = flipEntry ? flipEntry.offset : 21;
+
+            // Get the actual harvest offset from taskOffsets (may differ from default 56)
+            const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
+            const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset);
 
             // Build calendar events from current offsets (skip disabled tasks)
             const newEvents = [];
@@ -949,8 +991,18 @@
                 if (entry.enabled === false) continue;
 
                 const def = entry.def;
-                const anchorDate = anchors[def.reference];
-                const effectiveOffset = def.isBloomDuration ? (bloomWeeks * 7) : entry.offset;
+
+                // Determine effective reference and offset
+                let anchorRef = def.reference;
+                let effectiveOffset = entry.offset;
+
+                // When clones disabled, planting is at Day 0 from planting anchor
+                if (def.taskType === 'planting' && !clonesEnabled) {
+                    anchorRef = 'planting';
+                    effectiveOffset = 0;
+                }
+
+                const anchorDate = anchors[anchorRef];
                 const startDate = computeTaskDate(anchorDate, effectiveOffset);
 
                 const event = {
@@ -977,7 +1029,6 @@
             // Store config per-lot
             DB.data.lots[lotId]._tool_CropLabourWizard = {
                 plantingDate: plantingDate,
-                bloomDuration: bloomWeeks,
                 trimDays: TRIM_DAYS,
                 taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
@@ -990,7 +1041,6 @@
             DB.data._CropLabourWizard.generations.push({
                 lotId: lotId,
                 plantingDate: plantingDate,
-                bloomDuration: bloomWeeks,
                 trimDays: TRIM_DAYS,
                 taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
@@ -1006,13 +1056,44 @@
             showToast(`Schedule generated — ${newEvents.length} tasks for ${lotId}`);
         });
 
-        // ---- Clear Form ----
+        // ---- Clear Schedule — remove all CropLabourWizard events for the selected lot ----
         clearFormBtn.addEventListener('click', () => {
-            scheduleForm.reset();
-            plantingDateInput.value = new Date().toISOString().split('T')[0];
-            bloomDurationSelect.value = '8';
+            const lotId = activeLotSelect.value;
+
+            if (!lotId) {
+                showToast('Select a lot first');
+                return;
+            }
+
+            // Check if there are any events to clear
+            const existingCount = DB.data.calendarEvents.filter(
+                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
+            ).length;
+
+            if (existingCount === 0) {
+                showToast('No schedule to clear for this lot');
+                return;
+            }
+
+            // Remove all CropLabourWizard events for this lot
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(
+                ev => !(ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId)
+            );
+
+            // Clear per-lot config
+            if (DB.lots[lotId]?._tool_CropLabourWizard) {
+                delete DB.lots[lotId]._tool_CropLabourWizard;
+            }
+
+            // Notify SitkaTools so the calendar refreshes
+            notifySitkaTools();
+
+            // Reset form state
             buildDefaultOffsets();
             refreshPreview();
+            renderScheduleList();
+
+            showToast(`Cleared ${existingCount} schedule events from ${lotId}`);
         });
 
         // ---- Render Schedule List ----
@@ -1037,8 +1118,7 @@
             // Show config summary
             configSummaryEl.style.display = 'flex';
             configSummaryEl.innerHTML = `
-                <span>📅 Planting: <strong>${config.plantingDate}</strong></span>
-                <span>🌸 Bloom: <strong>${config.bloomDuration} weeks</strong></span>
+                <span>📅 Anchor: <strong>${config.plantingDate}</strong></span>
                 <span>✂️ Trim: <strong>${config.trimDays} days</strong></span>
                 <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
             `;
