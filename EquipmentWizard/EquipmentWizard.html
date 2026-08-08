@@ -469,6 +469,42 @@
             transform: translateX(-50%) translateY(0);
         }
 
+        /* ---- Mobile Import Banner ---- */
+        .mobile-banner {
+            background: var(--bg-card);
+            border: 1px solid var(--warning);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--warning);
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mobile-banner.show {
+            display: flex;
+        }
+
+        .mobile-banner-text {
+            flex: 1;
+        }
+
+        .mobile-banner-text strong {
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .mobile-banner-text span {
+            font-size: 0.8rem;
+            opacity: 0.85;
+        }
+
+        #dbImportInput {
+            display: none;
+        }
+
         /* ---- Empty State ---- */
         .empty-state {
             text-align: center;
@@ -638,8 +674,21 @@
         </div>
     </header>
 
+    <!-- Hidden file input for mobile DB import -->
+    <input type="file" id="dbImportInput" accept=".json">
+
     <!-- Main Content -->
     <main class="main">
+        <!-- Mobile Import Banner -->
+        <div class="mobile-banner" id="mobileBanner">
+            <span style="font-size:1.3rem;">📱</span>
+            <div class="mobile-banner-text">
+                <strong>Mobile Detected — Manual Import Required</strong>
+                <span>postMessage sync is unavailable on mobile. Tap below to import your database file.</span>
+            </div>
+            <button type="button" class="btn btn-secondary" id="importDbBtn" style="white-space:nowrap; padding:8px 14px; font-size:0.85rem;">Import DB</button>
+        </div>
+
         <!-- Status Bar -->
         <div class="status-bar" id="statusBar">
             <span id="statusText">No database loaded. Open from SitkaTools.</span>
@@ -711,7 +760,10 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn btn-primary" id="saveDbBtn" style="display:none;">💾 Save Database</button>
+            <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+        </div>
     </footer>
 
     <!-- Toast -->
@@ -741,6 +793,56 @@
         };
 
         const $ = id => document.getElementById(id);
+
+        // ---- Mobile Detection — touch screen + small viewport (low resolution) ----
+        const isMobileDevice = window.innerWidth < 768 && navigator.maxTouchPoints > 0;
+
+        // ---- Mobile: Import DB from file ----
+        function handleDbImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    DB.data = parsed;
+                    DB.ensureStructure();
+                    populateRoomSelector();
+                    renderEquipmentList();
+                    updateStatusBar();
+                    syncAllRooms();
+                    showToast('Database imported successfully');
+                } catch (err) {
+                    alert('Failed to parse JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+
+        // ---- Mobile: Save DB as downloadable JSON file ----
+        function handleDbSave() {
+            DB.ensureStructure();
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Database saved — import it in SitkaTools to sync');
+        }
 
         // ---- Utility: unique ID generator ----
         function uid() {
@@ -1505,6 +1607,19 @@
 
         // ---- Close Tool ----
         $('closeToolBtn').addEventListener('click', () => window.close());
+
+        // ---- Mobile UI Setup ----
+        if (isMobileDevice) {
+            $('mobileBanner').classList.add('show');
+            $('saveDbBtn').style.display = 'inline-block';
+
+            $('importDbBtn').addEventListener('click', () => {
+                $('dbImportInput').click();
+            });
+            $('dbImportInput').addEventListener('change', handleDbImport);
+
+            $('saveDbBtn').addEventListener('click', handleDbSave);
+        }
 
         // ---- Initial render check ----
         updateStatusBar();

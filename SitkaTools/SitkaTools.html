@@ -782,6 +782,137 @@
             color: var(--danger);
         }
 
+        /* Print Todo Button in Terminal Header */
+        .terminal-print-btn {
+            background: none;
+            border: 1px solid #555;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 2px 8px;
+            border-radius: 3px;
+            line-height: 1.4;
+            transition: all 0.15s;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .terminal-print-btn:hover {
+            background: rgba(83, 216, 168, 0.15);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Print Todo Dialog Overlay */
+        .print-todo-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .print-todo-overlay.hidden {
+            display: none;
+        }
+
+        .print-todo-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 32px 40px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            max-width: 380px;
+            width: 90%;
+        }
+
+        .print-todo-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .print-todo-desc {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .print-todo-input-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .print-todo-input-row label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .print-todo-input {
+            width: 70px;
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 1rem;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .print-todo-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .print-todo-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .print-todo-go {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 10px 28px;
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .print-todo-go:hover {
+            background: var(--accent-hover);
+        }
+
+        .print-todo-cancel {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 10px 28px;
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .print-todo-cancel:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+
         /* Calendar Navigation */
         .calendar-nav {
             display: flex;
@@ -1799,6 +1930,22 @@
         </div>
     </div>
 
+    <!-- Print Todo List Dialog -->
+    <div class="print-todo-overlay hidden" id="printTodoOverlay">
+        <div class="print-todo-card">
+            <div class="print-todo-title">🖨 Print Todo List</div>
+            <div class="print-todo-desc">How many days ahead should the todo list cover?</div>
+            <div class="print-todo-input-row">
+                <label for="printTodoDaysInput">Days:</label>
+                <input type="number" class="print-todo-input" id="printTodoDaysInput" value="7" min="1" max="365">
+            </div>
+            <div class="print-todo-actions">
+                <button class="print-todo-go" id="printTodoGoBtn">Print</button>
+                <button class="print-todo-cancel" id="printTodoCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sync Toast — appears when a subtool updates the database (auto-synced) -->
     <div class="sync-toast hidden" id="syncToast">
         <span class="sync-toast-icon">🔄</span>
@@ -1844,7 +1991,10 @@
             <div class="terminal-panel" id="terminalPanel">
                 <div class="terminal-header">
                     <span class="terminal-title">📋 UPCOMING EVENTS</span>
-                    <span class="terminal-status" id="terminalStatus">0 events</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="terminal-status" id="terminalStatus">0 events</span>
+                        <button class="terminal-print-btn" id="printTodoBtn" title="Print todo list">🖨 Print Todo</button>
+                    </div>
                 </div>
                 <div class="terminal-body" id="terminalBody">
                     <div class="terminal-line text-secondary">No events loaded. Import a database to begin.</div>
@@ -2376,6 +2526,207 @@
         function hideMobileToolOverlay() {
             mobileToolOverlay.classList.add('hidden');
             pendingToolUrl = null;
+        }
+
+        // ---- Print Todo List ----
+        const printTodoOverlay = $('printTodoOverlay');
+        const printTodoBtn = $('printTodoBtn');
+        const printTodoDaysInput = $('printTodoDaysInput');
+        const printTodoGoBtn = $('printTodoGoBtn');
+        const printTodoCancelBtn = $('printTodoCancelBtn');
+
+        printTodoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            printTodoDaysInput.value = 7;
+            printTodoOverlay.classList.remove('hidden');
+            setTimeout(() => printTodoDaysInput.focus(), 100);
+        });
+
+        printTodoCancelBtn.addEventListener('click', () => {
+            printTodoOverlay.classList.add('hidden');
+        });
+
+        printTodoOverlay.addEventListener('click', (e) => {
+            if (e.target === printTodoOverlay) {
+                printTodoOverlay.classList.add('hidden');
+            }
+        });
+
+        printTodoDaysInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                generatePrintTodo();
+            }
+            if (e.key === 'Escape') {
+                printTodoOverlay.classList.add('hidden');
+            }
+        });
+
+        printTodoGoBtn.addEventListener('click', () => {
+            generatePrintTodo();
+        });
+
+        function generatePrintTodo() {
+            const daysAhead = parseInt(printTodoDaysInput.value) || 7;
+            const events = DB.data?.calendarEvents || [];
+            if (events.length === 0) {
+                alert('No events in the database to print.');
+                return;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const endDate = new Date(today);
+            endDate.setDate(endDate.getDate() + daysAhead);
+
+            const todayStr = localDate(today);
+            const endStr = localDate(endDate);
+
+            // Helper: check if an event spans a given date
+            const spansDate = (ev, d) => {
+                const start = ev.date;
+                const end = ev.endDate || ev.date;
+                return d >= start && d <= end;
+            };
+
+            // Filter events within the date range, exclude already completed
+            const filtered = events.filter(ev => {
+                if (ev.completed) return false;
+                const evEnd = ev.endDate || ev.date;
+                return evEnd >= todayStr && ev.date <= endStr;
+            });
+
+            // Sort by date
+            const sorted = filtered.sort((a, b) => {
+                const dc = (a.date || '').localeCompare(b.date || '');
+                if (dc !== 0) return dc;
+                return (a.title || '').localeCompare(b.title || '');
+            });
+
+            // Group by date
+            const grouped = {};
+            sorted.forEach(ev => {
+                const key = ev.date;
+                if (!grouped[key]) grouped[key] = [];
+                // Avoid duplicates for multi-day events on the same start date
+                if (!grouped[key].includes(ev)) {
+                    grouped[key].push(ev);
+                }
+            });
+
+            // Also add events that span a date but start before the range
+            sorted.forEach(ev => {
+                if (ev.endDate && ev.endDate !== ev.date && ev.date < todayStr) {
+                    for (let d = new Date(today); d <= endDate; d.setDate(d.getDate() + 1)) {
+                        const ds = localDate(d);
+                        if (spansDate(ev, ds)) {
+                            if (!grouped[ds]) grouped[ds] = [];
+                            if (!grouped[ds].includes(ev)) {
+                                grouped[ds].push(ev);
+                            }
+                        }
+                    }
+                }
+            });
+
+            const dateKeys = Object.keys(grouped).sort();
+
+            if (dateKeys.length === 0) {
+                alert('No upcoming events found in the next ' + daysAhead + ' days.');
+                return;
+            }
+
+            // Build printable HTML
+            let rows = '';
+            dateKeys.forEach(dateKey => {
+                const dayDate = parseLocalDate(dateKey);
+                const dayLabel = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                const isToday = dateKey === todayStr;
+
+                grouped[dateKey].forEach(ev => {
+                    let timeStr = '';
+                    if (ev.startTime) {
+                        const fmt = (t) => {
+                            const [h, m] = t.split(':');
+                            const hour = parseInt(h, 10);
+                            const ampm = hour >= 12 ? 'PM' : 'AM';
+                            const dh = hour % 12 || 12;
+                            return `${dh}:${m}${ampm}`;
+                        };
+                        timeStr = ev.endTime
+                            ? ` ${fmt(ev.startTime)}-${fmt(ev.endTime)}`
+                            : ` ${fmt(ev.startTime)}`;
+                    }
+                    const multiDay = ev.endDate && ev.endDate !== ev.date
+                        ? ` (${ev.date} → ${ev.endDate})`
+                        : '';
+                    const lotTag = ev.lotId ? ` [${ev.lotId}]` : '';
+
+                    rows += `<tr>
+                        <td class="date-col">${dayLabel}${isToday ? ' (Today)' : ''}</td>
+                        <td>${ev.title}${lotTag}${multiDay}</td>
+                        <td class="time-col">${timeStr}</td>
+                        <td class="check-col"><input type="checkbox"></td>
+                    </tr>`;
+                });
+            });
+
+            const printDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sitka Todo List — ${daysAhead} Days</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 24px; color: #000; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { font-size: 0.85rem; color: #444; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; border-bottom: 2px solid #000; padding: 6px 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 6px 8px; border-bottom: 1px solid #ccc; vertical-align: middle; }
+    .date-col { width: 120px; font-weight: 600; white-space: nowrap; }
+    .time-col { width: 120px; white-space: nowrap; }
+    .check-col { width: 40px; text-align: center; }
+    .check-col input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+    tr:hover { background: #f5f5f5; }
+    @media print {
+        body { padding: 0; }
+        .no-print { display: none; }
+        tr:hover { background: none; }
+    }
+</style>
+</head>
+<body>
+    <h1>🌿 Sitka Todo List</h1>
+    <p class="subtitle">Printed: ${printDate} &middot; Next ${daysAhead} days (${dateKeys[0]} to ${dateKeys[dateKeys.length - 1]}) &middot; ${filtered.length} task${filtered.length !== 1 ? 's' : ''}</p>
+    <table>
+        <thead>
+            <tr><th>Date</th><th>Task</th><th>Time</th><th style="text-align:center">Done</th></tr>
+        </thead>
+        <tbody>
+            ${rows}
+        </tbody>
+    </table>
+    <p class="no-print" style="margin-top: 16px; text-align: center;">
+        <button onclick="window.print()" style="padding: 8px 24px; font-size: 0.9rem; cursor: pointer;">Print</button>
+        <button onclick="window.close()" style="padding: 8px 24px; font-size: 0.9rem; cursor: pointer; margin-left: 8px;">Close</button>
+    </p>
+    <script>window.onload = function() { window.focus(); }<\/script>
+</body>
+</html>`;
+
+            // Open in new window for printing
+            const printWindow = window.open('', '_blank', 'width=700,height=600,scrollbars=yes');
+            if (!printWindow) {
+                alert('Pop-up blocked. Please allow pop-ups to print the todo list.');
+                return;
+            }
+            printWindow.document.write(html);
+            printWindow.document.close();
+
+            // Close the dialog
+            printTodoOverlay.classList.add('hidden');
         }
 
         function handleMobileSaveDb() {
