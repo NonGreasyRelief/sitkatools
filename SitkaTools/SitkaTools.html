@@ -2281,14 +2281,35 @@
         });
 
         // ---- Initialize ----
-        function init() {
+        async function init() {
             // Set default date to today (local timezone)
             const today = localDate();
             lotDateInput.value = today;
 
-            // Show session overlay if no DB is loaded (check before ensureStructure populates it)
+            // Try to auto-load database.json from the Database folder
             if (!DB.data) {
-                showOverlay();
+                try {
+                    const response = await fetch('../Database/database.json');
+                    if (response.ok) {
+                        const parsed = await response.json();
+                        DB.data = parsed;
+                        DB.ensureStructure();
+                        DB.fileName = 'database';
+                        updateStatusBar();
+                        renderLotList();
+                        updateLotIdSuggestion();
+                        RoomManager.renderRoomList();
+                        updateRoomStatusBar();
+                        RoomManager.updateRoomDatalist();
+                        Calendar.render();
+                        updateCalendarStatusBar();
+                        updateIOStatusBar();
+                    } else {
+                        showOverlay();
+                    }
+                } catch {
+                    showOverlay();
+                }
             }
 
             // Auto-generate Lot ID based on count
