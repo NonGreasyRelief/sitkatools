@@ -2281,35 +2281,14 @@
         });
 
         // ---- Initialize ----
-        async function init() {
+        function init() {
             // Set default date to today (local timezone)
             const today = localDate();
             lotDateInput.value = today;
 
-            // Try to auto-load database.json from the Database folder
+            // Show session overlay if no DB is loaded (check before ensureStructure populates it)
             if (!DB.data) {
-                try {
-                    const response = await fetch('../Database/database.json');
-                    if (response.ok) {
-                        const parsed = await response.json();
-                        DB.data = parsed;
-                        DB.ensureStructure();
-                        DB.fileName = 'database';
-                        updateStatusBar();
-                        renderLotList();
-                        updateLotIdSuggestion();
-                        RoomManager.renderRoomList();
-                        updateRoomStatusBar();
-                        RoomManager.updateRoomDatalist();
-                        Calendar.render();
-                        updateCalendarStatusBar();
-                        updateIOStatusBar();
-                    } else {
-                        showOverlay();
-                    }
-                } catch {
-                    showOverlay();
-                }
+                showOverlay();
             }
 
             // Auto-generate Lot ID based on count
@@ -2656,6 +2635,9 @@
                 return;
             }
 
+            // Strip emojis for print (printers render them poorly — scaled/overlapping)
+            const stripEmoji = (s) => (s || '').replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
+
             // Build printable HTML
             let rows = '';
             dateKeys.forEach(dateKey => {
@@ -2678,13 +2660,14 @@
                             : ` ${fmt(ev.startTime)}`;
                     }
                     const multiDay = ev.endDate && ev.endDate !== ev.date
-                        ? ` (${ev.date} → ${ev.endDate})`
+                        ? ` (${ev.date} to ${ev.endDate})`
                         : '';
                     const lotTag = ev.lotId ? ` [${ev.lotId}]` : '';
+                    const cleanTitle = escapeHtml(stripEmoji(ev.title));
 
                     rows += `<tr>
                         <td class="date-col">${dayLabel}${isToday ? ' (Today)' : ''}</td>
-                        <td>${ev.title}${lotTag}${multiDay}</td>
+                        <td>${cleanTitle}${lotTag}${multiDay}</td>
                         <td class="time-col">${timeStr}</td>
                         <td class="check-col"><input type="checkbox"></td>
                     </tr>`;
@@ -2705,7 +2688,7 @@
     .subtitle { font-size: 0.85rem; color: #444; margin-bottom: 20px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     th { text-align: left; border-bottom: 2px solid #000; padding: 6px 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
-    td { padding: 6px 8px; border-bottom: 1px solid #ccc; vertical-align: middle; }
+    td { padding: 6px 8px; border-bottom: 1px solid #ccc; vertical-align: middle; line-height: 1.5; }
     .date-col { width: 120px; font-weight: 600; white-space: nowrap; }
     .time-col { width: 120px; white-space: nowrap; }
     .check-col { width: 40px; text-align: center; }
@@ -2719,7 +2702,7 @@
 </style>
 </head>
 <body>
-    <h1>🌿 Sitka Todo List</h1>
+    <h1>Sitka Todo List</h1>
     <p class="subtitle">Printed: ${printDate} &middot; Next ${daysAhead} days (${dateKeys[0]} to ${dateKeys[dateKeys.length - 1]}) &middot; ${filtered.length} task${filtered.length !== 1 ? 's' : ''}</p>
     <table>
         <thead>
