@@ -68,6 +68,12 @@
             letter-spacing: 0.5px;
         }
 
+        .tabs-wrapper {
+            display: contents;
+        }
+        .tabs-fade {
+            display: none;
+        }
         .tabs {
             display: flex;
             gap: 4px;
@@ -1485,6 +1491,45 @@
                 gap: 12px;
                 align-items: flex-start;
             }
+            .header-left {
+                flex-direction: column;
+                gap: 8px;
+                width: 100%;
+            }
+            .tabs-wrapper {
+                display: block;
+                width: 100%;
+                position: relative;
+            }
+            .tabs {
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                flex-shrink: 0;
+                padding-right: 24px;
+            }
+            .tabs::-webkit-scrollbar {
+                display: none;
+            }
+            .tabs-fade {
+                position: absolute;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                width: 24px;
+                background: linear-gradient(to right, transparent, var(--bg-primary));
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .tabs-fade.visible {
+                opacity: 1;
+            }
+            .tab {
+                white-space: nowrap;
+                flex-shrink: 0;
+            }
             .header-right {
                 width: 100%;
             }
@@ -1955,12 +2000,15 @@
     <header class="header">
         <div class="header-left">
             <span class="logo"><img src="SitkaLogo.png" alt="Sitka" style="height: 28px; vertical-align: middle;">itkaTools</span>
-            <nav class="tabs">
-                <button class="tab active" data-tab="calendar-view">Calendar View</button>
-                <button class="tab" data-tab="lot-management">Lot Manager</button>
-                <button class="tab" data-tab="room-management">Room Manager</button>
-                <button class="tab" data-tab="calendar-io">Calendar Import/Export</button>
-            </nav>
+            <div class="tabs-wrapper">
+                <nav class="tabs">
+                    <button class="tab active" data-tab="calendar-view">Calendar View</button>
+                    <button class="tab" data-tab="lot-management">Lot Manager</button>
+                    <button class="tab" data-tab="room-management">Room Manager</button>
+                    <button class="tab" data-tab="calendar-io">Calendar Import/Export</button>
+                </nav>
+                <div class="tabs-fade" id="tabsFade"></div>
+            </div>
         </div>
         <div class="header-right">
             <button class="db-btn import" id="importBtn" title="Import database JSON file">
@@ -2333,6 +2381,20 @@
 
         // Start in calendar-active mode since calendar is the default tab
         mainEl.classList.add('calendar-active');
+
+        // ---- Tabs Scroll Fade Indicator (mobile) ----
+        const tabsContainer = document.querySelector('.tabs');
+        const tabsFade = document.getElementById('tabsFade');
+        if (tabsContainer && tabsFade) {
+            const updateTabsFade = () => {
+                const isScrollable = tabsContainer.scrollWidth > tabsContainer.clientWidth;
+                const scrolledToEnd = tabsContainer.scrollLeft + tabsContainer.clientWidth >= tabsContainer.scrollWidth - 2;
+                tabsFade.classList.toggle('visible', isScrollable && !scrolledToEnd);
+            };
+            tabsContainer.addEventListener('scroll', updateTabsFade, { passive: true });
+            window.addEventListener('resize', updateTabsFade);
+            updateTabsFade();
+        }
 
         // ---- Database Import/Export ----
         let fileDialogSource = null; // Tracks which UI triggered the file dialog ('overlay', 'mobileOverlay', 'toolbar', or null)
