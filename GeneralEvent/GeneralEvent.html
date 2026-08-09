@@ -832,7 +832,6 @@
             DB.ensureStructure();
             const json = JSON.stringify(DB.data, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
 
             const now = new Date();
             const yy = String(now.getFullYear()).slice(-2);
@@ -840,14 +839,23 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('Database saved — import it in SitkaTools to sync');
+            // Use Web Share API on mobile (fixes iOS Safari blob URL issue)
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename })
+                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
+                    .catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('Database saved — import it in SitkaTools to sync');
+            }
         }
 
         // ---- Mobile UI Setup ----

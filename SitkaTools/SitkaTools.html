@@ -2448,11 +2448,29 @@
             fileDialogSource = null;
         });
 
+        // ---- Helper: share or download a file (fixes iOS Safari blob URL issue) ----
+        function shareFile(blob, filename) {
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename }).catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        }
+
         // ---- Save DB Popup ----
         const savePopup = $('savePopup');
         const saveLink = $('saveLink');
         const saveCloseBtn = $('saveCloseBtn');
         let currentBlobUrl = null;
+        let currentBlobRef = null;
 
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
@@ -2466,6 +2484,7 @@
 
             const json = JSON.stringify(DB.data, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
+            currentBlobRef = blob;
             currentBlobUrl = URL.createObjectURL(blob);
 
             // Generate filename from current date
@@ -2475,12 +2494,24 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            saveLink.href = currentBlobUrl;
-            saveLink.download = filename;
             const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
-            saveLink.textContent = isTouchDevice
-                ? `📄 ${filename} — Press to download`
-                : `📄 ${filename} — Right-click → Save Link As…`;
+
+            if (isTouchDevice) {
+                // On mobile, make the link a button that triggers navigator.share on tap
+                saveLink.href = '#';
+                saveLink.textContent = `📄 ${filename} — Tap to save`;
+                saveLink.onclick = (e) => {
+                    e.preventDefault();
+                    if (currentBlobRef) {
+                        shareFile(currentBlobRef, filename);
+                    }
+                };
+            } else {
+                saveLink.href = currentBlobUrl;
+                saveLink.download = filename;
+                saveLink.textContent = `📄 ${filename} — Right-click → Save Link As…`;
+                saveLink.onclick = null;
+            }
 
             // Clear unsaved flag
             clearUnsaved();
@@ -2798,14 +2829,8 @@
         function handleMobileSaveDb() {
             DB.ensureStructure();
 
-            // Revoke previous blob URL to free memory
-            if (currentBlobUrl) {
-                URL.revokeObjectURL(currentBlobUrl);
-            }
-
             const json = JSON.stringify(DB.data, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
-            currentBlobUrl = URL.createObjectURL(blob);
 
             // Generate filename from current date
             const now = new Date();
@@ -2814,12 +2839,20 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            // Update the save button to become a download link
+            // Use a button that triggers share/download on tap (fixes iOS Safari blob URL issue)
             mobileToolDesc.innerHTML = `
                 <span style="color: var(--accent);">✓ Database ready!</span><br><br>
-                <a href="${currentBlobUrl}" download="${filename}" class="save-link" style="display: inline-block; margin-bottom: 8px;">📄 ${filename} — Press to download</a><br><br>
-                <strong>Now tap Launch Tool → then import this file in the subtool.</strong>
+                <button id="mobileSaveFileBtn" class="btn-load-db" style="display: inline-block; margin-bottom: 8px;">📄 ${filename} — Tap to save</button><br><br>
+                <strong>Then tap Launch Tool → and import this file in the subtool.</strong>
             `;
+
+            // Attach share handler to the newly created button
+            const saveFileBtn = document.getElementById('mobileSaveFileBtn');
+            if (saveFileBtn) {
+                saveFileBtn.addEventListener('click', () => {
+                    shareFile(blob, filename);
+                });
+            }
 
             // Clear unsaved flag
             clearUnsaved();
