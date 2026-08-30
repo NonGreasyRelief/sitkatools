@@ -522,6 +522,49 @@
             border: 1px solid var(--warning);
         }
 
+        .hidden { display: none !important; }
+
+        /* ---- Holiday flag — shown next to a task's date when it lands on an observed BC civic holiday ---- */
+        .holiday-flag {
+            font-size: 0.7rem;
+            color: var(--warning);
+            background: rgba(243, 156, 18, 0.12);
+            border: 1px solid var(--warning);
+            padding: 3px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            cursor: help;
+        }
+
+        /* ---- Holiday conflict banner — lists tasks that fall on BC civic holidays (notify only) ---- */
+        .holiday-conflict-banner {
+            background: rgba(243, 156, 18, 0.1);
+            border: 1px solid var(--warning);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+        }
+
+        .holiday-conflict-banner strong {
+            color: var(--warning);
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.82rem;
+        }
+
+        .holiday-conflict-banner ul {
+            margin: 0;
+            padding-left: 18px;
+            color: var(--text-secondary);
+        }
+
+        .holiday-conflict-banner li {
+            margin-top: 2px;
+        }
+
         /* ---- Custom Checkbox ---- */
         .task-enabled-check {
             appearance: none;
@@ -867,6 +910,118 @@
             return d.toISOString().split('T')[0];
         }
 
+        // =====================================================
+        // CropLabourWizard — BC Civic Holidays Module
+        // 11 statutory holidays per the BC Employment Standards Act.
+        // Every date is a pure function of its year — no external data.
+        // All date math uses local-time Date constructors (never UTC).
+        // =====================================================
+        const Holidays = {
+            // Add/subtract days (returns a new Date)
+            addDays(d, n) {
+                return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+            },
+
+            // Nth occurrence of a weekday in a month (n is 1-based)
+            nthWeekday(y, m, weekday, n) {
+                const first = new Date(y, m, 1).getDay();
+                return new Date(y, m, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7);
+            },
+
+            // Victoria Day — the last Monday strictly before May 25 (per BC ESA).
+            // Start from May 24 and walk back to the previous Monday.
+            victoriaDay(y) {
+                const d = new Date(y, 4, 24);
+                while (d.getDay() !== 1) d.setDate(d.getDate() - 1);
+                return d;
+            },
+
+            // Observed-date shift — applies ONLY to fixed-date holidays:
+            // if the nominal date falls on Saturday or Sunday, observed on the following Monday.
+            observed(d) {
+                const dow = d.getDay();
+                if (dow === 6) return this.addDays(d, 2); // Sat → Mon
+                if (dow === 0) return this.addDays(d, 1); // Sun → Mon
+                return d;
+            },
+
+            // Easter Sunday — Gregorian computus (Meeus–Jones–Butcher algorithm)
+            easterSunday(y) {
+                const a = y % 19, b = Math.floor(y / 100), c = y % 100;
+                const d = Math.floor(b / 4), e = b % 4;
+                const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+                const h = (19 * a + b - d - g + 15) % 30;
+                const i = Math.floor(c / 4), k = c % 4;
+                const l = (32 + 2 * e + 2 * i - h - k) % 7;
+                const m = Math.floor((a + 11 * h + 22 * l) / 451);
+                const month = Math.floor((h + l - 7 * m + 114) / 31); // 3 = March, 4 = April
+                return new Date(y, month - 1, ((h + l - 7 * m + 114) % 31) + 1);
+            },
+
+            // The 11 BC civic holidays for a given year.
+            // Returns [{ name, date (observed), nominalDate (only when shifted), rule }]
+            getForYear(y) {
+                const easter = this.easterSunday(y);
+                const defs = [
+                    { name: "New Year's Day", rule: 'Jan 1; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 0, 1)), nominalDate: new Date(y, 0, 1) },
+                    { name: 'Family Day', rule: 'Third Monday in February', date: this.nthWeekday(y, 1, 1, 3), nominalDate: null },
+                    { name: 'Good Friday', rule: 'Two days before Easter Sunday', date: this.addDays(easter, -2), nominalDate: null },
+                    { name: 'Victoria Day', rule: 'Last Monday strictly before May 25', date: this.victoriaDay(y), nominalDate: null },
+                    { name: 'Canada Day', rule: 'Jul 1; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 6, 1)), nominalDate: new Date(y, 6, 1) },
+                    { name: 'BC Day (Civic Holiday)', rule: 'First Monday in August', date: this.nthWeekday(y, 7, 1, 1), nominalDate: null },
+                    { name: 'Labour Day', rule: 'First Monday in September', date: this.nthWeekday(y, 8, 1, 1), nominalDate: null },
+                    { name: 'National Day for Truth and Reconciliation', rule: 'Sep 30; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 8, 30)), nominalDate: new Date(y, 8, 30) },
+                    { name: 'Thanksgiving', rule: 'Second Monday in October', date: this.nthWeekday(y, 9, 1, 2), nominalDate: null },
+                    { name: 'Remembrance Day', rule: 'Nov 11; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 10, 11)), nominalDate: new Date(y, 10, 11) },
+                    { name: 'Christmas Day', rule: 'Dec 25; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 11, 25)), nominalDate: new Date(y, 11, 25) }
+                ];
+
+                return defs.map(def => {
+                    const shifted = def.nominalDate && localDateStr(def.nominalDate) !== localDateStr(def.date);
+                    return {
+                        name: def.name,
+                        date: localDateStr(def.date),          // observed date — the day off
+                        nominalDate: shifted ? localDateStr(def.nominalDate) : null,
+                        rule: def.rule
+                    };
+                });
+            },
+
+            // Look up a holiday by its observed date string ("YYYY-MM-DD"). Returns the holiday or null.
+            forDate(dateStr) {
+                const y = parseInt(dateStr.slice(0, 4), 10);
+                return this.getForYear(y).find(h => h.date === dateStr) || null;
+            }
+        };
+
+        // ---- Utility: local date string (avoids UTC shift from toISOString) ----
+        function localDateStr(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        // ---- Holiday helpers for task dates ----
+        // Returns the holiday if any day in [start, end] (inclusive) is an observed BC civic holiday.
+        function holidayInRange(startStr, endStr) {
+            const end = endStr || startStr;
+            let d = new Date(startStr + 'T00:00:00');
+            const last = new Date(end + 'T00:00:00');
+            while (d <= last) {
+                const h = Holidays.forDate(localDateStr(d));
+                if (h) return h;
+                d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+            }
+            return null;
+        }
+
+        // Small amber chip shown next to a task's date when it lands on an observed holiday.
+        function holidayFlagHtml(holiday) {
+            if (!holiday) return '';
+            const title = holiday.nominalDate
+                ? `${holiday.name} — BC civic holiday (observed ${holiday.date}; nominal date ${holiday.nominalDate} falls on a weekend)`
+                : `${holiday.name} — BC civic holiday (${holiday.rule})`;
+            return `<span class="holiday-flag" title="${title}">🏛️ Holiday</span>`;
+        }
+
         // ---- Re-render preview whenever config changes ----
         function refreshPreview() {
             const plantingDate = plantingDateInput.value;
@@ -904,6 +1059,9 @@
             const listWrapper = document.createElement('div');
             listWrapper.className = 'preview-task-list';
 
+            // Tasks whose computed date lands on an observed BC civic holiday (notify only)
+            const holidayConflicts = [];
+
             taskOffsets.forEach((entry, idx) => {
                 const def = entry.def;
                 const isEnabled = entry.enabled !== false;
@@ -935,6 +1093,9 @@
 
                 // Build display date string
                 const displayDate = endDate ? `${startDate} → ${endDate}` : startDate;
+
+                // Holiday check — notify only, never auto-reschedule
+                const holiday = isEnabled ? holidayInRange(startDate, endDate) : null;
 
                 const item = document.createElement('div');
                 item.className = 'preview-task-item' + (isEnabled ? '' : ' disabled');
@@ -982,12 +1143,32 @@
                     </div>
                     ${offsetGroupHtml}
                     <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}" ${!isEnabled ? 'style="opacity:0.4"' : ''}>${displayDate}</span>
+                    ${holidayFlagHtml(holiday)}
                 `;
 
                 listWrapper.appendChild(item);
+
+                // Collect holiday conflicts for the summary banner
+                if (holiday) {
+                    holidayConflicts.push({ name: def.name, emoji: def.emoji, date: displayDate, holiday });
+                }
             });
 
             previewTaskList.appendChild(listWrapper);
+
+            // Holiday conflict summary — notify only, never auto-reschedule
+            const banner = document.createElement('div');
+            if (holidayConflicts.length > 0) {
+                banner.className = 'holiday-conflict-banner';
+                const items = holidayConflicts.map(c =>
+                    `<li>${c.emoji} ${escapeHtml(c.name)} — <strong>${c.date}</strong> falls on ${escapeHtml(c.holiday.name)}${c.holiday.nominalDate ? ` (observed; nominal date ${c.holiday.nominalDate})` : ''}</li>`
+                ).join('');
+                banner.innerHTML = `<strong>⚠️ ${holidayConflicts.length} task${holidayConflicts.length > 1 ? 's' : ''} fall${holidayConflicts.length > 1 ? '' : 's'} on a BC civic holiday</strong><ul>${items}</ul>`;
+            } else {
+                banner.className = 'hidden';
+                banner.innerHTML = '';
+            }
+            previewTaskList.appendChild(banner);
 
             // Attach live-update listeners to all offset inputs
             listWrapper.querySelectorAll('input[type="number"]').forEach(input => {
@@ -1176,7 +1357,13 @@
             // Notify SitkaTools via postMessage
             notifySitkaTools();
 
-            showToast(`Schedule generated — ${newEvents.length} tasks for ${lotId}`);
+            // Holiday conflicts — notify only, never auto-reschedule
+            const conflictEvents = newEvents.filter(ev => holidayInRange(ev.date, ev.endDate));
+            let toastMsg = `Schedule generated — ${newEvents.length} tasks for ${lotId}`;
+            if (conflictEvents.length > 0) {
+                toastMsg += ` · ⚠️ ${conflictEvents.length} on a BC civic holiday`;
+            }
+            showToast(toastMsg);
         });
 
         // ---- Clear Schedule — remove all CropLabourWizard events for the selected lot ----
@@ -1269,6 +1456,9 @@
                     ? `${ev.date} → ${ev.endDate}`
                     : ev.date;
 
+                // Holiday check — notify only, never auto-reschedule
+                const holiday = holidayInRange(ev.date, ev.endDate);
+
                 // Extract emoji from title
                 const emojiMatch = ev.title.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?)\s*/su);
                 const emoji = emojiMatch ? emojiMatch[1] : '📋';
@@ -1281,6 +1471,7 @@
                         <span class="task-type-badge">${escapeHtml(ev.taskType || '')}</span>
                     </div>
                     <span class="task-date-badge">${displayDate}</span>
+                    ${holidayFlagHtml(holiday)}
                     <button class="task-delete-btn" title="Delete entire schedule for this lot">✕</button>
                 `;
 

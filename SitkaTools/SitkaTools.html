@@ -936,6 +936,31 @@
             text-align: center;
         }
 
+        /* Holiday display toggle */
+        .holiday-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 16px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+
+        .holiday-toggle:hover { border-color: var(--warning); color: var(--text-primary); }
+
+        .holiday-toggle input[type="checkbox"] {
+            accent-color: var(--warning);
+            cursor: pointer;
+        }
+
         /* Calendar Grid */
         .calendar-grid {
             display: grid;
@@ -1098,6 +1123,36 @@
         .day-event.multi-day:not(.range-start):not(.range-end) {
             border-radius: 0;
             border-left: 2px solid rgba(83, 216, 168, 0.4);
+        }
+
+        /* BC civic holiday styling on calendar (read-only, computed per year) */
+        .day-event.holiday {
+            background: rgba(243, 156, 18, 0.18);
+            color: var(--warning);
+            border-left: 2px solid var(--warning);
+            font-weight: 600;
+        }
+
+        .calendar-day.has-holiday {
+            background-color: rgba(243, 156, 18, 0.06);
+        }
+
+        /* Holiday detail panel */
+        .holiday-banner {
+            background: rgba(243, 156, 18, 0.15);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            font-weight: 700;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+
+        .holiday-note {
+            margin-top: 12px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.4;
         }
 
         /* Event Details Panel */
@@ -2055,6 +2110,10 @@
                 <h2 class="calendar-month-title" id="calendarTitle">August 2026</h2>
                 <button class="btn btn-secondary" id="nextMonthBtn">Next ▶</button>
                 <button class="btn btn-primary" id="todayBtn" style="margin-left: 16px;">Today</button>
+                <label class="holiday-toggle" title="Show BC civic holidays on the calendar (on by default)">
+                    <input type="checkbox" id="showHolidaysToggle" checked>
+                    <span>🏛️ Holidays</span>
+                </label>
             </div>
 
             <!-- Calendar grid -->
@@ -3210,7 +3269,7 @@
                 const stageSelectId = `stage_${key}`;
                 const stages = ['cloning', 'veg', 'flower', 'harvest', 'drying', 'curing'];
                 const stageOptions = stages.map(s => {
-                    const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Veg' : s === 'flower' ? 'Flower' :
+                    const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Vegetative' : s === 'flower' ? 'Flower' :
                                   s === 'harvest' ? 'Harvest' : s === 'drying' ? 'Drying' : 'Curing';
                     const selected = lot.stage === s ? 'selected' : '';
                     return `<option value="${s}" ${selected}>${label}</option>`;
@@ -3771,6 +3830,90 @@
         }
 
         // =====================================================
+        // SitkaTools — BC Civic Holidays Module
+        // 11 statutory holidays per the BC Employment Standards Act.
+        // Every date is a pure function of its year — no external data.
+        // All date math uses local-time Date constructors (never UTC).
+        // =====================================================
+        const Holidays = {
+            // Add/subtract days (returns a new Date)
+            addDays(d, n) {
+                return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+            },
+
+            // Nth occurrence of a weekday in a month (n is 1-based)
+            nthWeekday(y, m, weekday, n) {
+                const first = new Date(y, m, 1).getDay();
+                return new Date(y, m, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7);
+            },
+
+            // Victoria Day — the last Monday strictly before May 25 (per BC ESA).
+            // Start from May 24 and walk back to the previous Monday.
+            victoriaDay(y) {
+                const d = new Date(y, 4, 24);
+                while (d.getDay() !== 1) d.setDate(d.getDate() - 1);
+                return d;
+            },
+
+            // Observed-date shift — applies ONLY to fixed-date holidays:
+            // if the nominal date falls on Saturday or Sunday, observed on the following Monday.
+            observed(d) {
+                const dow = d.getDay();
+                if (dow === 6) return this.addDays(d, 2); // Sat → Mon
+                if (dow === 0) return this.addDays(d, 1); // Sun → Mon
+                return d;
+            },
+
+            // Easter Sunday — Gregorian computus (Meeus–Jones–Butcher algorithm)
+            easterSunday(y) {
+                const a = y % 19, b = Math.floor(y / 100), c = y % 100;
+                const d = Math.floor(b / 4), e = b % 4;
+                const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+                const h = (19 * a + b - d - g + 15) % 30;
+                const i = Math.floor(c / 4), k = c % 4;
+                const l = (32 + 2 * e + 2 * i - h - k) % 7;
+                const m = Math.floor((a + 11 * h + 22 * l) / 451);
+                const month = Math.floor((h + l - 7 * m + 114) / 31); // 3 = March, 4 = April
+                return new Date(y, month - 1, ((h + l - 7 * m + 114) % 31) + 1);
+            },
+
+            // The 11 BC civic holidays for a given year.
+            // Returns [{ name, date (observed), nominalDate (only when shifted), rule }]
+            getForYear(y) {
+                const easter = this.easterSunday(y);
+                const defs = [
+                    { name: "New Year's Day", rule: 'Jan 1; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 0, 1)), nominalDate: new Date(y, 0, 1) },
+                    { name: 'Family Day', rule: 'Third Monday in February', date: this.nthWeekday(y, 1, 1, 3), nominalDate: null },
+                    { name: 'Good Friday', rule: 'Two days before Easter Sunday', date: this.addDays(easter, -2), nominalDate: null },
+                    { name: 'Victoria Day', rule: 'Last Monday strictly before May 25', date: this.victoriaDay(y), nominalDate: null },
+                    { name: 'Canada Day', rule: 'Jul 1; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 6, 1)), nominalDate: new Date(y, 6, 1) },
+                    { name: 'BC Day (Civic Holiday)', rule: 'First Monday in August', date: this.nthWeekday(y, 7, 1, 1), nominalDate: null },
+                    { name: 'Labour Day', rule: 'First Monday in September', date: this.nthWeekday(y, 8, 1, 1), nominalDate: null },
+                    { name: 'National Day for Truth and Reconciliation', rule: 'Sep 30; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 8, 30)), nominalDate: new Date(y, 8, 30) },
+                    { name: 'Thanksgiving', rule: 'Second Monday in October', date: this.nthWeekday(y, 9, 1, 2), nominalDate: null },
+                    { name: 'Remembrance Day', rule: 'Nov 11; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 10, 11)), nominalDate: new Date(y, 10, 11) },
+                    { name: 'Christmas Day', rule: 'Dec 25; observed on the following Monday if it falls on a weekend', date: this.observed(new Date(y, 11, 25)), nominalDate: new Date(y, 11, 25) }
+                ];
+
+                return defs.map(def => {
+                    const shifted = def.nominalDate && localDate(def.nominalDate) !== localDate(def.date);
+                    return {
+                        name: def.name,
+                        date: localDate(def.date),          // observed date — the day off
+                        nominalDate: shifted ? localDate(def.nominalDate) : null,
+                        rule: def.rule
+                    };
+                });
+            },
+
+            // Look up a holiday by its observed date string ("YYYY-MM-DD"). Returns the holiday or null.
+            forDate(dateStr) {
+                const y = parseInt(dateStr.slice(0, 4), 10);
+                return this.getForYear(y).find(h => h.date === dateStr) || null;
+            }
+        };
+
+        // =====================================================
         // SitkaTools — Calendar Module
         // =====================================================
         const Calendar = {
@@ -3779,6 +3922,7 @@
             selectedDate: null,
             selectedEvent: null,
             draggedEvent: null,
+            showHolidays: true,
 
             get events() {
                 return DB.data?.calendarEvents || [];
@@ -3789,6 +3933,12 @@
                 $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
+
+                // Holiday display toggle (on by default)
+                $('showHolidaysToggle').addEventListener('change', (e) => {
+                    this.showHolidays = e.target.checked;
+                    this.render();
+                });
 
                 // Swipe gesture for month navigation (mobile)
                 let touchStartX = 0;
@@ -3906,6 +4056,21 @@
                 numEl.className = 'day-number';
                 numEl.textContent = day;
                 cell.appendChild(numEl);
+
+                // BC civic holiday for this day (observed date) — rendered by default, read-only
+                const holiday = this.showHolidays ? Holidays.forDate(dateStr) : null;
+                if (holiday) {
+                    cell.classList.add('has-holiday');
+                    const holidayEl = document.createElement('div');
+                    holidayEl.className = 'day-event holiday';
+                    holidayEl.textContent = `🏛️ ${holiday.name}`;
+                    holidayEl.title = `${holiday.name} — BC civic holiday (${holiday.rule})`;
+                    holidayEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectHoliday(holiday);
+                    });
+                    cell.appendChild(holidayEl);
+                }
 
                 // Events for this day — include multi-day events that span this date
                 const dayEvents = this.events.filter(e => {
@@ -4056,6 +4221,44 @@
                 this.selectedEvent = event;
                 this.render();
                 this.renderEventPanel(event);
+            },
+
+            // ---- Holiday selection (read-only — holidays are computed, not stored in the DB) ----
+            selectHoliday(holiday) {
+                this.selectedEvent = null;
+                this.renderHolidayPanel(holiday);
+            },
+
+            renderHolidayPanel(holiday) {
+                const body = $('eventPanelBody');
+                const shiftedNote = holiday.nominalDate
+                    ? `Observed on ${holiday.date} — the nominal date (${holiday.nominalDate}) falls on a weekend, so the day off is the following Monday.`
+                    : '';
+
+                let html = `<div class="holiday-banner">🏛️ BC CIVIC HOLIDAY</div>`;
+                html += '<div class="event-detail-grid">';
+                html += `
+                    <div class="event-detail-group">
+                        <label class="event-detail-label">Holiday</label>
+                        <div class="event-detail-value">${escapeHtml(holiday.name)}</div>
+                    </div>
+                    <div class="event-detail-group">
+                        <label class="event-detail-label">Date (Observed)</label>
+                        <div class="event-detail-value">${escapeHtml(holiday.date)}</div>
+                    </div>
+                    <div class="event-detail-group">
+                        <label class="event-detail-label">Rule</label>
+                        <div class="event-detail-value">${escapeHtml(holiday.rule)}</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (shiftedNote) {
+                    html += `<div class="holiday-note">${escapeHtml(shiftedNote)}</div>`;
+                }
+                html += `<div class="holiday-note">Holidays are computed from the year per the BC Employment Standards Act — they are not stored in the database and cannot be edited, moved, or deleted.</div>`;
+
+                body.innerHTML = html;
             },
 
             renderEventPanel(event) {
