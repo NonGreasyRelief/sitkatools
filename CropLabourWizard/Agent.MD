@@ -6,7 +6,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 ### Intended Use
 
-- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, room cleans (clone, veg, dry), and final weigh/ship.
+- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, undercanopy lights & air socks, flipping to flower, pruning, leaf picks, clone cutting, harvest, tote prep, bucking, trim, room cleans (clone, veg, dry), and final weigh/ship.
 - **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) before generating the final schedule. Each task's computed date shows its weekday next to it (e.g., `2026-09-15 · Tue`), and clicking a task's date opens a clickable date picker — picking a day adjusts that task's offset by the delta, exactly like the +/− spinbox.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
 - **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
@@ -29,20 +29,22 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 | 5 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
 | 6 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
 | 7 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
-| 8 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
-| 9 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
-| 10 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
-| 11 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
-| 12 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
-| 13 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks) | — |
-| 14 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
-| 15 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
-| 16 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
-| 17 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
-| 18 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
-| 19 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
+| 8 | Install undercanopy lights and air socks | 💡 | Planting | +16 days (day after IPM deployment) | Yes | — |
+| 9 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
+| 10 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
+| 11 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
+| 12 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
+| 13 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
+| 14 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks) | — |
+| 15 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
+| 16 | Clean and prepare totes for bucking | 🧺 | Harvest | +9 days (day before bucking) | Yes | — |
+| 17 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
+| 18 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
+| 19 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
+| 20 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
+| 21 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
 
-**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks, and adjusting the Trim offset shifts the two trim-anchored tasks (Clean Dry Room, Weigh & Ship).
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Tote Prep, Bucking, Lab Sample, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks, and adjusting the Trim offset shifts the two trim-anchored tasks (Clean Dry Room, Weigh & Ship).
 
 ### Calendar Events Generated
 
