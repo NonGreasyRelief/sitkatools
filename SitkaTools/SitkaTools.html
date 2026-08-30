@@ -2167,8 +2167,20 @@
                         <input type="text" id="lotStrain" placeholder="e.g., Kush Mints">
                     </div>
                     <div class="form-group">
-                        <label for="destRoom">Destination Room</label>
+                        <label for="destRoom">Destination Room (flower)</label>
                         <select id="destRoom">
+                            <option value="">— No room assigned —</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="vegRoomGroup" style="display: none;">
+                        <label for="vegRoom">Vegetating Room</label>
+                        <select id="vegRoom">
+                            <option value="">— No room assigned —</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="cloningRoomGroup" style="display: none;">
+                        <label for="cloningRoom">Cloning Room</label>
+                        <select id="cloningRoom">
                             <option value="">— No room assigned —</option>
                         </select>
                     </div>
@@ -2360,6 +2372,10 @@
         const lotIdInput = $('lotId');
         const lotStrainInput = $('lotStrain');
         const destRoomInput = $('destRoom');
+        const vegRoomInput = $('vegRoom');
+        const cloningRoomInput = $('cloningRoom');
+        const vegRoomGroup = $('vegRoomGroup');
+        const cloningRoomGroup = $('cloningRoomGroup');
         const parentLotGroup = $('parentLotGroup');
         const parentLotSelect = $('parentLot');
         const plantCountGroup = $('plantCountGroup');
@@ -3099,6 +3115,10 @@
             parentLotGroup.style.display = isNotNewLot ? 'flex' : 'none';
             parentLotSelect.required = isNotNewLot;
 
+            // Veg/Cloning rooms only apply to new lots (sub/split lots inherit from their parent)
+            vegRoomGroup.style.display = isNotNewLot ? 'none' : 'flex';
+            cloningRoomGroup.style.display = isNotNewLot ? 'none' : 'flex';
+
             // Plant Count is always visible (for all lot types)
             plantCountGroup.style.display = 'flex';
 
@@ -3152,6 +3172,8 @@
             const plantsTransferred = type === 'split-lot' ? parseInt(plantsTransferredInput.value, 10) : null;
             const createdDate = lotDateInput.value;
             const stage = lotStageSelect.value;
+            const vegRoom = type === 'new-lot' ? vegRoomInput.value : '';
+            const cloningRoom = type === 'new-lot' ? cloningRoomInput.value : '';
 
             // Auto-generate Lot Name from LotID + first 6 letters of strain
             const strainPrefix = (strain || '').substring(0, 6).toUpperCase();
@@ -3183,6 +3205,8 @@
                 name: name,
                 strain: strain || null,
                 destRoom: destRoom || null,
+                vegRoom: vegRoom || null,
+                cloningRoom: cloningRoom || null,
                 type: type,
                 parentLotId: parentLotId,
                 plantCount: plantCountValue,
@@ -3214,13 +3238,20 @@
             markUnsaved();
 
             // Success feedback
-            alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${destRoom ? '\nRoom: ' + destRoom : ''}\n\nRemember to export the database to save your changes.`);
+            const roomLines = [
+                destRoom ? '\nFlower Room: ' + destRoom : '',
+                vegRoom ? '\nVeg Room: ' + vegRoom : '',
+                cloningRoom ? '\nCloning Room: ' + cloningRoom : ''
+            ].join('');
+            alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${roomLines}\n\nRemember to export the database to save your changes.`);
 
             // Reset form and refresh UI
             lotForm.reset();
             lotDateInput.value = localDate();
             lotStageSelect.value = 'cloning';
             parentLotGroup.style.display = 'none';
+            vegRoomGroup.style.display = 'none';
+            cloningRoomGroup.style.display = 'none';
             plantsTransferredGroup.style.display = 'none';
             updateStatusBar();
             renderLotList();
@@ -3233,6 +3264,8 @@
             lotDateInput.value = localDate();
             lotStageSelect.value = 'cloning';
             parentLotGroup.style.display = 'none';
+            vegRoomGroup.style.display = 'none';
+            cloningRoomGroup.style.display = 'none';
             plantsTransferredGroup.style.display = 'none';
         });
 
@@ -3263,7 +3296,12 @@
                 const typeLabel = lot.type === 'new-lot' ? 'New' : lot.type === 'sub-lot' ? 'Sub-Lot' : 'Split';
 
                 const parentInfo = lot.parentLotId ? ` ← ${lot.parentLotId}` : '';
-                const roomInfo = lot.destRoom ? ` → ${lot.destRoom}` : '';
+                const roomParts = [
+                    lot.cloningRoom ? `Clone: ${lot.cloningRoom}` : '',
+                    lot.vegRoom ? `Veg: ${lot.vegRoom}` : '',
+                    lot.destRoom ? `Flower: ${lot.destRoom}` : ''
+                ].filter(Boolean);
+                const roomInfo = roomParts.length ? ` → ${roomParts.join(' · ')}` : '';
 
                 // Build stage selector dropdown
                 const stageSelectId = `stage_${key}`;
@@ -3416,15 +3454,22 @@
             },
 
             updateRoomDatalist() {
-                const select = $('destRoom');
-                if (!select) return;
-                select.innerHTML = '<option value="">— No room assigned —</option>';
-                const rooms = this.rooms;
-                Object.keys(rooms).forEach(id => {
-                    const opt = document.createElement('option');
-                    opt.value = rooms[id].name;
-                    opt.textContent = `${rooms[id].name} (${id})`;
-                    select.appendChild(opt);
+                // Populate every room selector in the lot form (destination, veg, cloning)
+                ['destRoom', 'vegRoom', 'cloningRoom'].forEach(id => {
+                    const select = $(id);
+                    if (!select) return;
+                    const current = select.value;
+                    select.innerHTML = '<option value="">— No room assigned —</option>';
+                    Object.keys(this.rooms).forEach(roomId => {
+                        const opt = document.createElement('option');
+                        opt.value = this.rooms[roomId].name;
+                        opt.textContent = `${this.rooms[roomId].name} (${roomId})`;
+                        select.appendChild(opt);
+                    });
+                    // Restore selection if the room still exists
+                    if (current && Object.values(this.rooms).some(r => r.name === current)) {
+                        select.value = current;
+                    }
                 });
             },
 
@@ -3735,14 +3780,13 @@
 
             deleteRoom(roomId) {
                 const room = this.rooms[roomId];
-                if (room?.assignedLots) {
-                    room.assignedLots.forEach(lotId => {
-                        const lot = DB.lots[lotId];
-                        if (lot && lot.destRoom === room.name) {
-                            lot.destRoom = null;
-                        }
-                    });
-                }
+                // Clear any lot references to this room (assigned, veg, or cloning)
+                Object.values(DB.lots).forEach(lot => {
+                    if (!lot) return;
+                    if (lot.destRoom === room.name) lot.destRoom = null;
+                    if (lot.vegRoom === room.name) lot.vegRoom = null;
+                    if (lot.cloningRoom === room.name) lot.cloningRoom = null;
+                });
                 delete DB.data.rooms[roomId];
                 markUnsaved();
                 this.renderRoomList();

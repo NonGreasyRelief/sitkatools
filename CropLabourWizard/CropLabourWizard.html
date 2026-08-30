@@ -1248,6 +1248,52 @@
             });
         }
 
+        // ---- Build event title: "Room code-Strain name#Lot number, task" ----
+        // The room code depends on which phase of the crop cycle the task belongs to:
+        //   - Cutting Clones (clone prep) → lot's cloning room
+        //   - Tasks before Transplanting to Flower Room → lot's veg room
+        //   - Transplant and everything after → lot's destination (flower) room
+        function roomCodeForName(roomName) {
+            if (!roomName) return null;
+            const byName = Object.entries(DB.data.rooms || {}).find(([, r]) => r.name === roomName);
+            return byName ? byName[0] : null;
+        }
+
+        function getLotRoomCode(lotId, taskType) {
+            const lot = DB.lots[lotId] || {};
+            const rooms = DB.data.rooms || {};
+
+            // Clone prep happens in the cloning room
+            if (taskType === 'clone_cut_prep') {
+                return roomCodeForName(lot.cloningRoom);
+            }
+
+            // Everything before transplanting to flower happens in the veg room
+            const defIdx = TASK_DEFS.findIndex(d => d.taskType === taskType);
+            const transplantIdx = TASK_DEFS.findIndex(d => d.taskType === 'transplant');
+            if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx) {
+                return roomCodeForName(lot.vegRoom);
+            }
+
+            // Transplant and everything after happens in the destination (flower) room
+            for (const [roomId, room] of Object.entries(rooms)) {
+                if ((room.assignedLots || []).includes(lotId)) return roomId;
+            }
+            return roomCodeForName(lot.destRoom);
+        }
+
+        function buildEventTitle(def, lotId) {
+            const lot = DB.lots[lotId] || {};
+            const roomCode = getLotRoomCode(lotId, def.taskType);
+            const strain = (lot.strain || '').trim();
+            let prefix;
+            if (roomCode && strain) prefix = `${roomCode}-${strain}#${lotId}`;
+            else if (roomCode) prefix = `${roomCode}#${lotId}`;
+            else if (strain) prefix = `${strain}#${lotId}`;
+            else prefix = lotId;
+            return `${def.emoji} ${prefix}, ${def.name}`;
+        }
+
         // ---- Generate Schedule (uses current offsets to compute final dates) ----
         scheduleForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -1310,7 +1356,7 @@
 
                 const event = {
                     date: startDate,
-                    title: `${def.emoji} ${def.name} — ${lotId}`,
+                    title: buildEventTitle(def, lotId),
                     sourceTool: 'CropLabourWizard',
                     lotId: lotId,
                     taskType: def.taskType

@@ -53,6 +53,9 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "stage": "string",
       "createdDate": "YYYY-MM-DD",
       "closedDate": "YYYY-MM-DD | null",
+      "destRoom": "string | null",   // flower room name (also tracked in rooms.<roomId>.assignedLots)
+      "vegRoom": "string | null",    // vegetating room name (set at lot creation, new lots only)
+      "cloningRoom": "string | null",// cloning room name (set at lot creation, new lots only)
       "_tool_<ToolName>": { ... }
     }
   },

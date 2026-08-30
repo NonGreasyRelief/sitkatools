@@ -44,7 +44,12 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 
 CropLabourWizard appends events to the shared `calendarEvents` array using `"sourceTool": "CropLabourWizard"`. Each event has:
 
-- **Title:** Emoji + task name + lot ID (e.g., `"🌸 Flip to Flower — LOT-001"`)
+- **Title:** Emoji + `Room code-Strain name#Lot number` + `, task name` (e.g., `"🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower"`). The room code is **per-task**, based on which phase of the crop cycle the task belongs to:
+  - **Cutting Clones** (`clone_cut_prep`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
+  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) → the lot's `vegRoom`.
+  - **Transplant and everything after** → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
+
+  Room names are stored on the lot (`cloningRoom`, `vegRoom`, `destRoom`) and resolved to room IDs at title-build time. If no room is found for a task's phase, the prefix degrades gracefully: `Strain#Lot number`, or just `Lot number` when strain is also missing.
 - **Date:** The computed date for the task (`YYYY-MM-DD`)
 - **EndDate:** Set for multi-day events only (Trim). Omitted for single-day events.
 - **SourceTool:** `"CropLabourWizard"`
