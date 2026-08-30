@@ -7,7 +7,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 ### Intended Use
 
 - **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, room cleans (clone, veg, dry), and final weigh/ship.
-- **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) before generating the final schedule.
+- **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) before generating the final schedule. Each task's computed date shows its weekday next to it (e.g., `2026-09-15 · Tue`), and clicking a task's date opens a clickable date picker — picking a day adjusts that task's offset by the delta, exactly like the +/− spinbox.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
 - **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
 
@@ -159,7 +159,7 @@ Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 
 CropLabourWizard is holiday-aware in three places, all computed live from the year (no stored data):
 
-1. **Task preview:** Each task row shows a small amber "🏛️ Holiday" chip next to its computed date when any day of the task falls on an observed BC civic holiday (multi-day tasks like Trim are checked across their full `[date, endDate]` range). The chip's tooltip names the holiday and, for shifted fixed-date holidays, notes the nominal date.
+1. **Task preview:** Each task row shows a small amber "🏛️ Holiday" chip next to its computed date when any day of the task falls on an observed BC civic holiday (multi-day tasks like Trim are checked across their full `[date, endDate]` range). The chip's tooltip names the holiday and, for shifted fixed-date holidays, notes the nominal date. Each row also shows the weekday next to its computed date — single-day tasks as `YYYY-MM-DD · Ddd` (e.g., `2026-09-15 · Tue`), multi-day tasks as `start (Ddd) → end (Ddd)` (e.g., `2026-12-17 (Thu) → 2026-12-23 (Wed)`). The saved schedule list and the config summary's anchor date use the same format.
 2. **Conflict banner:** When one or more tasks land on a holiday, a warning banner below the preview list enumerates each affected task with its date and holiday (e.g., "🌾 Harvest — 2026-12-25 falls on Christmas Day").
 3. **Generate toast:** After generating a schedule, the confirmation toast appends "· ⚠️ N on a BC civic holiday" when any generated event conflicts.
 
@@ -257,6 +257,18 @@ This tool follows the shared UI Standards defined in the root `Agent.MD`. Key sp
 - **Header:** Tool name "👷 Crop Labour Wizard" on the left, Active Lot dropdown on the right
 - **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
 - **Theme:** Uses shared CSS custom properties from root UI Standards
+
+### Weekday Display & Clickable Date Picker
+
+**Weekday display:** Every computed date in the tool shows its weekday, derived locally via `Date.getDay()` (never UTC). Single-day dates render as `YYYY-MM-DD · Ddd` (e.g., `2026-09-15 · Tue`); multi-day ranges render as `start (Ddd) → end (Ddd)` (e.g., `2026-12-17 (Thu) → 2026-12-23 (Wed)`). This appears in the task preview, the saved schedule list, and the config summary's anchor date.
+
+**Clickable date picker:** In the task preview, each editable task's computed-date badge is a button. Clicking it opens a custom popup calendar anchored to the badge (flips above the badge near the bottom edge of the viewport). The picker:
+- Shows a month grid (Su–Sa columns) with ‹/› month navigation and a "Today" shortcut.
+- Highlights the task's current date (accent fill), today (inset accent ring), and observed BC civic holidays (amber dot under the day, with a tooltip naming the holiday).
+- On day selection, closes and adjusts that task's **day offset by the delta** between the old and new dates — identical cascade semantics to the +/− spinbox (same min/max clamping: 0–200, or −30–200 for tasks with negative defaults). For multi-day tasks (Trim), the picked day becomes the new trim **start**; the 7-day span and all downstream trim-anchored tasks shift by the same delta.
+- Closes on outside click or Escape. A single shared popup element (`#datePickerPopup`) is reused for every row — no per-row popups.
+
+Locked tasks (Cutting Clones, and Planting Clones when clones are disabled) and disabled tasks render a non-clickable date badge instead.
 
 ### Header Pattern
 

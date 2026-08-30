@@ -522,6 +522,157 @@
             border: 1px solid var(--warning);
         }
 
+        /* ---- Clickable computed date — opens the custom date picker ---- */
+        button.preview-computed-date.clickable {
+            cursor: pointer;
+            font-family: inherit;
+            border: 1px solid var(--border);
+            transition: border-color 0.15s, color 0.15s;
+        }
+
+        button.preview-computed-date.clickable:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Multi-day (Trim) keeps its warning border even on hover */
+        button.preview-computed-date.clickable.multi {
+            border-color: var(--warning);
+        }
+
+        /* ---- Custom Date Picker Popup ---- */
+        .dp-popup {
+            position: fixed;
+            z-index: 400;
+            width: 296px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+            padding: 12px;
+        }
+
+        .dp-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .dp-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .dp-nav-btn {
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .dp-nav-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .dp-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+        }
+
+        .dp-weekday {
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 4px 0;
+            letter-spacing: 0.5px;
+        }
+
+        .dp-day {
+            position: relative;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.12s, color 0.12s;
+        }
+
+        .dp-day:hover {
+            background: var(--input-bg);
+            color: var(--accent);
+        }
+
+        .dp-day.blank {
+            cursor: default;
+        }
+
+        .dp-day.blank:hover {
+            background: transparent;
+            color: var(--text-primary);
+        }
+
+        .dp-day.today {
+            box-shadow: inset 0 0 0 1px var(--accent);
+        }
+
+        .dp-day.selected {
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-weight: 700;
+        }
+
+        /* Amber dot under days that are observed BC civic holidays */
+        .dp-day.holiday::after {
+            content: '';
+            position: absolute;
+            bottom: 3px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--warning);
+        }
+
+        .dp-day.selected.holiday::after {
+            background: var(--bg-primary);
+        }
+
+        .dp-footer {
+            display: flex;
+            justify-content: center;
+            margin-top: 8px;
+        }
+
+        .dp-today-btn {
+            border: none;
+            background: none;
+            color: var(--accent);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 4px;
+        }
+
+        .dp-today-btn:hover {
+            background: var(--input-bg);
+        }
+
         .hidden { display: none !important; }
 
         /* ---- Holiday flag — shown next to a task's date when it lands on an observed BC civic holiday ---- */
@@ -685,6 +836,9 @@
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
+
+    <!-- Custom Date Picker Popup (opened by clicking a task's computed date) -->
+    <div class="dp-popup" id="datePickerPopup" hidden></div>
 
     <script>
         // =====================================================
@@ -1007,6 +1161,23 @@
             return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         }
 
+        // ---- Utility: weekday names (local time; index matches Date.getDay()) ----
+        const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const WEEKDAYS_MIN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+        // Short weekday name for an ISO date string (e.g. "2026-09-15" → "Tue")
+        function weekdayShort(dateStr) {
+            if (!dateStr) return '';
+            return WEEKDAYS_SHORT[new Date(dateStr + 'T00:00:00').getDay()];
+        }
+
+        // Whole days from date a to date b (local time; rounding is DST-safe)
+        function daysBetween(aStr, bStr) {
+            const a = new Date(aStr + 'T00:00:00');
+            const b = new Date(bStr + 'T00:00:00');
+            return Math.round((b - a) / 86400000);
+        }
+
         // ---- Holiday helpers for task dates ----
         // Returns the holiday if any day in [start, end] (inclusive) is an observed BC civic holiday.
         function holidayInRange(startStr, endStr) {
@@ -1030,8 +1201,173 @@
             return `<span class="holiday-flag" title="${title}">🏛️ Holiday</span>`;
         }
 
+        // =====================================================
+        // Custom Date Picker — popup calendar opened by clicking a task's computed date.
+        // Picking a day adjusts that task's day offset by the delta (same cascade rules
+        // as the +/- spinbox). BC civic holidays are marked with an amber dot.
+        // Single shared popup element (#datePickerPopup) — no per-row popups.
+        // =====================================================
+        const DatePicker = {
+            el: null,
+            anchorEl: null,
+            onSelectCb: null,
+            selectedStr: null,
+            viewYear: 0,
+            viewMonth: 0, // 0-based
+            _holidayCache: {},
+
+            init() { this.el = $('datePickerPopup'); },
+
+            open(anchorEl, selectedStr, onSelect) {
+                this.anchorEl = anchorEl;
+                this.onSelectCb = onSelect;
+                this.selectedStr = selectedStr || '';
+                const now = new Date();
+                if (selectedStr) {
+                    const [y, m] = selectedStr.split('-').map(Number);
+                    this.viewYear = y;
+                    this.viewMonth = m - 1;
+                } else {
+                    this.viewYear = now.getFullYear();
+                    this.viewMonth = now.getMonth();
+                }
+                this.render();
+                this.el.hidden = false;
+                this.position();
+
+                document.addEventListener('mousedown', this._onDocMouseDown);
+                document.addEventListener('keydown', this._onDocKeydown);
+                window.addEventListener('scroll', this._onReposition, true);
+                window.addEventListener('resize', this._onReposition);
+            },
+
+            close() {
+                if (this.el.hidden) return;
+                this.el.hidden = true;
+                document.removeEventListener('mousedown', this._onDocMouseDown);
+                document.removeEventListener('keydown', this._onDocKeydown);
+                window.removeEventListener('scroll', this._onReposition, true);
+                window.removeEventListener('resize', this._onReposition);
+            },
+
+            // Note: these are detached event listeners — reference DatePicker explicitly,
+            // since `this` inside arrow functions does not bind to the object.
+            _onDocMouseDown: (e) => {
+                if (!DatePicker.el.hidden && !DatePicker.el.contains(e.target) && e.target !== DatePicker.anchorEl) {
+                    DatePicker.close();
+                }
+            },
+
+            _onDocKeydown: (e) => {
+                if (e.key === 'Escape') DatePicker.close();
+            },
+
+            _onReposition: () => { if (!DatePicker.el.hidden) DatePicker.position(); },
+
+            // Anchor the popup to the clicked badge; flip above it near the bottom edge
+            position() {
+                const rect = this.anchorEl.getBoundingClientRect();
+                const pw = this.el.offsetWidth;
+                const ph = this.el.offsetHeight;
+                const left = Math.min(Math.max(8, rect.right - pw), window.innerWidth - pw - 8);
+                let top = rect.bottom + 6;
+                if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 6);
+                this.el.style.left = left + 'px';
+                this.el.style.top = top + 'px';
+            },
+
+            _holidaysForYear(y) {
+                if (!this._holidayCache[y]) {
+                    const map = {};
+                    for (const h of Holidays.getForYear(y)) map[h.date] = h;
+                    this._holidayCache[y] = map;
+                }
+                return this._holidayCache[y];
+            },
+
+            render() {
+                const y = this.viewYear;
+                const m = this.viewMonth;
+                const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                const firstDow = new Date(y, m, 1).getDay();
+                const daysInMonth = new Date(y, m + 1, 0).getDate();
+                const todayStr = localDateStr(new Date());
+                const holMap = this._holidaysForYear(y);
+
+                let html = `
+                    <div class="dp-header">
+                        <button type="button" class="dp-nav-btn" data-dp-nav="-1" title="Previous month">‹</button>
+                        <span class="dp-title">${MONTHS[m]} ${y}</span>
+                        <button type="button" class="dp-nav-btn" data-dp-nav="1" title="Next month">›</button>
+                    </div>
+                    <div class="dp-grid">
+                        ${WEEKDAYS_MIN.map(w => `<span class="dp-weekday">${w}</span>`).join('')}
+                `;
+
+                for (let i = 0; i < firstDow; i++) html += '<span class="dp-day blank"></span>';
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = localDateStr(new Date(y, m, d));
+                    const cls = ['dp-day'];
+                    if (dateStr === this.selectedStr) cls.push('selected');
+                    if (dateStr === todayStr) cls.push('today');
+                    const hol = holMap[dateStr];
+                    if (hol) cls.push('holiday');
+                    const title = hol
+                        ? ` title="${escapeHtml(hol.name)} — BC civic holiday${hol.nominalDate ? ' (observed; nominal date ' + hol.nominalDate + ')' : ''}"`
+                        : '';
+                    html += `<button type="button" class="${cls.join(' ')}" data-dp-date="${dateStr}"${title}>${d}</button>`;
+                }
+
+                html += `
+                    </div>
+                    <div class="dp-footer">
+                        <button type="button" class="dp-today-btn" data-dp-today>Today</button>
+                    </div>
+                `;
+                this.el.innerHTML = html;
+
+                // Month navigation
+                this.el.querySelectorAll('[data-dp-nav]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const delta = parseInt(btn.dataset.dpNav, 10);
+                        this.viewMonth += delta;
+                        if (this.viewMonth < 0) { this.viewMonth = 11; this.viewYear--; }
+                        if (this.viewMonth > 11) { this.viewMonth = 0; this.viewYear++; }
+                        this.render();
+                        this.position();
+                    });
+                });
+
+                // Day selection — close, then hand the picked date to the caller
+                this.el.querySelectorAll('[data-dp-date]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const picked = btn.dataset.dpDate;
+                        const cb = this.onSelectCb;
+                        this.close();
+                        if (cb) cb(picked);
+                    });
+                });
+
+                // Jump to the current month
+                const todayBtn = this.el.querySelector('[data-dp-today]');
+                if (todayBtn) {
+                    todayBtn.addEventListener('click', () => {
+                        const now = new Date();
+                        this.viewYear = now.getFullYear();
+                        this.viewMonth = now.getMonth();
+                        this.render();
+                        this.position();
+                    });
+                }
+            }
+        };
+
         // ---- Re-render preview whenever config changes ----
         function refreshPreview() {
+            // A re-render replaces the DOM — close any open date picker so it doesn't anchor to a stale node
+            DatePicker.close();
+
             const plantingDate = plantingDateInput.value;
 
             if (!plantingDate) {
@@ -1103,8 +1439,10 @@
                     endDate = d.toISOString().split('T')[0];
                 }
 
-                // Build display date string
-                const displayDate = endDate ? `${startDate} → ${endDate}` : startDate;
+                // Build display date string with weekday (e.g. "2026-09-15 · Tue")
+                const displayDate = endDate
+                    ? `${startDate} (${weekdayShort(startDate)}) → ${endDate} (${weekdayShort(endDate)})`
+                    : `${startDate} · ${weekdayShort(startDate)}`;
 
                 // Holiday check — notify only, never auto-reschedule
                 const holiday = isEnabled ? holidayInRange(startDate, endDate) : null;
@@ -1146,6 +1484,13 @@
                 // Offset label: show sign for negative offsets
                 const offsetLabel = effectiveOffset >= 0 ? `+${effectiveOffset}d` : `${effectiveOffset}d`;
 
+                // Computed-date badge — clickable (opens the date picker) unless locked or disabled
+                const canPickDate = isEnabled && !isLockedDisplay;
+                const dateBadgeCls = `preview-computed-date${def.isMultiDay ? ' multi' : ''}`;
+                const dateBadgeHtml = canPickDate
+                    ? `<button type="button" class="${dateBadgeCls} clickable" data-idx="${idx}" data-date="${startDate}" title="Click to pick a date">${displayDate}</button>`
+                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? 'title="Locked to Day 0"' : ''}>${displayDate}</span>`;
+
                 item.innerHTML = `
                     ${checkboxHtml}
                     <span class="preview-task-emoji">${def.emoji}</span>
@@ -1154,7 +1499,7 @@
                         <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}</div>
                     </div>
                     ${offsetGroupHtml}
-                    <span class="preview-computed-date${def.isMultiDay ? ' multi' : ''}" ${!isEnabled ? 'style="opacity:0.4"' : ''}>${displayDate}</span>
+                    ${dateBadgeHtml}
                     ${holidayFlagHtml(holiday)}
                 `;
 
@@ -1216,6 +1561,26 @@
                     input.value = val;
                     // Trigger the input event to update state and re-render
                     input.dispatchEvent(new Event('input'));
+                });
+            });
+
+            // Attach date-picker handlers to clickable computed-date badges.
+            // Picking a day adjusts this task's offset by the delta — same cascade rules as the spinbox.
+            listWrapper.querySelectorAll('.preview-computed-date.clickable').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const i = parseInt(btn.dataset.idx);
+                    const entry = taskOffsets[i];
+                    const currentStart = btn.dataset.date;
+                    DatePicker.open(btn, currentStart, (picked) => {
+                        const delta = daysBetween(currentStart, picked);
+                        if (delta === 0) return;
+                        // Same clamp rules as the +/- spinbox
+                        const min = entry.def.defaultOffset && entry.def.defaultOffset < 0 ? -30 : 0;
+                        const max = 200;
+                        entry.offset = Math.max(min, Math.min(max, entry.offset + delta));
+                        refreshPreview();
+                    });
                 });
             });
         }
@@ -1496,7 +1861,7 @@
             // Show config summary
             configSummaryEl.style.display = 'flex';
             configSummaryEl.innerHTML = `
-                <span>📅 Anchor: <strong>${config.plantingDate}</strong></span>
+                <span>📅 Anchor: <strong>${config.plantingDate}${config.plantingDate ? ' · ' + weekdayShort(config.plantingDate) : ''}</strong></span>
                 <span>✂️ Trim: <strong>${config.trimDays} days</strong></span>
                 <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
             `;
@@ -1520,8 +1885,8 @@
                 item.className = 'task-item';
 
                 const displayDate = ev.endDate && ev.endDate !== ev.date
-                    ? `${ev.date} → ${ev.endDate}`
-                    : ev.date;
+                    ? `${ev.date} (${weekdayShort(ev.date)}) → ${ev.endDate} (${weekdayShort(ev.endDate)})`
+                    : `${ev.date} · ${weekdayShort(ev.date)}`;
 
                 // Holiday check — notify only, never auto-reschedule
                 const holiday = holidayInRange(ev.date, ev.endDate);
@@ -1647,6 +2012,8 @@
 
         // ---- Start ----
         function init() {
+            DatePicker.init();
+
             // Set default planting date to today
             plantingDateInput.value = new Date().toISOString().split('T')[0];
 
