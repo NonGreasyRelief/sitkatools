@@ -39,10 +39,10 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 | 15 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
 | 16 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
 | 17 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
-| 18 | Clean Dry Room | 🧼 | Harvest | +18 days (after trim ends) | Yes | — |
-| 19 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Harvest | +19 days (after trim ends) | Yes | — |
+| 18 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
+| 19 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
 
-**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim, Dry Room Clean, Weigh & Ship) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks.
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks, and adjusting the Trim offset shifts the two trim-anchored tasks (Clean Dry Room, Weigh & Ship).
 
 ### Calendar Events Generated
 

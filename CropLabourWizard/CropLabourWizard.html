@@ -770,7 +770,7 @@
         }
 
         // ---- Task Definitions (reference + default offset) ----
-        // reference: 'cloning' | 'planting' | 'flip' | 'harvest'
+        // reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
         // defaultOffset: days from the reference point
         const TASK_DEFS = [
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
@@ -795,9 +795,9 @@
             { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 10 },
             // Trim is multi-day (7 days), offset from harvest
             { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true },
-            // Post-trim tasks (offset from harvest; trim ends at +17)
-            { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'harvest', defaultOffset: 18 },
-            { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'harvest', defaultOffset: 19 }
+            // Post-trim tasks (offset from trim start; trim runs 7 days, so +7/+8 land after trim ends)
+            { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
+            { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8 }
         ];
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
@@ -884,7 +884,8 @@
             cloning: 'Cloning',
             planting: 'Planting',
             flip: 'Flip to Flower',
-            harvest: 'Harvest'
+            harvest: 'Harvest',
+            trim: 'Trim Start'
         };
 
         // ---- Compute anchor dates from config ----
@@ -893,7 +894,8 @@
         // plantingOffset: days from cloning to planting (only used when clonesEnabled)
         // flipOffset: days from planting to flip (defaults to 21)
         // harvestOffset: days from flip to harvest (defaults to 56 = 8 weeks bloom)
-        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56) {
+        // trimOffset: days from harvest to the start of trim (defaults to 11)
+        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56, trimOffset = 11) {
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
@@ -904,8 +906,9 @@
             const plantingDate = clonesEnabled ? addDays(topDate, plantingOffset) : topDate;
             const flipDate = addDays(plantingDate, flipOffset);
             const harvestDate = addDays(flipDate, harvestOffset);
+            const trimDate = addDays(harvestDate, trimOffset);
 
-            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate };
+            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate, trim: trimDate };
         }
 
         // ---- Compute a task's date from its reference anchor + offset ----
@@ -1052,13 +1055,17 @@
             const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
             const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
 
+            // Get the actual trim offset from taskOffsets (may differ from default 11) — anchors post-trim tasks
+            const trimEntry = taskOffsets.find(e => e.def.taskType === 'trim');
+            const trimOffset = trimEntry ? trimEntry.offset : 11;
+
             // Update date picker label based on clone state
             const anchorLabel = $('anchorDateLabel');
             if (anchorLabel) {
                 anchorLabel.textContent = clonesEnabled ? 'Cloning Date (Day 0)' : 'Planting Date (Day 0)';
             }
 
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset);
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset);
 
             previewTaskList.innerHTML = '';
             const listWrapper = document.createElement('div');
@@ -1341,7 +1348,11 @@
             // Get the actual harvest offset from taskOffsets (may differ from default 56)
             const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
             const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset);
+
+            // Get the actual trim offset from taskOffsets (may differ from default 11) — anchors post-trim tasks
+            const trimEntry = taskOffsets.find(e => e.def.taskType === 'trim');
+            const trimOffset = trimEntry ? trimEntry.offset : 11;
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset);
 
             // Build calendar events from current offsets (skip disabled tasks)
             const newEvents = [];
