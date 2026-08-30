@@ -775,9 +775,11 @@
         const TASK_DEFS = [
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
+            { name: 'Clean Clone Room', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
             { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+            { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 15 },
             { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
             { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
             { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 21 },
@@ -792,7 +794,10 @@
             { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
             { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 10 },
             // Trim is multi-day (7 days), offset from harvest
-            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true }
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true },
+            // Post-trim tasks (offset from harvest; trim ends at +17)
+            { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'harvest', defaultOffset: 18 },
+            { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'harvest', defaultOffset: 19 }
         ];
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
@@ -1250,9 +1255,9 @@
 
         // ---- Build event title: "Room code-Strain name#Lot number, task" ----
         // The room code depends on which phase of the crop cycle the task belongs to:
-        //   - Cutting Clones (clone prep) → lot's cloning room
+        //   - Cutting Clones (clone prep) & Clean Clone Room → lot's cloning room
         //   - Tasks before Transplanting to Flower Room → lot's veg room
-        //   - Transplant and everything after → lot's destination (flower) room
+        //   - Transplant and everything after (incl. post-trim tasks) → lot's destination (flower) room
         function roomCodeForName(roomName) {
             if (!roomName) return null;
             const byName = Object.entries(DB.data.rooms || {}).find(([, r]) => r.name === roomName);
@@ -1263,9 +1268,14 @@
             const lot = DB.lots[lotId] || {};
             const rooms = DB.data.rooms || {};
 
-            // Clone prep happens in the cloning room
-            if (taskType === 'clone_cut_prep') {
+            // Clone prep and clone-room clean happen in the cloning room
+            if (taskType === 'clone_cut_prep' || taskType === 'clone_room_clean') {
                 return roomCodeForName(lot.cloningRoom);
+            }
+
+            // Veg-room clean happens in the veg room (after plants have moved out)
+            if (taskType === 'veg_room_clean') {
+                return roomCodeForName(lot.vegRoom);
             }
 
             // Everything before transplanting to flower happens in the veg room

@@ -6,7 +6,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 ### Intended Use
 
-- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, and room clean.
+- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, transplanting, topping, flipping to flower, pruning, leaf picks, clone cutting, harvest, bucking, trim, room cleans (clone, veg, dry), and final weigh/ship.
 - **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) before generating the final schedule.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
 - **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
@@ -23,31 +23,35 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 |---|------|-------|-----------------|----------------|-----------|-------------|
 | 0 | Cutting Clones | ✂️ | Cloning (Day 0) | Day 0 (locked) | No | **Yes** (enabled by default) |
 | 1 | Planting Clones | 🌱 | Cloning (when clones on) / Planting (when clones off) | +14 from cloning / Day 0 (locked when clones off) | Yes (when clones on) | — |
-| 2 | Topping | ✂️ | Planting | +3 days | Yes | — |
-| 3 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
-| 4 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
-| 5 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
-| 6 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
-| 7 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
-| 8 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
-| 9 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
-| 10 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
-| 11 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks) | — |
-| 12 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
-| 13 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
-| 14 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
-| 15 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
+| 2 | Clean Clone Room | 🧼 | Planting | +1 day (after planting clones) | Yes | — |
+| 3 | Topping | ✂️ | Planting | +3 days | Yes | — |
+| 4 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
+| 5 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
+| 6 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
+| 7 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
+| 8 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
+| 9 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
+| 10 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
+| 11 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
+| 12 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
+| 13 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks) | — |
+| 14 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
+| 15 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
+| 16 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
+| 17 | Trim | ✂️ | Harvest | +11 days → +7 days | Yes | — |
+| 18 | Clean Dry Room | 🧼 | Harvest | +18 days (after trim ends) | Yes | — |
+| 19 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Harvest | +19 days (after trim ends) | Yes | — |
 
-**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks.
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Bucking, Lab Sample, Trim, Dry Room Clean, Weigh & Ship) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks.
 
 ### Calendar Events Generated
 
 CropLabourWizard appends events to the shared `calendarEvents` array using `"sourceTool": "CropLabourWizard"`. Each event has:
 
 - **Title:** Emoji + `Room code-Strain name#Lot number` + `, task name` (e.g., `"🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower"`). The room code is **per-task**, based on which phase of the crop cycle the task belongs to:
-  - **Cutting Clones** (`clone_cut_prep`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
-  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) → the lot's `vegRoom`.
-  - **Transplant and everything after** → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
+  - **Cutting Clones** (`clone_cut_prep`) and **Clean Clone Room** (`clone_room_clean`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
+  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
+  - **Transplant and everything else after** (incl. post-trim tasks: Clean Dry Room, Weigh & Ship) → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
 
   Room names are stored on the lot (`cloningRoom`, `vegRoom`, `destRoom`) and resolved to room IDs at title-build time. If no room is found for a task's phase, the prefix degrades gracefully: `Strain#Lot number`, or just `Lot number` when strain is also missing.
 - **Date:** The computed date for the task (`YYYY-MM-DD`)
