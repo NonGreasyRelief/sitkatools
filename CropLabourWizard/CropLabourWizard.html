@@ -1120,6 +1120,65 @@
             }));
         }
 
+        // ---- Restore task offsets to match an already-generated schedule ----
+        // When a lot with an existing schedule is selected, recompute each task's day
+        // offset so its preview date exactly matches the stored calendar event. This lets
+        // the user tweak and overwrite from the current (generated) state rather than
+        // starting from defaults. The anchor dates are reconstructed from the "defining"
+        // tasks' event dates — planting / flip / harvest / trim have no toggle, so they're
+        // always present in a generated schedule. Must run after updateFormFromStoredConfig
+        // (so trimDays / harvestMultiDay / harvestDays reflect the stored config).
+        function applyStoredScheduleToOffsets(lotId) {
+            const config = lotId ? DB.lots[lotId]?._tool_CropLabourWizard : null;
+            if (!config) return;
+
+            // Gather this lot's generated events keyed by taskType
+            const eventsByType = {};
+            for (const ev of (DB.data.calendarEvents || [])) {
+                if (ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId) {
+                    eventsByType[ev.taskType] = ev;
+                }
+            }
+            if (Object.keys(eventsByType).length === 0) return;
+
+            const dateOf = t => eventsByType[t]?.date || null;
+
+            // Infer clone state from whether the (toggleable) clone-cut-prep task was generated,
+            // and reflect it in the preview toggle so refreshPreview agrees.
+            const clonesEnabled = !!eventsByType['clone_cut_prep'];
+            const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
+            if (clonePrepEntry) clonePrepEntry.enabled = clonesEnabled;
+
+            // topDate = the date in the top picker (cloning date when clones enabled, planting otherwise)
+            const topDate = config.plantingDate;
+
+            // Reconstruct anchor dates from the defining tasks' event dates (default fallbacks if missing)
+            const P = clonesEnabled ? (dateOf('planting') || computeTaskDate(topDate, 14)) : topDate; // planting
+            const F = dateOf('flip') || computeTaskDate(P, 21);                                       // flip
+            const H = dateOf('harvest') || computeTaskDate(F, 56);                                     // harvest start
+            const harvestEnd = (config.harvestMultiDay && config.harvestDays > 1)
+                ? computeTaskDate(H, config.harvestDays - 1) : H;                                      // harvest end
+            const T = dateOf('trim') || computeTaskDate(harvestEnd, 11);                               // trim start
+
+            const anchors = { cloning: topDate, planting: P, flip: F, harvest: H, harvestEnd, trim: T };
+
+            // Set each task's offset so its computed date equals the stored event date
+            for (const entry of taskOffsets) {
+                const def = entry.def;
+                const ev = eventsByType[def.taskType];
+                if (!ev) continue; // task absent from schedule — keep default
+
+                // When clones disabled, planting is locked to Day 0
+                if (def.taskType === 'planting' && !clonesEnabled) {
+                    entry.offset = 0;
+                    continue;
+                }
+
+                const anchorDate = resolveTaskAnchor(anchors, def.reference);
+                entry.offset = daysBetween(anchorDate, ev.date);
+            }
+        }
+
         // ---- Reference date labels ----
         const REF_LABELS = {
             cloning: 'Cloning',
@@ -1758,6 +1817,7 @@
             renderScheduleList();
             updateFormFromStoredConfig();
             buildDefaultOffsets();
+            applyStoredScheduleToOffsets(activeLotSelect.value);
             refreshPreview();
             updateGenerateBtnLabel();
         });
