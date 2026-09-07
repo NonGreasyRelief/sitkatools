@@ -2888,7 +2888,8 @@
                 const multiDay = ev.endDate && ev.endDate !== ev.date
                     ? ` (${ev.date} to ${ev.endDate})`
                     : '';
-                const lotTag = ev.lotId ? ` [${ev.lotId}]` : '';
+                // Only show the bracketed lot tag if the title doesn't already contain the lot ID
+                const lotTag = ev.lotId && !(ev.title || '').includes(ev.lotId) ? ` [${ev.lotId}]` : '';
                 const cleanTitle = escapeHtml(stripEmoji(ev.title));
 
                 return `<tr>
@@ -4806,7 +4807,8 @@
             },
 
             createTerminalLine(event, proximityClass, dateStr) {
-                const lotInfo = event.lotId ? ` [${escapeHtml(event.lotId)}]` : '';
+                // Only show the bracketed lot tag if the title doesn't already contain the lot ID
+                const lotInfo = event.lotId && !(event.title || '').includes(event.lotId) ? ` [${escapeHtml(event.lotId)}]` : '';
                 const title = escapeHtml(event.title || 'Untitled Event');
                 const displayDate = event.endDate && event.endDate !== event.date
                     ? `${event.date} → ${event.endDate}`
