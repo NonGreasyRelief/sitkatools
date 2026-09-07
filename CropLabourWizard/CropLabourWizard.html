@@ -948,10 +948,10 @@
         const TASK_DEFS = [
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
-            { name: 'Clean Clone Room', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+            { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
-            // Day before transplant — prep work done in the veg room
+            // Day before transplant — prep work done in the flower room
             { name: 'Hydrate coco blocks for transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 13 },
             { name: 'Install undercanopy lights and air socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 13 },
             { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
@@ -1855,7 +1855,7 @@
 
         // ---- Build event title: "Room code-Strain name#Lot number, task" ----
         // The room code depends on which phase of the crop cycle the task belongs to:
-        //   - Cutting Clones (clone prep) & Clean Clone Room → lot's cloning room
+        //   - Cutting Clones (clone prep) & Clean Clone Room and used cloning supplies → lot's cloning room
         //   - Tasks before Transplanting to Flower Room → lot's veg room
         //   - Transplant and everything after (incl. post-trim tasks) → lot's destination (flower) room
         function roomCodeForName(roomName) {
@@ -1891,6 +1891,13 @@
             // day before transplant so they're ready when plants arrive. It's listed before
             // transplant in TASK_DEFS for chronological display, but it's a flower-room task.
             if (taskType === 'undercanopy_lights') {
+                return resolveFlowerRoom(lotId, rooms);
+            }
+
+            // Coco blocks are hydrated in the flower room — prepped the day before transplant
+            // so they're ready when plants arrive. Listed before transplant in TASK_DEFS for
+            // chronological display, but it's a flower-room task.
+            if (taskType === 'hydrate_coco_blocks') {
                 return resolveFlowerRoom(lotId, rooms);
             }
 

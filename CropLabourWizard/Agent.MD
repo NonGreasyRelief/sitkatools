@@ -23,10 +23,10 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 |---|------|-------|-----------------|----------------|-----------|-------------|
 | 0 | Cutting Clones | ✂️ | Cloning (Day 0) | Day 0 (locked) | No | **Yes** (enabled by default) |
 | 1 | Planting Clones | 🌱 | Cloning (when clones on) / Planting (when clones off) | +14 from cloning / Day 0 (locked when clones off) | Yes (when clones on) | — |
-| 2 | Clean Clone Room | 🧼 | Planting | +1 day (after planting clones) | Yes | — |
+| 2 | Clean Clone Room and used cloning supplies | 🧼 | Planting | +1 day (after planting clones) | Yes | — |
 | 3 | Topping | ✂️ | Planting | +3 days | Yes | — |
 | 4 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
-| 5 | Hydrate coco blocks for transplanting | 💧 | Planting | +13 days (day before transplant) | Yes | — |
+| 5 | Hydrate coco blocks for transplanting | 💧 | Planting | +13 days (day before transplant; flower room) | Yes | — |
 | 6 | Install undercanopy lights and air socks | 💡 | Planting | +13 days (same day as hydrate blocks; flower room) | Yes | — |
 | 7 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
 | 8 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
@@ -59,9 +59,9 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 CropLabourWizard appends events to the shared `calendarEvents` array using `"sourceTool": "CropLabourWizard"`. Each event has:
 
 - **Title:** Emoji + `Room code-Strain name#Lot number` + `, task name` (e.g., `"🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower"`). The room code is **per-task**, based on which phase of the crop cycle the task belongs to:
-  - **Cutting Clones** (`clone_cut_prep`) and **Clean Clone Room** (`clone_room_clean`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
-  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM, Hydrate coco blocks) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
-  - **Install undercanopy lights and air socks** (`undercanopy_lights`) is an explicit exception: although it's listed *before* transplant for chronological display (it's prepped the day before plants arrive), it happens in the flower room, so it resolves to the destination (flower) room.
+  - **Cutting Clones** (`clone_cut_prep`) and **Clean Clone Room and used cloning supplies** (`clone_room_clean`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
+  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
+  - **Install undercanopy lights and air socks** (`undercanopy_lights`) and **Hydrate coco blocks for transplanting** (`hydrate_coco_blocks`) are explicit exceptions: although they're listed *before* transplant for chronological display (they're prepped the day before plants arrive), they happen in the flower room, so they resolve to the destination (flower) room.
   - **Transplant and everything else after** (incl. post-harvest tasks like Tank & Irrigation line clean, Prepare trim room, and post-trim tasks: Clean Dry Room, Weigh & Ship) → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
 
   Room names are stored on the lot (`cloningRoom`, `vegRoom`, `destRoom`) and resolved to room IDs at title-build time. If no room is found for a task's phase, the prefix degrades gracefully: `Strain#Lot number`, or just `Lot number` when strain is also missing.
