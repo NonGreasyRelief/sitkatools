@@ -2807,11 +2807,20 @@
                 return d >= start && d <= end;
             };
 
-            // Filter events within the date range, exclude already completed
+            // Helper: is this event past-due? (ended before today and not completed)
+            // Matches the terminal's definition — multi-day events are past-due only if endDate < today.
+            const isPastDue = (ev) => {
+                if (ev.completed) return false;
+                const end = ev.endDate || ev.date;
+                return end < todayStr;
+            };
+
+            // Filter events: exclude completed. Include past-due tasks plus
+            // anything that starts or spans within the print window.
             const filtered = events.filter(ev => {
                 if (ev.completed) return false;
                 const evEnd = ev.endDate || ev.date;
-                return evEnd >= todayStr && ev.date <= endStr;
+                return isPastDue(ev) || (evEnd >= todayStr && ev.date <= endStr);
             });
 
             // Sort by date
@@ -2821,9 +2830,13 @@
                 return (a.title || '').localeCompare(b.title || '');
             });
 
-            // Group by date
+            // Past-due tasks first (oldest first — already sorted by date)
+            const pastDueEvents = sorted.filter(isPastDue);
+            const upcomingEvents = sorted.filter(ev => !isPastDue(ev));
+
+            // Group upcoming events by date
             const grouped = {};
-            sorted.forEach(ev => {
+            upcomingEvents.forEach(ev => {
                 const key = ev.date;
                 if (!grouped[key]) grouped[key] = [];
                 // Avoid duplicates for multi-day events on the same start date
@@ -2833,7 +2846,7 @@
             });
 
             // Also add events that span a date but start before the range
-            sorted.forEach(ev => {
+            upcomingEvents.forEach(ev => {
                 if (ev.endDate && ev.endDate !== ev.date && ev.date < todayStr) {
                     for (let d = new Date(today); d <= endDate; d.setDate(d.getDate() + 1)) {
                         const ds = localDate(d);
@@ -2849,47 +2862,61 @@
 
             const dateKeys = Object.keys(grouped).sort();
 
-            if (dateKeys.length === 0) {
-                alert('No upcoming events found in the next ' + daysAhead + ' days.');
+            if (dateKeys.length === 0 && pastDueEvents.length === 0) {
+                alert('No tasks found in the next ' + daysAhead + ' days.');
                 return;
             }
 
             // Strip emojis for print (printers render them poorly — scaled/overlapping)
             const stripEmoji = (s) => (s || '').replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
 
-            // Build printable HTML
+            // Build a single table row for an event
+            const buildRow = (ev, dayLabel, isToday) => {
+                let timeStr = '';
+                if (ev.startTime) {
+                    const fmt = (t) => {
+                        const [h, m] = t.split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const dh = hour % 12 || 12;
+                        return `${dh}:${m}${ampm}`;
+                    };
+                    timeStr = ev.endTime
+                        ? ` ${fmt(ev.startTime)}-${fmt(ev.endTime)}`
+                        : ` ${fmt(ev.startTime)}`;
+                }
+                const multiDay = ev.endDate && ev.endDate !== ev.date
+                    ? ` (${ev.date} to ${ev.endDate})`
+                    : '';
+                const lotTag = ev.lotId ? ` [${ev.lotId}]` : '';
+                const cleanTitle = escapeHtml(stripEmoji(ev.title));
+
+                return `<tr>
+                        <td class="date-col">${dayLabel}${isToday ? ' (Today)' : ''}</td>
+                        <td>${cleanTitle}${lotTag}${multiDay}</td>
+                        <td class="time-col">${timeStr}</td>
+                        <td class="check-col"><input type="checkbox"></td>
+                    </tr>`;
+            };
+
+            // Build printable HTML — past-due tasks first, then today/future by date
             let rows = '';
+            if (pastDueEvents.length > 0) {
+                rows += `<tr class="section-row"><td colspan="4">PAST DUE</td></tr>`;
+                pastDueEvents.forEach(ev => {
+                    const dayDate = parseLocalDate(ev.date);
+                    const dayLabel = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    rows += buildRow(ev, dayLabel, false);
+                });
+            }
+
             dateKeys.forEach(dateKey => {
                 const dayDate = parseLocalDate(dateKey);
                 const dayLabel = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                 const isToday = dateKey === todayStr;
 
                 grouped[dateKey].forEach(ev => {
-                    let timeStr = '';
-                    if (ev.startTime) {
-                        const fmt = (t) => {
-                            const [h, m] = t.split(':');
-                            const hour = parseInt(h, 10);
-                            const ampm = hour >= 12 ? 'PM' : 'AM';
-                            const dh = hour % 12 || 12;
-                            return `${dh}:${m}${ampm}`;
-                        };
-                        timeStr = ev.endTime
-                            ? ` ${fmt(ev.startTime)}-${fmt(ev.endTime)}`
-                            : ` ${fmt(ev.startTime)}`;
-                    }
-                    const multiDay = ev.endDate && ev.endDate !== ev.date
-                        ? ` (${ev.date} to ${ev.endDate})`
-                        : '';
-                    const lotTag = ev.lotId ? ` [${ev.lotId}]` : '';
-                    const cleanTitle = escapeHtml(stripEmoji(ev.title));
-
-                    rows += `<tr>
-                        <td class="date-col">${dayLabel}${isToday ? ' (Today)' : ''}</td>
-                        <td>${cleanTitle}${lotTag}${multiDay}</td>
-                        <td class="time-col">${timeStr}</td>
-                        <td class="check-col"><input type="checkbox"></td>
-                    </tr>`;
+                    rows += buildRow(ev, dayLabel, isToday);
                 });
             });
 
@@ -2912,6 +2939,7 @@
     .time-col { width: 120px; white-space: nowrap; }
     .check-col { width: 40px; text-align: center; }
     .check-col input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+    tr.section-row td { background: #fdecea; color: #b71c1c; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.75rem; border-top: 2px solid #b71c1c; }
     tr:hover { background: #f5f5f5; }
     @media print {
         body { padding: 0; }
@@ -2922,7 +2950,7 @@
 </head>
 <body>
     <h1>Sitka Todo List</h1>
-    <p class="subtitle">Printed: ${printDate} &middot; Next ${daysAhead} days (${dateKeys[0]} to ${dateKeys[dateKeys.length - 1]}) &middot; ${filtered.length} task${filtered.length !== 1 ? 's' : ''}</p>
+    <p class="subtitle">Printed: ${printDate} &middot; Next ${daysAhead} days${dateKeys.length > 0 ? ` (${dateKeys[0]} to ${dateKeys[dateKeys.length - 1]})` : ''}${pastDueEvents.length > 0 ? ` &middot; ${pastDueEvents.length} past due` : ''} &middot; ${filtered.length} task${filtered.length !== 1 ? 's' : ''}</p>
     <table>
         <thead>
             <tr><th>Date</th><th>Task</th><th>Time</th><th style="text-align:center">Done</th></tr>
