@@ -387,6 +387,8 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
+            row-gap: 6px;
             transition: border-color 0.2s;
         }
 
@@ -457,6 +459,23 @@
         .preview-offset-group input[type="number"]:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        /* ---- Multi-day toggle (Harvest) ---- */
+        .preview-multiday-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .preview-multiday-label input[type="checkbox"] {
+            margin: 0;
+            accent-color: var(--accent);
         }
 
         /* Remove number spinners */
@@ -932,10 +951,12 @@
             { name: 'Clean Clone Room', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
+            // Day before transplant — prep work done in the veg room
+            { name: 'Hydrate coco blocks for transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 13 },
+            { name: 'Install undercanopy lights and air socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 13 },
             { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
             { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 15 },
             { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
-            { name: 'Install undercanopy lights and air socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 16 },
             { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
             { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 21 },
             // Bloom-relative tasks (offset from flip)
@@ -947,12 +968,15 @@
             { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 56 },
             // Post-harvest tasks (offset from harvest)
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
+            { name: 'Tank and Irrigation line clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2 },
             { name: 'Clean and prepare totes for bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 9 },
             { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
             { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 10 },
-            // Trim is multi-day (7 days), offset from harvest
-            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11, isMultiDay: true },
-            // Post-trim tasks (offset from trim start; trim runs 7 days, so +7/+8 land after trim ends)
+            // Day before trim starts — prep the trim room
+            { name: 'Prepare trim room', emoji: '🧽', taskType: 'trim_room_prep', reference: 'harvest', defaultOffset: 10 },
+            // Trim is multi-day (length user-selectable, default 7), offset from harvest end
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11 },
+            // Post-trim tasks (offset from trim start; re-based by resolveTaskAnchor so +7/+8 land after trim ends for any length)
             { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
             { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8 }
         ];
@@ -1008,23 +1032,83 @@
         const activeLotSelect = $('activeLot');
         const previewTaskList = $('previewTaskList');
 
-        // Trim is fixed at 7 days
-        const TRIM_DAYS = 7;
+        // ---- Multi-day task durations (user-editable in the preview) ----
+        const DEFAULT_TRIM_DAYS = 7;      // Trim length, editable 1–30
+        const DEFAULT_HARVEST_DAYS = 2;   // Harvest length when multi-day is checked
+        let trimDays = DEFAULT_TRIM_DAYS;
+        let harvestMultiDay = false;
+        let harvestDays = DEFAULT_HARVEST_DAYS;
+
+        function clampDuration(v, fallback) {
+            const n = parseInt(v);
+            return Number.isFinite(n) ? Math.max(1, Math.min(30, n)) : fallback;
+        }
 
         // ---- Preview State: array of { def, offset } — offset is user-editable days from reference ----
         let taskOffsets = [];
 
         // ---- Populate Lot Selector ----
+        // Lots are grouped by destination (flower) room. Each room that has lots
+        // assigned gets an unselectable divider ("↓ Room Name"), with its lots listed
+        // below in order of age (oldest first). Lots without a flower room go last.
         function populateLotSelector() {
             const sel = $('activeLot');
             if (!sel) return;
+            const prevValue = sel.value;
             sel.innerHTML = '<option value="">— Select a lot —</option>';
-            for (const [id, lot] of Object.entries(DB.lots)) {
-                const opt = document.createElement('option');
-                opt.value = id;
-                opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
-                sel.appendChild(opt);
+
+            const rooms = DB.data.rooms || {};
+            const lots = DB.lots;
+
+            // Group lot IDs by their resolved flower room
+            const groups = new Map();   // roomId -> [lotId, ...]
+            const unassigned = [];
+            for (const lotId of Object.keys(lots)) {
+                const roomId = resolveFlowerRoom(lotId, rooms);
+                if (roomId && rooms[roomId]) {
+                    if (!groups.has(roomId)) groups.set(roomId, []);
+                    groups.get(roomId).push(lotId);
+                } else {
+                    unassigned.push(lotId);
+                }
             }
+
+            // Oldest lot first (by createdDate; lot ID breaks ties)
+            const byAge = (a, b) =>
+                (lots[a]?.createdDate || '').localeCompare(lots[b]?.createdDate || '') ||
+                a.localeCompare(b);
+
+            const addDivider = label => {
+                const opt = document.createElement('option');
+                opt.textContent = `↓ ${label}`;
+                opt.disabled = true;
+                sel.appendChild(opt);
+            };
+
+            const addLotOption = lotId => {
+                const lot = lots[lotId] || {};
+                const opt = document.createElement('option');
+                opt.value = lotId;
+                opt.textContent = `${lotId} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                sel.appendChild(opt);
+            };
+
+            // Room dividers in alphabetical order of room name
+            [...groups.keys()]
+                .sort((a, b) => (rooms[a].name || '').localeCompare(rooms[b].name || ''))
+                .forEach(roomId => {
+                    addDivider(rooms[roomId].name || roomId);
+                    groups.get(roomId).sort(byAge).forEach(addLotOption);
+                });
+
+            // Lots with no flower room assignment go last
+            if (unassigned.length) {
+                addDivider('Unassigned');
+                unassigned.sort(byAge).forEach(addLotOption);
+            }
+
+            // Restore the previous selection if that lot is still in the list
+            if (prevValue && [...sel.options].some(o => o.value === prevValue)) sel.value = prevValue;
         }
 
         // ---- Build task offsets from defaults (called on init / lot change) ----
@@ -1052,7 +1136,7 @@
         // flipOffset: days from planting to flip (defaults to 21)
         // harvestOffset: days from flip to harvest (defaults to 56 = 8 weeks bloom)
         // trimOffset: days from harvest to the start of trim (defaults to 11)
-        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56, trimOffset = 11) {
+        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56, trimOffset = 11, multiDayHarvest = false, hDays = 1) {
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
@@ -1063,9 +1147,12 @@
             const plantingDate = clonesEnabled ? addDays(topDate, plantingOffset) : topDate;
             const flipDate = addDays(plantingDate, flipOffset);
             const harvestDate = addDays(flipDate, harvestOffset);
-            const trimDate = addDays(harvestDate, trimOffset);
+            // Harvest end — same as start unless multi-day is checked
+            const harvestEndDate = multiDayHarvest ? addDays(harvestDate, Math.max(0, hDays - 1)) : harvestDate;
+            // Trim starts after harvest ends
+            const trimDate = addDays(harvestEndDate, trimOffset);
 
-            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate, trim: trimDate };
+            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate, harvestEnd: harvestEndDate, trim: trimDate };
         }
 
         // ---- Compute a task's date from its reference anchor + offset ----
@@ -1073,6 +1160,32 @@
             const d = new Date(anchorDateStr + 'T00:00:00');
             d.setDate(d.getDate() + offset);
             return d.toISOString().split('T')[0];
+        }
+
+        // Resolve the anchor date a task's offset is measured from.
+        // - 'harvest' reference → harvest END (post-harvest tasks and trim run after
+        //   harvest finishes; identical to start when single-day)
+        // - 'trim' reference → re-based: post-trim offsets are defined assuming a
+        //   7-day trim, so shift the anchor by (actual length − 7)
+        function resolveTaskAnchor(anchors, ref) {
+            if (ref === 'harvest') return anchors.harvestEnd;
+            if (ref === 'trim') return computeTaskDate(anchors.trim, trimDays - DEFAULT_TRIM_DAYS);
+            return anchors[ref];
+        }
+
+        // End date for multi-day tasks (null for single-day)
+        function taskEndDate(def, startDate, isEnabled) {
+            if (!isEnabled) return null;
+            if (def.taskType === 'trim') return trimDays > 1 ? computeTaskDate(startDate, trimDays - 1) : null;
+            if (def.taskType === 'harvest' && harvestMultiDay) return harvestDays > 1 ? computeTaskDate(startDate, harvestDays - 1) : null;
+            return null;
+        }
+
+        // Whether a task renders as multi-day (drives the amber "multi" badge style)
+        function isMultiDayTask(def) {
+            if (def.taskType === 'trim') return true;
+            if (def.taskType === 'harvest') return harvestMultiDay;
+            return false;
         }
 
         // =====================================================
@@ -1404,7 +1517,7 @@
                 anchorLabel.textContent = clonesEnabled ? 'Cloning Date (Day 0)' : 'Planting Date (Day 0)';
             }
 
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset);
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, harvestMultiDay, harvestDays);
 
             previewTaskList.innerHTML = '';
             const listWrapper = document.createElement('div');
@@ -1431,16 +1544,10 @@
                     isLockedDisplay = true;
                 }
 
-                // Compute date from anchor + offset
-                const anchorDate = anchors[displayRef];
+                // Compute date from anchor + offset (anchor accounts for multi-day harvest/trim)
+                const anchorDate = resolveTaskAnchor(anchors, displayRef);
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
-                let endDate = null;
-
-                if (def.isMultiDay && isEnabled) {
-                    const d = new Date(startDate + 'T00:00:00');
-                    d.setDate(d.getDate() + TRIM_DAYS - 1);
-                    endDate = d.toISOString().split('T')[0];
-                }
+                let endDate = taskEndDate(def, startDate, isEnabled);
 
                 // Build display date string with weekday (e.g. "2026-09-15 · Tue")
                 const displayDate = endDate
@@ -1489,10 +1596,35 @@
 
                 // Computed-date badge — clickable (opens the date picker) unless locked or disabled
                 const canPickDate = isEnabled && !isLockedDisplay;
-                const dateBadgeCls = `preview-computed-date${def.isMultiDay ? ' multi' : ''}`;
+                const dateBadgeCls = `preview-computed-date${isMultiDayTask(def) ? ' multi' : ''}`;
                 const dateBadgeHtml = canPickDate
                     ? `<button type="button" class="${dateBadgeCls} clickable" data-idx="${idx}" data-date="${startDate}" title="Click to pick a date">${displayDate}</button>`
                     : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? 'title="Locked to Day 0"' : ''}>${displayDate}</span>`;
+
+                // Duration controls — Trim length (always) and Harvest multi-day toggle + length
+                let durationControlsHtml = '';
+                if (def.taskType === 'trim' && isEnabled) {
+                    durationControlsHtml = `
+                        <div class="preview-offset-group" title="Trim length in days">
+                            <label>Length:</label>
+                            <button type="button" class="spinbox-btn minus" data-target="trimDaysInput">−</button>
+                            <input type="number" id="trimDaysInput" value="${trimDays}" min="1" max="30" />
+                            <button type="button" class="spinbox-btn plus" data-target="trimDaysInput">+</button>
+                        </div>
+                    `;
+                } else if (def.taskType === 'harvest' && isEnabled) {
+                    durationControlsHtml = `
+                        <label class="preview-multiday-label" title="Span Harvest across multiple days — downstream tasks start after harvest ends">
+                            <input type="checkbox" id="harvestMultiCheck" ${harvestMultiDay ? 'checked' : ''} /> Multi-day
+                        </label>
+                        <div class="preview-offset-group" title="Harvest length in days (when multi-day)">
+                            <label>Length:</label>
+                            <button type="button" class="spinbox-btn minus" data-target="harvestDaysInput" ${!harvestMultiDay ? 'disabled' : ''}>−</button>
+                            <input type="number" id="harvestDaysInput" value="${harvestDays}" min="1" max="30" ${!harvestMultiDay ? 'disabled' : ''} />
+                            <button type="button" class="spinbox-btn plus" data-target="harvestDaysInput" ${!harvestMultiDay ? 'disabled' : ''}>+</button>
+                        </div>
+                    `;
+                }
 
                 item.innerHTML = `
                     ${checkboxHtml}
@@ -1502,6 +1634,7 @@
                         <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}</div>
                     </div>
                     ${offsetGroupHtml}
+                    ${durationControlsHtml}
                     ${dateBadgeHtml}
                     ${holidayFlagHtml(holiday)}
                 `;
@@ -1531,7 +1664,7 @@
             previewTaskList.appendChild(banner);
 
             // Attach live-update listeners to all offset inputs
-            listWrapper.querySelectorAll('input[type="number"]').forEach(input => {
+            listWrapper.querySelectorAll('input[type="number"][data-idx]').forEach(input => {
                 input.addEventListener('input', () => {
                     const i = parseInt(input.dataset.idx);
                     taskOffsets[i].offset = parseInt(input.value) || 0;
@@ -1540,8 +1673,33 @@
                 });
             });
 
-            // Attach listeners to enable/disable checkboxes
-            listWrapper.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            // Trim length spinbox
+            const trimDaysInput = listWrapper.querySelector('#trimDaysInput');
+            if (trimDaysInput) {
+                trimDaysInput.addEventListener('input', () => {
+                    trimDays = clampDuration(trimDaysInput.value, trimDays);
+                    refreshPreview();
+                });
+            }
+
+            // Harvest multi-day toggle + length
+            const harvestMultiCheck = listWrapper.querySelector('#harvestMultiCheck');
+            if (harvestMultiCheck) {
+                harvestMultiCheck.addEventListener('change', () => {
+                    harvestMultiDay = harvestMultiCheck.checked;
+                    refreshPreview();
+                });
+            }
+            const harvestDaysInput = listWrapper.querySelector('#harvestDaysInput');
+            if (harvestDaysInput && !harvestDaysInput.disabled) {
+                harvestDaysInput.addEventListener('input', () => {
+                    harvestDays = clampDuration(harvestDaysInput.value, harvestDays);
+                    refreshPreview();
+                });
+            }
+
+            // Attach listeners to enable/disable checkboxes (scoped — the harvest multi-day checkbox has no data-idx)
+            listWrapper.querySelectorAll('input.task-enabled-check').forEach(checkbox => {
                 checkbox.addEventListener('change', () => {
                     const i = parseInt(checkbox.dataset.idx);
                     taskOffsets[i].enabled = checkbox.checked;
@@ -1607,11 +1765,18 @@
         // ---- Update Form from Stored Config ----
         function updateFormFromStoredConfig() {
             const lotId = activeLotSelect.value;
-            if (!lotId) return;
+            const config = lotId ? DB.lots[lotId]?._tool_CropLabourWizard : null;
 
-            const config = DB.lots[lotId]?._tool_CropLabourWizard;
             if (config) {
                 plantingDateInput.value = config.plantingDate || '';
+                trimDays = clampDuration(config.trimDays, DEFAULT_TRIM_DAYS);
+                harvestMultiDay = !!config.harvestMultiDay;
+                harvestDays = clampDuration(config.harvestDays, DEFAULT_HARVEST_DAYS);
+            } else {
+                // No stored schedule — reset durations to defaults
+                trimDays = DEFAULT_TRIM_DAYS;
+                harvestMultiDay = false;
+                harvestDays = DEFAULT_HARVEST_DAYS;
             }
         }
 
@@ -1639,6 +1804,15 @@
             return byName ? byName[0] : null;
         }
 
+        // Resolve the lot's destination (flower) room: prefer a room that has this lot
+        // assigned to it, otherwise fall back to the lot's destRoom field.
+        function resolveFlowerRoom(lotId, rooms) {
+            for (const [roomId, room] of Object.entries(rooms)) {
+                if ((room.assignedLots || []).includes(lotId)) return roomId;
+            }
+            return roomCodeForName(DB.lots[lotId]?.destRoom);
+        }
+
         function getLotRoomCode(lotId, taskType) {
             const lot = DB.lots[lotId] || {};
             const rooms = DB.data.rooms || {};
@@ -1653,6 +1827,13 @@
                 return roomCodeForName(lot.vegRoom);
             }
 
+            // Undercanopy lights & air socks are installed in the flower room — prepped the
+            // day before transplant so they're ready when plants arrive. It's listed before
+            // transplant in TASK_DEFS for chronological display, but it's a flower-room task.
+            if (taskType === 'undercanopy_lights') {
+                return resolveFlowerRoom(lotId, rooms);
+            }
+
             // Everything before transplanting to flower happens in the veg room
             const defIdx = TASK_DEFS.findIndex(d => d.taskType === taskType);
             const transplantIdx = TASK_DEFS.findIndex(d => d.taskType === 'transplant');
@@ -1661,10 +1842,7 @@
             }
 
             // Transplant and everything after happens in the destination (flower) room
-            for (const [roomId, room] of Object.entries(rooms)) {
-                if ((room.assignedLots || []).includes(lotId)) return roomId;
-            }
-            return roomCodeForName(lot.destRoom);
+            return resolveFlowerRoom(lotId, rooms);
         }
 
         function buildEventTitle(def, lotId) {
@@ -1720,7 +1898,7 @@
             // Get the actual trim offset from taskOffsets (may differ from default 11) — anchors post-trim tasks
             const trimEntry = taskOffsets.find(e => e.def.taskType === 'trim');
             const trimOffset = trimEntry ? trimEntry.offset : 11;
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset);
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, harvestMultiDay, harvestDays);
 
             // Build calendar events from current offsets (skip disabled tasks)
             const newEvents = [];
@@ -1740,7 +1918,7 @@
                     effectiveOffset = 0;
                 }
 
-                const anchorDate = anchors[anchorRef];
+                const anchorDate = resolveTaskAnchor(anchors, anchorRef);
                 const startDate = computeTaskDate(anchorDate, effectiveOffset);
 
                 const event = {
@@ -1751,12 +1929,9 @@
                     taskType: def.taskType
                 };
 
-                // Multi-day events get endDate
-                if (def.isMultiDay) {
-                    const d = new Date(startDate + 'T00:00:00');
-                    d.setDate(d.getDate() + TRIM_DAYS - 1);
-                    event.endDate = d.toISOString().split('T')[0];
-                }
+                // Multi-day events get endDate (Trim always; Harvest when multi-day is checked)
+                const endDate = taskEndDate(def, startDate, true);
+                if (endDate) event.endDate = endDate;
 
                 newEvents.push(event);
             }
@@ -1767,7 +1942,9 @@
             // Store config per-lot
             DB.data.lots[lotId]._tool_CropLabourWizard = {
                 plantingDate: plantingDate,
-                trimDays: TRIM_DAYS,
+                trimDays: trimDays,
+                harvestMultiDay: harvestMultiDay,
+                harvestDays: harvestDays,
                 taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
             };
@@ -1779,7 +1956,9 @@
             DB.data._CropLabourWizard.generations.push({
                 lotId: lotId,
                 plantingDate: plantingDate,
-                trimDays: TRIM_DAYS,
+                trimDays: trimDays,
+                harvestMultiDay: harvestMultiDay,
+                harvestDays: harvestDays,
                 taskCount: newEvents.length,
                 generatedAt: new Date().toISOString()
             });
@@ -1865,7 +2044,8 @@
             configSummaryEl.style.display = 'flex';
             configSummaryEl.innerHTML = `
                 <span>📅 Anchor: <strong>${config.plantingDate}${config.plantingDate ? ' · ' + weekdayShort(config.plantingDate) : ''}</strong></span>
-                <span>✂️ Trim: <strong>${config.trimDays} days</strong></span>
+                <span>✂️ Trim: <strong>${config.trimDays || DEFAULT_TRIM_DAYS} days</strong></span>
+                ${config.harvestMultiDay ? `<span>🌾 Harvest: <strong>${config.harvestDays || DEFAULT_HARVEST_DAYS} days</strong></span>` : ''}
                 <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
             `;
 

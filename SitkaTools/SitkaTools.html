@@ -305,8 +305,8 @@
             border-radius: var(--radius);
             padding: 12px 16px;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
+            flex-direction: column;
+            gap: 8px;
             transition: border-color 0.2s;
         }
 
@@ -314,20 +314,37 @@
             border-color: var(--accent);
         }
 
+        /* Row 1 of a lot card — name/meta on the left, controls on the right */
+        .lot-row-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         .lot-info {
             display: flex;
             flex-direction: column;
             gap: 2px;
+            flex: 1;
+            min-width: 0;
         }
 
         .lot-name {
             font-weight: 600;
             font-size: 0.95rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .lot-meta {
             font-size: 0.8rem;
             color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .lot-type-badge {
@@ -433,6 +450,40 @@
         }
 
         .lot-stage-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Room editor dropdowns in lot list (clone / veg / flower) — row 2 of the card */
+        .lot-room-editors {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+
+        .lot-room-editor {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .lot-room-select {
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            flex-shrink: 0;
+            max-width: 180px;
+        }
+
+        .lot-room-select:focus {
             outline: none;
             border-color: var(--accent);
         }
@@ -3115,9 +3166,9 @@
             parentLotGroup.style.display = isNotNewLot ? 'flex' : 'none';
             parentLotSelect.required = isNotNewLot;
 
-            // Veg/Cloning rooms only apply to new lots (sub/split lots inherit from their parent)
-            vegRoomGroup.style.display = isNotNewLot ? 'none' : 'flex';
-            cloningRoomGroup.style.display = isNotNewLot ? 'none' : 'flex';
+            // Veg/Cloning rooms apply to new lots and sub-lots (split lots inherit from their parent)
+            vegRoomGroup.style.display = isSplitLot ? 'none' : 'flex';
+            cloningRoomGroup.style.display = isSplitLot ? 'none' : 'flex';
 
             // Plant Count is always visible (for all lot types)
             plantCountGroup.style.display = 'flex';
@@ -3172,8 +3223,9 @@
             const plantsTransferred = type === 'split-lot' ? parseInt(plantsTransferredInput.value, 10) : null;
             const createdDate = lotDateInput.value;
             const stage = lotStageSelect.value;
-            const vegRoom = type === 'new-lot' ? vegRoomInput.value : '';
-            const cloningRoom = type === 'new-lot' ? cloningRoomInput.value : '';
+            // Veg/Cloning rooms are settable for new lots and sub-lots (split lots inherit from parent)
+            const vegRoom = type === 'split-lot' ? '' : vegRoomInput.value;
+            const cloningRoom = type === 'split-lot' ? '' : cloningRoomInput.value;
 
             // Auto-generate Lot Name from LotID + first 6 letters of strain
             const strainPrefix = (strain || '').substring(0, 6).toUpperCase();
@@ -3335,17 +3387,46 @@
                     </div>
                 `;
 
+                // Build room dropdowns — change clone / veg / flower room after the lot is made
+                const allRooms = DB.data.rooms || {};
+                const roomOptionsHtml = (currentRoom) => {
+                    let opts = '<option value="">— None —</option>';
+                    Object.values(allRooms).forEach(r => {
+                        const selected = r.name === currentRoom ? 'selected' : '';
+                        opts += `<option value="${escapeHtml(r.name)}" ${selected}>${escapeHtml(r.name)}</option>`;
+                    });
+                    return opts;
+                };
+                const roomEditorHtml = (field, emoji, label) => `
+                    <div class="lot-room-editor">
+                        <span title="${label}">${emoji}</span>
+                        <select class="lot-room-select" data-lot-id="${key}" data-room-field="${field}" title="${label} room">
+                            ${roomOptionsHtml(lot[field])}
+                        </select>
+                    </div>
+                `;
+                const roomEditorsHtml = `
+                    <div class="lot-room-editors">
+                        ${roomEditorHtml('cloningRoom', '✂️', 'Cloning')}
+                        ${roomEditorHtml('vegRoom', '🌿', 'Vegetating')}
+                        ${roomEditorHtml('destRoom', '🌸', 'Destination flower')}
+                    </div>
+                `;
+
                 item.innerHTML = `
-                    <div class="lot-info">
-                        <span class="lot-name">${escapeHtml(lot.name)}${roomInfo ? ' <span style="color: var(--text-secondary); font-weight: 400;">' + escapeHtml(roomInfo) + '</span>' : ''}</span>
-                        <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate}</span>
+                    <div class="lot-row-top">
+                        <div class="lot-info">
+                            <span class="lot-name">${escapeHtml(lot.name)}${roomInfo ? ' <span style="color: var(--text-secondary); font-weight: 400;">' + escapeHtml(roomInfo) + '</span>' : ''}</span>
+                            <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                            ${stageHtml}
+                            ${plantCountHtml}
+                            <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
+                            <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
+                        </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        ${stageHtml}
-                        ${plantCountHtml}
-                        <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
-                        <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
-                    </div>
+                    ${roomEditorsHtml}
                 `;
 
                 lotListEl.appendChild(item);
@@ -3391,6 +3472,36 @@
                         lot.plantCount = null;
                     }
                     markUnsaved();
+                });
+            });
+
+            // Attach room change handlers (clone / veg / flower room dropdowns)
+            lotListEl.querySelectorAll('.lot-room-select').forEach(select => {
+                select.addEventListener('change', () => {
+                    const lotId = select.dataset.lotId;
+                    const field = select.dataset.roomField;
+                    const lot = DB.lots[lotId];
+                    if (!lot) return;
+
+                    const rooms = DB.data.rooms || {};
+                    const roomName = select.value || null;
+
+                    // Keep the flower room's assignedLots in sync with destRoom
+                    if (field === 'destRoom') {
+                        Object.values(rooms).forEach(r => {
+                            if (!r.assignedLots) return;
+                            r.assignedLots = r.assignedLots.filter(id => id !== lotId);
+                        });
+                        const target = Object.values(rooms).find(r => r.name === roomName);
+                        if (target) {
+                            if (!target.assignedLots) target.assignedLots = [];
+                            if (!target.assignedLots.includes(lotId)) target.assignedLots.push(lotId);
+                        }
+                    }
+
+                    lot[field] = roomName;
+                    markUnsaved();
+                    renderLotList();
                 });
             });
         }
