@@ -6,7 +6,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 ### Intended Use
 
-- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, coco block hydration, transplanting, topping, undercanopy lights & air socks, flipping to flower, trellis layout, pruning, leaf picks, clone cutting, harvest, grow-room clean, tank & irrigation line clean, tote prep, bucking, trim room prep, trim, room cleans (clone, veg, dry), and final weigh/ship.
+- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, coco block layout/spiking & hydration, transplanting, topping, undercanopy lights & air socks, flipping to flower, trellis layout, pruning, leaf picks, clone cutting, harvest, grow-room clean, tank & irrigation line clean, tote prep, bucking, trim room prep, trim, machine trim of smalls, room cleans (clone, veg, dry), and final weigh/ship.
 - **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) and multi-day durations (trim length; optionally multi-day harvest) before generating the final schedule. Each task's computed date shows its weekday next to it (e.g., `2026-09-15 · Tue`), and clicking a task's date opens a clickable date picker — picking a day adjusts that task's offset by the delta, exactly like the +/− spinbox.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
 - **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
@@ -26,32 +26,34 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 | 2 | Clean Clone Room and used cloning supplies | 🧼 | Planting | +1 day (after planting clones) | Yes | — |
 | 3 | Topping | ✂️ | Planting | +3 days | Yes | — |
 | 4 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
-| 5 | Hydrate coco blocks for transplanting | 💧 | Planting | +13 days (day before transplant; flower room) | Yes | — |
-| 6 | Install undercanopy lights and air socks | 💡 | Planting | +13 days (same day as hydrate blocks; flower room) | Yes | — |
-| 7 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
-| 8 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
-| 9 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
-| 10 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
-| 11 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
-| 12 | Layout trellis and secure | 🕸️ | Flip | +1 day (day after flip) | Yes | — |
-| 13 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
-| 14 | Cutting Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
-| 15 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
-| 16 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks; optionally **multi-day** — default 2 days when checked, and post-harvest tasks then cascade from the harvest *end* date) | — |
-| 17 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
-| 18 | Tank and Irrigation line clean | 🚿 | Harvest | +2 days (day after grow-room clean) | Yes | — |
-| 19 | Clean and prepare totes for bucking | 🧺 | Harvest | +9 days (day before bucking) | Yes | — |
-| 20 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
-| 21 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
-| 22 | Prepare trim room | 🧽 | Harvest | +10 days (day before trim starts) | Yes | — |
-| 23 | Trim | ✂️ | Harvest (end, when multi-day) | +11 days; **length is user-selectable** (default 7 days, editable 1–30 in the preview) | Yes | — |
-| 24 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
-| 25 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
+| 5 | Lay-out and Spike Coco Blocks for Hydrating | 🥥 | Planting | +12 days (two days before transplant; flower room) | Yes | — |
+| 6 | Hydrate Coco Blocks for Transplanting | 💧 | Planting | +13 days (day before transplant; flower room) | Yes | — |
+| 7 | Install Undercanopy Lights and Air Socks | 💡 | Planting | +13 days (same day as hydrate blocks; flower room) | Yes | — |
+| 8 | Transplanting to Flower Room | 🪴 | Planting | +14 days | Yes | — |
+| 9 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
+| 10 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
+| 11 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
+| 12 | Flip to Flower | 🌸 | Planting | +21 days | **Yes** (cascades to all bloom & harvest tasks) | — |
+| 13 | Layout Trellis and Secure | 🕸️ | Flip | +1 day (day after flip) | Yes | — |
+| 14 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
+| 15 | Cut Clones to Replace Lot | 🌿 | Flip | +42 days | Yes | — |
+| 16 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
+| 17 | Harvest | 🌾 | Flip | +56 days (8 weeks bloom) | **Yes** (cascades to all post-harvest tasks; optionally **multi-day** — default 2 days when checked, and post-harvest tasks then cascade from the harvest *end* date) | — |
+| 18 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
+| 19 | Tank and Irrigation Line Clean | 🚿 | Harvest | +2 days (day after grow-room clean) | Yes | — |
+| 20 | Clean and Prepare Totes for Bucking | 🧺 | Harvest | +9 days (day before bucking) | Yes | — |
+| 21 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
+| 22 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
+| 23 | Prepare Trim Room | 🧽 | Harvest | +10 days (day before trim starts) | Yes | — |
+| 24 | Trim | ✂️ | Harvest (end, when multi-day) | +11 days; **length is user-selectable** (default 7 days, editable 1–30 in the preview) | Yes | — |
+| 25 | Machine Trim Smalls | ⚙️ | Trim Start | +7 days (day after trim ends at default length) | Yes | **Yes** (enabled by default) |
+| 26 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
+| 27 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
 
-**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Trellis Layout, Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Tank & Irrigation Clean, Tote Prep, Bucking, Lab Sample, Prepare Trim Room, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks, and adjusting the Trim offset shifts the two trim-anchored tasks (Clean Dry Room, Weigh & Ship).
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Trellis Layout, Early Leaf Pick, Clone Cut, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Tank & Irrigation Clean, Tote Prep, Bucking, Lab Sample, Prepare Trim Room, Trim) by the same delta. Similarly, adjusting the Harvest offset shifts all post-harvest tasks, and adjusting the Trim offset shifts the three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship).
 
 **Multi-day durations:**
-- **Trim length** is user-selectable in the preview (1–30 days, default 7). The two trim-anchored tasks (Clean Dry Room, Weigh & Ship) are re-based so they always land 1–2 days after trim *ends*, regardless of the chosen length.
+- **Trim length** is user-selectable in the preview (1–30 days, default 7). The three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship) are re-based so they always land 1–2 days after trim *ends*, regardless of the chosen length.
 - **Harvest** can optionally span multiple days via a "Multi-day" checkbox in the preview (default length 2 when checked). When multi-day is on, all harvest-referenced tasks measure from the harvest *end* date instead of the start date; when off, behavior is identical to single-day harvest.
 
 ### Calendar Events Generated
@@ -61,8 +63,8 @@ CropLabourWizard appends events to the shared `calendarEvents` array using `"sou
 - **Title:** Emoji + `Room code-Strain name#Lot number` + `, task name` (e.g., `"🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower"`). The room code is **per-task**, based on which phase of the crop cycle the task belongs to:
   - **Cutting Clones** (`clone_cut_prep`) and **Clean Clone Room and used cloning supplies** (`clone_room_clean`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
   - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
-  - **Install undercanopy lights and air socks** (`undercanopy_lights`) and **Hydrate coco blocks for transplanting** (`hydrate_coco_blocks`) are explicit exceptions: although they're listed *before* transplant for chronological display (they're prepped the day before plants arrive), they happen in the flower room, so they resolve to the destination (flower) room.
-  - **Transplant and everything else after** (incl. post-harvest tasks like Tank & Irrigation line clean, Prepare trim room, and post-trim tasks: Clean Dry Room, Weigh & Ship) → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
+  - **Lay-out & Spike Coco Blocks for Hydrating** (`layout_coco_blocks`), **Hydrate coco blocks for transplanting** (`hydrate_coco_blocks`), and **Install undercanopy lights and air socks** (`undercanopy_lights`) are explicit exceptions: although they're listed *before* transplant for chronological display (they're prepped the day(s) before plants arrive), they happen in the flower room, so they resolve to the destination (flower) room.
+  - **Transplant and everything else after** (incl. post-harvest tasks like Tank & Irrigation line clean, Prepare Trim Room, and post-trim tasks: Machine Trim Smalls, Clean Dry Room, Weigh & Ship) → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
 
   Room names are stored on the lot (`cloningRoom`, `vegRoom`, `destRoom`) and resolved to room IDs at title-build time. If no room is found for a task's phase, the prefix degrades gracefully: `Strain#Lot number`, or just `Lot number` when strain is also missing.
 - **Date:** The computed date for the task (`YYYY-MM-DD`)
