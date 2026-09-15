@@ -1,0 +1,560 @@
+<!-- EmployeeWizard.html — Employee roster, scheduling & labour tracking for SitkaGit suite -->
+<!-- Tool: EmployeeWizard | Purpose: Employee work schedules, time-off booking, per-task labour hour tracking, labour cost reports -->
+<!-- Database Keys: "_EmployeeWizard" (top-level), "calendarEvents" (time-off events + labour_map annotations on Labour wizard events) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmployeeWizard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left { display: flex; align-items: center; gap: 24px; }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+        }
+
+        .header-right { display: flex; gap: 8px; align-items: flex-end; }
+
+        /* ---- Form (header selector) ---- */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-group select {
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* ---- Main Content (stub — tabs + panels arrive with Phase 2) ---- */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        /* ---- Status Bar ---- */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-bar.loaded { border-color: var(--accent); }
+
+        .placeholder-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 48px 64px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .placeholder-card h2 {
+            font-size: 1.3rem;
+            color: var(--accent);
+            margin-bottom: 12px;
+        }
+
+        .placeholder-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* ---- Buttons ---- */
+        .btn {
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { border-color: var(--text-secondary); }
+
+        /* ---- Hidden file input (mobile import) ---- */
+        #dbImportInput { display: none; }
+
+        /* ---- Mobile Import Banner ---- */
+        .mobile-banner {
+            background: var(--bg-card);
+            border: 1px solid var(--warning);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--warning);
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mobile-banner.show {
+            display: flex;
+        }
+
+        .mobile-banner-text {
+            flex: 1;
+        }
+
+        .mobile-banner-text strong {
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .mobile-banner-text span {
+            font-size: 0.8rem;
+            opacity: 0.85;
+        }
+
+        /* ---- Toast notification ---- */
+        .toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 300;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ---- Footer ---- */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hidden file input for mobile DB import -->
+    <input type="file" id="dbImportInput" accept=".json">
+
+    <!-- Header (lot-focused tool — Active Lot selector) -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">👥 EmployeeWizard</span>
+        </div>
+        <div class="header-right">
+            <div class="form-group">
+                <label for="activeLot">Active Lot</label>
+                <select id="activeLot">
+                    <option value="">— Select a lot —</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content (tabs + panels arrive with Phase 2) -->
+    <main class="main">
+        <!-- Mobile Import Banner -->
+        <div class="mobile-banner" id="mobileBanner">
+            <span style="font-size:1.3rem;">📱</span>
+            <div class="mobile-banner-text">
+                <strong>Mobile Detected — Manual Import Required</strong>
+                <span>postMessage sync is unavailable on mobile. Tap below to import your database file.</span>
+            </div>
+            <button type="button" class="btn btn-secondary" id="importDbBtn" style="white-space:nowrap; padding:8px 14px; font-size:0.85rem;">Import DB</button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <span id="statusText">No database loaded. Open from SitkaTools.</span>
+        </div>
+
+        <!-- Placeholder (two-panel tabs + labour report arrive with Phase 2) -->
+        <div class="placeholder-card">
+            <h2>👥 EmployeeWizard</h2>
+            <p>Under construction — see Agent.MD for the design spec.</p>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn btn-primary" id="saveDbBtn" style="display:none;">💾 Save Database</button>
+            <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+        </div>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // =====================================================
+        // EmployeeWizard — Employee roster, scheduling & labour tracking
+        // Database Keys: "_EmployeeWizard" (top-level), "calendarEvents"
+        // =====================================================
+
+        const DB = {
+            data: null,
+            fileName: '',
+
+            get lots() { return this.data?.lots || {}; },
+            get rooms() { return this.data?.rooms || {}; },
+
+            ensureStructure() {
+                if (!this.data) this.data = { lots: {}, rooms: {}, calendarEvents: [] };
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                return this.data;
+            },
+
+            // Sync all in-memory changes before export.
+            // Call this BEFORE serializing DB.data for save.
+            sync() {
+                this.ensureStructure();
+                // EmployeeWizard writes directly to DB.data on every mutation,
+                // so no extra flush is needed — but the method exists as convention.
+                return this.data;
+            }
+        };
+
+        const $ = id => document.getElementById(id);
+
+        // ---- Room helpers (for lot selector grouping) ----
+        function roomCodeForName(name) {
+            if (!name) return null;
+            const m = String(name).match(/\b([A-Z]{1,3}\d{1,2})\b/);
+            return m ? m[1] : null;
+        }
+
+        function resolveFlowerRoom(lotId, rooms) {
+            for (const [roomId, room] of Object.entries(rooms)) {
+                if ((room.assignedLots || []).includes(lotId)) return roomId;
+            }
+            return roomCodeForName(DB.lots[lotId]?.destRoom);
+        }
+
+        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        DB.ensureStructure();
+
+        // Notify SitkaTools of changes via postMessage
+        function notifySitkaTools() {
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'sitkaGit_db_update',
+                    payload: DB.data
+                }, '*');
+            }
+        }
+
+        // Listen for DB from SitkaTools via postMessage
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+
+                // Acknowledge receipt so SitkaTools stops retrying
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                }
+
+                // Reconcile and render with fresh data
+                populateLotSelector();
+                updateStatusBar();
+                showToast('Database loaded from SitkaTools');
+            }
+
+            // Handle live DB updates (e.g., new lots created in SitkaTools)
+            // Only refresh the lot selector to avoid disrupting active editing
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                populateLotSelector();
+                updateStatusBar();
+            }
+        });
+
+        // ---- Populate Lot Selector ----
+        // Lots are grouped by destination (flower) room. Each room that has lots
+        // assigned gets an unselectable divider ("↓ Room Name"), with its lots listed
+        // below in order of age (oldest first). Lots without a flower room go last.
+        function populateLotSelector() {
+            const sel = $('activeLot');
+            if (!sel) return;
+            const prevValue = sel.value;
+            sel.innerHTML = '<option value="">— Select a lot —</option>';
+
+            const rooms = DB.data.rooms || {};
+            const lots = DB.lots;
+
+            // Group lot IDs by their resolved flower room
+            const groups = new Map();   // roomId -> [lotId, ...]
+            const unassigned = [];
+            for (const lotId of Object.keys(lots)) {
+                const roomId = resolveFlowerRoom(lotId, rooms);
+                if (roomId && rooms[roomId]) {
+                    if (!groups.has(roomId)) groups.set(roomId, []);
+                    groups.get(roomId).push(lotId);
+                } else {
+                    unassigned.push(lotId);
+                }
+            }
+
+            // Oldest lot first (by createdDate; lot ID breaks ties)
+            const byAge = (a, b) =>
+                (lots[a]?.createdDate || '').localeCompare(lots[b]?.createdDate || '') ||
+                a.localeCompare(b);
+
+            const addDivider = label => {
+                const opt = document.createElement('option');
+                opt.textContent = `↓ ${label}`;
+                opt.disabled = true;
+                sel.appendChild(opt);
+            };
+
+            const addLotOption = lotId => {
+                const lot = lots[lotId];
+                const opt = document.createElement('option');
+                opt.value = lotId;
+                opt.textContent = `${lotId} — ${lot.name || lotId}`;
+                sel.appendChild(opt);
+            };
+
+            for (const [roomId, lotIds] of groups) {
+                addDivider(rooms[roomId].name || roomId);
+                lotIds.sort(byAge).forEach(addLotOption);
+            }
+
+            if (unassigned.length > 0) {
+                if (groups.size > 0) addDivider('Unassigned');
+                unassigned.sort(byAge).forEach(addLotOption);
+            }
+
+            // Restore previous selection if the lot still exists
+            if (prevValue && lots[prevValue]) sel.value = prevValue;
+        }
+
+        // ---- Mobile Detection — touch screen + small viewport (low resolution) ----
+        const isMobileDevice = window.innerWidth < 768 && navigator.maxTouchPoints > 0;
+
+        // ---- Mobile: Import DB from file ----
+        function handleDbImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    DB.data = parsed;
+                    DB.ensureStructure();
+                    populateLotSelector();
+                    updateStatusBar();
+                    showToast('Database imported successfully');
+                } catch (err) {
+                    alert('Failed to parse JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            // Reset so the same file can be imported again
+            e.target.value = '';
+        }
+
+        // ---- Mobile: Save DB as downloadable JSON file ----
+        function handleDbSave() {
+            DB.sync();
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            // Use Web Share API on mobile (fixes iOS Safari blob URL issue)
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename })
+                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
+                    .catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('Database saved — import it in SitkaTools to sync');
+            }
+        }
+
+        // ---- Update Status Bar ----
+        function updateStatusBar() {
+            const statusBar = $('statusBar');
+            const statusText = $('statusText');
+            if (!statusBar || !statusText) return;
+
+            if (!DB.data) {
+                statusBar.className = 'status-bar';
+                statusText.textContent = 'No database loaded. Open from SitkaTools.';
+                return;
+            }
+
+            statusBar.className = 'status-bar loaded';
+            const lotCount = Object.keys(DB.lots).length;
+            const employeeCount = Object.keys(DB.data._EmployeeWizard?.employees || {}).length;
+            statusText.textContent = `Database loaded — ${lotCount} lots, ${employeeCount} employees`;
+        }
+
+        // ---- Close Tool ----
+        $('closeToolBtn').addEventListener('click', () => window.close());
+
+        // ---- Mobile UI Setup ----
+        if (isMobileDevice) {
+            // Show mobile import banner at top
+            $('mobileBanner').classList.add('show');
+            // Show save database button in footer
+            $('saveDbBtn').style.display = 'inline-block';
+
+            // Wire up import button
+            $('importDbBtn').addEventListener('click', () => {
+                $('dbImportInput').click();
+            });
+            $('dbImportInput').addEventListener('change', handleDbImport);
+
+            // Wire up save button
+            $('saveDbBtn').addEventListener('click', handleDbSave);
+        }
+
+        // ---- Toast ----
+        function showToast(msg) {
+            const toast = $('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+
+        // ---- Utility ----
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---- Start ----
+        function init() {
+            populateLotSelector();
+            updateStatusBar();
+        }
+        init();
+    </script>
+</body>
+</html>
