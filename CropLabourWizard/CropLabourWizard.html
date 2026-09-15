@@ -166,6 +166,17 @@
 
         .btn-secondary:hover { border-color: var(--text-secondary); }
 
+        /* Project Crop button in the header — same height as the lot dropdown (matching its padding);
+           greys out when the selected lot can't be projected */
+        .btn-project { padding: 10px 12px; white-space: nowrap; }
+        /* Bloom length toggle — two small stacked buttons left of Project Crop (8 / 9 weeks) */
+        .bloom-toggle { display: flex; flex-direction: column; gap: 4px; }
+        .bloom-btn { padding: 3px 8px; font-size: 0.7rem; white-space: nowrap; }
+        .bloom-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+        .header-right .form-group { margin-bottom: 0; } /* bottom-align button + dropdown in the header row */
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn:disabled:hover { border-color: var(--border); background: var(--bg-card); }
+
         .btn-danger {
             background: var(--danger);
             color: #fff;
@@ -784,6 +795,11 @@
             <span class="logo">👷 Crop Labour Wizard</span>
         </div>
         <div class="header-right">
+            <div class="bloom-toggle" title="Bloom length used when projecting crops (clone cut stays at harvest − 21)">
+                <button type="button" id="bloom8Btn" class="btn btn-secondary bloom-btn">8 weeks</button>
+                <button type="button" id="bloom9Btn" class="btn btn-secondary bloom-btn active">9 weeks</button>
+            </div>
+            <button type="button" class="btn btn-secondary btn-project" id="generateProjectionsBtn" disabled title="Select a lot to project its crop">🔮 Project Crop</button>
             <div class="form-group">
                 <label for="activeLot">Active Lot</label>
                 <select id="activeLot">
@@ -901,6 +917,7 @@
                     updateStatusBar();
                     refreshPreview();
                     updateGenerateBtnLabel();
+                    updateProjectBtnState();
                     showToast('Database imported successfully');
                 } catch (err) {
                     alert('Failed to parse JSON file: ' + err.message);
@@ -951,22 +968,23 @@
             { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
-            // Day before transplant — prep work done in the flower room
-            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: 12 },
-            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 13 },
-            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 13 },
-            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+            // Pre-transplant prep work done in the flower room (layout the day before; hydration & lights on transplant day)
+            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: 9 },
+            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 10 },
+            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 10 },
+            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 10 },
             { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 15 },
             { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
             { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
-            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 21 },
+            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 20 },
             // Bloom-relative tasks (offset from flip)
             { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1 },
             { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
+            // Derived/locked — always lands at harvest START − 21 days (displayed offset from flip = bloom length − 21)
             { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 42 },
             { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42 },
-            // Harvest — user-editable offset from flip (default 56 days = 8 weeks bloom)
-            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 56 },
+            // Harvest — user-editable offset from flip (default 63 days = 9 weeks bloom)
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63 },
             // Post-harvest tasks (offset from harvest)
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2 },
@@ -999,6 +1017,7 @@
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
+                if (migrateProjectedLotIds()) notifySitkaTools();
 
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
@@ -1010,16 +1029,21 @@
                 updateStatusBar();
                 refreshPreview();
                 updateGenerateBtnLabel();
+                updateProjectBtnState();
                 showToast('Database loaded from SitkaTools');
             }
 
-            // Handle live DB updates (e.g., new lots created in SitkaTools)
-            // Only refresh the lot selector to avoid disrupting active editing
+            // Handle live DB updates (e.g., new lots created in SitkaTools, or a room's
+            // projection events deleted there). Refresh selector + schedule list without
+            // disrupting active form/preview editing.
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
                 populateLotSelector();
+                renderScheduleList();
                 updateStatusBar();
+                updateGenerateBtnLabel();
+                updateProjectBtnState();
             }
         });
 
@@ -1041,6 +1065,11 @@
         let harvestMultiDay = false;
         let harvestDays = DEFAULT_HARVEST_DAYS;
 
+        // Bloom length (days from flip to harvest) used when generating/refreshing projection chains.
+        // 9 weeks = 63 days (default); 8 weeks = 56 days. Clone cut stays at harvest − 21, so the
+        // chain cadence remains correct for either bloom length.
+        let projectionBloomDays = 63;
+
         function clampDuration(v, fallback) {
             const n = parseInt(v);
             return Number.isFinite(n) ? Math.max(1, Math.min(30, n)) : fallback;
@@ -1048,6 +1077,76 @@
 
         // ---- Preview State: array of { def, offset } — offset is user-editable days from reference ----
         let taskOffsets = [];
+
+        // ---- Projected Lots — unified lot abstraction ----
+        // Projected lots are synthetic future crops for flowering rooms (see root Agent.MD,
+        // "Crop Projection"). They are NOT in DB.lots — the source of truth is the
+        // _CropLabourWizard.projectedLots map. All code paths that read DB.lots[lotId]
+        // must go through these helpers so real and projected lots behave identically.
+        function getProjectedLots() {
+            return DB.data?._CropLabourWizard?.projectedLots || {};
+        }
+
+        function ensureProjectedLots() {
+            if (!DB.data._CropLabourWizard) DB.data._CropLabourWizard = { generations: [] };
+            if (!DB.data._CropLabourWizard.projectedLots) DB.data._CropLabourWizard.projectedLots = {};
+            return DB.data._CropLabourWizard.projectedLots;
+        }
+
+        function isProjectedLot(lotId) {
+            return !!lotId && !!getProjectedLots()[lotId];
+        }
+
+        // sourceTool used for a lot's calendar events
+        function lotSourceTool(lotId) {
+            return isProjectedLot(lotId) ? 'CropProjection' : 'CropLabourWizard';
+        }
+
+        // Unified lot record — real lots come from DB.lots; projected lots are synthetic
+        function getLotRecord(lotId) {
+            if (isProjectedLot(lotId)) {
+                const p = getProjectedLots()[lotId];
+                return { name: p.name, strain: p.strain || 'TBA', destRoom: p.roomName };
+            }
+            return DB.lots[lotId] || {};
+        }
+
+        // Unified schedule config (real: _tool_CropLabourWizard; projected: map entry .config)
+        function getScheduleConfig(lotId) {
+            if (!lotId) return null;
+            if (isProjectedLot(lotId)) return getProjectedLots()[lotId].config || null;
+            return DB.lots[lotId]?._tool_CropLabourWizard || null;
+        }
+
+        function setScheduleConfig(lotId, cfg) {
+            if (isProjectedLot(lotId)) {
+                ensureProjectedLots()[lotId].config = cfg;
+            } else {
+                DB.data.lots[lotId]._tool_CropLabourWizard = cfg;
+            }
+        }
+
+        // Clear stored config. Projected lots keep their map entry (→ flagged stale in the
+        // selector); real lots just lose their _tool_CropLabourWizard key.
+        function clearScheduleConfig(lotId) {
+            if (isProjectedLot(lotId)) {
+                const p = getProjectedLots()[lotId];
+                if (p) delete p.config;
+            } else if (DB.lots[lotId]) {
+                delete DB.lots[lotId]._tool_CropLabourWizard;
+            }
+        }
+
+        // All calendar events belonging to a lot (correct sourceTool per lot type)
+        function eventsForLot(lotId) {
+            const tool = lotSourceTool(lotId);
+            return (DB.data.calendarEvents || []).filter(ev => ev.sourceTool === tool && ev.lotId === lotId);
+        }
+
+        // A projected lot is stale when it has no calendar events (deleted by SitkaTools or cleared)
+        function isStaleProjectedLot(lotId) {
+            return isProjectedLot(lotId) && eventsForLot(lotId).length === 0;
+        }
 
         // ---- Populate Lot Selector ----
         // Lots are grouped by destination (flower) room. Each room that has lots
@@ -1061,17 +1160,27 @@
 
             const rooms = DB.data.rooms || {};
             const lots = DB.lots;
+            const projLots = getProjectedLots();
 
-            // Group lot IDs by their resolved flower room
-            const groups = new Map();   // roomId -> [lotId, ...]
+            // Group lot IDs by their resolved flower room (real + projected)
+            const groups = new Map();   // roomId -> { real: [lotId], proj: [lotId] }
             const unassigned = [];
             for (const lotId of Object.keys(lots)) {
                 const roomId = resolveFlowerRoom(lotId, rooms);
                 if (roomId && rooms[roomId]) {
-                    if (!groups.has(roomId)) groups.set(roomId, []);
-                    groups.get(roomId).push(lotId);
+                    if (!groups.has(roomId)) groups.set(roomId, { real: [], proj: [] });
+                    groups.get(roomId).real.push(lotId);
                 } else {
                     unassigned.push(lotId);
+                }
+            }
+
+            // Projected lots group by their room — a room with only projected lots still gets a divider
+            for (const lotId of Object.keys(projLots)) {
+                const roomId = projLots[lotId].roomId;
+                if (roomId && rooms[roomId]) {
+                    if (!groups.has(roomId)) groups.set(roomId, { real: [], proj: [] });
+                    groups.get(roomId).proj.push(lotId);
                 }
             }
 
@@ -1095,12 +1204,21 @@
                 sel.appendChild(opt);
             };
 
-            // Room dividers in alphabetical order of room name
+            // Room dividers in alphabetical order of room name.
+            // Real lots first (by age), then the room's projected lots in chain order.
             [...groups.keys()]
                 .sort((a, b) => (rooms[a].name || '').localeCompare(rooms[b].name || ''))
                 .forEach(roomId => {
+                    const g = groups.get(roomId);
                     addDivider(rooms[roomId].name || roomId);
-                    groups.get(roomId).sort(byAge).forEach(addLotOption);
+                    g.real.sort(byAge).forEach(addLotOption);
+                    g.proj.sort((a, b) => projLots[a].index - projLots[b].index).forEach(lotId => {
+                        const p = projLots[lotId];
+                        const opt = document.createElement('option');
+                        opt.value = lotId;
+                        opt.textContent = `🔮 ${p.name}${isStaleProjectedLot(lotId) ? ' ⚠️' : ''}`;
+                        sel.appendChild(opt);
+                    });
                 });
 
             // Lots with no flower room assignment go last
@@ -1131,15 +1249,13 @@
         // always present in a generated schedule. Must run after updateFormFromStoredConfig
         // (so trimDays / harvestMultiDay / harvestDays reflect the stored config).
         function applyStoredScheduleToOffsets(lotId) {
-            const config = lotId ? DB.lots[lotId]?._tool_CropLabourWizard : null;
+            const config = getScheduleConfig(lotId);
             if (!config) return;
 
-            // Gather this lot's generated events keyed by taskType
+            // Gather this lot's generated events keyed by taskType (sourceTool depends on lot type)
             const eventsByType = {};
-            for (const ev of (DB.data.calendarEvents || [])) {
-                if (ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId) {
-                    eventsByType[ev.taskType] = ev;
-                }
+            for (const ev of eventsForLot(lotId)) {
+                eventsByType[ev.taskType] = ev;
             }
             if (Object.keys(eventsByType).length === 0) return;
 
@@ -1156,8 +1272,8 @@
 
             // Reconstruct anchor dates from the defining tasks' event dates (default fallbacks if missing)
             const P = clonesEnabled ? (dateOf('planting') || computeTaskDate(topDate, 14)) : topDate; // planting
-            const F = dateOf('flip') || computeTaskDate(P, 21);                                       // flip
-            const H = dateOf('harvest') || computeTaskDate(F, 56);                                     // harvest start
+            const F = dateOf('flip') || computeTaskDate(P, 20);                                       // flip
+            const H = dateOf('harvest') || computeTaskDate(F, 63);                                     // harvest start
             const harvestEnd = (config.harvestMultiDay && config.harvestDays > 1)
                 ? computeTaskDate(H, config.harvestDays - 1) : H;                                      // harvest end
             const T = dateOf('trim') || computeTaskDate(harvestEnd, 11);                               // trim start
@@ -1194,10 +1310,10 @@
         // topDate: the date from the top picker (cloning date when clones enabled, planting date otherwise)
         // clonesEnabled: whether Cutting Clones is toggled on
         // plantingOffset: days from cloning to planting (only used when clonesEnabled)
-        // flipOffset: days from planting to flip (defaults to 21)
-        // harvestOffset: days from flip to harvest (defaults to 56 = 8 weeks bloom)
+        // flipOffset: days from planting to flip (defaults to 20)
+        // harvestOffset: days from flip to harvest (defaults to 63 = 9 weeks bloom)
         // trimOffset: days from harvest to the start of trim (defaults to 11)
-        function computeAnchors(topDate, flipOffset = 21, clonesEnabled = false, plantingOffset = 14, harvestOffset = 56, trimOffset = 11, multiDayHarvest = false, hDays = 1) {
+        function computeAnchors(topDate, flipOffset = 20, clonesEnabled = false, plantingOffset = 14, harvestOffset = 63, trimOffset = 11, multiDayHarvest = false, hDays = 1) {
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
@@ -1560,13 +1676,13 @@
             const plantingEntry = taskOffsets.find(e => e.def.taskType === 'planting');
             const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
 
-            // Get the actual flip offset from taskOffsets (may differ from default 21)
+            // Get the actual flip offset from taskOffsets (may differ from default 20)
             const flipEntry = taskOffsets.find(e => e.def.taskType === 'flip');
-            const flipOffset = flipEntry ? flipEntry.offset : 21;
+            const flipOffset = flipEntry ? flipEntry.offset : 20;
 
-            // Get the actual harvest offset from taskOffsets (may differ from default 56)
+            // Get the actual harvest offset from taskOffsets (may differ from default 63)
             const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
-            const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
+            const harvestOffset = harvestEntry ? harvestEntry.offset : 63;
 
             // Get the actual trim offset from taskOffsets (may differ from default 11) — anchors post-trim tasks
             const trimEntry = taskOffsets.find(e => e.def.taskType === 'trim');
@@ -1605,9 +1721,21 @@
                     isLockedDisplay = true;
                 }
 
+                // Clone cut is derived — always harvest start − 21 days (locked; follows bloom length)
+                if (def.taskType === 'clone_cut') {
+                    displayRef = 'flip';
+                    displayLabel = REF_LABELS[displayRef];
+                    effectiveOffset = harvestOffset - 21;
+                    isLockedDisplay = true;
+                }
+
                 // Compute date from anchor + offset (anchor accounts for multi-day harvest/trim)
                 const anchorDate = resolveTaskAnchor(anchors, displayRef);
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
+                // Clone cut derives from harvest START (not end): always harvest − 21 days
+                if (def.taskType === 'clone_cut') {
+                    startDate = computeTaskDate(anchors.harvest, -21);
+                }
                 let endDate = taskEndDate(def, startDate, isEnabled);
 
                 // Build display date string with weekday (e.g. "2026-09-15 · Tue")
@@ -1660,7 +1788,7 @@
                 const dateBadgeCls = `preview-computed-date${isMultiDayTask(def) ? ' multi' : ''}`;
                 const dateBadgeHtml = canPickDate
                     ? `<button type="button" class="${dateBadgeCls} clickable" data-idx="${idx}" data-date="${startDate}" title="Click to pick a date">${displayDate}</button>`
-                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? 'title="Locked to Day 0"' : ''}>${displayDate}</span>`;
+                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? `title="${def.taskType === 'clone_cut' ? 'Derived — harvest start − 21 days' : 'Locked to Day 0'}"` : ''}>${displayDate}</span>`;
 
                 // Duration controls — Trim length (always) and Harvest multi-day toggle + length
                 let durationControlsHtml = '';
@@ -1810,7 +1938,7 @@
         // ---- Update Generate Button Label ----
         function updateGenerateBtnLabel() {
             const lotId = activeLotSelect.value;
-            const hasSchedule = lotId && DB.lots[lotId]?._tool_CropLabourWizard;
+            const hasSchedule = lotId && getScheduleConfig(lotId);
             generateBtn.textContent = hasSchedule ? 'Overwrite Schedule' : 'Generate Schedule';
         }
 
@@ -1822,12 +1950,13 @@
             applyStoredScheduleToOffsets(activeLotSelect.value);
             refreshPreview();
             updateGenerateBtnLabel();
+            updateProjectBtnState();
         });
 
         // ---- Update Form from Stored Config ----
         function updateFormFromStoredConfig() {
             const lotId = activeLotSelect.value;
-            const config = lotId ? DB.lots[lotId]?._tool_CropLabourWizard : null;
+            const config = getScheduleConfig(lotId);
 
             if (config) {
                 plantingDateInput.value = config.plantingDate || '';
@@ -1845,14 +1974,276 @@
         // ---- Auto-refresh preview when planting date changes ----
         plantingDateInput.addEventListener('input', () => refreshPreview());
 
-        // ---- Reconcile: Remove existing CropLabourWizard events for a lot ----
+        // ---- Reconcile: Remove existing schedule events for a lot (sourceTool depends on lot type) ----
         function reconcileLotSchedule(lotId) {
+            const tool = lotSourceTool(lotId);
             DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
-                if (ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId) {
+                if (ev.sourceTool === tool && ev.lotId === lotId) {
                     return false; // Remove stale events for this lot
                 }
                 return true;
             });
+        }
+
+        // =====================================================
+        // Crop Projection — 5-lot chain per flowering room (see root Agent.MD)
+        // Lot Day 0 = the form's anchor date (the clone-cut date when cloning is enabled).
+        // Chain rule: Lot(k+1) Day 0 = Lot(k) harvest START − 21 days.
+        // =====================================================
+
+        const PROJECTION_LOT_COUNT = 5;
+
+        // Projected lot IDs use a single leading zero (e.g. "01"–"05") to distinguish them
+        // from usual non-projected lots, which never start with "0".
+        function projectedLotId(roomId, index) {
+            return `0${index}`;
+        }
+
+        // One-time migration: old synthetic IDs ("PROJ-{roomId}-{index}") → new short IDs ("01"–"05").
+        // Renames the map keys, rewrites lotId on CropProjection events, and updates any real-lot
+        // generation log entries that reference a projected ID. Runs on load / DB import; no-op once done.
+        function migrateProjectedLotIds() {
+            const clw = DB.data?._CropLabourWizard;
+            if (!clw) return false;
+
+            // Build the old → new ID map first (before touching anything)
+            const renames = {};
+            const map = clw.projectedLots || {};
+            for (const [oldId, entry] of Object.entries(map)) {
+                if (!/^PROJ-/.test(oldId)) continue; // already migrated (or foreign key)
+                const roomId = entry.roomId || (oldId.match(/^PROJ-(.*)-\d+$/) || [])[1];
+                const index = parseInt((entry.index ?? oldId.split('-').pop()), 10);
+                if (!roomId || !Number.isFinite(index)) continue;
+                renames[oldId] = projectedLotId(roomId, index);
+            }
+
+            if (Object.keys(renames).length === 0) return false;
+
+            // Rename map keys (if a target already exists, the old entry is dropped as a stale duplicate)
+            for (const [oldId, newId] of Object.entries(renames)) {
+                if (map[newId]) { delete map[oldId]; continue; }
+                map[newId] = map[oldId];
+                delete map[oldId];
+            }
+
+            // Rewrite event references (projection events only — real lots never used PROJ- IDs)
+            for (const ev of DB.data.calendarEvents || []) {
+                if (ev.sourceTool === 'CropProjection' && renames[ev.lotId]) {
+                    ev.lotId = renames[ev.lotId];
+                }
+            }
+
+            // Generation log entries are only written for real lots, but keep them consistent anyway
+            for (const g of clw.generations || []) {
+                if (renames[g.lotId]) g.lotId = renames[g.lotId];
+            }
+
+            return true;
+        }
+
+        // Task types whose dates move with the bloom length (everything from flip onward, except
+        // flip itself). Pre-flip tasks stay anchored to Day 0.
+        const BLOOM_DEPENDENT_TASKS = new Set([
+            'trellis_layout', 'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest',
+            'room_clean', 'tank_irrigation_clean', 'tote_prep', 'bucking', 'lab_sample',
+            'trim_room_prep', 'trim', 'machine_trim', 'dry_room_clean', 'weigh_ship'
+        ]);
+
+        // Default offsets without touching the live preview state (taskOffsets).
+        // The harvest offset is set to bloomDays so a fresh lot uses the selected bloom length.
+        function defaultOffsetsSnapshot(bloomDays = 63) {
+            return TASK_DEFS.map(def => ({
+                def,
+                offset: def.taskType === 'harvest' ? bloomDays : (def.defaultOffset ?? 0),
+                enabled: true
+            }));
+        }
+
+        // Build + persist a full schedule for a lot from explicit offsets and durations.
+        // Shared by the Generate button (real & projected lots) and projection chain generation.
+        function generateLotSchedule(lotId, day0, offsets, durations) {
+            const d = durations || { trimDays, harvestMultiDay, harvestDays };
+
+            const clonePrepEntry = offsets.find(e => e.def.taskType === 'clone_cut_prep');
+            const clonesEnabled = clonePrepEntry?.enabled !== false;
+            const plantingEntry = offsets.find(e => e.def.taskType === 'planting');
+            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
+            const flipEntry = offsets.find(e => e.def.taskType === 'flip');
+            const flipOffset = flipEntry ? flipEntry.offset : 20;
+            const harvestEntry = offsets.find(e => e.def.taskType === 'harvest');
+            const harvestOffset = harvestEntry ? harvestEntry.offset : 63;
+            const trimEntry = offsets.find(e => e.def.taskType === 'trim');
+            const trimOffset = trimEntry ? trimEntry.offset : 11;
+
+            const anchors = computeAnchors(day0, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, d.harvestMultiDay, d.harvestDays);
+
+            // Projected lots emit CropProjection events tagged with their room (SitkaTools uses
+            // roomId to delete a room's projections when a real lot takes the slot)
+            const isProjected = isProjectedLot(lotId);
+            const projRoomId = isProjected ? getProjectedLots()[lotId].roomId : null;
+
+            const newEvents = [];
+            for (const entry of offsets) {
+                // Skip disabled tasks
+                if (entry.enabled === false) continue;
+
+                const def = entry.def;
+
+                // Determine effective reference and offset
+                let anchorRef = def.reference;
+                let effectiveOffset = entry.offset;
+
+                // When clones disabled, planting is at Day 0 from planting anchor
+                if (def.taskType === 'planting' && !clonesEnabled) {
+                    anchorRef = 'planting';
+                    effectiveOffset = 0;
+                }
+
+                const anchorDate = resolveTaskAnchor(anchors, anchorRef);
+                let startDate = computeTaskDate(anchorDate, effectiveOffset);
+
+                // Clone cut is derived — always harvest start − 21 days (follows bloom length)
+                if (def.taskType === 'clone_cut') {
+                    startDate = computeTaskDate(anchors.harvest, -21);
+                }
+
+                const event = {
+                    date: startDate,
+                    title: buildEventTitle(def, lotId),
+                    sourceTool: isProjected ? 'CropProjection' : 'CropLabourWizard',
+                    lotId: lotId,
+                    taskType: def.taskType
+                };
+                if (projRoomId) event.roomId = projRoomId;
+
+                // Multi-day events get endDate (Trim always; Harvest when multi-day is checked)
+                let endDate = null;
+                if (def.taskType === 'trim' && d.trimDays > 1) endDate = computeTaskDate(startDate, d.trimDays - 1);
+                else if (def.taskType === 'harvest' && d.harvestMultiDay && d.harvestDays > 1) endDate = computeTaskDate(startDate, d.harvestDays - 1);
+                if (endDate) event.endDate = endDate;
+
+                newEvents.push(event);
+            }
+
+            // Append to calendarEvents
+            DB.data.calendarEvents.push(...newEvents);
+
+            // Store config (real lot: _tool_CropLabourWizard; projected lot: map entry .config)
+            const config = {
+                plantingDate: day0,
+                trimDays: d.trimDays,
+                harvestMultiDay: d.harvestMultiDay,
+                harvestDays: d.harvestDays,
+                taskCount: newEvents.length,
+                generatedAt: new Date().toISOString()
+            };
+            setScheduleConfig(lotId, config);
+            return { events: newEvents, config };
+        }
+
+        // Re-anchor one projected lot so its Day 0 = day0. Lots with existing events are
+        // shifted by the delta (preserving every per-task offset); when bloomDays is provided,
+        // bloom-dependent tasks additionally shift to enforce that bloom length (overriding any
+        // custom bloom). Stale lots (no events) are regenerated fresh from defaults at their new position.
+        function reAnchorProjectedLot(roomId, index, day0, bloomDays) {
+            const lotId = projectedLotId(roomId, index);
+            const entry = getProjectedLots()[lotId];
+            if (!entry) return;
+
+            const events = eventsForLot(lotId);
+            const oldDay0 = entry.config?.plantingDate;
+
+            if (events.length === 0) {
+                // Stale — fresh generation from defaults at the new Day 0
+                generateLotSchedule(lotId, day0, defaultOffsetsSnapshot(bloomDays), {
+                    trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
+                });
+                return;
+            }
+
+            // Day-0 shift (applied to every event) — preserves per-task offsets from Day 0.
+            const delta = oldDay0 ? daysBetween(oldDay0, day0) : 0;
+
+            // Bloom adjustment (applied only to bloom-dependent tasks) — makes the new bloom length
+            // take effect. 0 when bloomDays is not provided (e.g., manual-edit cascade).
+            let deltaBloom = 0;
+            if (bloomDays != null) {
+                const flipEv = events.find(ev => ev.taskType === 'flip');
+                const harvestEv = events.find(ev => ev.taskType === 'harvest');
+                if (flipEv && harvestEv) {
+                    deltaBloom = bloomDays - daysBetween(flipEv.date, harvestEv.date);
+                }
+            }
+
+            for (const ev of events) {
+                const shift = delta + (BLOOM_DEPENDENT_TASKS.has(ev.taskType) ? deltaBloom : 0);
+                if (shift === 0) continue;
+                ev.date = computeTaskDate(ev.date, shift);
+                if (ev.endDate) ev.endDate = computeTaskDate(ev.endDate, shift);
+            }
+
+            // Update stored config's anchor (keep the other fields)
+            entry.config = Object.assign({}, entry.config, {
+                plantingDate: day0,
+                generatedAt: new Date().toISOString()
+            });
+        }
+
+        // Re-project lots fromIndex..5 forward in the chain: each lot's new Day 0 =
+        // previous lot's harvest start − 21 (read from its current events).
+        function cascadeProjections(roomId, fromIndex, bloomDays) {
+            for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) {
+                const prevEvents = eventsForLot(projectedLotId(roomId, i - 1));
+                const prevHarvest = prevEvents.find(ev => ev.taskType === 'harvest');
+                if (!prevHarvest) continue; // previous lot has no schedule — nothing to chain from
+                reAnchorProjectedLot(roomId, i, computeTaskDate(prevHarvest.date, -21), bloomDays);
+            }
+        }
+
+        // Generate/refresh the full 5-lot projection chain for a flowering room.
+        // Lot 1 anchors to the room's active real lot's clone_cut event (the replacement cut
+        // lands exactly when the current lot's harvest window opens), or today if none.
+        // Never auto-runs — only via the Generate Projections button.
+        function generateProjectionsForRoom(roomId) {
+            const room = (DB.data.rooms || {})[roomId];
+            if (!room) return;
+            if (!room.isFlowering) {
+                alert(`"${room.name}" is not flagged as a flowering room.`);
+                return;
+            }
+
+            DB.ensureStructure();
+            const map = ensureProjectedLots();
+
+            // Ensure all 5 map entries exist (keep existing entries — never prune)
+            for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
+                const lotId = projectedLotId(roomId, i);
+                if (!map[lotId]) {
+                    map[lotId] = { name: `${roomId} - TBA ${String(i).padStart(2, '0')}`, roomId, roomName: room.name, strain: 'TBA', index: i };
+                } else {
+                    map[lotId].roomName = room.name; // keep in sync if the room was renamed
+                }
+            }
+
+            // Lot 1 anchor: active real lot's clone_cut event date, else today
+            let day0 = localDateStr(new Date());
+            for (const realLotId of room.assignedLots || []) {
+                if (isProjectedLot(realLotId)) continue;
+                const cut = eventsForLot(realLotId).find(ev => ev.taskType === 'clone_cut');
+                if (cut) { day0 = cut.date; break; }
+            }
+
+            reAnchorProjectedLot(roomId, 1, day0, projectionBloomDays);
+            cascadeProjections(roomId, 2, projectionBloomDays);
+
+            populateLotSelector();
+            renderScheduleList();
+            updateStatusBar();
+            updateGenerateBtnLabel();
+            updateProjectBtnState();
+            refreshPreview();
+            notifySitkaTools();
+            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projectionBloomDays / 7}-week bloom)`);
         }
 
         // ---- Build event title: "Room code-Strain name#Lot number, task" ----
@@ -1872,10 +2263,13 @@
             for (const [roomId, room] of Object.entries(rooms)) {
                 if ((room.assignedLots || []).includes(lotId)) return roomId;
             }
-            return roomCodeForName(DB.lots[lotId]?.destRoom);
+            return roomCodeForName(getLotRecord(lotId).destRoom);
         }
 
         function getLotRoomCode(lotId, taskType) {
+            // Projected lots have no veg/cloning rooms — every task happens in the flower room
+            if (isProjectedLot(lotId)) return getProjectedLots()[lotId].roomId;
+
             const lot = DB.lots[lotId] || {};
             const rooms = DB.data.rooms || {};
 
@@ -1889,15 +2283,15 @@
                 return roomCodeForName(lot.vegRoom);
             }
 
-            // Undercanopy lights & air socks are installed in the flower room — prepped the
-            // day before transplant so they're ready when plants arrive. It's listed before
+            // Undercanopy lights & air socks are installed in the flower room — prepped on
+            // transplant day so they're ready when plants arrive. It's listed before
             // transplant in TASK_DEFS for chronological display, but it's a flower-room task.
             if (taskType === 'undercanopy_lights') {
                 return resolveFlowerRoom(lotId, rooms);
             }
 
-            // Coco blocks are laid out/spiked and hydrated in the flower room — prepped the
-            // day(s) before transplant so they're ready when plants arrive. Listed before
+            // Coco blocks are laid out/spiked (day before) and hydrated (transplant day) in the
+            // flower room so they're ready when plants arrive. Listed before
             // transplant in TASK_DEFS for chronological display, but they're flower-room tasks.
             if (taskType === 'layout_coco_blocks' || taskType === 'hydrate_coco_blocks') {
                 return resolveFlowerRoom(lotId, rooms);
@@ -1915,7 +2309,7 @@
         }
 
         function buildEventTitle(def, lotId) {
-            const lot = DB.lots[lotId] || {};
+            const lot = getLotRecord(lotId);
             const roomCode = getLotRoomCode(lotId, def.taskType);
             const strain = (lot.strain || '').trim();
             let prefix;
@@ -1948,94 +2342,29 @@
             // Reconcile: remove existing schedule for this lot
             reconcileLotSchedule(lotId);
 
-            // Determine if clones are enabled
-            const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
-            const clonesEnabled = clonePrepEntry?.enabled !== false;
-
-            // Get planting offset (only matters when clones are enabled)
-            const plantingEntry = taskOffsets.find(e => e.def.taskType === 'planting');
-            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
-
-            // Get the actual flip offset from taskOffsets (may differ from default 21)
-            const flipEntry = taskOffsets.find(e => e.def.taskType === 'flip');
-            const flipOffset = flipEntry ? flipEntry.offset : 21;
-
-            // Get the actual harvest offset from taskOffsets (may differ from default 56)
-            const harvestEntry = taskOffsets.find(e => e.def.taskType === 'harvest');
-            const harvestOffset = harvestEntry ? harvestEntry.offset : 56;
-
-            // Get the actual trim offset from taskOffsets (may differ from default 11) — anchors post-trim tasks
-            const trimEntry = taskOffsets.find(e => e.def.taskType === 'trim');
-            const trimOffset = trimEntry ? trimEntry.offset : 11;
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, harvestMultiDay, harvestDays);
-
-            // Build calendar events from current offsets (skip disabled tasks)
-            const newEvents = [];
-            for (const entry of taskOffsets) {
-                // Skip disabled tasks
-                if (entry.enabled === false) continue;
-
-                const def = entry.def;
-
-                // Determine effective reference and offset
-                let anchorRef = def.reference;
-                let effectiveOffset = entry.offset;
-
-                // When clones disabled, planting is at Day 0 from planting anchor
-                if (def.taskType === 'planting' && !clonesEnabled) {
-                    anchorRef = 'planting';
-                    effectiveOffset = 0;
-                }
-
-                const anchorDate = resolveTaskAnchor(anchors, anchorRef);
-                const startDate = computeTaskDate(anchorDate, effectiveOffset);
-
-                const event = {
-                    date: startDate,
-                    title: buildEventTitle(def, lotId),
-                    sourceTool: 'CropLabourWizard',
-                    lotId: lotId,
-                    taskType: def.taskType
-                };
-
-                // Multi-day events get endDate (Trim always; Harvest when multi-day is checked)
-                const endDate = taskEndDate(def, startDate, true);
-                if (endDate) event.endDate = endDate;
-
-                newEvents.push(event);
-            }
-
-            // Append to calendarEvents
-            DB.data.calendarEvents.push(...newEvents);
-
-            // Store config per-lot
-            DB.data.lots[lotId]._tool_CropLabourWizard = {
-                plantingDate: plantingDate,
-                trimDays: trimDays,
-                harvestMultiDay: harvestMultiDay,
-                harvestDays: harvestDays,
-                taskCount: newEvents.length,
-                generatedAt: new Date().toISOString()
-            };
-
-            // Update top-level metadata
-            if (!DB.data._CropLabourWizard) {
-                DB.data._CropLabourWizard = { generations: [] };
-            }
-            DB.data._CropLabourWizard.generations.push({
-                lotId: lotId,
-                plantingDate: plantingDate,
-                trimDays: trimDays,
-                harvestMultiDay: harvestMultiDay,
-                harvestDays: harvestDays,
-                taskCount: newEvents.length,
-                generatedAt: new Date().toISOString()
+            // Build + persist events from current offsets (shared with projection generation)
+            const { events: newEvents, config } = generateLotSchedule(lotId, plantingDate, taskOffsets, {
+                trimDays, harvestMultiDay, harvestDays
             });
+
+            // Log generation for real lots (projected lots are tracked in the map instead)
+            if (!isProjectedLot(lotId)) {
+                if (!DB.data._CropLabourWizard) DB.data._CropLabourWizard = { generations: [] };
+                DB.data._CropLabourWizard.generations.push({ lotId, ...config });
+            }
+
+            // Editing a projected lot re-projects all later lots in the chain forward —
+            // their anchor dates shift; each later lot's per-task offsets are preserved.
+            if (isProjectedLot(lotId)) {
+                const entry = getProjectedLots()[lotId];
+                cascadeProjections(entry.roomId, entry.index + 1);
+            }
 
             // Re-render
             renderScheduleList();
             updateStatusBar();
             updateGenerateBtnLabel();
+            updateProjectBtnState();
 
             // Notify SitkaTools via postMessage
             notifySitkaTools();
@@ -2049,6 +2378,56 @@
             showToast(toastMsg);
         });
 
+        // Resolve the flower room a lot's projections would target. Returns { roomId, room, disabledReason }.
+        // disabledReason is null when the lot can be projected; otherwise it explains why the button is greyed out.
+        function resolveProjectionRoom(lotId) {
+            if (!lotId) return { roomId: null, room: null, disabledReason: 'Select a lot first' };
+
+            // Projected lots carry their room; real lots resolve via assignment/destRoom
+            let roomId = null;
+            if (isProjectedLot(lotId)) {
+                roomId = getProjectedLots()[lotId].roomId;
+            } else {
+                roomId = resolveFlowerRoom(lotId, DB.data.rooms || {});
+            }
+            const room = roomId ? (DB.data.rooms || {})[roomId] : null;
+            if (!room) return { roomId: null, room: null, disabledReason: 'This lot has no flower room — projections need a room.' };
+            if (!room.isFlowering) return { roomId, room, disabledReason: `"${room.name}" is not flagged as a flowering room. Enable the flag in SitkaTools' Room Manager first.` };
+
+            return { roomId, room, disabledReason: null };
+        }
+
+        // Grey out / enable the Project Crop button based on whether the selected lot can be projected.
+        function updateProjectBtnState() {
+            const btn = $('generateProjectionsBtn');
+            if (!btn) return;
+            const { disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            btn.disabled = !!disabledReason;
+            btn.title = disabledReason || 'Generate the 5-lot projection chain for this lot\'s room';
+        }
+
+        // ---- Bloom length toggle (8 / 9 weeks) — applies to projection chain generation only ----
+        const bloom8Btn = $('bloom8Btn');
+        const bloom9Btn = $('bloom9Btn');
+        function setProjectionBloom(days) {
+            projectionBloomDays = days;
+            bloom8Btn.classList.toggle('active', days === 56);
+            bloom9Btn.classList.toggle('active', days === 63);
+        }
+        bloom8Btn.addEventListener('click', () => setProjectionBloom(56));
+        bloom9Btn.addEventListener('click', () => setProjectionBloom(63));
+
+        // ---- Project Crop — 5-lot chain for the selected lot's room (button lives in the header) ----
+        $('generateProjectionsBtn').addEventListener('click', () => {
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            if (disabledReason) {
+                alert(disabledReason);
+                return;
+            }
+
+            generateProjectionsForRoom(roomId);
+        });
+
         // ---- Clear Schedule — remove all CropLabourWizard events for the selected lot ----
         clearFormBtn.addEventListener('click', () => {
             const lotId = activeLotSelect.value;
@@ -2059,24 +2438,17 @@
             }
 
             // Check if there are any events to clear
-            const existingCount = DB.data.calendarEvents.filter(
-                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
-            ).length;
+            const existingCount = eventsForLot(lotId).length;
 
             if (existingCount === 0) {
                 showToast('No schedule to clear for this lot');
                 return;
             }
 
-            // Remove all CropLabourWizard events for this lot
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(
-                ev => !(ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId)
-            );
+            // Remove all schedule events for this lot (sourceTool depends on lot type)
+            reconcileLotSchedule(lotId);
 
-            // Clear per-lot config
-            if (DB.lots[lotId]?._tool_CropLabourWizard) {
-                delete DB.lots[lotId]._tool_CropLabourWizard;
-            }
+            // Clear stored config (projected lots keep their map entry → flagged stale)
 
             // Notify SitkaTools so the calendar refreshes
             notifySitkaTools();
@@ -2086,6 +2458,7 @@
             refreshPreview();
             renderScheduleList();
             updateGenerateBtnLabel();
+            updateProjectBtnState();
 
             showToast(`Cleared ${existingCount} schedule events from ${lotId}`);
         });
@@ -2099,8 +2472,8 @@
                 return;
             }
 
-            // Get stored config
-            const config = DB.lots[lotId]?._tool_CropLabourWizard;
+            // Get stored config (real lot or projected lot)
+            const config = getScheduleConfig(lotId);
 
             if (!config) {
                 scheduleListCard.style.display = 'none';
@@ -2118,10 +2491,8 @@
                 <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
             `;
 
-            // Get calendar events for this lot from CropLabourWizard
-            const lotEvents = (DB.data.calendarEvents || []).filter(
-                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
-            ).sort((a, b) => a.date.localeCompare(b.date));
+            // Get calendar events for this lot (sourceTool depends on lot type)
+            const lotEvents = eventsForLot(lotId).sort((a, b) => a.date.localeCompare(b.date));
 
             if (lotEvents.length === 0) {
                 scheduleListEl.innerHTML = '<div class="empty-state">No tasks found. Schedule may have been cleared.</div>';
@@ -2179,13 +2550,11 @@
 
             DB.ensureStructure();
 
-            // Remove all CropLabourWizard events for this lot
+            // Remove all schedule events for this lot (sourceTool depends on lot type)
             reconcileLotSchedule(lotId);
 
-            // Clear per-lot config
-            if (DB.data.lots[lotId]?._tool_CropLabourWizard) {
-                delete DB.data.lots[lotId]._tool_CropLabourWizard;
-            }
+            // Clear stored config (projected lots keep their map entry → flagged stale)
+            clearScheduleConfig(lotId);
 
             // Remove generation record
             if (DB.data._CropLabourWizard?.generations) {
@@ -2203,9 +2572,7 @@
         }
 
         function getLotTaskCount(lotId) {
-            return (DB.data.calendarEvents || []).filter(
-                ev => ev.sourceTool === 'CropLabourWizard' && ev.lotId === lotId
-            ).length;
+            return eventsForLot(lotId).length;
         }
 
         // ---- Update Status Bar ----
@@ -2223,7 +2590,16 @@
             statusBar.className = 'status-bar loaded';
             const lotCount = Object.keys(DB.lots).length;
             const scheduledLots = Object.values(DB.lots).filter(l => l._tool_CropLabourWizard).length;
-            statusText.textContent = `Database loaded — ${lotCount} lots, ${scheduledLots} with schedules`;
+            let statusMsg = `Database loaded — ${lotCount} lots, ${scheduledLots} with schedules`;
+
+            // Projection summary (flowering rooms + projected lots, stale flagged)
+            const floweringRooms = Object.values(DB.data.rooms || {}).filter(r => r.isFlowering).length;
+            const projIds = Object.keys(getProjectedLots());
+            const staleCount = projIds.filter(isStaleProjectedLot).length;
+            if (floweringRooms > 0 || projIds.length > 0) {
+                statusMsg += ` · 🌸 ${floweringRooms} flowering room${floweringRooms === 1 ? '' : 's'} · 🔮 ${projIds.length} projected${staleCount ? ` (${staleCount} stale)` : ''}`;
+            }
+            statusText.textContent = statusMsg;
         }
 
         // ---- Close Tool ----
@@ -2274,6 +2650,7 @@
             renderScheduleList();
             updateStatusBar();
             refreshPreview();
+            updateProjectBtnState();
         }
         init();
     </script>

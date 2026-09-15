@@ -1184,6 +1184,14 @@
             font-weight: 600;
         }
 
+        /* Crop Projection events — dashed/muted to distinguish from real-lot schedule chips */
+        .day-event.projection {
+            background: rgba(168, 168, 184, 0.12);
+            color: var(--text-secondary);
+            border-left: 2px dashed var(--text-secondary);
+            opacity: 0.8;
+        }
+
         .calendar-day.has-holiday {
             background-color: rgba(243, 156, 18, 0.06);
         }
@@ -2306,6 +2314,12 @@
                         <label for="roomDescription">Location</label>
                         <input type="text" id="roomDescription" placeholder="e.g., Building 66D Front Room">
                     </div>
+                    <div class="form-group full-width">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="roomIsFlowering" style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
+                            Flowering room (eligible for Crop Projection)
+                        </label>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="clearRoomFormBtn">Clear</button>
                         <button type="submit" class="btn btn-primary" id="createRoomBtn">Create Room</button>
@@ -3023,12 +3037,12 @@
             const newWindow = window.open(toolUrl, '_blank');
             if (!newWindow) return;
 
-            openSubtools.push(newWindow);
+            openSubtools.push({ win: newWindow, url: toolUrl });
 
             // Track close with interval fallback
             const closeCheck = setInterval(() => {
                 if (newWindow.closed) {
-                    openSubtools = openSubtools.filter(w => w !== newWindow);
+                    openSubtools = openSubtools.filter(w => w.win !== newWindow);
                     clearInterval(closeCheck);
                 }
             }, 1000);
@@ -3126,12 +3140,12 @@
             );
             if (!newWindow) return;
 
-            openSubtools.push(newWindow);
+            openSubtools.push({ win: newWindow, url });
 
             // Track close with interval fallback (close event unreliable on file://)
             const closeCheck = setInterval(() => {
                 if (newWindow.closed) {
-                    openSubtools = openSubtools.filter(w => w !== newWindow);
+                    openSubtools = openSubtools.filter(w => w.win !== newWindow);
                     clearInterval(closeCheck);
                 }
             }, 1000);
@@ -3306,12 +3320,14 @@
             DB.lots[lotId] = newLot;
 
             // Assign to room if destRoom matches an existing room by name
+            let matchedRoomId = null;
             if (destRoom && DB.data.rooms) {
                 const match = Object.entries(DB.data.rooms).find(([id, r]) =>
                     r.name === destRoom
                 );
                 if (match) {
                     const [roomId] = match;
+                    matchedRoomId = roomId;
                     if (!DB.data.rooms[roomId].assignedLots) {
                         DB.data.rooms[roomId].assignedLots = [];
                     }
@@ -3323,13 +3339,24 @@
 
             markUnsaved();
 
+            // A real lot taking a flowering room's slot "takes" that room — clear its projections.
+            // Only the CropProjection calendar events are deleted; the _CropLabourWizard.projectedLots
+            // map is left untouched (CLW flags those lots stale for manual regeneration).
+            let projNote = '';
+            if (matchedRoomId && DB.data.rooms[matchedRoomId] && DB.data.rooms[matchedRoomId].isFlowering) {
+                const cleared = clearRoomProjections(matchedRoomId);
+                if (cleared > 0) {
+                    projNote = `\n\n🔮 ${cleared} projected calendar event${cleared === 1 ? '' : 's'} for this room were cleared — regenerate them in CropLabourWizard when ready.`;
+                }
+            }
+
             // Success feedback
             const roomLines = [
                 destRoom ? '\nFlower Room: ' + destRoom : '',
                 vegRoom ? '\nVeg Room: ' + vegRoom : '',
                 cloningRoom ? '\nCloning Room: ' + cloningRoom : ''
             ].join('');
-            alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${roomLines}\n\nRemember to export the database to save your changes.`);
+            alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${roomLines}${projNote}\n\nRemember to export the database to save your changes.`);
 
             // Reset form and refresh UI
             lotForm.reset();
@@ -3566,6 +3593,41 @@
             return div.innerHTML;
         }
 
+        // ---- Crop Projection deletion hook (see root Agent.MD) ----
+        // When a real lot takes a flowering room's slot, that room's projected lots are "taken":
+        // delete ONLY the room's CropProjection calendar events. The _CropLabourWizard.projectedLots
+        // map is NEVER touched — it survives byte-for-byte and CLW flags those lots stale (⚠️) for
+        // manual regeneration via its Generate Projections button.
+        function clearRoomProjections(roomId) {
+            if (!DB.data || !Array.isArray(DB.data.calendarEvents)) return 0;
+            const before = DB.data.calendarEvents.length;
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev =>
+                !(ev.sourceTool === 'CropProjection' && ev.roomId === roomId)
+            );
+            const deleted = before - DB.data.calendarEvents.length;
+            if (deleted > 0) {
+                markUnsaved();
+                broadcastToCropLabourWizard(); // push fresh DB so open CLW windows flag the lots stale
+            }
+            return deleted;
+        }
+
+        // Re-broadcast the current DB to any open CropLabourWizard windows via sitkaGit_db_update.
+        // CLW's handler refreshes its lot selector / schedule list / status bar without disrupting
+        // active form editing. Scoped by URL so other subtools aren't needlessly re-rendered.
+        function broadcastToCropLabourWizard() {
+            const payload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+            openSubtools.forEach(entry => {
+                const win = entry && typeof entry === 'object' ? entry.win : entry; // tolerate legacy bare-window entries
+                const url = entry && typeof entry === 'object' ? (entry.url || '') : '';
+                if (!win || win.closed) return;
+                if (url && !/CropLabourWizard/i.test(url)) return;
+                try {
+                    win.postMessage({ type: 'sitkaGit_db_update', payload }, '*');
+                } catch (_) { /* window gone */ }
+            });
+        }
+
         // =====================================================
         // SitkaTools — Room Manager Module
         // Database Keys: "rooms" (object of all rooms)
@@ -3624,6 +3686,7 @@
                 const roomId = $('roomId').value.trim();
                 const roomName = $('roomName').value.trim();
                 const description = $('roomDescription').value.trim();
+                const isFlowering = $('roomIsFlowering') ? $('roomIsFlowering').checked : false;
 
                 if (!roomId || !roomName) {
                     alert('Please fill in Room ID and Room Name.');
@@ -3641,11 +3704,12 @@
                     name: roomName,
                     description: description || null,
                     createdDate: today,
-                    assignedLots: []
+                    assignedLots: [],
+                    isFlowering: isFlowering
                 };
 
                 markUnsaved();
-                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}\nRemember to export the database to save.`);
+                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}\nRemember to export the database to save.`);
 
                 $('roomForm').reset();
                 this.updateRoomIdSuggestion();
@@ -3727,6 +3791,13 @@
                         <div class="room-detail-row">
                             <span class="detail-label">Created:</span>
                             <span>${room.createdDate || 'N/A'}</span>
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Flowering:</span>
+                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                <input type="checkbox" class="room-is-flowering" data-room-id="${roomId}" ${room.isFlowering ? 'checked' : ''} style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
+                                Flowering room (Crop Projection)
+                            </label>
                         </div>
                     </div>
                 `;
@@ -3908,6 +3979,19 @@
                         this.assignLotToRoom(lotId, roomId);
                     });
                 });
+
+                // Flowering-room toggle (per-room detail panel)
+                document.querySelectorAll('.room-is-flowering').forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const roomId = cb.dataset.roomId;
+                        const room = this.rooms[roomId];
+                        if (!room) return;
+                        room.isFlowering = cb.checked;
+                        markUnsaved();
+                        this.renderRoomList();
+                        updateRoomStatusBar();
+                    });
+                });
             },
 
             toggleRoom(roomId) {
@@ -3958,6 +4042,13 @@
                 }
 
                 markUnsaved();
+
+                // Moving a real lot into a flowering room "takes" that room — clear its projections.
+                if (toRoom.isFlowering) {
+                    const cleared = clearRoomProjections(toRoomId);
+                    if (cleared > 0) showSyncToast(`🔮 Cleared ${cleared} projection event${cleared === 1 ? '' : 's'} for ${toRoom.name}`);
+                }
+
                 this.renderRoomList();
             },
 
@@ -3991,6 +4082,13 @@
                 }
 
                 markUnsaved();
+
+                // Assigning a real lot into a flowering room "takes" that room — clear its projections.
+                if (room.isFlowering) {
+                    const cleared = clearRoomProjections(roomId);
+                    if (cleared > 0) showSyncToast(`🔮 Cleared ${cleared} projection event${cleared === 1 ? '' : 's'} for ${room.name}`);
+                }
+
                 this.renderRoomList();
             }
         };
@@ -4289,6 +4387,7 @@
                             if (isEnd) cssClass += ' range-end';
                         }
                         if (isCompleted) cssClass += ' completed';
+                        if (event.sourceTool === 'CropProjection') cssClass += ' projection';
                         eventEl.className = cssClass;
 
                         // Build display text with optional time prefix
@@ -4924,7 +5023,11 @@
                         descLines.push(`${label}: ${value}`);
                     }
 
-                    const summary = this.escapeICS(event.title || 'Untitled Event');
+                    // Projection events get a " (projected)" suffix in the ICS summary; on-screen titles stay clean
+                    const rawSummary = event.sourceTool === 'CropProjection'
+                        ? `${event.title || 'Untitled Event'} (projected)`
+                        : (event.title || 'Untitled Event');
+                    const summary = this.escapeICS(rawSummary);
                     const description = this.escapeICS(descLines.join('\n'));
 
                     ics += `BEGIN:VEVENT\r\n`;
