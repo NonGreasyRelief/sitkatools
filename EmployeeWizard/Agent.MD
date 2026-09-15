@@ -43,7 +43,7 @@ The tool has **two main tabs — Employees and Tasks**. Both tabs use a two-pane
 1. **No employee highlighted → Work Week calendar.** A 7-day work-week view showing, for each day of the week, the names of the employees working that specific day (based on their ongoing schedules). The week starts **Monday** (Mon–Sun columns) and shows the **current week only** — no week navigation.
 2. **Employee highlighted → Employee editor:**
    - **Top:** 7 buttons in a row (one for each day of the week) that toggle **green** (works) / **red** (off) to set the days that employee is working, ongoing.
-   - **Middle:** 3 fields — **Name**, **Wage** ($/hour, default `20`), and **Confirm Wage**.
+   - **Middle:** 2 fields — **Name** and **Wage** ($/hour, default `20`). Wages are open information — no confirmation step.
    - **Bottom:** two buttons — **Save Changes** (to employee) and **Request Time Off**.
 
 **Time-off view** (entered via "Request Time Off"):
@@ -134,8 +134,8 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 ## Implementation Order
 
 1. **Phase 1 — Popup + DB:** ✅ Done. Module link added to SitkaTools (opens centered popup, half viewport width × 83% height); subtool receives DB via postMessage per the suite standard (`sitkaGit_db` → `sitkaGit_ready` → `sitkaGit_db_update`, with `notifySitkaTools()` after every mutation).
-2. **Phase 2 — Blank dummies:** Blank dummy of both the Employees and Tasks tabs (two-panel layout), plus a blank dummy of the labour report at the bottom.
-3. **Phase 3 — Employees tab fully functional.**
+2. **Phase 2 — Blank dummies:** ✅ Done. Tab bar (Employees / Tasks) with two-panel layouts (scrolling list left, editor right) and a full-width Labour Report stub below both tabs.
+3. **Phase 3 — Employees tab fully functional.** ✅ Done. Roster management (add/edit/delete with confirmation, unique names), work-week calendar (Monday-first, current week only), employee editor (7 day toggles green/red, Name/Wage fields, Save Changes + Request Time Off buttons), and time-off booking view (month calendar with regular-day dots and booked-off shading, multi-day/partial hour-based bookings, event list with delete) — all mirrored to shared `calendarEvents`.
 4. **Phase 4 — Tasks tab fully functional.**
 5. **Phase 5 — Labour reporting** (last; can be left as a dummy stub).
 

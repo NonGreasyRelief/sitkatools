@@ -93,13 +93,478 @@
             color: var(--text-primary);
         }
 
-        /* ---- Main Content (stub — tabs + panels arrive with Phase 2) ---- */
+        /* ---- Main Content ---- */
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
             padding: 24px;
         }
+
+        /* ---- Tabs ---- */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover { color: var(--text-primary); }
+
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        /* ---- Two-panel layout (scrolling list left, editor right) ---- */
+        .two-panel {
+            display: grid;
+            grid-template-columns: 1fr 1.4fr;
+            gap: 16px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: 320px;
+        }
+
+        .panel-list {
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .panel-header {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .panel-body {
+            padding: 16px;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+
+        /* ---- Labour Report section (dummy until Phase 5) ---- */
+        .report-section {
+            margin-top: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 24px;
+            text-align: center;
+        }
+
+        .report-section h3 {
+            color: var(--accent);
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+        }
+
+        .report-section p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ---- Phase 3 — Employees tab ---- */
+
+        /* Employee list (left panel) */
+        .emp-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 12px;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .emp-row {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .emp-row:hover { border-color: var(--accent); }
+
+        .emp-row.selected {
+            border-color: var(--accent);
+            background: rgba(83, 216, 168, 0.12);
+        }
+
+        .emp-name {
+            flex: 1;
+            font-size: 0.9rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .emp-days {
+            display: flex;
+            gap: 3px;
+        }
+
+        .emp-day-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border);
+        }
+
+        .emp-day-dot.on { background: var(--accent); }
+
+        .emp-del {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            line-height: 1;
+        }
+
+        .emp-del:hover { background: rgba(231, 76, 60, 0.15); }
+
+        /* Add-employee form (bottom of left panel) */
+        .add-emp-form {
+            border-top: 1px solid var(--border);
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        .add-emp-form .form-group { margin-bottom: 0; flex: 1; }
+
+        .add-emp-form input {
+            padding: 9px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .add-emp-form input:focus { outline: none; border-color: var(--accent); }
+
+        /* Work-week calendar (right panel, no employee selected) */
+        .workweek {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+            padding: 14px;
+        }
+
+        .ww-col {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ww-col.today { border-color: var(--accent); }
+
+        .ww-day-head {
+            padding: 7px 4px;
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .ww-col.today .ww-day-head { color: var(--accent); }
+
+        .ww-names {
+            flex: 1;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .ww-name-chip {
+            font-size: 0.75rem;
+            background: var(--input-bg);
+            border-radius: 4px;
+            padding: 3px 6px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ww-empty {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            opacity: 0.6;
+            text-align: center;
+            padding-top: 4px;
+        }
+
+        /* Employee editor (right panel, employee selected) */
+        .emp-editor {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .day-toggle-row {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+        }
+
+        .day-toggle {
+            padding: 9px 0;
+            border-radius: var(--radius);
+            border: 2px solid transparent;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .day-toggle.on {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .day-toggle.off {
+            background: rgba(231, 76, 60, 0.18);
+            color: var(--danger);
+            border-color: rgba(231, 76, 60, 0.45);
+        }
+
+        .emp-fields {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 12px;
+        }
+
+        .emp-fields input {
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .emp-fields input:focus { outline: none; border-color: var(--accent); }
+
+        .emp-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Time-off view (right panel) */
+        .timeoff-view { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+        .timeoff-emp-name { font-size: 1.05rem; font-weight: 700; color: var(--accent); }
+
+        .month-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .month-nav-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: var(--radius);
+            padding: 6px 14px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .month-nav-btn:hover { border-color: var(--accent); }
+
+        .month-title { font-weight: 700; font-size: 0.95rem; }
+
+        .to-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .to-weekday {
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            padding: 4px 0;
+        }
+
+        .to-day {
+            position: relative;
+            min-height: 52px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            transition: border-color 0.15s;
+        }
+
+        .to-day:hover { border-color: var(--accent); }
+
+        .to-day.blank { visibility: hidden; cursor: default; }
+
+        .to-day-num { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+
+        .to-day.today .to-day-num { color: var(--accent); }
+
+        .to-day.regular::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        .to-day.full-off {
+            background: rgba(231, 76, 60, 0.28);
+            border-color: var(--danger);
+        }
+
+        .to-day.partial-off {
+            background: linear-gradient(to bottom, rgba(243, 156, 18, 0.3) 50%, rgba(231, 76, 60, 0.28) 50%);
+            border-color: var(--warning);
+        }
+
+        .to-day.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+        .to-range-chip {
+            font-size: 0.62rem;
+            color: var(--text-primary);
+            background: rgba(26, 26, 46, 0.75);
+            border-radius: 3px;
+            padding: 1px 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .to-day.full-off .to-range-chip { color: #ffd7d0; }
+
+        .to-day.partial-off .to-range-chip { color: #ffe3b3; }
+
+        /* Time-off form (below calendar) */
+        .to-form {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .to-form-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .to-form-row label { font-size: 0.85rem; color: var(--text-secondary); }
+
+        .to-form input[type="date"],
+        .to-form input[type="time"] {
+            padding: 7px 10px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+        }
+
+        .to-form input:focus { outline: none; border-color: var(--accent); }
+
+        .to-form input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+        .to-hours-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-left: 24px;
+        }
+
+        .to-hours-row.disabled { opacity: 0.45; pointer-events: none; }
+
+        .to-form-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* Time-off event list (bottom of time-off view) */
+        .to-event-list { display: flex; flex-direction: column; gap: 6px; }
+
+        .to-event-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .to-event-item span { flex: 1; }
 
         /* ---- Status Bar ---- */
         .status-bar {
@@ -273,11 +738,128 @@
             <span id="statusText">No database loaded. Open from SitkaTools.</span>
         </div>
 
-        <!-- Placeholder (two-panel tabs + labour report arrive with Phase 2) -->
-        <div class="placeholder-card">
-            <h2>👥 EmployeeWizard</h2>
-            <p>Under construction — see Agent.MD for the design spec.</p>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button type="button" class="tab-btn active" id="tabEmployees">👥 Employees</button>
+            <button type="button" class="tab-btn" id="tabTasks">📋 Tasks</button>
         </div>
+
+        <!-- Employees Tab (Phase 3 — fully functional) -->
+        <div class="tab-pane active" id="paneEmployees">
+            <div class="two-panel">
+                <!-- Left: employee roster list + add form -->
+                <div class="panel panel-list">
+                    <div class="panel-header">
+                        <span>Employees</span>
+                        <button type="button" class="btn btn-secondary" id="addEmpBtn" style="padding:5px 12px; font-size:0.8rem;">+ Add</button>
+                    </div>
+                    <div class="emp-list" id="empList"></div>
+                    <form class="add-emp-form" id="addEmpForm" hidden>
+                        <div class="form-group">
+                            <label for="newEmpName">Name</label>
+                            <input type="text" id="newEmpName" placeholder="Employee name" autocomplete="off">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="padding:9px 16px; font-size:0.85rem;">Add</button>
+                    </form>
+                </div>
+
+                <!-- Right: work-week calendar / employee editor / time-off view -->
+                <div class="panel">
+                    <!-- State 1: no employee highlighted → Work Week calendar -->
+                    <div id="workweekView">
+                        <div class="panel-header">Work Week — current week</div>
+                        <div class="workweek" id="workweekGrid"></div>
+                    </div>
+
+                    <!-- State 2: employee highlighted → Employee editor -->
+                    <div id="empEditorView" hidden>
+                        <div class="panel-header">
+                            <span>Employee</span>
+                            <button type="button" class="btn btn-secondary" id="backToCalendarBtn" style="padding:5px 12px; font-size:0.8rem;">← Back to Calendar</button>
+                        </div>
+                        <div class="emp-editor">
+                            <div class="day-toggle-row" id="dayToggleRow"></div>
+                            <div class="emp-fields">
+                                <div class="form-group">
+                                    <label for="empNameInput">Name</label>
+                                    <input type="text" id="empNameInput" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="empWageInput">Wage ($/hr)</label>
+                                    <input type="number" id="empWageInput" min="0" step="0.5" value="20">
+                                </div>
+                            </div>
+                            <div class="emp-actions">
+                                <button type="button" class="btn btn-primary" id="saveEmpBtn">Save Changes</button>
+                                <button type="button" class="btn btn-secondary" id="requestTimeOffBtn">Request Time Off</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- State 3: time-off booking view -->
+                    <div id="timeoffView" hidden>
+                        <div class="panel-header">
+                            <span>🏖️ Request Time Off — <span id="toEmpName"></span></span>
+                            <button type="button" class="btn btn-secondary" id="backToEditorBtn" style="padding:5px 12px; font-size:0.8rem;">← Back</button>
+                        </div>
+                        <div class="timeoff-view">
+                            <div class="month-nav">
+                                <button type="button" class="month-nav-btn" id="toPrevMonth">‹ Prev</button>
+                                <span class="month-title" id="toMonthTitle"></span>
+                                <button type="button" class="month-nav-btn" id="toNextMonth">Next ›</button>
+                            </div>
+                            <div class="to-grid" id="toGrid"></div>
+
+                            <div class="to-form">
+                                <div class="to-form-row">
+                                    <label for="toStartDate">Start</label>
+                                    <input type="date" id="toStartDate">
+                                    <label for="toEndDate">End</label>
+                                    <input type="date" id="toEndDate">
+                                </div>
+                                <div class="to-form-row">
+                                    <label style="display:flex; align-items:center; gap:6px;">
+                                        <input type="checkbox" id="toPartialChk"> Partial day (specific hours)
+                                    </label>
+                                </div>
+                                <div class="to-hours-row disabled" id="toHoursRow">
+                                    <label for="toStartHour">From</label>
+                                    <input type="time" id="toStartHour" value="08:00">
+                                    <label for="toEndHour">To</label>
+                                    <input type="time" id="toEndHour" value="16:00">
+                                </div>
+                                <div class="to-form-actions">
+                                    <button type="button" class="btn btn-primary" id="bookTimeOffBtn">Book Time Off</button>
+                                </div>
+                            </div>
+
+                            <div class="panel-header" style="border-top:1px solid var(--border); border-bottom:none; padding-top:12px;">This employee's time off</div>
+                            <div class="to-event-list" id="toEventList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tasks Tab (dummy — functional in Phase 4) -->
+        <div class="tab-pane" id="paneTasks">
+            <div class="two-panel">
+                <div class="panel panel-list">
+                    <div class="panel-header">Tasks</div>
+                    <div class="panel-body">Task list arrives in Phase 4.</div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">Task Editor</div>
+                    <div class="panel-body">Labour map editor arrives in Phase 4.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Labour Report (dummy — functional in Phase 5) -->
+        <section class="report-section">
+            <h3>📊 Labour Report</h3>
+            <p>Reports &amp; graphs arrive in Phase 5.</p>
+        </section>
     </main>
 
     <!-- Footer -->
@@ -365,6 +947,9 @@
                 // Reconcile and render with fresh data
                 populateLotSelector();
                 updateStatusBar();
+                renderEmpList();
+                if (EMP.viewMode === 'workweek') renderWorkweek();
+                else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -454,6 +1039,9 @@
                     DB.ensureStructure();
                     populateLotSelector();
                     updateStatusBar();
+                    renderEmpList();
+                    if (EMP.viewMode === 'workweek') renderWorkweek();
+                    else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
                     showToast('Database imported successfully');
                 } catch (err) {
                     alert('Failed to parse JSON file: ' + err.message);
@@ -513,6 +1101,506 @@
             statusText.textContent = `Database loaded — ${lotCount} lots, ${employeeCount} employees`;
         }
 
+        // =====================================================
+        // Phase 3 — Employees tab
+        // Roster management, work-week calendar, employee editor,
+        // and time-off booking (mirrored to calendarEvents).
+        // =====================================================
+
+        const EMP = {
+            selectedName: null,      // highlighted employee in the roster list
+            editorDays: [],          // draft workDays for the editor (getDay() numbers)
+            viewMode: 'workweek',    // 'workweek' | 'editor' | 'timeoff'
+            toMonth: null,           // {y, m} month shown in the time-off calendar
+            toRangeStart: null,      // ISO date string — booking range start
+            toRangeEnd: null,        // ISO date string — booking range end
+        };
+
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const WEEKDAYS_MIN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // index matches Date.getDay()
+        const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];                          // getDay() numbers, Monday-first
+
+        // ---- Date utilities (local time — never UTC variants) ----
+        function localDateStr(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function parseISO(s) {
+            const [y, m, d] = s.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function addDays(d, n) {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+        }
+
+        // Monday of the week containing d (local time)
+        function mondayOf(d) {
+            return addDays(d, -((d.getDay() + 6) % 7));
+        }
+
+        // ---- Employee data access ----
+        function getEmployees() {
+            if (!DB.data._EmployeeWizard) DB.data._EmployeeWizard = { employees: {} };
+            if (!DB.data._EmployeeWizard.employees) DB.data._EmployeeWizard.employees = {};
+            return DB.data._EmployeeWizard.employees;
+        }
+
+        // ---- Roster list (left panel) ----
+        function renderEmpList() {
+            const list = $('empList');
+            const emps = getEmployees();
+            const names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
+            if (!names.length) {
+                list.innerHTML = '<div class="panel-body" style="padding:24px 16px;">No employees yet — use “+ Add” to create the first roster entry.</div>';
+                return;
+            }
+            // Build rows with DOM APIs + closures (names may contain quotes —
+            // avoid embedding them in data-* attributes)
+            list.innerHTML = '';
+            for (const name of names) {
+                const e = emps[name];
+                const dots = MON_FIRST.map(dw => `<span class="emp-day-dot${(e.workDays || []).includes(dw) ? ' on' : ''}"></span>`).join('');
+                const row = document.createElement('div');
+                row.className = 'emp-row' + (name === EMP.selectedName ? ' selected' : '');
+                row.innerHTML = `
+                    <span class="emp-name">${escapeHtml(name)}</span>
+                    <span class="emp-days" title="Work days (Mon–Sun)">${dots}</span>
+                    <button type="button" class="emp-del" title="Delete employee">✕</button>`;
+                row.addEventListener('click', (ev) => {
+                    if (ev.target.closest('.emp-del')) return;
+                    selectEmployee(name);
+                });
+                row.querySelector('.emp-del').addEventListener('click', () => deleteEmployee(name));
+                list.appendChild(row);
+            }
+        }
+
+        function selectEmployee(name) {
+            // Clicking the already-selected employee deselects them → back to the work-week calendar
+            if (EMP.selectedName === name) {
+                EMP.selectedName = null;
+                setViewMode('workweek');
+                renderEmpList();
+                return;
+            }
+            EMP.selectedName = name;
+            const e = getEmployees()[name];
+            EMP.editorDays = [...(e?.workDays || [])];
+            $('empNameInput').value = name;
+            $('empWageInput').value = e?.wage ?? 20;
+            setViewMode('editor');
+        }
+
+        function deleteEmployee(name) {
+            const emps = getEmployees();
+            if (!emps[name]) return;
+            const toCount = (emps[name].timeOff || []).length;
+            let msg = `Delete employee "${name}"?`;
+            if (toCount > 0) msg += `\n\nThis will also remove their ${toCount} booked time-off event(s) from the shared calendar.`;
+            if (!confirm(msg + '\n\nThis action cannot be undone.')) return;
+
+            delete emps[name];
+
+            // Purge mirrored time-off calendar events in the same confirm step (confirmed design)
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(
+                ev => !(ev.sourceTool === 'EmployeeWizard' && ev.title === `🏖️ Time Off — ${name}`)
+            );
+
+            if (EMP.selectedName === name) { EMP.selectedName = null; setViewMode('workweek'); }
+
+            renderEmpList();
+            renderWorkweek();
+            updateStatusBar();
+            notifySitkaTools();
+            showToast(`Deleted ${name}`);
+        }
+
+        // ---- Add-employee form (bottom of left panel) ----
+        function toggleAddForm(show) {
+            const form = $('addEmpForm');
+            form.hidden = !show;
+            if (show) $('newEmpName').focus();
+        }
+
+        $('addEmpBtn').addEventListener('click', () => toggleAddForm($('addEmpForm').hidden));
+
+        $('addEmpForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = $('newEmpName').value.trim();
+            if (!name) return;
+            const emps = getEmployees();
+            if (emps[name]) { showToast(`"${name}" already exists — names are unique`); return; }
+
+            emps[name] = { wage: 20, workDays: [], timeOff: [] };
+            $('newEmpName').value = '';
+            toggleAddForm(false);
+            selectEmployee(name);   // highlight the new employee and open the editor
+            renderEmpList();
+            renderWorkweek();
+            updateStatusBar();
+            notifySitkaTools();
+            showToast(`Added ${name} ($20/hr)`);
+        });
+
+        // ---- Right-panel view switching (workweek / editor / timeoff) ----
+        function setViewMode(mode) {
+            EMP.viewMode = mode;
+            $('workweekView').hidden = mode !== 'workweek';
+            $('empEditorView').hidden = mode !== 'editor';
+            $('timeoffView').hidden = mode !== 'timeoff';
+            if (mode === 'workweek') renderWorkweek();
+            if (mode === 'editor') renderDayToggles();
+            if (mode === 'timeoff') initTimeoffView();
+        }
+
+        // ---- Work-week calendar (current week only, Monday-first) ----
+        function renderWorkweek() {
+            const grid = $('workweekGrid');
+            const emps = getEmployees();
+            const today = new Date();
+            const mon = mondayOf(today);
+            const names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
+
+            let html = '';
+            for (let i = 0; i < 7; i++) {
+                const d = addDays(mon, i);
+                const dw = d.getDay();
+                const working = names.filter(n => (emps[n].workDays || []).includes(dw));
+                const isToday = localDateStr(d) === localDateStr(today);
+                html += `<div class="ww-col${isToday ? ' today' : ''}">
+                    <div class="ww-day-head">${WEEKDAYS_MIN[dw]} ${d.getDate()}</div>
+                    <div class="ww-names">
+                        ${working.length
+                            ? working.map(n => `<span class="ww-name-chip" title="${escapeHtml(n)} works this day">${escapeHtml(n)}</span>`).join('')
+                            : '<span class="ww-empty">—</span>'}
+                    </div>
+                </div>`;
+            }
+            grid.innerHTML = html;
+        }
+
+        // ---- Employee editor: 7-day toggles (Monday-first, green=works / red=off) ----
+        function renderDayToggles() {
+            const row = $('dayToggleRow');
+            row.innerHTML = MON_FIRST.map(dw => {
+                const on = EMP.editorDays.includes(dw);
+                return `<button type="button" class="day-toggle ${on ? 'on' : 'off'}" data-dw="${dw}">${WEEKDAYS_MIN[dw]}</button>`;
+            }).join('');
+            row.querySelectorAll('.day-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const dw = Number(btn.dataset.dw);
+                    const idx = EMP.editorDays.indexOf(dw);
+                    if (idx >= 0) EMP.editorDays.splice(idx, 1);
+                    else EMP.editorDays.push(dw);
+                    renderDayToggles();
+                });
+            });
+        }
+
+        // ---- Save employee changes (name / wage / work days) ----
+        $('saveEmpBtn').addEventListener('click', () => {
+            const emps = getEmployees();
+            const oldName = EMP.selectedName;
+            if (!oldName || !emps[oldName]) return;
+
+            const newName = $('empNameInput').value.trim();
+            const wageRaw = parseFloat($('empWageInput').value);
+
+            if (!newName) { showToast('Name is required'); return; }
+            if (isNaN(wageRaw) || wageRaw < 0) { showToast('Enter a valid wage ($/hr)'); return; }
+
+            const emp = emps[oldName];
+            if (newName !== oldName) {
+                if (emps[newName]) { showToast(`"${newName}" already exists — names are unique`); return; }
+                // Rename: move the record and re-point labour-map references on tasks
+                delete emps[oldName];
+                emps[newName] = emp;
+                for (const ev of DB.data.calendarEvents) {
+                    const lm = ev.labour_map;
+                    if (!lm) continue;
+                    for (const day of Object.keys(lm)) {
+                        for (const entry of lm[day]) {
+                            if (entry.employee === oldName) entry.employee = newName;
+                        }
+                    }
+                }
+            }
+
+            emp.wage = wageRaw;
+            emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
+
+            EMP.selectedName = newName;
+            renderEmpList();
+            renderWorkweek();
+            updateStatusBar();
+            notifySitkaTools();
+            showToast(`Saved ${newName}`);
+        });
+
+        // ---- Time-off view ----
+        function initTimeoffView() {
+            const name = EMP.selectedName;
+            if (!name) return;
+            $('toEmpName').textContent = name;
+            const now = new Date();
+            if (!EMP.toMonth) EMP.toMonth = { y: now.getFullYear(), m: now.getMonth() };
+            // Default booking range = today (if not already set)
+            if (!EMP.toRangeStart) {
+                EMP.toRangeStart = localDateStr(now);
+                EMP.toRangeEnd = localDateStr(now);
+            }
+            $('toStartDate').value = EMP.toRangeStart;
+            $('toEndDate').value = EMP.toRangeEnd;
+            renderTimeoffCalendar();
+            renderTimeoffEventList();
+        }
+
+        function timeoffForEmployee(name) {
+            return getEmployees()[name]?.timeOff || [];
+        }
+
+        // Map of ISO date -> { full, ranges: [{start,end}] } across the employee's bookings
+        function toDayMap(name) {
+            const map = {};
+            for (const ev of timeoffForEmployee(name)) {
+                const start = parseISO(ev.date);
+                const end = ev.endDate ? parseISO(ev.endDate) : start;
+                let d = new Date(start);
+                while (d <= end) {
+                    const key = localDateStr(d);
+                    if (!map[key]) map[key] = { full: true, ranges: [] };
+                    const ho = (ev.hoursOff || []).find(h => h.date === key);
+                    if (ho) {
+                        map[key].full = false;
+                        map[key].ranges.push({ start: ho.start, end: ho.end });
+                    }
+                    d = addDays(d, 1);
+                }
+            }
+            return map;
+        }
+
+        function renderTimeoffCalendar() {
+            const name = EMP.selectedName;
+            if (!name) return;
+            const { y, m } = EMP.toMonth;
+            $('toMonthTitle').textContent = `${MONTH_NAMES[m]} ${y}`;
+
+            const emp = getEmployees()[name];
+            const workDays = emp?.workDays || [];
+            const dayMap = toDayMap(name);
+            const todayStr = localDateStr(new Date());
+
+            const firstDow = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+            // Monday-first grid (suite convention)
+            let html = MON_FIRST.map(dw => `<span class="to-weekday">${WEEKDAYS_MIN[dw]}</span>`).join('');
+            for (let i = 0; i < (firstDow + 6) % 7; i++) html += '<span class="to-day blank"></span>';
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = localDateStr(new Date(y, m, d));
+                const dow = new Date(y, m, d).getDay();
+                const info = dayMap[dateStr];
+                let cls = 'to-day';
+                if (dateStr === todayStr) cls += ' today';
+                if (workDays.includes(dow)) cls += ' regular';
+                if (info) cls += info.full ? ' full-off' : ' partial-off';
+                if (EMP.toRangeStart && dateStr >= EMP.toRangeStart && dateStr <= EMP.toRangeEnd) cls += ' selected';
+                const chip = info?.ranges.length
+                    ? `<span class="to-range-chip">${info.ranges.map(r => `${r.start}–${r.end}`).join(', ')}</span>`
+                    : (info ? '<span class="to-range-chip">full day</span>' : '');
+                html += `<div class="${cls}" data-date="${dateStr}"><span class="to-day-num">${d}</span>${chip}</div>`;
+            }
+            const grid = $('toGrid');
+            grid.innerHTML = html;
+
+            grid.querySelectorAll('.to-day[data-date]').forEach(cell => {
+                cell.addEventListener('click', () => onTimeoffDayClick(cell.dataset.date));
+            });
+        }
+
+        // Click a day: grow the range if the day is outside it, re-anchor to that day if inside
+        function onTimeoffDayClick(dateStr) {
+            if (!EMP.toRangeStart || dateStr < EMP.toRangeStart || dateStr > EMP.toRangeEnd) {
+                if (!EMP.toRangeStart) {
+                    EMP.toRangeStart = dateStr;
+                    EMP.toRangeEnd = dateStr;
+                } else if (dateStr < EMP.toRangeStart) {
+                    EMP.toRangeStart = dateStr;   // grow backwards
+                } else {
+                    EMP.toRangeEnd = dateStr;     // grow forwards
+                }
+            } else {
+                EMP.toRangeStart = dateStr;       // inside range → re-anchor to this day
+                EMP.toRangeEnd = dateStr;
+            }
+            $('toStartDate').value = EMP.toRangeStart;
+            $('toEndDate').value = EMP.toRangeEnd;
+            renderTimeoffCalendar();
+        }
+
+        // Keep the calendar highlight in sync when dates are typed directly into the inputs
+        $('toStartDate').addEventListener('change', () => {
+            const v = $('toStartDate').value;
+            if (!v) return;
+            EMP.toRangeStart = v;
+            if (!EMP.toRangeEnd || v > EMP.toRangeEnd) EMP.toRangeEnd = v;
+            renderTimeoffCalendar();
+        });
+        $('toEndDate').addEventListener('change', () => {
+            const v = $('toEndDate').value;
+            if (!v) return;
+            EMP.toRangeEnd = v;
+            if (!EMP.toRangeStart || v < EMP.toRangeStart) EMP.toRangeStart = v;
+            renderTimeoffCalendar();
+        });
+
+        // Month navigation
+        $('toPrevMonth').addEventListener('click', () => {
+            EMP.toMonth.m--;
+            if (EMP.toMonth.m < 0) { EMP.toMonth.m = 11; EMP.toMonth.y--; }
+            renderTimeoffCalendar();
+        });
+        $('toNextMonth').addEventListener('click', () => {
+            EMP.toMonth.m++;
+            if (EMP.toMonth.m > 11) { EMP.toMonth.m = 0; EMP.toMonth.y++; }
+            renderTimeoffCalendar();
+        });
+
+        // Partial-day checkbox toggles the hours row
+        $('toPartialChk').addEventListener('change', () => {
+            $('toHoursRow').classList.toggle('disabled', !$('toPartialChk').checked);
+        });
+
+        // ---- Book time off (employee record + mirrored calendar event) ----
+        $('bookTimeOffBtn').addEventListener('click', () => {
+            const name = EMP.selectedName;
+            if (!name) return;
+            const emp = getEmployees()[name];
+
+            let startStr = $('toStartDate').value;
+            let endStr = $('toEndDate').value || startStr;
+            if (!startStr) { showToast('Pick a start date on the calendar'); return; }
+            if (endStr < startStr) [startStr, endStr] = [endStr, startStr];
+
+            const partial = $('toPartialChk').checked;
+            let hoursOff = null;
+            if (partial) {
+                const s = $('toStartHour').value;
+                const e2 = $('toEndHour').value;
+                if (!s || !e2 || e2 <= s) { showToast('Enter valid off-hours (end must be after start)'); return; }
+                hoursOff = [];
+                let d = parseISO(startStr);
+                const end = parseISO(endStr);
+                while (d <= end) {
+                    hoursOff.push({ date: localDateStr(d), start: s, end: e2 });
+                    d = addDays(d, 1);
+                }
+            }
+
+            emp.timeOff = emp.timeOff || [];
+            const ev = { id: 'to-' + Date.now(), date: startStr };
+            if (endStr !== startStr) ev.endDate = endStr;
+            if (hoursOff) ev.hoursOff = hoursOff;
+            emp.timeOff.push(ev);
+
+            // Mirror to the shared calendar (suite convention: omit endDate when equal to date)
+            DB.data.calendarEvents.push({
+                title: `🏖️ Time Off — ${name}`,
+                date: startStr,
+                ...(endStr !== startStr ? { endDate: endStr } : {}),
+                sourceTool: 'EmployeeWizard'
+            });
+
+            // Reset the form for the next booking
+            EMP.toRangeStart = null;
+            EMP.toRangeEnd = null;
+            $('toPartialChk').checked = false;
+            $('toHoursRow').classList.add('disabled');
+
+            renderTimeoffCalendar();
+            renderTimeoffEventList();
+            updateStatusBar();
+            notifySitkaTools();
+            showToast(`Booked time off for ${name}`);
+        });
+
+        // ---- This employee's time-off event list (each with ✕ delete) ----
+        function renderTimeoffEventList() {
+            const name = EMP.selectedName;
+            if (!name) return;
+            const list = $('toEventList');
+            const events = timeoffForEmployee(name);
+            if (!events.length) {
+                list.innerHTML = '<div class="panel-body" style="padding:16px;">No time off booked yet.</div>';
+                return;
+            }
+            const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
+            list.innerHTML = sorted.map(ev => {
+                const range = ev.endDate && ev.endDate !== ev.date ? `${ev.date} → ${ev.endDate}` : ev.date;
+                const partial = (ev.hoursOff || []).length > 0;
+                const hours = partial ? ` (${ev.hoursOff[0].start}–${ev.hoursOff[0].end}/day)` : '';
+                return `<div class="to-event-item">
+                    <span>🏖️ ${range}${escapeHtml(hours)}</span>
+                    <button type="button" class="emp-del" data-to-id="${ev.id}" title="Delete this time-off event">✕</button>
+                </div>`;
+            }).join('');
+
+            list.querySelectorAll('[data-to-id]').forEach(btn => {
+                btn.addEventListener('click', () => deleteTimeoffEvent(name, btn.dataset.toId));
+            });
+        }
+
+        function deleteTimeoffEvent(name, id) {
+            const emp = getEmployees()[name];
+            if (!emp) return;
+            const idx = (emp.timeOff || []).findIndex(ev => ev.id === id);
+            if (idx < 0) return;
+            const [ev] = emp.timeOff.splice(idx, 1);
+
+            // Remove the mirrored calendar event
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(c => !(
+                c.sourceTool === 'EmployeeWizard' &&
+                c.title === `🏖️ Time Off — ${name}` &&
+                c.date === ev.date &&
+                (c.endDate || null) === (ev.endDate || null)
+            ));
+
+            renderTimeoffEventList();
+            renderTimeoffCalendar();
+            updateStatusBar();
+            notifySitkaTools();
+            showToast('Time-off event removed');
+        }
+
+        // ---- Request Time Off / Back buttons ----
+        $('requestTimeOffBtn').addEventListener('click', () => {
+            if (!EMP.selectedName) return;
+            EMP.toMonth = null;   // jump to the current month
+            setViewMode('timeoff');
+        });
+
+        $('backToEditorBtn').addEventListener('click', () => setViewMode('editor'));
+
+        // Back to Calendar — deselect the employee and show the work-week view
+        $('backToCalendarBtn').addEventListener('click', () => {
+            EMP.selectedName = null;
+            setViewMode('workweek');
+            renderEmpList();
+        });
+
+        // ---- Tab Switching ----
+        function switchTab(tabName) {
+            const isEmployees = tabName === 'employees';
+            $('tabEmployees').classList.toggle('active', isEmployees);
+            $('tabTasks').classList.toggle('active', !isEmployees);
+            $('paneEmployees').classList.toggle('active', isEmployees);
+            $('paneTasks').classList.toggle('active', !isEmployees);
+        }
+        $('tabEmployees').addEventListener('click', () => switchTab('employees'));
+        $('tabTasks').addEventListener('click', () => switchTab('tasks'));
+
         // ---- Close Tool ----
         $('closeToolBtn').addEventListener('click', () => window.close());
 
@@ -544,15 +1632,20 @@
 
         // ---- Utility ----
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         // ---- Start ----
         function init() {
             populateLotSelector();
             updateStatusBar();
+            renderEmpList();
+            renderWorkweek();
         }
         init();
     </script>
