@@ -62,6 +62,7 @@ The tool has **two main tabs — Employees and Tasks**. Both tabs use a two-pane
 **Right panel — task editor (when a task is highlighted):**
 - Assign employees to **today's** labour map, or modify previous days.
 - For a day: either pick an **existing employee** from the roster and input a time in **hours and minutes**, or fill in a **"Temp employee"** field with a name and wage. Temp employees are assigned on the task by name, below where you would select a regular employee.
+- **+ Add day picker:** single-day events often grow into multi-day work. A small calendar popover (opened from the Day section) lets you pick other days work happened on; picking a date creates that day in the task's `labour_map` and selects it for editing. Added days sit outside the event's own `date`/`endDate`, which are left untouched — the task keeps its original due state until marked completed. Extra days show an ✕ to remove them while they still have no labour entries.
 - A control to mark the task **completed** from this panel when the task is finished.
 
 ### Labour Report Section (below both panels)
@@ -89,7 +90,7 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
 ```
 
 - `wage` — $/hour. **Secret wage:** stored in the main JSON DB but **not visible on any dash or report** as a per-person figure; used only for cost math. Wage can be changed at any time. Default is **20**.
-- `workDays` — ongoing work days of the week (weekday numbers follow `Date.getDay()`: `0`=Sun … `6`=Sat). The UI displays them Monday-first.
+- `workDays` — ongoing work days of the week (weekday numbers follow `Date.getDay()`: `0`=Sun … `6`=Sat). The UI displays them Monday-first. **New employees default to Mon–Fri** (`[1, 2, 3, 4, 5]`).
 - Employees are keyed by name in this map. **Duplicate names are prevented** — adding an employee whose name already exists is rejected (the name *is* the identity, and labour maps reference it).
 
 **Time-off events** (stored per employee, and mirrored to `calendarEvents`):
@@ -122,6 +123,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 }
 ```
 - `labour_map` keys are ISO dates; each value records who worked that day and for how long. Regular employees reference roster names (wage resolved from the roster at report time); temp entries carry their own name + wage inline.
+- Keys may fall **outside** the event's `[date, endDate]` range: when a single-day event turns into multi-day work, the task editor's "+ Add day" picker records extra days in `labour_map` without touching the event's dates (the task keeps sitting in its original due state until completed). Task hour/cost totals span **all** recorded days, not just the event range.
 - `completed` is set when the task is marked finished from the task editor panel.
 
 ## Man-Hour Tracking
@@ -136,7 +138,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 1. **Phase 1 — Popup + DB:** ✅ Done. Module link added to SitkaTools (opens centered popup, half viewport width × 83% height); subtool receives DB via postMessage per the suite standard (`sitkaGit_db` → `sitkaGit_ready` → `sitkaGit_db_update`, with `notifySitkaTools()` after every mutation).
 2. **Phase 2 — Blank dummies:** ✅ Done. Tab bar (Employees / Tasks) with two-panel layouts (scrolling list left, editor right) and a full-width Labour Report stub below both tabs.
 3. **Phase 3 — Employees tab fully functional.** ✅ Done. Roster management (add/edit/delete with confirmation, unique names), work-week calendar (Monday-first, current week only), employee editor (7 day toggles green/red, Name/Wage fields, Save Changes + Request Time Off buttons), and time-off booking view (month calendar with regular-day dots and booked-off shading, multi-day/partial hour-based bookings, event list with delete) — all mirrored to shared `calendarEvents`.
-4. **Phase 4 — Tasks tab fully functional.** ✅ Done. Terminal-style task list for the active lot (Labour-wizard events only, via `LABOUR_TOOLS`), defaulting to today with completed/old tasks hidden until the "show old/completed" checkbox is ticked (view still anchors at today; older tasks scroll above). Task editor: per-day labour map with a day selector across multi-day ranges (defaults to today when in range), roster-employee entries in hours + minutes, temp-worker entries (name + wage) below the employee picker, entry delete, day/task hour & cost totals, and a Mark Completed / reopen control — all written in place onto the Labour-wizard events (`labour_map`, `completed`) with postMessage sync after every mutation.
+4. **Phase 4 — Tasks tab fully functional.** ✅ Done. Terminal-style task list for the active lot (Labour-wizard events only, via `LABOUR_TOOLS`), defaulting to today with completed/old tasks hidden until the "show old/completed" checkbox is ticked (view still anchors at today; older tasks scroll above). Task editor: per-day labour map with a day selector across multi-day ranges (defaults to today when in range), roster-employee entries in hours + minutes, temp-worker entries (name + wage) below the employee picker, entry delete, a "+ Add day" calendar picker for recording labour on days outside the event's range (extra days persist as `labour_map` keys and are removable from the day row while still empty), day/task hour & cost totals, and a Mark Completed / reopen control — all written in place onto the Labour-wizard events (`labour_map`, `completed`) with postMessage sync after every mutation.
 5. **Phase 5 — Labour reporting** (last; can be left as a dummy stub).
 
 ## BC Civic Holidays
@@ -179,6 +181,8 @@ This tool follows the shared UI Standards defined in the root `Agent.MD`. Key sp
 5. **Plant count source:** `plantCount` field on the lot in SitkaTools (`lots.<LotID>.plantCount`), shared by all tools; EmployeeWizard reads it for per-plant math.
 6. **Holiday awareness:** None — this tool is not BC-civic-holiday-aware.
 7. **Time-off event title:** `"🏖️ Time Off — <Name>"` confirmed as the calendar-event title format.
+8. **Grown tasks:** single-day events that become multi-day work keep their original `date`/`endDate`; extra work days are recorded as additional `labour_map` keys via the "+ Add day" picker in the task editor (removable from the day row while they have no entries). Task totals include all recorded days.
+9. **Global report mode:** the Active Lot selector's empty value (`''`) means *no lot / global scope*. When a lot is selected, the empty option is labeled "— No lot / Global report —" (otherwise "— Select a lot —"). In Phase 5, labour reports use this no-lot state to show cross-lot (global) figures instead of per-lot.
 
 ### Remaining Open Questions
 

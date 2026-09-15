@@ -27,6 +27,10 @@
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        /* The `hidden` attribute must beat any author display rule (e.g. .panel-body,
+           .add-emp-form) or hidden panels keep showing through */
+        [hidden] { display: none !important; }
+
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: var(--bg-primary);
@@ -147,7 +151,7 @@
         }
 
         .panel-list {
-            max-height: 420px;
+            max-height: 58vh;
             overflow-y: auto;
         }
 
@@ -208,7 +212,7 @@
             flex-direction: column;
             gap: 6px;
             padding: 12px;
-            max-height: 420px;
+            max-height: 58vh;
             overflow-y: auto;
         }
 
@@ -338,6 +342,12 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .ww-name-chip.ww-off {
+            text-decoration: line-through;
+            opacity: 0.8;
+            background: rgba(231, 76, 60, 0.18);
         }
 
         .ww-empty {
@@ -589,7 +599,7 @@
             background: #0a0a0a;
             border-radius: 0 0 var(--radius) var(--radius);
             font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-            max-height: 420px;
+            max-height: 58vh;
             overflow-y: auto;
             padding: 10px 14px;
             position: relative;
@@ -629,6 +639,7 @@
 
         .task-line .t-date { color: var(--warning); flex-shrink: 0; font-size: 0.75rem; }
         .task-line.today-row .t-date { color: var(--accent); }
+        .task-line.pastdue-row .t-date { color: var(--danger); }
 
         .task-line .t-title {
             flex: 1;
@@ -707,6 +718,78 @@
         }
 
         .day-btn.today:not(.active) { border-color: var(--warning); }
+
+        /* Extra days (added outside the event's native range) */
+        .day-btn.extra { border-color: rgba(243, 156, 18, 0.55); }
+
+        .day-btn .day-x {
+            margin-left: 6px;
+            color: var(--danger);
+            font-size: 0.7rem;
+            line-height: 1;
+            padding: 1px 3px;
+            border-radius: 3px;
+        }
+
+        .day-btn .day-x:hover { background: rgba(231, 76, 60, 0.2); }
+
+        /* Day picker popover (adds days outside the event's native range) */
+        .te-day-wrap { position: relative; }
+
+        .te-day-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .add-day-btn { padding: 4px 10px; font-size: 0.72rem; }
+
+        .day-picker-pop {
+            position: absolute;
+            z-index: 60;
+            width: 320px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+            padding: 12px;
+        }
+
+        .dp-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .dp-nav-btn { padding: 4px 10px; font-size: 0.85rem; }
+
+        .dp-grid .to-day { min-height: 40px; }
+
+        .dp-grid .to-day.in-range {
+            border-color: rgba(83, 216, 168, 0.5);
+            background: rgba(83, 216, 168, 0.07);
+        }
+
+        .dp-grid .to-day.has-labour::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--warning);
+        }
+
+        .dp-foot {
+            margin-top: 8px;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }
 
         .entry-list { display: flex; flex-direction: column; gap: 6px; }
 
@@ -1073,9 +1156,23 @@
                                 <button type="button" class="btn btn-secondary te-complete-btn" id="teCompleteBtn">Mark task completed</button>
                             </div>
 
-                            <div>
-                                <div class="te-section-label">Day</div>
+                            <div class="te-day-wrap">
+                                <div class="te-section-label te-day-head">
+                                    <span>Day</span>
+                                    <button type="button" class="btn btn-secondary add-day-btn" id="addDayBtn" title="Add another day to this task — for work done outside the event's date range">+ Add day</button>
+                                </div>
                                 <div class="day-row" id="teDayRow"></div>
+
+                                <!-- Day picker popover: pick other days work happened on -->
+                                <div class="day-picker-pop" id="dayPickerPop" hidden>
+                                    <div class="dp-nav">
+                                        <button type="button" class="month-nav-btn dp-nav-btn" id="dpPrevMonth" title="Previous month">‹</button>
+                                        <span class="month-title" id="dpMonthTitle"></span>
+                                        <button type="button" class="month-nav-btn dp-nav-btn" id="dpNextMonth" title="Next month">›</button>
+                                    </div>
+                                    <div class="to-grid dp-grid" id="dpGrid"></div>
+                                    <div class="dp-foot">Pick a day work happened on to add it to this task.</div>
+                                </div>
                             </div>
 
                             <div>
@@ -1238,6 +1335,7 @@
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
+                closeDayPicker();
                 populateLotSelector();
                 updateStatusBar();
                 reconcileSelectedTask();
@@ -1249,6 +1347,16 @@
         // Lots are grouped by destination (flower) room. Each room that has lots
         // assigned gets an unselectable divider ("↓ Room Name"), with its lots listed
         // below in order of age (oldest first). Lots without a flower room go last.
+        // The empty option is the "no lot" state — in Phase 5 that's how
+        // labour reports go global (all lots) instead of per-lot. When a lot
+        // is currently selected, label it as the way back to global.
+        function updateLotEmptyLabel() {
+            const sel = $('activeLot');
+            if (!sel || !sel.options.length) return;
+            const hasSelection = !!(sel.value && DB.lots[sel.value]);
+            sel.options[0].textContent = hasSelection ? '— No lot / Global report —' : '— Select a lot —';
+        }
+
         function populateLotSelector() {
             const sel = $('activeLot');
             if (!sel) return;
@@ -1303,6 +1411,7 @@
 
             // Restore previous selection if the lot still exists
             if (prevValue && lots[prevValue]) sel.value = prevValue;
+            updateLotEmptyLabel();
         }
 
         // ---- Mobile Detection — touch screen + small viewport (low resolution) ----
@@ -1516,7 +1625,7 @@
             const emps = getEmployees();
             if (emps[name]) { showToast(`"${name}" already exists — names are unique`); return; }
 
-            emps[name] = { wage: 20, workDays: [], timeOff: [] };
+            emps[name] = { wage: 20, workDays: [1, 2, 3, 4, 5], timeOff: [] }; // Mon–Fri by default
             $('newEmpName').value = '';
             toggleAddForm(false);
             selectEmployee(name);   // highlight the new employee and open the editor
@@ -1546,18 +1655,29 @@
             const mon = mondayOf(today);
             const names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
 
+            // Pre-compute each employee's booked-off days (ISO date -> {full, ranges})
+            const offMaps = {};
+            for (const n of names) offMaps[n] = toDayMap(n);
+
             let html = '';
             for (let i = 0; i < 7; i++) {
                 const d = addDays(mon, i);
                 const dw = d.getDay();
+                const dateStr = localDateStr(d);
                 const working = names.filter(n => (emps[n].workDays || []).includes(dw));
-                const isToday = localDateStr(d) === localDateStr(today);
+                const isToday = dateStr === localDateStr(today);
+                const chips = working.map(n => {
+                    const off = offMaps[n][dateStr];
+                    if (!off) return `<span class="ww-name-chip" title="${escapeHtml(n)} works this day">${escapeHtml(n)}</span>`;
+                    const tip = off.full
+                        ? `${n} is booked off all day`
+                        : `${n} is off ${off.ranges.map(r => `${r.start}–${r.end}`).join(', ')}`;
+                    return `<span class="ww-name-chip ww-off" title="${escapeHtml(tip)}">${escapeHtml(n)} 🏖️</span>`;
+                }).join('');
                 html += `<div class="ww-col${isToday ? ' today' : ''}">
                     <div class="ww-day-head">${WEEKDAYS_MIN[dw]} ${d.getDate()}</div>
                     <div class="ww-names">
-                        ${working.length
-                            ? working.map(n => `<span class="ww-name-chip" title="${escapeHtml(n)} works this day">${escapeHtml(n)}</span>`).join('')
-                            : '<span class="ww-empty">—</span>'}
+                        ${chips || '<span class="ww-empty">—</span>'}
                     </div>
                 </div>`;
             }
@@ -1920,16 +2040,22 @@
                 ev => ev.lotId === lotId && LABOUR_TOOLS.includes(ev.sourceTool));
         }
 
-        // ISO dates covered by a task (multi-day aware, capped for safety)
+        // ISO dates a task can hold labour for: the event's native [date, endDate]
+        // range plus any extra days recorded in the labour map (single-day events
+        // that grew into multi-day work via the "+ Add day" picker). Sorted
+        // ascending. Range iteration is capped for safety against bad data.
         function taskDays(ev) {
-            const days = [];
+            const set = new Set();
             let d = parseISO(ev.date);
             const end = parseISO(taskEnd(ev));
-            while (d <= end && days.length < 92) {
-                days.push(localDateStr(d));
+            while (d <= end && set.size < 92) {
+                set.add(localDateStr(d));
                 d = addDays(d, 1);
             }
-            return days;
+            for (const k of Object.keys(ev.labour_map || {})) {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(k)) set.add(k);
+            }
+            return [...set].sort();
         }
 
         function dayEntries(ev, dateStr) {
@@ -1968,6 +2094,25 @@
             });
         }
 
+        // Shortened title for the terminal list: show everything after "#<lotId>"
+        // so only the task name shows (the popup is narrow). The room code stays
+        // visible for the three room-clean tasks. Full title remains as a tooltip.
+        const ROOM_CLEAN_TYPES = ['clone_room_clean', 'veg_room_clean', 'room_clean'];
+        function taskDisplayTitle(ev) {
+            const t = ev.title || '';
+            const lotId = ev.lotId || '';
+            if (!lotId) return t;
+            const idx = t.indexOf('#' + lotId);
+            if (idx === -1) return t;
+            let name = t.slice(idx + lotId.length + 1).replace(/^[, ]+/, '');
+            if (ROOM_CLEAN_TYPES.includes(ev.taskType)) {
+                // Keep the room code: first segment of the prefix before any dash or #
+                const rm = t.slice(0, idx).match(/^(\S+?)[-#]/);
+                if (rm) name = `${rm[1]} ${name}`;
+            }
+            return name || t;
+        }
+
         // ---- Task list (left panel, terminal-style) ----
         function renderTaskList(scrollToToday = false) {
             const body = $('taskTermBody');
@@ -1992,13 +2137,16 @@
             const oldT = sorted.filter(ev => taskEnd(ev) < todayStr);
             const todayT = sorted.filter(ev => ev.date <= todayStr && taskEnd(ev) >= todayStr);
             const upT = sorted.filter(ev => ev.date > todayStr);
+            // Uncompleted past-due tasks stay visible even without the checkbox —
+            // they're still actionable. Completed old tasks wait for the checkbox.
+            const pastDueT = oldT.filter(ev => !ev.completed);
 
             const lineHtml = (ev, cls) => {
                 const range = ev.endDate && ev.endDate !== ev.date ? `${ev.date} → ${ev.endDate}` : ev.date;
                 const hrs = taskHours(ev);
-                return `<div class="task-line ${cls}${ev.completed ? ' completed' : ''}${taskKey(ev) === TASK.selectedKey ? ' selected' : ''}" data-key="${escapeHtml(taskKey(ev))}">
+                return `<div class="task-line ${cls}${ev.completed ? ' completed' : ''}${taskKey(ev) === TASK.selectedKey ? ' selected' : ''}" data-key="${escapeHtml(taskKey(ev))}" title="${escapeHtml(ev.title || '')}">
                     <span class="t-date">${range}</span>
-                    <span class="t-title">${escapeHtml(ev.title || '')}</span>
+                    <span class="t-title">${escapeHtml(taskDisplayTitle(ev))}</span>
                     ${ev.completed ? '<span class="t-chip done">✓</span>' : ''}
                     ${hrs > 0 ? `<span class="t-chip">${fmtHours(hrs)}</span>` : ''}
                 </div>`;
@@ -2008,6 +2156,11 @@
             if (showOld && oldT.length) {
                 html += `<div class="task-sec old" data-sec="old">▸ OLD / COMPLETED</div>` +
                     oldT.map(ev => lineHtml(ev, '')).join('');
+            } else if (pastDueT.length) {
+                // Checkbox off: past-due tasks that aren't completed get their own
+                // section above TODAY so overdue work can't be missed.
+                html += `<div class="task-sec old" data-sec="pastdue">▸ PAST DUE</div>` +
+                    pastDueT.map(ev => lineHtml(ev, 'pastdue-row')).join('');
             }
             const todayVisible = showOld ? todayT : todayT.filter(ev => !ev.completed);
             if (todayVisible.length) {
@@ -2069,7 +2222,8 @@
             btn.textContent = ev.completed ? '✓ Completed — click to reopen' : 'Mark task completed';
             btn.classList.toggle('done', !!ev.completed);
 
-            // Day selector (one button per day in the task range)
+            // Day selector — one button per day the task can hold labour for:
+            // the event's native range plus any extra days added via the picker.
             const days = taskDays(ev);
             const todayStr = localDateStr(new Date());
             if (!days.includes(TASK.editDate)) {
@@ -2077,11 +2231,19 @@
             }
             $('teDayRow').innerHTML = days.map(d => {
                 const dt = parseISO(d);
-                const cls = 'day-btn' + (d === TASK.editDate ? ' active' : '') + (d === todayStr ? ' today' : '');
-                return `<button type="button" class="${cls}" data-date="${d}" title="${d}">${WEEKDAYS_MIN[dt.getDay()]} ${Number(d.slice(8))}</button>`;
+                const extra = d < ev.date || d > taskEnd(ev);
+                const cls = 'day-btn' + (d === TASK.editDate ? ' active' : '') + (d === todayStr ? ' today' : '') + (extra ? ' extra' : '');
+                const title = extra ? `${d} — outside event range` : d;
+                const x = extra ? `<span class="day-x" data-rm="${d}" title="Remove this day from the task">✕</span>` : '';
+                return `<button type="button" class="${cls}" data-date="${d}" title="${title}">${WEEKDAYS_MIN[dt.getDay()]} ${Number(d.slice(8))}${x}</button>`;
             }).join('');
             $('teDayRow').querySelectorAll('.day-btn').forEach(b => {
-                b.addEventListener('click', () => { TASK.editDate = b.dataset.date; renderTaskEditor(); });
+                b.addEventListener('click', (e) => {
+                    const rm = e.target.closest('[data-rm]');
+                    if (rm) { removeExtraDay(rm.dataset.rm); return; }
+                    TASK.editDate = b.dataset.date;
+                    renderTaskEditor();
+                });
             });
 
             // Entries recorded for the selected day
@@ -2124,6 +2286,166 @@
             renderTaskList(scrollToToday);
             renderTaskEditor();
         }
+
+        // ---- Day picker — add days outside the event's native range ----
+        // Single-day events often grow into multi-day work. The picker lets the
+        // user record labour on any other day: picking a date creates that day
+        // in the task's labour map (persisted as an empty entry list until
+        // labour is added) and selects it for editing. The event's own
+        // date/endDate are left untouched — the task keeps sitting in its
+        // original due state until marked completed.
+        const DP = { open: false, month: null }; // {y, m} of the picker's visible month
+
+        function dpMonth() {
+            if (!DP.month) {
+                const ref = TASK.editDate ? parseISO(TASK.editDate) : new Date();
+                DP.month = { y: ref.getFullYear(), m: ref.getMonth() };
+            }
+            return DP.month;
+        }
+
+        function openDayPicker() {
+            if (!selectedTask()) return;
+            DP.open = true;
+            $('dayPickerPop').hidden = false;
+            renderDayPicker();
+            positionDayPicker();
+            document.addEventListener('click', onDocClickClosePicker);
+        }
+
+        function closeDayPicker() {
+            if (!DP.open) return;
+            DP.open = false;
+            DP.month = null;
+            $('dayPickerPop').hidden = true;
+            document.removeEventListener('click', onDocClickClosePicker);
+        }
+
+        function onDocClickClosePicker(e) {
+            if (!DP.open) return;
+            if ($('dayPickerPop').contains(e.target)) return;
+            if (e.target.closest && e.target.closest('#addDayBtn')) return;
+            closeDayPicker();
+        }
+
+        function renderDayPicker() {
+            const ev = selectedTask();
+            if (!ev) return;
+            const { y, m } = dpMonth();
+            $('dpMonthTitle').textContent = `${MONTH_NAMES[m]} ${y}`;
+
+            const rangeEnd = taskEnd(ev);
+            const todayStr = localDateStr(new Date());
+            const labourDays = new Set(Object.keys(ev.labour_map || {}));
+
+            const firstDow = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+            // Monday-first grid (suite convention), reusing the time-off day cells
+            let html = MON_FIRST.map(dw => `<span class="to-weekday">${WEEKDAYS_MIN[dw]}</span>`).join('');
+            for (let i = 0; i < (firstDow + 6) % 7; i++) html += '<span class="to-day blank"></span>';
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = localDateStr(new Date(y, m, d));
+                let cls = 'to-day';
+                if (dateStr === todayStr) cls += ' today';
+                if (dateStr >= ev.date && dateStr <= rangeEnd) cls += ' in-range';
+                if (labourDays.has(dateStr)) cls += ' has-labour';
+                if (dateStr === TASK.editDate) cls += ' selected';
+                html += `<div class="${cls}" data-date="${dateStr}"><span class="to-day-num">${d}</span></div>`;
+            }
+            const grid = $('dpGrid');
+            grid.innerHTML = html;
+            grid.querySelectorAll('.to-day[data-date]').forEach(cell => {
+                cell.addEventListener('click', () => pickDayForTask(cell.dataset.date));
+            });
+        }
+
+        // Anchor the popover under the "+ Add day" button, flipping above it
+        // when there isn't room below in the viewport.
+        function positionDayPicker() {
+            const wrap = document.querySelector('.te-day-wrap');
+            const btn = $('addDayBtn');
+            const pop = $('dayPickerPop');
+            if (!wrap || !btn) return;
+            const wrapRect = wrap.getBoundingClientRect();
+            const btnRect = btn.getBoundingClientRect();
+            const popW = pop.offsetWidth;
+            const popH = pop.offsetHeight;
+
+            let left = btnRect.left - wrapRect.left;
+            if (left + popW > wrapRect.width) left = Math.max(0, wrapRect.width - popW);
+
+            let top = btnRect.bottom - wrapRect.top + 6;
+            if (btnRect.bottom + popH + 12 > window.innerHeight) {
+                top = btnRect.top - wrapRect.top - popH - 6;
+            }
+            pop.style.left = left + 'px';
+            pop.style.top = top + 'px';
+        }
+
+        function pickDayForTask(dateStr) {
+            const ev = selectedTask();
+            if (!ev) return;
+            if (dateStr < ev.date || dateStr > taskEnd(ev)) {
+                if (!ev.labour_map) ev.labour_map = {};
+                if (!ev.labour_map[dateStr]) {
+                    ev.labour_map[dateStr] = [];
+                    notifySitkaTools();
+                    showToast(`Added ${dateStr} to this task`);
+                }
+            }
+            TASK.editDate = dateStr;
+            closeDayPicker();
+            renderTasksTab();
+        }
+
+        // Remove an added day that has no labour entries yet. Days with recorded
+        // labour must have their entries removed first (no silent data loss).
+        function removeExtraDay(dateStr) {
+            const ev = selectedTask();
+            if (!ev) return;
+            if (dayEntries(ev, dateStr).length > 0) {
+                showToast('Remove the labour entries for that day first');
+                return;
+            }
+            if (ev.labour_map) {
+                delete ev.labour_map[dateStr];
+                if (!Object.keys(ev.labour_map).length) delete ev.labour_map;
+            }
+            if (TASK.editDate === dateStr) {
+                const days = taskDays(ev);
+                const todayStr = localDateStr(new Date());
+                TASK.editDate = days.includes(todayStr) ? todayStr : days[0];
+            }
+            notifySitkaTools();
+            renderTasksTab();
+            showToast(`Removed ${dateStr} from this task`);
+        }
+
+        $('addDayBtn').addEventListener('click', () => {
+            if (DP.open) closeDayPicker();
+            else openDayPicker();
+        });
+
+        $('dpPrevMonth').addEventListener('click', () => {
+            const mo = dpMonth();
+            mo.m--;
+            if (mo.m < 0) { mo.m = 11; mo.y--; }
+            renderDayPicker();
+            positionDayPicker();
+        });
+
+        $('dpNextMonth').addEventListener('click', () => {
+            const mo = dpMonth();
+            mo.m++;
+            if (mo.m > 11) { mo.m = 0; mo.y++; }
+            renderDayPicker();
+            positionDayPicker();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && DP.open) closeDayPicker();
+        });
 
         // ---- Labour entry helpers ----
         function parseHm(hoursInput, minutesInput) {
@@ -2229,6 +2551,7 @@
 
         // Changing the active lot clears the selection and re-renders the task list
         $('activeLot').addEventListener('change', () => {
+            updateLotEmptyLabel();
             TASK.selectedKey = null;
             TASK.editDate = null;
             renderTasksTab(true);
