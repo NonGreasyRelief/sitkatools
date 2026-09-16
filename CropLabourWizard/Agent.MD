@@ -106,24 +106,24 @@ The **source of truth** for projected lots lives in the top-level `_CropLabourWi
 _CropLabourWizard: {
     generations: [ /* generation log — real lots only */ ],
     projectedLots: {
-        "01": {
-            name: "G1B6 - TBA 01",
+        "G1B6-TBA-01": {
+            name: "G1B6-TBA-01",
             roomId: "G1B6",
             roomName: "Grow Room 1",
             strain: "TBA",
             index: 1,
             config: { plantingDate, trimDays, harvestMultiDay, harvestDays, taskCount, generatedAt }
         }
-        // … "02" … "05"
+        // … "G1B6-TBA-02" … "G1B6-TBA-05", plus one chain per other flowering room
     }
 }
 ```
 
 Rules:
 
-- **Synthetic lot IDs**: `0{index}` — zero-padded `"01"`–`"05"`. The single leading zero distinguishes projected lots from usual non-projected lots (which never start with `0`). They never collide with real lot IDs and are never written to `DB.lots`. Note: the ID is **not** room-scoped — each room's chain reuses the same five IDs, disambiguated by the map entry's `roomId`.
-- **Naming**: `{roomId} - TBA {index}` (zero-padded, e.g. `G1B6 - TBA 01`) — strain is always `"TBA"` until a real lot takes the slot.
-- **Legacy ID migration:** databases created before this scheme used `PROJ-{roomId}-{index}` IDs. On load / DB import, `migrateProjectedLotIds()` renames any remaining `PROJ-*` map keys to `01`–`05` (using each entry's `roomId` + `index`), rewrites `lotId` on the matching `CropProjection` events and generation-log entries, and pushes the migrated DB back to SitkaTools. It is a no-op once every ID has been migrated.
+- **Synthetic lot IDs**: `{roomId}-TBA-{index}` (e.g. `G1B6-TBA-01`) — the room code is part of the ID, so each room's 5-lot chain is unique and generating projections for a new room can never collide with another room's lots. The `TBA` marker distinguishes projected IDs from real lot IDs; they are never written to `DB.lots`. The map entry still carries `roomId`/`roomName` as the source of truth for display and event tagging.
+- **Naming**: `{roomId}-TBA-{index}` (zero-padded, e.g. `G1B6-TBA-01`) — strain is always `"TBA"` until a real lot takes the slot.
+- **Legacy ID migration:** databases created before this scheme used either `PROJ-{roomId}-{index}` IDs or the intermediate non-room-scoped `01`–`05` IDs (which collided across rooms). On load / DB import, `migrateProjectedLotIds()` renames any remaining legacy map keys to `{roomId}-TBA-{index}` (using each entry's `roomId` + `index`; for `PROJ-*` the room falls back to the ID itself), rewrites `lotId` on the matching `CropProjection` events and generation-log entries, and pushes the migrated DB back to SitkaTools. It is a no-op once every ID has been migrated.
 - **Config lives in the map entry** (`projectedLots[lotId].config`), not in `DB.lots[lotId]._tool_CropLabourWizard`, because projected lots are not DB lots.
 - **The map is owned by this tool.** SitkaTools must never read, modify, or delete entries from it — even when deleting projection calendar events.
 - **`generations[]` log entries are only written for real lots.** Projected lot config lives solely in the map entry.
@@ -144,8 +144,8 @@ Each flowering room gets exactly **5** projected lots forming a chain:
 | Function | Purpose |
 |---|---|
 | `PROJECTION_LOT_COUNT` | Constant = 5 |
-| `projectedLotId(roomId, index)` | Returns `0{index}` (zero-padded `"01"`–`"05"`; the room is carried by the map entry, not the ID) |
-| `migrateProjectedLotIds()` | One-time migration of legacy `PROJ-{roomId}-{index}` IDs → `01`–`05` (map keys + event/log references); returns `true` if anything changed |
+| `projectedLotId(roomId, index)` | Returns `{roomId}-TBA-{index}` (zero-padded index, e.g. `G1B6-TBA-01`) — room-scoped so chains from different rooms never collide |
+| `migrateProjectedLotIds()` | One-time migration of legacy `PROJ-{roomId}-{index}` and intermediate `01`–`05` IDs → `{roomId}-TBA-{index}` (map keys + event/log references); returns `true` if anything changed |
 | `defaultOffsetsSnapshot(bloomDays = 63)` | Snapshot of all `TASK_DEFS` with their default offsets (used to regenerate stale lots); the harvest offset is set to `bloomDays` so a fresh lot uses the selected bloom length. |
 | `generateLotSchedule(lotId, day0, offsets, durations)` | Shared by the Generate button and chain generation. Computes anchors, builds events (with correct `sourceTool` per lot type), writes config via `setScheduleConfig`, returns `{ events, config }`. For projected lots, events carry `roomId`. |
 | `reAnchorProjectedLot(roomId, index, day0, bloomDays?)` | If the lot is stale (no events) → regenerate fresh from `defaultOffsetsSnapshot(bloomDays)` + default durations at the new Day 0. Otherwise → shift all existing events by the delta between old and new Day 0 (preserves custom offsets); when `bloomDays` is provided, bloom-dependent tasks additionally shift by `bloomDays − currentBloom` so the new bloom length takes effect. Updates `entry.config.plantingDate` and `generatedAt`. |
@@ -164,7 +164,7 @@ On load and after every DB update, this tool compares `projectedLots` against ca
 Projected lots emit calendar events identical in shape to CropLabourWizard events, but with a distinct source tool so both tools can separate them without ever reading each other's data:
 
 ```js
-{ date, endDate?, title, sourceTool: 'CropProjection', lotId: '01', roomId: 'G1B6', taskType }
+{ date, endDate?, title, sourceTool: 'CropProjection', lotId: 'G1B6-TBA-01', roomId: 'G1B6', taskType }
 ```
 
 - `roomId` is always present on projection events (real CLW events don't carry it) — this is what SitkaTools uses to delete a room's projections.
@@ -173,7 +173,7 @@ Projected lots emit calendar events identical in shape to CropLabourWizard event
 
 ### UI — CropLabourWizard
 
-- **Lot selector:** projected lots appear under their room's divider (after the room's real lots) as `🔮 {roomId} - TBA 0n`; stale ones get a ⚠️ suffix.
+- **Lot selector:** projected lots appear under their room's divider (after the room's real lots) as `🔮 {roomId}-TBA-0n`; stale ones get a ⚠️ suffix.
 - **Bloom length toggle** in the header, to the left of Project Crop: two small stacked buttons, **8 weeks** (top) and **9 weeks** (bottom). Selecting one sets `projectionBloomDays` (56 / 63 days); **9 weeks is the default** (active state highlighted with the accent color). It only affects projection chain generation — manual preview editing is untouched. Because clone cut stays at harvest − 21, the chain cadence remains correct for either bloom length.
 - **Project Crop button** in the header, to the left of the Active Lot selector (sized to match the dropdown's height): generates/refreshes the 5-lot chain for the selected room using the currently selected bloom length. Resolves the room from the currently selected lot (projected → its `roomId`; real → `resolveFlowerRoom`). Requires `isFlowering === true`. Never auto-runs on load or when a room flag changes. It is **greyed out (disabled)** whenever the selected lot can't be projected — no lot selected, no resolvable flower room, or the room isn't flagged as flowering — and its tooltip explains why; it re-enables automatically when a projectable lot is selected or the DB updates.
 - Selecting a projected lot loads its stored config into the same form; Generate/Clear operate on `CropProjection` events and the map entry's config.

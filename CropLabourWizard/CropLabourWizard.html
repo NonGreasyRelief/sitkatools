@@ -1993,15 +1993,18 @@
 
         const PROJECTION_LOT_COUNT = 5;
 
-        // Projected lot IDs use a single leading zero (e.g. "01"–"05") to distinguish them
-        // from usual non-projected lots, which never start with "0".
+        // Projected lot IDs are room-scoped: `{roomId}-TBA-{index}` (e.g. "G1B6-TBA-01").
+        // The room code in the ID keeps each room's chain from colliding with another
+        // room's, and the TBA marker distinguishes them from real lots.
         function projectedLotId(roomId, index) {
-            return `0${index}`;
+            return `${roomId}-TBA-${String(index).padStart(2, '0')}`;
         }
 
-        // One-time migration: old synthetic IDs ("PROJ-{roomId}-{index}") → new short IDs ("01"–"05").
-        // Renames the map keys, rewrites lotId on CropProjection events, and updates any real-lot
-        // generation log entries that reference a projected ID. Runs on load / DB import; no-op once done.
+        // One-time migration: legacy synthetic IDs → room-scoped IDs ("{roomId}-TBA-{index}").
+        // Handles both the original "PROJ-{roomId}-{index}" scheme and the intermediate
+        // non-room-scoped "01"–"05" scheme (which collided across rooms). Renames the map
+        // keys, rewrites lotId on CropProjection events, and updates any generation log
+        // entries that reference a projected ID. Runs on load / DB import; no-op once done.
         function migrateProjectedLotIds() {
             const clw = DB.data?._CropLabourWizard;
             if (!clw) return false;
@@ -2010,9 +2013,19 @@
             const renames = {};
             const map = clw.projectedLots || {};
             for (const [oldId, entry] of Object.entries(map)) {
-                if (!/^PROJ-/.test(oldId)) continue; // already migrated (or foreign key)
-                const roomId = entry.roomId || (oldId.match(/^PROJ-(.*)-\d+$/) || [])[1];
-                const index = parseInt((entry.index ?? oldId.split('-').pop()), 10);
+                let roomId = null;
+                let index = null;
+                if (/^PROJ-/.test(oldId)) {
+                    // Legacy: "PROJ-{roomId}-{index}" — room in the ID, index at the end
+                    roomId = entry.roomId || (oldId.match(/^PROJ-(.*)-\d+$/) || [])[1];
+                    index = parseInt((entry.index ?? oldId.split('-').pop()), 10);
+                } else if (/^0\d$/.test(oldId)) {
+                    // Intermediate: "01"–"05" — room only on the map entry
+                    roomId = entry.roomId;
+                    index = parseInt(entry.index ?? oldId, 10);
+                } else {
+                    continue; // already migrated (or foreign key)
+                }
                 if (!roomId || !Number.isFinite(index)) continue;
                 renames[oldId] = projectedLotId(roomId, index);
             }
@@ -2026,7 +2039,7 @@
                 delete map[oldId];
             }
 
-            // Rewrite event references (projection events only — real lots never used PROJ- IDs)
+            // Rewrite event references (projection events only — real lots never used synthetic IDs)
             for (const ev of DB.data.calendarEvents || []) {
                 if (ev.sourceTool === 'CropProjection' && renames[ev.lotId]) {
                     ev.lotId = renames[ev.lotId];
@@ -2219,7 +2232,7 @@
             for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
                 const lotId = projectedLotId(roomId, i);
                 if (!map[lotId]) {
-                    map[lotId] = { name: `${roomId} - TBA ${String(i).padStart(2, '0')}`, roomId, roomName: room.name, strain: 'TBA', index: i };
+                    map[lotId] = { name: `${roomId}-TBA-${String(i).padStart(2, '0')}`, roomId, roomName: room.name, strain: 'TBA', index: i };
                 } else {
                     map[lotId].roomName = room.name; // keep in sync if the room was renamed
                 }
