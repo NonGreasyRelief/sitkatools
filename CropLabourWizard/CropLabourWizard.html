@@ -967,6 +967,8 @@
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
             { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+            // Optional preventative IPM sprays — toggleable, off by default
+            { name: 'Preventative IPM Spray (Early veg)', emoji: '🧴', taskType: 'ipm_spray_veg_early', reference: 'planting', defaultOffset: 2, hasToggle: true, defaultEnabled: false },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
             // Pre-transplant prep work done in the flower room (layout the day before; hydration & lights on transplant day)
@@ -974,12 +976,18 @@
             { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 10 },
             { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 10 },
             { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 10 },
+            // Day after transplant — plants are now in the flower room (listed after transplant so it resolves there)
+            { name: 'Preventative IPM Spray (Second veg IPM)', emoji: '🧴', taskType: 'ipm_spray_veg_second', reference: 'planting', defaultOffset: 11, hasToggle: true, defaultEnabled: false },
             { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 15 },
             { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
             { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
             { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 20 },
             // Bloom-relative tasks (offset from flip)
+            // First day of bloom = flip day; toggleable, off by default
+            { name: 'Preventative IPM Spray (Start of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_start', reference: 'flip', defaultOffset: 0, hasToggle: true, defaultEnabled: false },
             { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1 },
+            // Second week of bloom; toggleable, off by default
+            { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
             { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
             // Derived/locked — always lands at harvest START − 21 days (displayed offset from flip = bloom length − 21)
             { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'flip', defaultOffset: 42 },
@@ -1259,7 +1267,9 @@
             taskOffsets = TASK_DEFS.map(def => ({
                 def,
                 offset: def.defaultOffset ?? 0,
-                enabled: def.hasToggle !== undefined ? (def.hasToggle === true ? true : true) : true
+                // Toggleable tasks default to their def's defaultEnabled (off for the IPM sprays);
+                // non-toggleable tasks are always on.
+                enabled: def.hasToggle ? (def.defaultEnabled !== false) : true
             }));
         }
 
@@ -1307,6 +1317,8 @@
             for (const entry of taskOffsets) {
                 const def = entry.def;
                 const ev = eventsByType[def.taskType];
+                // Toggleable tasks absent from a generated schedule were disabled at generation time
+                if (def.hasToggle && !ev) entry.enabled = false;
                 if (!ev) continue; // task absent from schedule — keep default
 
                 // When clones disabled, planting is locked to Day 0
@@ -2029,7 +2041,8 @@
         // Task types whose dates move with the bloom length (everything from flip onward, except
         // flip itself). Pre-flip tasks stay anchored to Day 0.
         const BLOOM_DEPENDENT_TASKS = new Set([
-            'trellis_layout', 'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest',
+            'ipm_spray_flower_start', 'trellis_layout', 'ipm_spray_flower_week2',
+            'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest',
             'room_clean', 'tank_irrigation_clean', 'tote_prep', 'bucking', 'lab_sample',
             'trim_room_prep', 'trim', 'machine_trim', 'dry_room_clean', 'weigh_ship'
         ]);
@@ -2040,7 +2053,9 @@
             return TASK_DEFS.map(def => ({
                 def,
                 offset: def.taskType === 'harvest' ? bloomDays : (def.defaultOffset ?? 0),
-                enabled: true
+                // Mirror the manual-preview defaults: toggleable tasks follow defaultEnabled
+                // (the IPM sprays stay off in fresh projections)
+                enabled: def.hasToggle ? (def.defaultEnabled !== false) : true
             }));
         }
 

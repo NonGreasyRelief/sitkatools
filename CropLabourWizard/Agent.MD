@@ -6,7 +6,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 ### Intended Use
 
-- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, coco block layout/spiking & hydration, transplanting, topping, undercanopy lights & air socks, flipping to flower, trellis layout, pruning, leaf picks, clone cutting, harvest, grow-room clean, tank & irrigation line clean, tote prep, bucking, trim room prep, trim, machine trim of smalls, room cleans (clone, veg, dry), and final weigh/ship.
+- **Auto-schedule a full crop cycle:** Select a lot, enter the anchor date, and the tool calculates every downstream task — cloning, coco block layout/spiking & hydration, transplanting, topping, preventative IPM sprays (optional, off by default), undercanopy lights & air socks, flipping to flower, trellis layout, pruning, leaf picks, clone cutting, harvest, grow-room clean, tank & irrigation line clean, tote prep, bucking, trim room prep, trim, machine trim of smalls, room cleans (clone, veg, dry), and final weigh/ship.
 - **Preview & edit before committing:** See all computed tasks with their default dates, then adjust any task's day offset (including flip-to-flower, harvest timing, planting offset) and multi-day durations (trim length; optionally multi-day harvest) before generating the final schedule. Each task's computed date shows its weekday next to it (e.g., `2026-09-15 · Tue`), and clicking a task's date opens a clickable date picker — picking a day adjusts that task's offset by the delta, exactly like the +/− spinbox.
 - **Visualize labour demand:** All generated events appear on the shared calendar so the grower can see when tasks cluster across multiple lots.
 - **Dynamic Day 0 anchor:** When Cutting Clones is enabled, the top date is the cloning date (Day 0) and planting offsets from it. When disabled, the top date becomes the planting date (Day 0). All downstream tasks cascade accordingly.
@@ -24,33 +24,39 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 | 0 | Cutting Clones | ✂️ | Cloning (Day 0) | Day 0 (locked) | No | **Yes** (enabled by default) |
 | 1 | Planting Clones | 🌱 | Cloning (when clones on) / Planting (when clones off) | +14 from cloning / Day 0 (locked when clones off) | Yes (when clones on) | — |
 | 2 | Clean Clone Room and used cloning supplies | 🧼 | Planting | +1 day (after planting clones) | Yes | — |
-| 3 | Topping | ✂️ | Planting | +3 days | Yes | — |
-| 4 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
-| 5 | Lay-out and Spike Coco Blocks for Hydrating | 🥥 | Planting | +9 days (day before transplant; flower room) | Yes | — |
-| 6 | Hydrate Coco Blocks for Transplanting | 💧 | Planting | +10 days (transplant day; flower room) | Yes | — |
-| 7 | Install Undercanopy Lights and Air Socks | 💡 | Planting | +10 days (same day as hydrate blocks; flower room) | Yes | — |
-| 8 | Transplanting to Flower Room | 🪴 | Planting | +10 days | Yes | — |
-| 9 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
-| 10 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
-| 11 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
-| 12 | Flip to Flower | 🌸 | Planting | +20 days | **Yes** (cascades to all bloom & harvest tasks) | — |
-| 13 | Layout Trellis and Secure | 🕸️ | Flip | +1 day (day after flip) | Yes | — |
-| 14 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
-| 15 | Cut Clones to Replace Lot | 🌿 | Harvest (start) | harvest start − 21 days (derived — follows bloom length; displayed offset vs flip = bloomLength − 21) | **No** (locked/derived) | — |
-| 16 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
-| 17 | Harvest | 🌾 | Flip | +63 days (9 weeks bloom) | **Yes** (cascades to all post-harvest tasks; optionally **multi-day** — default 2 days when checked, and post-harvest tasks then cascade from the harvest *end* date) | — |
-| 18 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
-| 19 | Tank and Irrigation Line Clean | 🚿 | Harvest | +2 days (day after grow-room clean) | Yes | — |
-| 20 | Clean and Prepare Totes for Bucking | 🧺 | Harvest | +9 days (day before bucking) | Yes | — |
-| 21 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
-| 22 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
-| 23 | Prepare Trim Room | 🧽 | Harvest | +10 days (day before trim starts) | Yes | — |
-| 24 | Trim | ✂️ | Harvest (end, when multi-day) | +11 days; **length is user-selectable** (default 7 days, editable 1–30 in the preview) | Yes | — |
-| 25 | Machine Trim Smalls | ⚙️ | Trim Start | +7 days (day after trim ends at default length) | Yes | **Yes** (enabled by default) |
-| 26 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
-| 27 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
+| 3 | Preventative IPM Spray (Early veg) | 🧴 | Planting | +2 days (after planting) | Yes | **Yes** (disabled by default) |
+| 4 | Topping | ✂️ | Planting | +3 days | Yes | — |
+| 5 | Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta | 🐛 | Planting | +7 days | Yes | — |
+| 6 | Lay-out and Spike Coco Blocks for Hydrating | 🥥 | Planting | +9 days (day before transplant; flower room) | Yes | — |
+| 7 | Hydrate Coco Blocks for Transplanting | 💧 | Planting | +10 days (transplant day; flower room) | Yes | — |
+| 8 | Install Undercanopy Lights and Air Socks | 💡 | Planting | +10 days (same day as hydrate blocks; flower room) | Yes | — |
+| 9 | Transplanting to Flower Room | 🪴 | Planting | +10 days | Yes | — |
+| 10 | Preventative IPM Spray (Second veg IPM) | 🧴 | Planting | +11 days (day after transplanting to flower room) | Yes | **Yes** (disabled by default) |
+| 11 | Clean Vegetation Room | 🧼 | Planting | +15 days (after transplanting to flower room) | Yes | — |
+| 12 | Deploy IPM to Flower Room | 🛡️ | Planting | +15 days | Yes | — |
+| 13 | Two-Node / Lollipop Prune | 🔪 | Planting | +20 days | Yes | — |
+| 14 | Flip to Flower | 🌸 | Planting | +20 days | **Yes** (cascades to all bloom & harvest tasks) | — |
+| 15 | Preventative IPM Spray (Start of flower IPM) | 🧴 | Flip | +0 days (first day of bloom = flip day) | Yes | **Yes** (disabled by default) |
+| 16 | Layout Trellis and Secure | 🕸️ | Flip | +1 day (day after flip) | Yes | — |
+| 17 | Preventative IPM Spray (Second week of flower IPM) | 🧴 | Flip | +7 days (second week of bloom) | Yes | **Yes** (disabled by default) |
+| 18 | Early Flower Leaf Pick | 🍃 | Flip | +21 days | Yes | — |
+| 19 | Cut Clones to Replace Lot | 🌿 | Harvest (start) | harvest start − 21 days (derived — follows bloom length; displayed offset vs flip = bloomLength − 21) | **No** (locked/derived) | — |
+| 20 | Late Flower Leaf Pick | 🍂 | Flip | +42 days | Yes | — |
+| 21 | Harvest | 🌾 | Flip | +63 days (9 weeks bloom) | **Yes** (cascades to all post-harvest tasks; optionally **multi-day** — default 2 days when checked, and post-harvest tasks then cascade from the harvest *end* date) | — |
+| 22 | Grow-Room Clean | 🧹 | Harvest | +1 day | Yes | — |
+| 23 | Tank and Irrigation Line Clean | 🚿 | Harvest | +2 days (day after grow-room clean) | Yes | — |
+| 24 | Clean and Prepare Totes for Bucking | 🧺 | Harvest | +9 days (day before bucking) | Yes | — |
+| 25 | Dry Room Take-Down / Bucking | 📦 | Harvest | +10 days | Yes | — |
+| 26 | Prepare Sample for Lab Testing | 🔬 | Harvest | +10 days | Yes | — |
+| 27 | Prepare Trim Room | 🧽 | Harvest | +10 days (day before trim starts) | Yes | — |
+| 28 | Trim | ✂️ | Harvest (end, when multi-day) | +11 days; **length is user-selectable** (default 7 days, editable 1–30 in the preview) | Yes | — |
+| 29 | Machine Trim Smalls | ⚙️ | Trim Start | +7 days (day after trim ends at default length) | Yes | **Yes** (enabled by default) |
+| 30 | Clean Dry Room | 🧼 | Trim Start | +7 days (day after trim ends) | Yes | — |
+| 31 | Weigh Final Dry Weight and Send Lot to Processing | ⚖️ | Trim Start | +8 days (after trim ends) | Yes | — |
 
-**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Trellis Layout, Early Leaf Pick, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Tank & Irrigation Clean, Tote Prep, Bucking, Lab Sample, Prepare Trim Room, Trim) by the same delta. **Clone Cut is derived/locked** — it always lands at harvest start − 21 days, so it follows the bloom length automatically rather than being an independently editable flip-relative task. Similarly, adjusting the Harvest offset shifts all post-harvest tasks (and Clone Cut), and adjusting the Trim offset shifts the three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship).
+**Optional IPM sprays:** the four 🧴 preventative spray tasks are toggleable in the preview and **default to off** (`defaultEnabled: false`). When enabled, they behave like any other task — editable offset, clickable date badge, holiday checks. The two flower-room sprays (Start of flower, Second week of flower) are bloom-dependent: they shift with Flip-to-Flower edits and with projection re-anchoring/bloom-length changes, exactly like the other flip-relative tasks. When a lot's stored schedule is loaded, a toggleable task absent from its events is inferred to have been disabled at generation time (its preview checkbox renders unchecked).
+
+**Cascade behavior:** Adjusting the Flip to Flower offset shifts all flip-relative tasks (Flower IPM Sprays when enabled, Trellis Layout, Early Leaf Pick, Late Leaf Pick, Harvest) and all harvest-relative tasks (Room Clean, Tank & Irrigation Clean, Tote Prep, Bucking, Lab Sample, Prepare Trim Room, Trim) by the same delta. **Clone Cut is derived/locked** — it always lands at harvest start − 21 days, so it follows the bloom length automatically rather than being an independently editable flip-relative task. Similarly, adjusting the Harvest offset shifts all post-harvest tasks (and Clone Cut), and adjusting the Trim offset shifts the three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship).
 
 **Multi-day durations:**
 - **Trim length** is user-selectable in the preview (1–30 days, default 7). The three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship) are re-based so they always land 1–2 days after trim *ends*, regardless of the chosen length.
@@ -62,7 +68,8 @@ CropLabourWizard appends events to the shared `calendarEvents` array using `"sou
 
 - **Title:** Emoji + `Room code-Strain name#Lot number` + `, task name` (e.g., `"🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower"`). The room code is **per-task**, based on which phase of the crop cycle the task belongs to:
   - **Cutting Clones** (`clone_cut_prep`) and **Clean Clone Room and used cloning supplies** (`clone_room_clean`) → the lot's `cloningRoom` (room name stored on the lot; resolved to a room ID via `rooms.<roomId>.name`).
-  - **Tasks before Transplanting to Flower Room** (Planting, Topping, Order IPM) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
+  - **Tasks before Transplanting to Flower Room** (Planting, Preventative IPM Spray Early veg, Topping, Order IPM) and **Clean Vegetation Room** (`veg_room_clean`, which happens after transplant but in the veg room) → the lot's `vegRoom`.
+  - **Preventative IPM Spray (Second veg IPM)** happens the day *after* transplanting — the plants are already in the flower room, so it resolves to the destination (flower) room like everything post-transplant.
   - **Lay-out & Spike Coco Blocks for Hydrating** (`layout_coco_blocks`), **Hydrate coco blocks for transplanting** (`hydrate_coco_blocks`), and **Install undercanopy lights and air socks** (`undercanopy_lights`) are explicit exceptions: although they're listed *before* transplant for chronological display (they're prepped the day(s) before plants arrive), they happen in the flower room, so they resolve to the destination (flower) room.
   - **Transplant and everything else after** (incl. post-harvest tasks like Tank & Irrigation line clean, Prepare Trim Room, and post-trim tasks: Machine Trim Smalls, Clean Dry Room, Weigh & Ship) → the lot's destination (flower) room — resolved from `rooms.<roomId>.assignedLots` containing the lot, falling back to matching the lot's `destRoom` name against `rooms.<roomId>.name`.
 
