@@ -370,7 +370,7 @@ Each flowering room gets exactly **5** projected lots forming a chain:
 
 **Pending-reprojection state (inferred, never stored).** A room is *pending reprojection* when its `{roomId}-TBA-01` map entry is **absent** AND at least one of TBA-2…TBA-5 is present. This state arises naturally from the deletion hook (which removes only TBA-1) and requires no stored flag — CropLabourWizard infers it on load and after every DB update. While pending, TBA-2…TBA-5 are displayed with the ⚠️ stale indicator and count toward the status-bar stale total (display-only; their events still exist). A room whose full 5-entry chain is intact is never pending, even if some entries have no events (that is ordinary staleness, healed by a normal projection).
 
-**Trigger & gate.** Reprojection is **manual** — it runs only when the user clicks the header button (whose label swaps from "Project Crop" to "Reproject" while the room is pending; see UI below). It is available only once the room's active real lot (the first non-projected lot in `room.assignedLots`) has a generated CropLabourWizard schedule — i.e., it has `CropLabourWizard` calendar events. Until then the button stays disabled with a tooltip explaining that the new lot needs a schedule first. The real lot's schedule is a **gate only**: reprojection does not read its dates and does not re-anchor the surviving lots to it.
+**Trigger & gate.** Reprojection is **manual** — it runs only when the user clicks the header button (whose label swaps from "Project Crop" to "Reproject" while the room is pending; see UI below). It is available only once the room's active real lot (the first non-projected lot in `room.assignedLots`) has a generated CropLabourWizard schedule — i.e., it has `CropLabourWizard` calendar events. Until then the button stays disabled with a tooltip explaining that the new lot needs a schedule first. The real lot's schedule gates availability, and its `tank_irrigation_clean` date drives the late-arrival push-back (below) — but reprojection never re-anchors the surviving lots to the real lot's harvest.
 
 **Algorithm.**
 1. **Rename pass, low → high (i = 2 up to 5):** for each index `i` where `{roomId}-TBA-{i}` exists, rename it to index `i−1`:
@@ -378,22 +378,20 @@ Each flowering room gets exactly **5** projected lots forming a chain:
    - the entry's `name` field (same new ID);
    - every matching calendar event's `lotId`, **and** the lot-ID token inside each stored event `title` (titles embed the lot ID, e.g. `"🌸 G1B6-TBA-02, Flip to Flower"` → `"🌸 G1B6-TBA-01, Flip to Flower"`).
    Renaming low-to-high is safe because every target slot is already free: TBA-1 is absent by the pending precondition, and each later slot was just vacated by the previous rename. (Renaming high-to-low would clobber an entry that still needs to move.)
-2. **Top up the chain:** generate one fresh lot named `{roomId}-TBA-05` exactly the way a new projection is made — `defaultOffsetsSnapshot(projectionBloomDays)` + default durations — with Day 0 = the highest-indexed surviving lot's harvest **start** − 21 days (normally the just-renamed TBA-4).
+2. **Late-arrival push-back:** compute a per-slot plan (`computeReprojectionPushes`) *before* mutating anything. For each slot 1..4, ensure its transplant lands at least 1 day after the previous lot's `tank_irrigation_clean` (the real lot is "previous" for slot 1). A lot earlier than that is pushed back by the minimum delta; a lot already late enough stays put (its planned delay absorbs the push) and stops the cascade through it. Stale / position-less lots are regenerated at the required position. If any push is needed, a blocking `confirm()` shows the per-lot breakdown — **cancel leaves the chain untouched**.
+3. **Apply + top up:** apply each planned shift via `reAnchorProjectedLot` (no bloom change), then generate one fresh `{roomId}-TBA-05` exactly the way a new projection is made — `defaultOffsetsSnapshot(projectionBloomDays)` + default durations — with Day 0 = slot 4's irrigation-clean + 1 day − 24 (its required transplant minus 24).
 
-Renamed lots keep their existing dates and per-task offsets verbatim; only the new TBA-5 is generated fresh, and it is the only lot affected by the current bloom-length toggle. After reprojection the room has a full 5-lot chain again and is no longer pending.
+Pushed lots keep their per-task offsets verbatim (the whole schedule shifts by the same delta); only the new TBA-5 is generated fresh, and it is the only lot affected by the current bloom-length toggle. After reprojection the room has a full 5-lot chain again and is no longer pending.
 
-### Future Concept — Late-Arrival Push-Back (documented, NOT implemented)
+### Late-Arrival Push-Back (implemented)
 
-> **Status: concept only.** This is a planned capability that has been deliberately scoped but **must not be implemented yet**. It is documented here so the design intent is captured; no code exists for it and none should be added until this work is explicitly started.
+When a new real crop comes into a room, its actual schedule may land **later** than the day the chain planned. If the new lot's room cleaning (`tank_irrigation_clean`, the last room-prep task) lands too close to the next TBA lot's transplant, reprojection pushes the affected TBA lots back by the **minimum** needed so each transplant lands at least **1 day** after the previous lot's irrigation-clean.
 
-When a new real crop comes into a room, its actual schedule may land **later** than the day the chain planned to cut its replacement clones (the previous lot's `clone_cut` / "Cut Clones to Replace Lot" day). In that case the new lot's later start can push back the TBA lots that follow it. The intended behavior:
-
-- **Detection:** compare the incoming real lot's effective start against the planned clone-cut day for its slot. If the crop came in later than the planned cut day, a push-back is possible.
-- **User consent:** the push-back is **never automatic**. A warning is shown explaining that the late arrival will shift the following TBA lots; the change only happens if the user accepts it.
-- **Minimum push:** when accepted, each affected TBA lot is pushed back by the **minimum amount** required to keep its own "Cut Clones to Replace Lot" day at exactly **21 days before its harvest start** (the standing clone-cut rule). A lot is never pushed more than necessary — only enough so its clone cut still follows the 21-day-before-harvest rule relative to the lot ahead of it.
-- **Scope:** only the TBA lots *after* the late-arriving lot are affected; the real lot's own schedule is untouched.
-
-Open questions to resolve when this work starts: which UI surface hosts the warning/accept flow (reprojection vs. a dedicated step), how the push composes with reprojection's rename pass, and whether multiple consecutive late arrivals compound.
+- **Detection:** for each slot 1..4 (after the rename pass), compare the lot's current transplant date against `previous lot's irrigation-clean + 1 day` (the real lot is "previous" for slot 1). If it is earlier, a push is required.
+- **Minimum push:** the lot shifts by exactly the shortfall (`requiredTransplant − currentTransplant`); its whole schedule moves by that delta (per-task offsets preserved). A lot already late enough — whose planned delay absorbs the push — stays put and stops the cascade through it.
+- **Cascade:** each pushed lot's irrigation-clean moves forward by the same delta, so the requirement propagates down the chain to a fresh TBA-5. Stale / position-less lots are regenerated at the required position.
+- **User consent:** never automatic. When any push is needed, a blocking `confirm()` shows a per-lot breakdown (e.g. `TBA-01: +5d (Mar 14 → Mar 19)`, `TBA-03: unchanged (planned delay absorbs it)`, `TBA-05: new — transplants Jul 31`) with a headline naming the push to the next lot. **Cancel = no changes at all** (the plan is computed before any mutation).
+- **Scope:** only TBA lots after the late-arriving lot are affected; the real lot's own schedule is untouched. The gate is purely room-readiness (irrigation-clean vs. next transplant) — it does not re-anchor to the real lot's harvest date.
 
 ### Calendar Events — `sourceTool: 'CropProjection'`
 

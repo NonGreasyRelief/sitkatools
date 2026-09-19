@@ -2269,6 +2269,81 @@
             showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projectionBloomDays / 7}-week bloom)`);
         }
 
+        // A lot's effective "Tank and Irrigation Line Clean" date — the last room-prep task, i.e. when
+        // the room is ready for the next crop to be transplanted in. Reads the actual event; falls back
+        // to harvest end + 2 (the task's default offset) if the task is missing or disabled.
+        function effectiveIrrigationClean(lotId) {
+            const events = eventsForLot(lotId);
+            const irr = events.find(ev => ev.taskType === 'tank_irrigation_clean');
+            if (irr) return irr.date;
+            const h = events.find(ev => ev.taskType === 'harvest');
+            if (h) return computeTaskDate(h.endDate || h.date, 2);
+            return null;
+        }
+
+        // Short display date for warning text (e.g. "2026-03-14" → "Mar 14")
+        const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function shortDate(dateStr) {
+            if (!dateStr) return '?';
+            const d = new Date(dateStr + 'T00:00:00');
+            return SHORT_MONTHS[d.getMonth()] + ' ' + d.getDate();
+        }
+
+        // Late-arrival push-back plan for a pending room's reprojection. Pure — reads only, writes nothing.
+        // After the rename pass, slot i will hold current TBA-(i+1). For each slot 1..4 we ensure its
+        // transplant lands at least 1 day after the previous lot's irrigation-clean (room readiness). A
+        // lot already late enough (planned delay absorbs it) stays put; otherwise it is pushed back by the
+        // minimum delta. Stale / position-less lots are regenerated at the required position. Slot 5 is fresh.
+        // Returns an array of per-slot plans, or null if the real lot has no usable irrigation-clean anchor.
+        function computeReprojectionPushes(roomId, newRealLotId) {
+            const startIrr = effectiveIrrigationClean(newRealLotId);
+            if (!startIrr) return null;
+
+            const plan = [];
+            let prevIrr = startIrr;
+
+            for (let i = 1; i <= PROJECTION_LOT_COUNT - 1; i++) {
+                const currentLotId = projectedLotId(roomId, i + 1); // lot that will move into slot i
+                const requiredTransplant = computeTaskDate(prevIrr, 1);
+                const events = eventsForLot(currentLotId);
+
+                let currentTransplant = null;
+                if (events.length > 0) {
+                    const tEv = events.find(ev => ev.taskType === 'transplant');
+                    if (tEv) currentTransplant = tEv.date;
+                    else {
+                        const cfg = getProjectedLots()[currentLotId]?.config;
+                        if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, 24);
+                    }
+                }
+                const lotIrr = effectiveIrrigationClean(currentLotId);
+
+                if (!currentTransplant || !lotIrr) {
+                    // Stale or position-less — regenerate fresh at the required position
+                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    plan.push({ index: i, currentLotId, action: 'regen', delta: null, transplantBefore: null, transplantAfter: requiredTransplant, day0 });
+                    prevIrr = computeTaskDate(day0, 34 + projectionBloomDays + 2);
+                    continue;
+                }
+
+                const delta = daysBetween(currentTransplant, requiredTransplant);
+                if (delta > 0) {
+                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    plan.push({ index: i, currentLotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0 });
+                    prevIrr = computeTaskDate(lotIrr, delta); // pushed forward by the same delta
+                } else {
+                    plan.push({ index: i, currentLotId, action: 'keep', delta: 0, transplantBefore: currentTransplant, transplantAfter: currentTransplant, day0: null });
+                    prevIrr = lotIrr; // unchanged — its planned delay absorbs the push
+                }
+            }
+
+            // Slot 5 — fresh lot at the required position
+            const requiredTransplant5 = computeTaskDate(prevIrr, 1);
+            plan.push({ index: PROJECTION_LOT_COUNT, currentLotId: null, action: 'fresh', delta: null, transplantBefore: null, transplantAfter: requiredTransplant5, day0: computeTaskDate(requiredTransplant5, -24) });
+
+            return plan;
+        }
+
         // Reproject a pending room: shift the surviving chain down one slot (TBA-2→TBA-1, …, TBA-5→TBA-4)
         // and generate one fresh TBA-5. The rename pass runs LOW → HIGH (i = 2 up to 5) so every target
         // slot is already free — TBA-1 is absent by the pending precondition, and each later slot was just
@@ -2295,6 +2370,28 @@
             DB.ensureStructure();
             const map = ensureProjectedLots();
 
+            // Late-arrival push-back: compute the per-slot plan BEFORE mutating anything, so a cancelled
+            // warning leaves the chain completely untouched.
+            const plan = computeReprojectionPushes(roomId, activeRealLotId);
+            if (plan) {
+                const affected = plan.filter(s => s.action === 'push' || s.action === 'regen');
+                if (affected.length > 0) {
+                    const firstPushed = plan.find(s => s.action === 'push');
+                    const headlineDelta = firstPushed ? firstPushed.delta : Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta));
+                    let msg = `⚠️ The new lot (${activeRealLotId}) arrived late — its room cleaning lands too close to the next transplant.\n\n`;
+                    msg += `This will push back the schedule of the next lot by ${headlineDelta} day${headlineDelta === 1 ? '' : 's'}.\n\n`;
+                    for (const s of plan) {
+                        const label = `TBA-${String(s.index).padStart(2, '0')}`;
+                        if (s.action === 'push') msg += `${label}: +${s.delta}d (${shortDate(s.transplantBefore)} → ${shortDate(s.transplantAfter)})\n`;
+                        else if (s.action === 'regen') msg += `${label}: rebuilt — transplants ${shortDate(s.transplantAfter)}\n`;
+                        else if (s.action === 'keep') msg += `${label}: unchanged (planned delay absorbs it)\n`;
+                        else if (s.action === 'fresh') msg += `${label}: new — transplants ${shortDate(s.transplantAfter)}\n`;
+                    }
+                    msg += `\nApply these changes?`;
+                    if (!confirm(msg)) return; // cancel → no changes at all
+                }
+            }
+
             // Rename pass, low → high (i = 2 up to 5): target slot i−1 is always free.
             for (let i = 2; i <= PROJECTION_LOT_COUNT; i++) {
                 const oldId = projectedLotId(roomId, i);
@@ -2317,12 +2414,30 @@
                 }
             }
 
-            // Top up: fresh TBA-5, Day 0 = highest-indexed surviving lot's harvest start − 21
-            // (walk down in case the top lot is stale/event-less; today as last resort)
-            let day0 = localDateStr(new Date());
-            for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
-                const h = eventsForLot(projectedLotId(roomId, i)).find(ev => ev.taskType === 'harvest');
-                if (h) { day0 = computeTaskDate(h.date, -21); break; }
+            // Apply the push-back plan: shift/regenerate slots 1..4 to their target Day 0. Without
+            // bloomDays, reAnchorProjectedLot shifts every event by (targetDay0 − oldDay0) — exactly the
+            // planned delta — or regenerates a stale lot fresh at the target. "keep" slots are untouched.
+            if (plan) {
+                for (const s of plan) {
+                    if ((s.action === 'push' || s.action === 'regen') && s.day0) {
+                        reAnchorProjectedLot(roomId, s.index, s.day0);
+                    }
+                }
+            }
+
+            // Top up: fresh TBA-5 at the plan's computed Day 0 (walk-down fallback if no plan).
+            let day0 = null;
+            if (plan) {
+                const fresh = plan.find(s => s.index === PROJECTION_LOT_COUNT);
+                if (fresh && fresh.day0) day0 = fresh.day0;
+            }
+            if (!day0) {
+                // Fallback: highest-indexed surviving lot's harvest start − 21 (today as last resort)
+                day0 = localDateStr(new Date());
+                for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
+                    const h = eventsForLot(projectedLotId(roomId, i)).find(ev => ev.taskType === 'harvest');
+                    if (h) { day0 = computeTaskDate(h.date, -21); break; }
+                }
             }
 
             const tba5Id = projectedLotId(roomId, PROJECTION_LOT_COUNT);
@@ -2340,7 +2455,11 @@
             updateProjectBtnState();
             refreshPreview();
             notifySitkaTools();
-            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added (${projectionBloomDays / 7}-week bloom)`);
+
+            const pushCount = plan ? plan.filter(s => s.action === 'push' || s.action === 'regen').length : 0;
+            const maxDelta = plan ? Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta)) : 0;
+            const pushNote = pushCount > 0 ? `, ${pushCount} lot${pushCount === 1 ? '' : 's'} pushed back up to ${maxDelta}d` : '';
+            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projectionBloomDays / 7}-week bloom)`);
         }
 
         // True reset for one room: delete ALL of its CropProjection events (matched by roomId) and
