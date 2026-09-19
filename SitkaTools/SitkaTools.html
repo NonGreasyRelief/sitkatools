@@ -3339,14 +3339,13 @@
 
             markUnsaved();
 
-            // A real lot taking a flowering room's slot "takes" that room — clear its projections.
-            // Only the CropProjection calendar events are deleted; the _CropLabourWizard.projectedLots
-            // map is left untouched (CLW flags those lots stale for manual regeneration).
+            // A real lot taking a flowering room's slot "takes" TBA-1: delete only the TBA-01 map
+            // entry + its events. TBA-2…TBA-5 survive — the room is now pending reprojection.
             let projNote = '';
             if (matchedRoomId && DB.data.rooms[matchedRoomId] && DB.data.rooms[matchedRoomId].isFlowering) {
-                const cleared = clearRoomProjections(matchedRoomId);
-                if (cleared > 0) {
-                    projNote = `\n\n🔮 ${cleared} projected calendar event${cleared === 1 ? '' : 's'} for this room were cleared — regenerate them in CropLabourWizard when ready.`;
+                const res = deleteTBA1Projection(matchedRoomId);
+                if (res.removedEntry || res.deletedEvents > 0) {
+                    projNote = `\n\n🔮 TBA-01 projection for this room was removed — the room is flagged for reprojection. Generate a schedule for this lot, then run Reproject in CropLabourWizard.`;
                 }
             }
 
@@ -3593,23 +3592,38 @@
             return div.innerHTML;
         }
 
-        // ---- Crop Projection deletion hook (see root Agent.MD) ----
-        // When a real lot takes a flowering room's slot, that room's projected lots are "taken":
-        // delete ONLY the room's CropProjection calendar events. The _CropLabourWizard.projectedLots
-        // map is NEVER touched — it survives byte-for-byte and CLW flags those lots stale (⚠️) for
-        // manual regeneration via its Generate Projections button.
-        function clearRoomProjections(roomId) {
-            if (!DB.data || !Array.isArray(DB.data.calendarEvents)) return 0;
-            const before = DB.data.calendarEvents.length;
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev =>
-                !(ev.sourceTool === 'CropProjection' && ev.roomId === roomId)
-            );
-            const deleted = before - DB.data.calendarEvents.length;
-            if (deleted > 0) {
-                markUnsaved();
-                broadcastToCropLabourWizard(); // push fresh DB so open CLW windows flag the lots stale
+        // ---- Crop Projection deletion hook (see root Agent.MD — "Deletion Hook — SitkaTools") ----
+        // When a real lot takes a flowering room's slot, only TBA-1 is "taken": delete its map
+        // entry and its CropProjection calendar events. TBA-2…TBA-5 survive untouched (entries +
+        // events) — the room becomes *pending reprojection*, which CLW infers from the missing
+        // TBA-1 entry. Idempotent: a no-op when the room has no TBA-1 projection.
+        function deleteTBA1Projection(roomId) {
+            const result = { deletedEvents: 0, removedEntry: false };
+            if (!DB.data || !roomId) return result;
+
+            const tba1Id = `${roomId}-TBA-01`;
+
+            // 1. Delete the TBA-1 map entry (the one permitted exception to CLW's ownership of the map)
+            const clw = DB.data._CropLabourWizard;
+            if (clw && clw.projectedLots && clw.projectedLots[tba1Id]) {
+                delete clw.projectedLots[tba1Id];
+                result.removedEntry = true;
             }
-            return deleted;
+
+            // 2. Delete TBA-1's CropProjection calendar events (matched by lotId — NOT by roomId)
+            if (Array.isArray(DB.data.calendarEvents)) {
+                const before = DB.data.calendarEvents.length;
+                DB.data.calendarEvents = DB.data.calendarEvents.filter(ev =>
+                    !(ev.sourceTool === 'CropProjection' && ev.lotId === tba1Id)
+                );
+                result.deletedEvents = before - DB.data.calendarEvents.length;
+            }
+
+            if (result.removedEntry || result.deletedEvents > 0) {
+                markUnsaved();
+                broadcastToCropLabourWizard(); // push fresh DB so open CLW windows see the missing TBA-1
+            }
+            return result;
         }
 
         // Re-broadcast the current DB to any open CropLabourWizard windows via sitkaGit_db_update.
@@ -4043,10 +4057,11 @@
 
                 markUnsaved();
 
-                // Moving a real lot into a flowering room "takes" that room — clear its projections.
+                // Moving a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
+                // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
                 if (toRoom.isFlowering) {
-                    const cleared = clearRoomProjections(toRoomId);
-                    if (cleared > 0) showSyncToast(`🔮 Cleared ${cleared} projection event${cleared === 1 ? '' : 's'} for ${toRoom.name}`);
+                    const res = deleteTBA1Projection(toRoomId);
+                    if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${toRoom.name} — room flagged for reprojection`);
                 }
 
                 this.renderRoomList();
@@ -4083,10 +4098,11 @@
 
                 markUnsaved();
 
-                // Assigning a real lot into a flowering room "takes" that room — clear its projections.
+                // Assigning a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
+                // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
                 if (room.isFlowering) {
-                    const cleared = clearRoomProjections(roomId);
-                    if (cleared > 0) showSyncToast(`🔮 Cleared ${cleared} projection event${cleared === 1 ? '' : 's'} for ${room.name}`);
+                    const res = deleteTBA1Projection(roomId);
+                    if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${room.name} — room flagged for reprojection`);
                 }
 
                 this.renderRoomList();

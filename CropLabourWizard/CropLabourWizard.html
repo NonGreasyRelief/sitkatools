@@ -800,6 +800,7 @@
                 <button type="button" id="bloom9Btn" class="btn btn-secondary bloom-btn active">9 weeks</button>
             </div>
             <button type="button" class="btn btn-secondary btn-project" id="generateProjectionsBtn" disabled title="Select a lot to project its crop">🔮 Project Crop</button>
+            <button type="button" class="btn btn-secondary btn-project" id="clearProjectionsBtn" disabled title="Clears all projections for the selected lot's room">🧹 Clear Projections</button>
             <div class="form-group">
                 <label for="activeLot">Active Lot</label>
                 <select id="activeLot">
@@ -1017,7 +1018,6 @@
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
-                if (migrateProjectedLotIds()) notifySitkaTools();
 
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
@@ -1148,6 +1148,29 @@
             return isProjectedLot(lotId) && eventsForLot(lotId).length === 0;
         }
 
+        // Pending-reprojection inference (display-only, never stored): a room is pending when its
+        // TBA-1 map entry is absent AND at least one of TBA-2…TBA-5 is present. This arises from
+        // SitkaTools' deletion hook removing only TBA-1. A full 5-entry chain is never pending,
+        // even if some entries have no events (that is ordinary staleness).
+        function isPendingReprojection(roomId) {
+            if (!roomId) return false;
+            const projLots = getProjectedLots();
+            if (projLots[projectedLotId(roomId, 1)]) return false; // TBA-1 present → not pending
+            for (let i = 2; i <= PROJECTION_LOT_COUNT; i++) {
+                if (projLots[projectedLotId(roomId, i)]) return true;
+            }
+            return false;
+        }
+
+        // Stale for display purposes: no events, OR the lot's room is pending reprojection —
+        // surviving TBA-2…TBA-5 await renumbering, so they get the ⚠️ indicator even though
+        // their events still exist.
+        function isStaleOrPending(lotId) {
+            if (isStaleProjectedLot(lotId)) return true;
+            const p = getProjectedLots()[lotId];
+            return !!(p && isPendingReprojection(p.roomId));
+        }
+
         // ---- Populate Lot Selector ----
         // Lots are grouped by destination (flower) room. Each room that has lots
         // assigned gets an unselectable divider ("↓ Room Name"), with its lots listed
@@ -1216,7 +1239,7 @@
                         const p = projLots[lotId];
                         const opt = document.createElement('option');
                         opt.value = lotId;
-                        opt.textContent = `🔮 ${p.name}${isStaleProjectedLot(lotId) ? ' ⚠️' : ''}`;
+                        opt.textContent = `🔮 ${p.name}${isStaleOrPending(lotId) ? ' ⚠️' : ''}`;
                         sel.appendChild(opt);
                     });
                 });
@@ -1968,6 +1991,9 @@
                 trimDays = DEFAULT_TRIM_DAYS;
                 harvestMultiDay = false;
                 harvestDays = DEFAULT_HARVEST_DAYS;
+                // Suggested cloning day defaults to the lot's created date (real lots only)
+                const lot = isProjectedLot(lotId) ? null : (DB.lots[lotId] || null);
+                if (lot && lot.createdDate) plantingDateInput.value = lot.createdDate;
             }
         }
 
@@ -1998,60 +2024,6 @@
         // room's, and the TBA marker distinguishes them from real lots.
         function projectedLotId(roomId, index) {
             return `${roomId}-TBA-${String(index).padStart(2, '0')}`;
-        }
-
-        // One-time migration: legacy synthetic IDs → room-scoped IDs ("{roomId}-TBA-{index}").
-        // Handles both the original "PROJ-{roomId}-{index}" scheme and the intermediate
-        // non-room-scoped "01"–"05" scheme (which collided across rooms). Renames the map
-        // keys, rewrites lotId on CropProjection events, and updates any generation log
-        // entries that reference a projected ID. Runs on load / DB import; no-op once done.
-        function migrateProjectedLotIds() {
-            const clw = DB.data?._CropLabourWizard;
-            if (!clw) return false;
-
-            // Build the old → new ID map first (before touching anything)
-            const renames = {};
-            const map = clw.projectedLots || {};
-            for (const [oldId, entry] of Object.entries(map)) {
-                let roomId = null;
-                let index = null;
-                if (/^PROJ-/.test(oldId)) {
-                    // Legacy: "PROJ-{roomId}-{index}" — room in the ID, index at the end
-                    roomId = entry.roomId || (oldId.match(/^PROJ-(.*)-\d+$/) || [])[1];
-                    index = parseInt((entry.index ?? oldId.split('-').pop()), 10);
-                } else if (/^0\d$/.test(oldId)) {
-                    // Intermediate: "01"–"05" — room only on the map entry
-                    roomId = entry.roomId;
-                    index = parseInt(entry.index ?? oldId, 10);
-                } else {
-                    continue; // already migrated (or foreign key)
-                }
-                if (!roomId || !Number.isFinite(index)) continue;
-                renames[oldId] = projectedLotId(roomId, index);
-            }
-
-            if (Object.keys(renames).length === 0) return false;
-
-            // Rename map keys (if a target already exists, the old entry is dropped as a stale duplicate)
-            for (const [oldId, newId] of Object.entries(renames)) {
-                if (map[newId]) { delete map[oldId]; continue; }
-                map[newId] = map[oldId];
-                delete map[oldId];
-            }
-
-            // Rewrite event references (projection events only — real lots never used synthetic IDs)
-            for (const ev of DB.data.calendarEvents || []) {
-                if (ev.sourceTool === 'CropProjection' && renames[ev.lotId]) {
-                    ev.lotId = renames[ev.lotId];
-                }
-            }
-
-            // Generation log entries are only written for real lots, but keep them consistent anyway
-            for (const g of clw.generations || []) {
-                if (renames[g.lotId]) g.lotId = renames[g.lotId];
-            }
-
-            return true;
         }
 
         // Task types whose dates move with the bloom length (everything from flip onward, except
@@ -2213,15 +2185,60 @@
             }
         }
 
+        // The NEWEST real lot in a room — the one with the latest createdDate (the crop that most
+        // recently came into the room). This is the lot projections anchor off, and the specific lot
+        // that must have a generated schedule before Project Crop is available. Returns the lotId,
+        // or null if the room has no real lots. Ties / missing dates fall back to assignedLots order.
+        function newestRealLotId(roomId) {
+            const room = (DB.data.rooms || {})[roomId];
+            if (!room) return null;
+            let bestId = null, bestDate = '';
+            for (const lotId of room.assignedLots || []) {
+                if (isProjectedLot(lotId)) continue;
+                const d = (DB.lots[lotId] || {}).createdDate || '';
+                if (!bestId || d.localeCompare(bestDate) >= 0) { bestId = lotId; bestDate = d; }
+            }
+            return bestId;
+        }
+
+        // Resolve the Lot-1 anchor + gate for a room's projection chain. Projections anchor off the
+        // NEWEST real lot in the room (latest createdDate) — specifically its "Cut Clones to Replace
+        // Lot" (clone_cut) day, or its start day (Day 0 / plantingDate) if it has no clone_cut event.
+        // The gate: that newest lot MUST have a generated schedule; if it doesn't (or the room has no
+        // real lots), returns null and Project Crop stays disabled. Returns { lotId, anchorDate } or null.
+        function resolveProjectionAnchor(roomId) {
+            const lotId = newestRealLotId(roomId);
+            if (!lotId) return null;
+            const events = eventsForLot(lotId);
+            if (events.length === 0) return null; // newest lot not scheduled yet — gate fails
+            const cut = events.find(ev => ev.taskType === 'clone_cut');
+            let anchorDate = cut ? cut.date : null;
+            if (!anchorDate) {
+                const cfg = getScheduleConfig(lotId);
+                anchorDate = cfg ? cfg.plantingDate : null; // start day / Day 0 fallback
+            }
+            if (!anchorDate) return null;
+            return { lotId, anchorDate };
+        }
+
         // Generate/refresh the full 5-lot projection chain for a flowering room.
-        // Lot 1 anchors to the room's active real lot's clone_cut event (the replacement cut
-        // lands exactly when the current lot's harvest window opens), or today if none.
-        // Never auto-runs — only via the Generate Projections button.
+        // Lot 1 anchors to the NEWEST real lot's "Cut Clones to Replace Lot" (clone_cut) day —
+        // or that lot's start day if it has no clone_cut event. Gated: that specific newest lot
+        // must have a generated schedule, else there is nothing to anchor off.
+        // Never auto-runs — only via the Project Crop button.
         function generateProjectionsForRoom(roomId) {
             const room = (DB.data.rooms || {})[roomId];
             if (!room) return;
             if (!room.isFlowering) {
                 alert(`"${room.name}" is not flagged as a flowering room.`);
+                return;
+            }
+
+            // Gate: the room's newest real lot must have a generated schedule to anchor off.
+            const anchor = resolveProjectionAnchor(roomId);
+            if (!anchor) {
+                const newestLotId = newestRealLotId(roomId);
+                showToast(`🔮 "${room.name}"'s newest lot${newestLotId ? ` (${newestLotId})` : ''} needs a generated schedule before Project Crop`);
                 return;
             }
 
@@ -2238,15 +2255,8 @@
                 }
             }
 
-            // Lot 1 anchor: active real lot's clone_cut event date, else today
-            let day0 = localDateStr(new Date());
-            for (const realLotId of room.assignedLots || []) {
-                if (isProjectedLot(realLotId)) continue;
-                const cut = eventsForLot(realLotId).find(ev => ev.taskType === 'clone_cut');
-                if (cut) { day0 = cut.date; break; }
-            }
-
-            reAnchorProjectedLot(roomId, 1, day0, projectionBloomDays);
+            // Lot 1 anchor: the newest real lot's clone_cut day (or its start day if no clone_cut)
+            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, projectionBloomDays);
             cascadeProjections(roomId, 2, projectionBloomDays);
 
             populateLotSelector();
@@ -2257,6 +2267,119 @@
             refreshPreview();
             notifySitkaTools();
             showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projectionBloomDays / 7}-week bloom)`);
+        }
+
+        // Reproject a pending room: shift the surviving chain down one slot (TBA-2→TBA-1, …, TBA-5→TBA-4)
+        // and generate one fresh TBA-5. The rename pass runs LOW → HIGH (i = 2 up to 5) so every target
+        // slot is already free — TBA-1 is absent by the pending precondition, and each later slot was just
+        // vacated by the previous rename. Renamed lots keep their dates/offsets verbatim; only IDs change.
+        // The real lot's schedule is a gate only — its dates are never read.
+        function reprojectRoom(roomId) {
+            const room = (DB.data.rooms || {})[roomId];
+            if (!room) return;
+            if (!isPendingReprojection(roomId)) {
+                showToast(`🔁 "${room.name}" isn't pending reprojection — use Project Crop instead`);
+                return;
+            }
+
+            // Gate: the room's active real lot (first non-projected in assignedLots) must have a CLW schedule
+            let activeRealLotId = null;
+            for (const lotId of room.assignedLots || []) {
+                if (!isProjectedLot(lotId)) { activeRealLotId = lotId; break; }
+            }
+            if (!activeRealLotId || eventsForLot(activeRealLotId).length === 0) {
+                showToast(`🔁 Generate a schedule for ${activeRealLotId || "the room's new lot"} first — reprojection needs it`);
+                return;
+            }
+
+            DB.ensureStructure();
+            const map = ensureProjectedLots();
+
+            // Rename pass, low → high (i = 2 up to 5): target slot i−1 is always free.
+            for (let i = 2; i <= PROJECTION_LOT_COUNT; i++) {
+                const oldId = projectedLotId(roomId, i);
+                const entry = map[oldId];
+                if (!entry) continue; // gap in the chain — skip; top-up below refills the tail
+                const newId = projectedLotId(roomId, i - 1);
+
+                // Map key + name + index (selector sorts by index)
+                delete map[oldId];
+                entry.name = newId;
+                entry.index = i - 1;
+                map[newId] = entry;
+
+                // Events: lotId + the lot-ID token embedded in each stored title
+                for (const ev of DB.data.calendarEvents || []) {
+                    if (ev.sourceTool === 'CropProjection' && ev.lotId === oldId) {
+                        ev.lotId = newId;
+                        if (typeof ev.title === 'string') ev.title = ev.title.split(oldId).join(newId);
+                    }
+                }
+            }
+
+            // Top up: fresh TBA-5, Day 0 = highest-indexed surviving lot's harvest start − 21
+            // (walk down in case the top lot is stale/event-less; today as last resort)
+            let day0 = localDateStr(new Date());
+            for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
+                const h = eventsForLot(projectedLotId(roomId, i)).find(ev => ev.taskType === 'harvest');
+                if (h) { day0 = computeTaskDate(h.date, -21); break; }
+            }
+
+            const tba5Id = projectedLotId(roomId, PROJECTION_LOT_COUNT);
+            if (!map[tba5Id]) {
+                map[tba5Id] = { name: tba5Id, roomId, roomName: room.name, strain: 'TBA', index: PROJECTION_LOT_COUNT };
+            }
+            generateLotSchedule(tba5Id, day0, defaultOffsetsSnapshot(projectionBloomDays), {
+                trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
+            });
+
+            populateLotSelector();
+            renderScheduleList();
+            updateStatusBar();
+            updateGenerateBtnLabel();
+            updateProjectBtnState();
+            refreshPreview();
+            notifySitkaTools();
+            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added (${projectionBloomDays / 7}-week bloom)`);
+        }
+
+        // True reset for one room: delete ALL of its CropProjection events (matched by roomId) and
+        // remove every {roomId}-TBA-* map entry. The next "Project Crop" starts from a fresh chain.
+        // The confirmation dialog lives in the UI layer (button handler), not here.
+        function clearAllProjectionsForRoom(roomId) {
+            if (!DB.data || !roomId) return { deletedEvents: 0, removedEntries: 0 };
+            const result = { deletedEvents: 0, removedEntries: 0 };
+
+            // 1. Delete all of the room's projection events (roomId is always present on them)
+            if (Array.isArray(DB.data.calendarEvents)) {
+                const before = DB.data.calendarEvents.length;
+                DB.data.calendarEvents = DB.data.calendarEvents.filter(ev =>
+                    !(ev.sourceTool === 'CropProjection' && ev.roomId === roomId)
+                );
+                result.deletedEvents = before - DB.data.calendarEvents.length;
+            }
+
+            // 2. Remove every {roomId}-TBA-* map entry (prefix match — covers any index)
+            const clw = DB.data._CropLabourWizard;
+            if (clw && clw.projectedLots) {
+                for (const lotId of Object.keys(clw.projectedLots)) {
+                    if (lotId.startsWith(`${roomId}-TBA-`)) {
+                        delete clw.projectedLots[lotId];
+                        result.removedEntries++;
+                    }
+                }
+            }
+
+            if (result.deletedEvents > 0 || result.removedEntries > 0) {
+                populateLotSelector();
+                renderScheduleList();
+                updateStatusBar();
+                updateGenerateBtnLabel();
+                updateProjectBtnState();
+                refreshPreview();
+                notifySitkaTools();
+            }
+            return result;
         }
 
         // ---- Build event title: "Room code-Strain name#Lot number, task" ----
@@ -2322,6 +2445,11 @@
         }
 
         function buildEventTitle(def, lotId) {
+            // Projected lots: the lotId already encodes room + "TBA" + index (e.g. "B66DG1-TBA-01"),
+            // so use it directly — prepending the room code would repeat it twice in the title.
+            if (isProjectedLot(lotId)) {
+                return `${def.emoji} ${lotId}, ${def.name}`;
+            }
             const lot = getLotRecord(lotId);
             const roomCode = getLotRoomCode(lotId, def.taskType);
             const strain = (lot.strain || '').trim();
@@ -2411,12 +2539,60 @@
         }
 
         // Grey out / enable the Project Crop button based on whether the selected lot can be projected.
+        // When the resolved room is pending reprojection, the label swaps to "🔁 Reproject" and the
+        // button stays disabled (with an explanatory tooltip) until the room's active real lot has a
+        // generated CLW schedule — then it runs reprojectRoom instead of generateProjectionsForRoom.
+        // Otherwise ("🔮 Project Crop") the button is disabled until the room's NEWEST real lot
+        // (latest createdDate) has a generated schedule — projections anchor off that lot's clone-cut day.
         function updateProjectBtnState() {
             const btn = $('generateProjectionsBtn');
             if (!btn) return;
-            const { disabledReason } = resolveProjectionRoom(activeLotSelect.value);
-            btn.disabled = !!disabledReason;
-            btn.title = disabledReason || 'Generate the 5-lot projection chain for this lot\'s room';
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+
+            if (roomId && isPendingReprojection(roomId)) {
+                btn.textContent = '🔁 Reproject';
+                let activeRealLotId = null;
+                for (const lotId of (DB.data.rooms[roomId].assignedLots || [])) {
+                    if (!isProjectedLot(lotId)) { activeRealLotId = lotId; break; }
+                }
+                const gated = !activeRealLotId || eventsForLot(activeRealLotId).length === 0;
+                btn.disabled = gated;
+                btn.title = gated
+                    ? `Reproject is available once ${activeRealLotId || "the room's new lot"} has a generated schedule`
+                    : 'Shift the surviving TBA chain down one slot and generate a fresh TBA-05';
+            } else {
+                btn.textContent = '🔮 Project Crop';
+                const anchor = roomId ? resolveProjectionAnchor(roomId) : null;
+                btn.disabled = !!disabledReason || !anchor;
+                const newestLotId = roomId ? newestRealLotId(roomId) : null;
+                btn.title = disabledReason
+                    || (!anchor
+                        ? `Project Crop is available once the room's newest lot${newestLotId ? ` (${newestLotId})` : ''} has a generated schedule`
+                        : 'Generate the 5-lot projection chain for this lot\'s room');
+            }
+
+            // Keep the Clear Projections button in sync (same resolved-room state)
+            updateClearProjectionsBtnState();
+        }
+
+        // Enable / grey out the Clear Projections button: enabled only when the resolved flowering
+        // room has at least one projected map entry or projection event.
+        function updateClearProjectionsBtnState() {
+            const btn = $('clearProjectionsBtn');
+            if (!btn) return;
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            if (disabledReason || !roomId) {
+                btn.disabled = true;
+                btn.title = disabledReason || 'Select a lot to clear its room\'s projections';
+                return;
+            }
+            const map = getProjectedLots();
+            const hasEntry = Object.keys(map).some(id => id.startsWith(`${roomId}-TBA-`));
+            const hasEvent = (DB.data.calendarEvents || []).some(ev => ev.sourceTool === 'CropProjection' && ev.roomId === roomId);
+            btn.disabled = !(hasEntry || hasEvent);
+            btn.title = btn.disabled
+                ? `No projections to clear for "${(DB.data.rooms[roomId] || {}).name || roomId}"`
+                : `Delete ALL projections (events + map entries) for ${(DB.data.rooms[roomId] || {}).name || roomId}`;
         }
 
         // ---- Bloom length toggle (8 / 9 weeks) — applies to projection chain generation only ----
@@ -2430,7 +2606,8 @@
         bloom8Btn.addEventListener('click', () => setProjectionBloom(56));
         bloom9Btn.addEventListener('click', () => setProjectionBloom(63));
 
-        // ---- Project Crop — 5-lot chain for the selected lot's room (button lives in the header) ----
+        // ---- Project Crop / Reproject — one button, two modes (button lives in the header) ----
+        // Pending room → reprojectRoom (shift chain down + fresh TBA-5); otherwise generateProjectionsForRoom.
         $('generateProjectionsBtn').addEventListener('click', () => {
             const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
             if (disabledReason) {
@@ -2438,7 +2615,35 @@
                 return;
             }
 
-            generateProjectionsForRoom(roomId);
+            if (isPendingReprojection(roomId)) reprojectRoom(roomId);
+            else generateProjectionsForRoom(roomId);
+        });
+
+        // ---- Clear Projections — true reset of the selected lot's room (confirm first) ----
+        $('clearProjectionsBtn').addEventListener('click', () => {
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            if (disabledReason || !roomId) return;
+
+            const roomName = (DB.data.rooms[roomId] || {}).name || roomId;
+            if (!confirm(`Clear ALL projections for "${roomName}"?\n\nThis deletes every projected crop event and all TBA map entries for the room. The next "Project Crop" starts from a completely fresh chain.`)) return;
+
+            const selectedLot = activeLotSelect.value;
+            const wasProjected = isProjectedLot(selectedLot); // capture before the wipe removes the entry
+            const res = clearAllProjectionsForRoom(roomId);
+
+            // If the currently selected lot was one of the wiped projected lots, reset the form
+            if (wasProjected) {
+                activeLotSelect.value = '';
+                buildDefaultOffsets();
+                updateFormFromStoredConfig();
+                refreshPreview();
+                renderScheduleList();
+                updateGenerateBtnLabel();
+                updateProjectBtnState();
+                updateClearProjectionsBtnState();
+            }
+
+            showToast(`🧹 Cleared ${res.deletedEvents} projection event${res.deletedEvents === 1 ? '' : 's'} and ${res.removedEntries} TBA entr${res.removedEntries === 1 ? 'y' : 'ies'} for ${roomName}`);
         });
 
         // ---- Clear Schedule — remove all CropLabourWizard events for the selected lot ----
@@ -2605,10 +2810,11 @@
             const scheduledLots = Object.values(DB.lots).filter(l => l._tool_CropLabourWizard).length;
             let statusMsg = `Database loaded — ${lotCount} lots, ${scheduledLots} with schedules`;
 
-            // Projection summary (flowering rooms + projected lots, stale flagged)
+            // Projection summary (flowering rooms + projected lots, stale flagged).
+            // Pending-reprojection lots (TBA-1 deleted, TBA-2…5 surviving) count as stale here.
             const floweringRooms = Object.values(DB.data.rooms || {}).filter(r => r.isFlowering).length;
             const projIds = Object.keys(getProjectedLots());
-            const staleCount = projIds.filter(isStaleProjectedLot).length;
+            const staleCount = projIds.filter(isStaleOrPending).length;
             if (floweringRooms > 0 || projIds.length > 0) {
                 statusMsg += ` · 🌸 ${floweringRooms} flowering room${floweringRooms === 1 ? '' : 's'} · 🔮 ${projIds.length} projected${staleCount ? ` (${staleCount} stale)` : ''}`;
             }
