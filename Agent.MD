@@ -362,7 +362,7 @@ Each flowering room gets exactly **5** projected lots forming a chain:
 - **Chain rule:** Lot(k+1) Day 0 = Lot(k) harvest **start** − 21 days. With the default 63-day bloom, consecutive Day 0s are exactly **76 days apart**; the 5 lots span ~420 days (~14 months). With an 8-week (56-day) bloom they are **69 days apart** (~345 days / ~11.5 months for 5 lots).
 - **Bloom length toggle:** the header's 8/9-week buttons set `projectionBloomDays` (56 or 63, default 63). It only affects projection chain generation — not manual preview editing. Because `clone_cut` stays at harvest start − 21, the chain cadence remains correct for either bloom length.
 - **Anchor for Lot 1:** Lot 1's Day 0 = the "Cut Clones to Replace Lot" (`clone_cut`) day of the room's **newest real lot** — the one with the latest `createdDate` (the crop that most recently came into the room) — or that lot's start day (Day 0 / `plantingDate`) if it has no `clone_cut` event. The gate is specific to that newest lot: Project Crop is available only once **that** lot has a generated schedule (an older scheduled lot does not count); there is no "today" fallback.
-- **Forward re-projection:** regenerating any projected lot re-projects all *later* lots in the chain forward — only their anchor dates shift; each later lot's user-tweaked task offsets are preserved.
+- **Overwrite push-back (room-readiness gate):** overwriting a projected lot's schedule pushes *later* lots forward **only** when their transplant would land before the overwritten lot's new irrigation-clean + 1 day — never pulled backward. A blocking warning lists every affected lot and its delta; cancelling leaves the chain untouched. Lots already late enough stay put (their planned delay absorbs the push) and stop the cascade through them. If the overwrite leaves extra slack, later lots keep their dates (the chain may drift from its nominal cadence — Project Crop re-tightens it).
 
 ### Reprojection
 
@@ -392,6 +392,16 @@ When a new real crop comes into a room, its actual schedule may land **later** t
 - **Cascade:** each pushed lot's irrigation-clean moves forward by the same delta, so the requirement propagates down the chain to a fresh TBA-5. Stale / position-less lots are regenerated at the required position.
 - **User consent:** never automatic. When any push is needed, a blocking `confirm()` shows a per-lot breakdown (e.g. `TBA-01: +5d (Mar 14 → Mar 19)`, `TBA-03: unchanged (planned delay absorbs it)`, `TBA-05: new — transplants Jul 31`) with a headline naming the push to the next lot. **Cancel = no changes at all** (the plan is computed before any mutation).
 - **Scope:** only TBA lots after the late-arriving lot are affected; the real lot's own schedule is untouched. The gate is purely room-readiness (irrigation-clean vs. next transplant) — it does not re-anchor to the real lot's harvest date.
+
+### Overwrite Push-Back (implemented)
+
+Overwriting a projected lot's schedule via CropLabourWizard's Generate button (e.g. delaying TBA-2's planting date) may push its irrigation-clean past the next lot's planned transplant. The same room-readiness gate as reprojection applies: each later lot's transplant must land at least **1 day** after the previous lot's irrigation-clean, and lots are pushed forward by the **minimum** needed — never pulled backward.
+
+- **Detection:** before any mutation, `simulatedIrrigationClean` computes the overwritten lot's NEW irrigation-clean date from the form state (day0 + current offsets + durations) without writing events; `computeForwardPushPlan(roomId, index+1, newIrr)` walks slots `index+1..5`, comparing each lot's transplant against `previous lot's irrigation-clean + 1 day`.
+- **Minimum push:** a lot earlier than the requirement shifts by exactly the shortfall (whole schedule moves by that delta, per-task offsets preserved). A lot already late enough stays put — its planned delay absorbs the push — and stops the cascade through it. Stale / position-less lots are regenerated at the required position.
+- **No backward pull:** if the overwrite leaves extra slack (e.g. TBA-2 moved *earlier*), later lots keep their dates untouched; no dialog, no toast suffix. The chain may then drift from its nominal cadence — Project Crop re-tightens it.
+- **User consent:** when any push is needed, a blocking `confirm()` shows the same per-lot breakdown as reprojection (`TBA-03: +5d (Mar 14 → Mar 19)`, `TBA-04: unchanged (planned delay absorbs it)`) with a headline naming the push to the next lot. **Cancel = no changes at all** (the plan is computed before any mutation).
+- **Scope:** only TBA lots after the overwritten lot are affected; the overwritten lot's own schedule is generated normally. The gate is purely room-readiness — it does not re-anchor later lots to this lot's harvest date.
 
 ### Calendar Events — `sourceTool: 'CropProjection'`
 
