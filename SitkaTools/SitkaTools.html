@@ -1084,6 +1084,7 @@
         }
 
         .filter-menu-option:hover { background: var(--bg-secondary); color: var(--accent); }
+        .filter-menu-check { width: 1em; text-align: center; color: var(--accent); flex-shrink: 0; }
         .filter-menu-count { font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap; }
         .filter-menu-empty { padding: 12px 10px; font-size: 0.85rem; color: var(--text-secondary); }
 
@@ -1296,6 +1297,199 @@
         .day-event.multi-day:not(.range-start):not(.range-end) {
             border-radius: 0;
             border-left: 2px solid rgba(83, 216, 168, 0.4);
+        }
+
+        /* =====================================================
+           Annual view — 12 mini-months, emoji dots per task
+           ===================================================== */
+
+        .view-toggle-btn.active {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border-color: var(--accent);
+        }
+
+        /* Emoji legend — one row per visible task type (max 8) */
+        .annual-legend {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            margin-bottom: 12px;
+        }
+
+        .annual-legend-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            cursor: default;
+        }
+
+        .legend-emoji {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+
+        .legend-count {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-more {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .annual-legend-empty {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* 12-month grid (4 cols × 3 rows) */
+        .annual-grid-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .annual-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            min-width: 760px;
+        }
+
+        .annual-month {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px;
+        }
+
+        .annual-month-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--accent);
+            text-align: center;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .annual-month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+        }
+
+        .annual-dow {
+            font-size: 0.55rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-weight: 700;
+            padding-bottom: 2px;
+        }
+
+        .annual-day {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            border-radius: 3px;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+            cursor: pointer;
+            overflow: hidden;
+            transition: background 0.15s;
+        }
+
+        .annual-day:hover { background: rgba(83, 216, 168, 0.12); }
+
+        .annual-day.other-month { opacity: 0.25; }
+
+        .annual-day-num {
+            font-size: 0.55rem;
+            line-height: 1;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .annual-day.today .annual-day-num {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .annual-day.has-holiday { box-shadow: inset 0 0 0 1px rgba(243, 156, 18, 0.5); }
+
+        /* Emoji dots — one per task type on that day */
+        .annual-dots {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1px;
+            max-width: 100%;
+        }
+
+        .annual-dot {
+            font-size: 0.62rem;
+            line-height: 1;
+        }
+
+        .annual-dot.projection { opacity: 0.55; }
+
+        /* Cluster warning — too many events of one task type in a short window */
+        .annual-day.clustered { box-shadow: inset 0 0 0 2px var(--danger); }
+
+        .cluster-badge {
+            position: absolute;
+            top: 1px;
+            right: 1px;
+            font-size: 0.5rem;
+            line-height: 1;
+            background: var(--danger);
+            color: #fff;
+            border-radius: 3px;
+            padding: 1px 2px;
+            font-weight: 700;
+        }
+
+        /* Annual view hint when no filters are active */
+        .annual-hint {
+            background: rgba(243, 156, 18, 0.1);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            border-radius: var(--radius);
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            margin-bottom: 12px;
         }
 
         /* BC civic holiday styling on calendar (read-only, computed per year) */
@@ -1809,6 +2003,16 @@
                 padding: 6px 8px;
             }
 
+            /* Annual view mobile fixes */
+            .annual-grid {
+                grid-template-columns: repeat(2, 1fr);
+                min-width: 0;
+            }
+
+            .annual-legend {
+                gap: 6px 10px;
+            }
+
             .event-detail-grid {
                 grid-template-columns: 1fr;
             }
@@ -2316,6 +2520,7 @@
                     <input type="checkbox" id="showHolidaysToggle" checked>
                     <span>🏛️ Holidays</span>
                 </label>
+                <button class="btn btn-secondary view-toggle-btn" id="viewToggleBtn" title="Flip between monthly and annual (12-month) views">📅 Annual</button>
             </div>
 
             <!-- Calendar grid -->
@@ -2328,6 +2533,14 @@
                     <div class="calendar-day-header">Thu</div>
                     <div class="calendar-day-header">Fri</div>
                     <div class="calendar-day-header">Sat</div>
+                </div>
+            </div>
+
+            <!-- Annual view: 12 mini-months with emoji dots + task legend -->
+            <div class="annual-view hidden" id="annualView">
+                <div class="annual-legend" id="annualLegend"></div>
+                <div class="annual-grid-wrapper">
+                    <div class="annual-grid" id="annualGrid"></div>
                 </div>
             </div>
 
@@ -4456,6 +4669,12 @@
             draggedEvent: null,
             showHolidays: true,
 
+            // ---- View mode: 'month' (default) or 'year' (12-month annual view) ----
+            viewMode: 'month',
+            // Days of the week in which a task-type cluster is "too close together"
+            // (e.g. two harvests 3 days apart). Session-only tuning, not persisted.
+            CLUSTER_WINDOW_DAYS: 7,
+
             // ---- Tag filters (session-only; not persisted to the DB) ----
             filters: [],          // [{ key: 'room'|'building'|'lot'|'strain'|'taskType', value }]
             _filterCache: new Map(),  // event object -> resolved { room, building, lot, strain, taskType }
@@ -4469,6 +4688,12 @@
                 $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
+
+                // View toggle — flip between monthly and annual (12-month) views
+                $('viewToggleBtn').addEventListener('click', () => {
+                    this.viewMode = this.viewMode === 'month' ? 'year' : 'month';
+                    this.render();
+                });
 
                 // Holiday display toggle (on by default)
                 $('showHolidaysToggle').addEventListener('change', (e) => {
@@ -4524,6 +4749,12 @@
             },
 
             navigateMonth(delta) {
+                if (this.viewMode === 'year') {
+                    // In annual view, Prev/Next step by whole years
+                    this.currentYear += delta;
+                    this.render();
+                    return;
+                }
                 this.currentMonth += delta;
                 if (this.currentMonth > 11) {
                     this.currentMonth = 0;
@@ -4543,9 +4774,218 @@
             },
 
             // =====================================================
+            // Annual view — 12 mini-months with emoji dots per task.
+            // Designed to be used with a few task-type filters active
+            // (e.g. harvest / clone / plant) so clusters of the same
+            // task are easy to spot across one building or all sites.
+            // =====================================================
+
+            // Emoji per task type for compact annual-view dots + legend.
+            TASK_EMOJI: {
+                clone_cut_prep: '✂️', planting: '🌱', clone_room_clean: '🧽',
+                ipm_spray_veg_early: '💦', topping: '✂️', order_ipm: '📦',
+                layout_coco_blocks: '🧱', hydrate_coco_blocks: '💧',
+                undercanopy_lights: '💡', transplant: '🪴', ipm_spray_veg_second: '💦',
+                veg_room_clean: '🧽', deploy_ipm: '🐞', prune: '✂️', flip: '🌸',
+                ipm_spray_flower_start: '💦', trellis_layout: '🕸️',
+                ipm_spray_flower_week2: '💦', leafpick_early: '🍃', clone_cut: '✂️',
+                leafpick_late: '🍂', harvest: '🌾', room_clean: '🧽',
+                tank_irrigation_clean: '🚿', tote_prep: '📦', bucking: '🪵',
+                lab_sample: '🧪', trim_room_prep: '🔪', trim: '✂️',
+                machine_trim: '⚙️', dry_room_clean: '🧽', weigh_ship: '🚚',
+                equipment_maintenance: '🔧'
+            },
+
+            // Fallback emoji for events without a known taskType (GeneralEvent, etc.)
+            _eventEmoji(ev) {
+                if (ev.taskType && this.TASK_EMOJI[ev.taskType]) return this.TASK_EMOJI[ev.taskType];
+                const m = (ev.title || '').match(/^\s*(\p{Extended_Pictographic})/u);
+                return m ? m[1] : '📌';
+            },
+
+            // Distinct task types present in the visible events, with counts.
+            _annualTaskTypes() {
+                const map = new Map(); // taskType (or null) -> count
+                for (const ev of this._visibleEvents || []) {
+                    const tt = ev.taskType || null;
+                    map.set(tt, (map.get(tt) || 0) + 1);
+                }
+                return [...map.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([tt, count]) => ({ taskType: tt, count }));
+            },
+
+            // Cluster detection: group consecutive same-type events (sorted by start)
+            // into runs where each gap (previous event's end → next event's start) is
+            // ≤ CLUSTER_WINDOW_DAYS. Overlapping events have a negative gap and always
+            // cluster. Returns a Map of dateStr -> { taskType, count } — one entry per
+            // clustered day (every run member except the first), count = run length.
+            _annualClusters() {
+                const windowMs = this.CLUSTER_WINDOW_DAYS * 86400000;
+                const byType = new Map(); // taskType -> [{ startMs, endMs }]
+                for (const ev of this._visibleEvents || []) {
+                    const tt = ev.taskType || null;
+                    if (!byType.has(tt)) byType.set(tt, []);
+                    byType.get(tt).push({
+                        startMs: parseLocalDate(ev.date).getTime(),
+                        endMs: parseLocalDate(ev.endDate || ev.date).getTime()
+                    });
+                }
+
+                const clusters = new Map(); // dateStr -> { taskType, count }
+                for (const [tt, ranges] of byType.entries()) {
+                    ranges.sort((a, b) => a.startMs - b.startMs);
+                    let runStart = 0;
+                    for (let i = 1; i <= ranges.length; i++) {
+                        const gapOk = i < ranges.length && (ranges[i].startMs - ranges[i - 1].endMs) <= windowMs;
+                        if (!gapOk) {
+                            const runLen = i - runStart;
+                            if (runLen >= 2) {
+                                for (let k = runStart + 1; k < i; k++) {
+                                    const dateStr = localDate(new Date(ranges[k].startMs));
+                                    const prev = clusters.get(dateStr);
+                                    if (!prev || runLen > prev.count) clusters.set(dateStr, { taskType: tt, count: runLen });
+                                }
+                            }
+                            runStart = i;
+                        }
+                    }
+                }
+                return clusters;
+            },
+
+            renderAnnual() {
+                const view = $('annualView');
+                const grid = $('annualGrid');
+                const legend = $('annualLegend');
+                const monthGrid = $('calendarGrid').closest('.calendar-grid-wrapper');
+
+                // Swap which container is visible
+                view.classList.remove('hidden');
+                if (monthGrid) monthGrid.classList.add('hidden');
+
+                const todayStr = localDate();
+                const taskTypes = this._annualTaskTypes();
+                const clusters = this._annualClusters();
+
+                // ---- Legend: up to 8 task types, most frequent first ----
+                const MAX_LEGEND = 8;
+                let legendHtml = '<span class="annual-legend-title">Legend</span>';
+                if (taskTypes.length === 0) {
+                    legendHtml += '<span class="annual-legend-empty">No events in this year — add filters or check the database.</span>';
+                } else {
+                    taskTypes.slice(0, MAX_LEGEND).forEach(({ taskType, count }) => {
+                        const label = taskType ? (this.TASK_TYPE_NAMES[taskType] || taskType) : 'Other';
+                        legendHtml += `<span class="legend-item" title="${escapeHtml(label)} — ${count} event${count !== 1 ? 's' : ''}">
+                            <span class="legend-emoji">${this._eventEmoji({ taskType, title: label })}</span>
+                            <span>${escapeHtml(label)}</span>
+                            <span class="legend-count">${count}</span>
+                        </span>`;
+                    });
+                    if (taskTypes.length > MAX_LEGEND) {
+                        legendHtml += `<span class="legend-more">+${taskTypes.length - MAX_LEGEND} more…</span>`;
+                    }
+                }
+                legend.innerHTML = legendHtml;
+
+                // ---- 12 mini-months ----
+                let html = '';
+                for (let m = 0; m < 12; m++) {
+                    const monthName = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m];
+                    const firstDow = new Date(this.currentYear, m, 1).getDay();
+                    const daysInMonth = new Date(this.currentYear, m + 1, 0).getDate();
+
+                    html += `<div class="annual-month">
+                        <div class="annual-month-title">${monthName} ${this.currentYear}</div>
+                        <div class="annual-month-grid">`;
+                    for (let d = 0; d < 7; d++) {
+                        html += `<div class="annual-dow">${'SMTWTFS'[d]}</div>`;
+                    }
+                    // Leading days from previous month
+                    const prevMonthDays = new Date(this.currentYear, m, 0).getDate();
+                    for (let i = firstDow - 1; i >= 0; i--) {
+                        html += `<div class="annual-day other-month"><span class="annual-day-num">${prevMonthDays - i}</span></div>`;
+                    }
+                    // Days of this month
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dateStr = `${this.currentYear}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        html += this._annualDayCell(dateStr, day, todayStr, clusters);
+                    }
+                    // Trailing days to complete the week rows
+                    const total = firstDow + daysInMonth;
+                    const remaining = (7 - (total % 7)) % 7;
+                    for (let day = 1; day <= remaining; day++) {
+                        html += `<div class="annual-day other-month"><span class="annual-day-num">${day}</span></div>`;
+                    }
+                    html += `</div></div>`;
+                }
+                grid.innerHTML = html;
+
+                // Click a day to jump into the monthly view for that month
+                grid.querySelectorAll('.annual-month').forEach((monthEl, m) => {
+                    monthEl.querySelectorAll('.annual-day:not(.other-month)').forEach(cell => {
+                        cell.dataset.month = m;
+                        cell.addEventListener('click', () => {
+                            this.currentMonth = parseInt(cell.dataset.month, 10);
+                            this.viewMode = 'month';
+                            this.render();
+                        });
+                    });
+                });
+            },
+
+            _annualDayCell(dateStr, day, todayStr, clusters) {
+                const holiday = this.showHolidays ? Holidays.forDate(dateStr) : null;
+                const cluster = clusters.get(dateStr);
+
+                // Events spanning this date (multi-day aware), from the filtered set
+                const dayEvents = (this._visibleEvents || []).filter(e => {
+                    const start = e.date;
+                    const end = e.endDate || e.date;
+                    return dateStr >= start && dateStr <= end;
+                });
+
+                // One dot per task type (deduped), most frequent first
+                const seen = new Map(); // emoji -> count
+                for (const ev of dayEvents) {
+                    const emoji = this._eventEmoji(ev);
+                    seen.set(emoji, (seen.get(emoji) || 0) + 1);
+                }
+                let dotsHtml = '';
+                if (seen.size > 0) {
+                    dotsHtml = '<div class="annual-dots">' +
+                        [...seen.entries()].map(([emoji, n]) => {
+                            const isProjection = dayEvents.some(e => this._eventEmoji(e) === emoji && e.sourceTool === 'CropProjection');
+                            return `<span class="annual-dot${isProjection ? ' projection' : ''}" title="${n} event${n !== 1 ? 's' : ''}">${emoji}</span>`;
+                        }).join('') + '</div>';
+                }
+
+                const classes = ['annual-day'];
+                if (dateStr === todayStr) classes.push('today');
+                if (holiday) classes.push('has-holiday');
+                if (cluster) classes.push('clustered');
+
+                const titleParts = [`${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}`];
+                if (holiday) titleParts.push(`🏛️ ${holiday.name}`);
+                if (cluster) {
+                    const name = cluster.taskType ? (this.TASK_TYPE_NAMES[cluster.taskType] || cluster.taskType) : 'Other';
+                    titleParts.push(`⚠️ Clustered: ${cluster.count}× ${name} within ${this.CLUSTER_WINDOW_DAYS} days`);
+                }
+
+                return `<div class="${classes.join(' ')}" data-date="${dateStr}" title="${escapeHtml(titleParts.join(' · '))}">
+                    <span class="annual-day-num">${day}</span>
+                    ${dotsHtml}
+                    ${cluster ? `<span class="cluster-badge">${cluster.count}×</span>` : ''}
+                </div>`;
+            },
+
+            // =====================================================
             // Tag filters — narrow which events show on the grid + terminal.
-            // Filters AND together; an event lacking a value for an active
-            // key is hidden (strict). Values are resolved per-event below.
+            // Multiple values under one key OR together (e.g. several task
+            // types at once); different keys AND together. An event lacking a
+            // value for an active key is hidden (strict). Values are resolved
+            // per-event below.
             // =====================================================
 
             FILTER_KEYS: [
@@ -4685,17 +5125,30 @@
                 }
             },
 
-            // Events passing ALL active filters (AND; strict — missing value fails).
+            // Group active filters by key: { key: Set(values) }.
+            _activeFilterKeys() {
+                const m = new Map();
+                for (const f of this.filters) {
+                    if (!m.has(f.key)) m.set(f.key, new Set());
+                    m.get(f.key).add(f.value);
+                }
+                return m;
+            },
+
+            // Events passing all active filters: values within a key OR
+            // together, keys AND together (strict — missing value fails).
             filteredEvents() {
                 const all = this.events;
                 if (this.filters.length === 0) return all;
+                const byKey = this._activeFilterKeys();
                 return all.filter(ev => {
                     const vals = this._filterCache.get(ev);
                     if (!vals) return false;
-                    return this.filters.every(f => {
-                        const v = vals[f.key];
-                        return v != null && String(v) === f.value;
-                    });
+                    for (const [key, values] of byKey) {
+                        const v = vals[key];
+                        if (v == null || !values.has(String(v))) return false;
+                    }
+                    return true;
                 });
             },
 
@@ -4704,17 +5157,23 @@
             availableFilterOptions() {
                 const groups = this.FILTER_KEYS.map(def => ({ ...def, options: [] }));
                 const byKey = Object.fromEntries(groups.map(g => [g.key, g]));
+                const active = this._activeFilterKeys();
 
                 for (const ev of this.events) {
                     const vals = this._filterCache.get(ev);
                     if (!vals) continue;
-                    // Event must already satisfy every active filter to contribute candidates.
-                    if (!this.filters.every(f => {
-                        const v = vals[f.key];
-                        return v != null && String(v) === f.value;
-                    })) continue;
 
                     for (const g of groups) {
+                        // Event must satisfy every active key EXCEPT g's own key to
+                        // contribute a candidate for g — so all values of a key stay
+                        // listed (with ✓ on selected ones) and can be multi-selected.
+                        let ok = true;
+                        for (const [key, values] of active) {
+                            if (key === g.key) continue;
+                            const v = vals[key];
+                            if (v == null || !values.has(String(v))) { ok = false; break; }
+                        }
+                        if (!ok) continue;
                         const raw = vals[g.key];
                         if (raw == null) continue;
                         let label;
@@ -4737,6 +5196,8 @@
                 }
 
                 for (const g of groups) {
+                    const selected = active.get(g.key);
+                    for (const o of g.options) o.selected = !!selected && selected.has(o.value);
                     g.options.sort((a, b) => a.label.localeCompare(b.label));
                 }
                 return groups;
@@ -4767,6 +5228,7 @@
                         <div class="filter-menu-key">${g.icon} ${escapeHtml(g.label)}</div>`;
                     for (const o of g.options) {
                         html += `<div class="filter-menu-option" data-key="${g.key}" data-value="${escapeHtml(o.value)}">
+                            <span class="filter-menu-check">${o.selected ? '✓' : ''}</span>
                             <span>${escapeHtml(o.label)}</span>
                             <span class="filter-menu-count">${o.count}</span>
                         </div>`;
@@ -4777,8 +5239,13 @@
 
                 menu.querySelectorAll('.filter-menu-option').forEach(el => {
                     el.addEventListener('click', () => {
-                        this.filters.push({ key: el.dataset.key, value: el.dataset.value });
-                        this.closeFilterMenu();
+                        const key = el.dataset.key, value = el.dataset.value;
+                        // Toggle: clicking again removes that value (multi-select per key).
+                        const i = this.filters.findIndex(f => f.key === key && f.value === value);
+                        if (i !== -1) this.filters.splice(i, 1);
+                        else this.filters.push({ key, value });
+                        // Keep the menu open so several values can be picked in a row.
+                        this.openFilterMenu();
                         this.render();
                     });
                 });
@@ -4860,18 +5327,41 @@
                 }
                 this.updateTitle();
                 this.renderFilterTags();
-                this.renderGrid();
+                if (this.viewMode === 'year') {
+                    this.renderAnnual();
+                } else {
+                    this.renderGrid();
+                }
                 this.renderTerminal(this._visibleEvents);
             },
 
             updateTitle() {
                 const months = ['January', 'February', 'March', 'April', 'May', 'June',
                     'July', 'August', 'September', 'October', 'November', 'December'];
-                $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
+                if (this.viewMode === 'year') {
+                    $('calendarTitle').textContent = `${this.currentYear} — Annual View`;
+                } else {
+                    $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
+                }
+                // Keep the toggle button label in sync with the active view
+                const btn = $('viewToggleBtn');
+                if (btn) {
+                    btn.textContent = this.viewMode === 'year' ? '📆 Monthly' : '📅 Annual';
+                    btn.classList.toggle('active', this.viewMode === 'year');
+                    btn.title = this.viewMode === 'year'
+                        ? 'Switch back to the monthly view'
+                        : 'Flip between monthly and annual (12-month) views';
+                }
             },
 
             renderGrid() {
                 const grid = $('calendarGrid');
+                // Coming back from annual view — restore the month grid, hide annual
+                if (grid.closest('.calendar-grid-wrapper')) {
+                    grid.closest('.calendar-grid-wrapper').classList.remove('hidden');
+                }
+                $('annualView').classList.add('hidden');
+
                 // Keep headers, remove day cells
                 const headers = grid.querySelectorAll('.calendar-day-header');
                 grid.innerHTML = '';
