@@ -1012,6 +1012,128 @@
             cursor: pointer;
         }
 
+        /* Calendar tag filter bar (top-left of the calendar) */
+        .calendar-filter-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .filter-add-wrap { position: relative; }
+
+        .filter-add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .filter-caret { font-size: 0.7rem; opacity: 0.7; }
+
+        .filter-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 50;
+            min-width: 280px;
+            max-width: 340px;
+            max-height: 320px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            padding: 6px;
+        }
+
+        .filter-menu-group { margin-bottom: 4px; }
+
+        .filter-menu-key {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .filter-menu-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 7px 10px;
+            border-radius: calc(var(--radius) - 3px);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .filter-menu-option:hover { background: var(--bg-secondary); color: var(--accent); }
+        .filter-menu-count { font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap; }
+        .filter-menu-empty { padding: 12px 10px; font-size: 0.85rem; color: var(--text-secondary); }
+
+        .filter-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+        .filter-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 6px 5px 10px;
+            border: 1px solid var(--accent);
+            border-radius: 999px;
+            background: rgba(83, 216, 168, 0.12);
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .filter-tag-key { color: var(--accent); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; }
+
+        .filter-tag-x {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .filter-tag-x:hover { background: var(--danger); color: #fff; }
+
+        .filter-clear-btn {
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .filter-clear-btn:hover { color: var(--danger); }
+
         /* Calendar Grid */
         .calendar-grid {
             display: grid;
@@ -1982,6 +2104,15 @@
             color: #9b59b6;
         }
 
+        .building-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+        }
+
         /* =====================================================
            Calendar Import/Export Tab Styles
            ===================================================== */
@@ -2163,6 +2294,18 @@
                 </div>
             </div>
 
+            <!-- Calendar tag filter bar (top-left of the calendar) -->
+            <div class="calendar-filter-bar hidden" id="calendarFilterBar">
+                <div class="filter-add-wrap">
+                    <button type="button" class="filter-add-btn" id="addFilterBtn" title="Add a filter to narrow which events are shown">
+                        ＋ Add filter <span class="filter-caret">▾</span>
+                    </button>
+                    <div class="filter-menu hidden" id="filterMenu"></div>
+                </div>
+                <div class="filter-tags" id="filterTags"></div>
+                <button type="button" class="filter-clear-btn hidden" id="clearFiltersBtn" title="Remove all filters">Clear all</button>
+            </div>
+
             <!-- Calendar navigation -->
             <div class="calendar-nav">
                 <button class="btn btn-secondary" id="prevMonthBtn">◀ Prev</button>
@@ -2315,6 +2458,12 @@
                         <input type="text" id="roomDescription" placeholder="e.g., Building 66D Front Room">
                     </div>
                     <div class="form-group full-width">
+                        <label for="roomBuildingId">Building (assign on day 1)</label>
+                        <select id="roomBuildingId">
+                            <option value="">— No building assigned —</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                             <input type="checkbox" id="roomIsFlowering" style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
                             Flowering room (eligible for Crop Projection)
@@ -2330,6 +2479,34 @@
             <div class="card" id="roomListCard" style="display: none;">
                 <h2 class="card-title">Existing Rooms</h2>
                 <div class="room-list" id="roomList"></div>
+            </div>
+
+            <!-- Building Manager -->
+            <div class="card">
+                <h2 class="card-title">Create New Building</h2>
+                <form id="buildingForm" class="form-grid">
+                    <div class="form-group">
+                        <label for="buildingId">Building ID</label>
+                        <input type="text" id="buildingId" placeholder="e.g., B66D" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="buildingName">Building Name</label>
+                        <input type="text" id="buildingName" placeholder="e.g., Building 66D" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="buildingDescription">Description</label>
+                        <input type="text" id="buildingDescription" placeholder="e.g., Main cultivation facility, Sitka">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="clearBuildingFormBtn">Clear</button>
+                        <button type="submit" class="btn btn-primary" id="createBuildingBtn">Create Building</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card" id="buildingListCard" style="display: none;">
+                <h2 class="card-title">Existing Buildings</h2>
+                <div class="room-list" id="buildingList"></div>
             </div>
         </section>
 
@@ -2417,12 +2594,17 @@
                 return this.data?.lots || {};
             },
 
+            get buildings() {
+                return this.data?.buildings || {};
+            },
+
             ensureStructure() {
                 if (!this.data) {
-                    this.data = { lots: {}, rooms: {}, calendarEvents: [] };
+                    this.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
                 }
                 if (!this.data.lots) this.data.lots = {};
                 if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.buildings) this.data.buildings = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
                 return this.data;
             }
@@ -2515,11 +2697,12 @@
                     mainEl.classList.remove('calendar-active');
                 }
 
-                // Refresh room list when switching to Room Manager tab
+                // Refresh room + building lists when switching to Room Manager tab
                 if (targetId === 'room-management' && DB.data) {
                     RoomManager.renderRoomList();
                     updateRoomStatusBar();
                     RoomManager.updateRoomDatalist();
+                    BuildingManager.renderBuildingList();
                 }
             });
         });
@@ -2578,6 +2761,8 @@
                     RoomManager.renderRoomList();
                     updateRoomStatusBar();
                     RoomManager.updateRoomDatalist();
+                    BuildingManager.renderBuildingList();
+                    Calendar.onDbChanged();
                     Calendar.render();
                     updateCalendarStatusBar();
                     updateIOStatusBar();
@@ -3151,7 +3336,7 @@
             }, 1000);
 
             // Send DB via postMessage with retry mechanism
-            const dbPayload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+            const dbPayload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
             let attempts = 0, acknowledged = false;
 
             function trySend() {
@@ -3197,6 +3382,8 @@
             RoomManager.renderRoomList();
             updateRoomStatusBar();
             RoomManager.updateRoomDatalist();
+            BuildingManager.renderBuildingList();
+            Calendar.onDbChanged();
             Calendar.render();
             updateCalendarStatusBar();
             updateIOStatusBar();
@@ -3630,7 +3817,7 @@
         // CLW's handler refreshes its lot selector / schedule list / status bar without disrupting
         // active form editing. Scoped by URL so other subtools aren't needlessly re-rendered.
         function broadcastToCropLabourWizard() {
-            const payload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+            const payload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
             openSubtools.forEach(entry => {
                 const win = entry && typeof entry === 'object' ? entry.win : entry; // tolerate legacy bare-window entries
                 const url = entry && typeof entry === 'object' ? (entry.url || '') : '';
@@ -3668,10 +3855,29 @@
 
                 this.updateRoomIdSuggestion();
                 this.updateRoomDatalist();
+                this.updateBuildingDatalist();
             },
 
             updateRoomIdSuggestion() {
                 $('roomId').placeholder = 'B66DG1';
+            },
+
+            updateBuildingDatalist() {
+                // Populate the room form's building selector with existing buildings
+                const select = $('roomBuildingId');
+                if (!select) return;
+                const current = select.value;
+                select.innerHTML = '<option value="">— No building assigned —</option>';
+                Object.keys(DB.buildings).forEach(bid => {
+                    const opt = document.createElement('option');
+                    opt.value = bid;
+                    opt.textContent = `${DB.buildings[bid].name} (${bid})`;
+                    select.appendChild(opt);
+                });
+                // Restore selection if the building still exists
+                if (current && DB.buildings[current]) {
+                    select.value = current;
+                }
             },
 
             updateRoomDatalist() {
@@ -3700,6 +3906,7 @@
                 const roomId = $('roomId').value.trim();
                 const roomName = $('roomName').value.trim();
                 const description = $('roomDescription').value.trim();
+                const buildingId = $('roomBuildingId') ? $('roomBuildingId').value : '';
                 const isFlowering = $('roomIsFlowering') ? $('roomIsFlowering').checked : false;
 
                 if (!roomId || !roomName) {
@@ -3719,17 +3926,26 @@
                     description: description || null,
                     createdDate: today,
                     assignedLots: [],
-                    isFlowering: isFlowering
+                    isFlowering: isFlowering,
+                    buildingId: buildingId || null
                 };
 
+                // Register the room with its building (day-1 assignment)
+                if (buildingId && DB.data.buildings[buildingId]) {
+                    const b = DB.data.buildings[buildingId];
+                    if (!b.assignedRooms) b.assignedRooms = [];
+                    if (!b.assignedRooms.includes(roomId)) b.assignedRooms.push(roomId);
+                }
+
                 markUnsaved();
-                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}\nRemember to export the database to save.`);
+                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${buildingId ? `\n🏢 Assigned to building: ${DB.data.buildings[buildingId].name} (${buildingId})` : ''}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}\nRemember to export the database to save.`);
 
                 $('roomForm').reset();
                 this.updateRoomIdSuggestion();
                 this.updateRoomDatalist();
                 this.renderRoomList();
                 updateRoomStatusBar();
+                BuildingManager.renderBuildingList();
             },
 
             renderRoomList() {
@@ -3767,6 +3983,7 @@
                                 <span class="lot-meta">${key}${room.description ? ' · ' + escapeHtml(room.description) : ''} · ${lotCount} lot${lotCount !== 1 ? 's' : ''} assigned</span>
                             </div>
                             <div class="room-header-actions">
+                                ${room.buildingId && DB.data.buildings[room.buildingId] ? `<span class="building-badge" title="Building: ${escapeHtml(DB.data.buildings[room.buildingId].name)}">🏢 ${escapeHtml(DB.data.buildings[room.buildingId].name)}</span>` : ''}
                                 <span class="room-badge">Room</span>
                                 <button class="room-expand-btn" data-room-id="${key}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
                                 <button class="lot-delete-btn" data-room-id="${key}" data-room-name="${escapeHtml(room.name)}" title="Delete room" style="opacity: 1;">✕</button>
@@ -3812,6 +4029,10 @@
                                 <input type="checkbox" class="room-is-flowering" data-room-id="${roomId}" ${room.isFlowering ? 'checked' : ''} style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
                                 Flowering room (Crop Projection)
                             </label>
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Building:</span>
+                            <span>${room.buildingId && DB.data.buildings[room.buildingId] ? `🏢 ${escapeHtml(DB.data.buildings[room.buildingId].name)} (${escapeHtml(room.buildingId)})` : '—'}</span>
                         </div>
                     </div>
                 `;
@@ -4030,11 +4251,18 @@
                     if (lot.vegRoom === room.name) lot.vegRoom = null;
                     if (lot.cloningRoom === room.name) lot.cloningRoom = null;
                 });
+                // Unassign the room from its building
+                Object.values(DB.buildings).forEach(b => {
+                    if (b && Array.isArray(b.assignedRooms)) {
+                        b.assignedRooms = b.assignedRooms.filter(id => id !== roomId);
+                    }
+                });
                 delete DB.data.rooms[roomId];
                 markUnsaved();
                 this.renderRoomList();
                 updateRoomStatusBar();
                 this.updateRoomDatalist();
+                BuildingManager.renderBuildingList();
             },
 
             moveLot(lotId, fromRoomId, toRoomId) {
@@ -4113,6 +4341,7 @@
             const bar = $('roomStatusBar');
             const rooms = RoomManager.rooms;
             const count = Object.keys(rooms).length;
+            const buildingCount = Object.keys(DB.buildings).length;
 
             if (!DB.data) {
                 bar.className = 'status-bar empty';
@@ -4120,14 +4349,14 @@
                 return;
             }
 
-            if (count === 0) {
+            if (count === 0 && buildingCount === 0) {
                 bar.className = 'status-bar empty';
                 bar.innerHTML = '<span class="status-text">Database loaded. No rooms yet — create your first room below.</span>';
             } else {
                 bar.className = 'status-bar loaded';
                 bar.innerHTML = `
                     <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
-                    <span class="lot-count">${count} room${count !== 1 ? 's' : ''}</span>
+                    <span class="lot-count">${count} room${count !== 1 ? 's' : ''}${buildingCount ? ` · ${buildingCount} building${buildingCount !== 1 ? 's' : ''}` : ''}</span>
                 `;
             }
         }
@@ -4227,6 +4456,10 @@
             draggedEvent: null,
             showHolidays: true,
 
+            // ---- Tag filters (session-only; not persisted to the DB) ----
+            filters: [],          // [{ key: 'room'|'building'|'lot'|'strain'|'taskType', value }]
+            _filterCache: new Map(),  // event object -> resolved { room, building, lot, strain, taskType }
+
             get events() {
                 return DB.data?.calendarEvents || [];
             },
@@ -4241,6 +4474,28 @@
                 $('showHolidaysToggle').addEventListener('change', (e) => {
                     this.showHolidays = e.target.checked;
                     this.render();
+                });
+
+                // Tag filter bar — "＋ Add filter" dropdown, tag chips, clear all
+                const addFilterBtn = $('addFilterBtn');
+                const filterMenu = $('filterMenu');
+                addFilterBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!filterMenu.classList.contains('hidden')) {
+                        this.closeFilterMenu();
+                    } else {
+                        this.openFilterMenu();
+                    }
+                });
+                filterMenu.addEventListener('click', (e) => e.stopPropagation());
+                $('clearFiltersBtn').addEventListener('click', () => {
+                    this.filters = [];
+                    this.render();
+                });
+                // Close the menu on outside click / Escape
+                document.addEventListener('click', () => this.closeFilterMenu());
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') this.closeFilterMenu();
                 });
 
                 // Swipe gesture for month navigation (mobile)
@@ -4287,14 +4542,326 @@
                 this.render();
             },
 
+            // =====================================================
+            // Tag filters — narrow which events show on the grid + terminal.
+            // Filters AND together; an event lacking a value for an active
+            // key is hidden (strict). Values are resolved per-event below.
+            // =====================================================
+
+            FILTER_KEYS: [
+                { key: 'room',     label: 'Room',      icon: '🏠' },
+                { key: 'building', label: 'Building',  icon: '🏢' },
+                { key: 'lot',      label: 'Lot',       icon: '📦' },
+                { key: 'strain',   label: 'Strain',    icon: '🌿' },
+                { key: 'taskType', label: 'Task Type', icon: '🛠️' }
+            ],
+
+            // Friendly names for CropLabourWizard task types (raw id is the fallback).
+            TASK_TYPE_NAMES: {
+                clone_cut_prep: 'Cutting Clones',
+                planting: 'Planting Clones',
+                clone_room_clean: 'Clean Clone Room & Supplies',
+                ipm_spray_veg_early: 'IPM Spray (Early Veg)',
+                topping: 'Topping',
+                order_ipm: 'Order Preventative Insects',
+                layout_coco_blocks: 'Lay-out & Spike Coco Blocks',
+                hydrate_coco_blocks: 'Hydrate Coco Blocks',
+                undercanopy_lights: 'Undercanopy Lights & Air Socks',
+                transplant: 'Transplanting to Flower Room',
+                ipm_spray_veg_second: 'IPM Spray (Second Veg)',
+                veg_room_clean: 'Clean Vegetation Room',
+                deploy_ipm: 'Deploy IPM to Flower Room',
+                prune: 'Two-Node / Lollipop Prune',
+                flip: 'Flip to Flower',
+                ipm_spray_flower_start: 'IPM Spray (Start of Flower)',
+                trellis_layout: 'Layout Trellis & Secure',
+                ipm_spray_flower_week2: 'IPM Spray (Second Week of Flower)',
+                leafpick_early: 'Early Flower Leaf Pick',
+                clone_cut: 'Cut Clones to Replace Lot',
+                leafpick_late: 'Late Flower Leaf Pick',
+                harvest: 'Harvest',
+                room_clean: 'Grow-Room Clean',
+                tank_irrigation_clean: 'Tank & Irrigation Line Clean',
+                tote_prep: 'Clean & Prepare Totes',
+                bucking: 'Dry Room Take-Down / Bucking',
+                lab_sample: 'Prepare Sample for Lab Testing',
+                trim_room_prep: 'Prepare Trim Room',
+                trim: 'Trim',
+                machine_trim: 'Machine Trim Smalls',
+                dry_room_clean: 'Clean Dry Room',
+                weigh_ship: 'Weigh & Ship to Processing',
+                equipment_maintenance: 'Equipment Maintenance'
+            },
+
+            // Task order used only for the pre/post-transplant room split (mirrors CLW's TASK_DEFS).
+            _CLW_TASK_ORDER: [
+                'clone_cut_prep', 'planting', 'clone_room_clean', 'ipm_spray_veg_early', 'topping',
+                'order_ipm', 'layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights',
+                'transplant', 'ipm_spray_veg_second', 'veg_room_clean', 'deploy_ipm', 'prune',
+                'flip', 'ipm_spray_flower_start', 'trellis_layout', 'ipm_spray_flower_week2',
+                'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest', 'room_clean',
+                'tank_irrigation_clean', 'tote_prep', 'bucking', 'lab_sample', 'trim_room_prep',
+                'trim', 'machine_trim', 'dry_room_clean', 'weigh_ship'
+            ],
+
+            // Resolve the filterable values for one event. Mirrors CropLabourWizard's
+            // getLotRoomCode() phase rules so real-lot events (which carry no roomId)
+            // resolve to the room each task physically happens in.
+            _resolveEventValues(ev) {
+                const rooms = DB.data?.rooms || {};
+                const lots = DB.data?.lots || {};
+                const projected = DB.data?._CropLabourWizard?.projectedLots || {};
+
+                const roomIdToBuildingId = (roomId) => (roomId && rooms[roomId]?.buildingId) || null;
+                const roomLabel = (roomId) => {
+                    if (!roomId || !rooms[roomId]) return null;
+                    const r = rooms[roomId];
+                    return r.name ? `${r.name} (${roomId})` : roomId;
+                };
+                const buildingLabel = (buildingId) => {
+                    const b = DB.data?.buildings?.[buildingId];
+                    if (!b) return null;
+                    return b.name ? `${b.name} (${buildingId})` : buildingId;
+                };
+
+                let room = null, lot = null, strain = null, taskType = ev.taskType || null;
+
+                if (ev.sourceTool === 'CropProjection' && ev.lotId) {
+                    const entry = projected[ev.lotId];
+                    room = ev.roomId || entry?.roomId || null;
+                    lot = ev.lotId;
+                    strain = entry?.strain || 'TBA';
+                } else if ((ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection') && ev.lotId) {
+                    const isProjected = !!projected[ev.lotId];
+                    const lotRec = lots[ev.lotId] || {};
+                    lot = ev.lotId;
+                    strain = (isProjected ? (projected[ev.lotId]?.strain || 'TBA') : (lotRec.strain || null)) || null;
+
+                    // Room per task phase (ported from CLW getLotRoomCode)
+                    const roomForName = (name) => {
+                        if (!name) return null;
+                        const found = Object.entries(rooms).find(([, r]) => r.name === name);
+                        return found ? found[0] : null;
+                    };
+                    const flowerRoom = (() => {
+                        for (const [rid, r] of Object.entries(rooms)) {
+                            if ((r.assignedLots || []).includes(ev.lotId)) return rid;
+                        }
+                        return roomForName(isProjected ? (projected[ev.lotId]?.roomName || null) : lotRec.destRoom);
+                    })();
+
+                    const tt = ev.taskType;
+                    if (isProjected) {
+                        room = ev.roomId || projected[ev.lotId]?.roomId || null;
+                    } else if (tt === 'clone_cut_prep' || tt === 'clone_room_clean') {
+                        room = roomForName(lotRec.cloningRoom);
+                    } else if (tt === 'veg_room_clean') {
+                        room = roomForName(lotRec.vegRoom);
+                    } else if (tt === 'undercanopy_lights' || tt === 'layout_coco_blocks' || tt === 'hydrate_coco_blocks') {
+                        room = flowerRoom;
+                    } else {
+                        const idx = this._CLW_TASK_ORDER.indexOf(tt);
+                        const transplantIdx = this._CLW_TASK_ORDER.indexOf('transplant');
+                        room = (idx !== -1 && transplantIdx !== -1 && idx < transplantIdx)
+                            ? roomForName(lotRec.vegRoom)
+                            : flowerRoom;
+                    }
+                } else if (ev.sourceTool === 'EquipmentWizard' && ev.roomId) {
+                    room = ev.roomId;
+                }
+
+                return {
+                    room: roomLabel(room),
+                    building: buildingLabel(roomIdToBuildingId(room)),
+                    lot, strain, taskType
+                };
+            },
+
+            // Rebuild the per-event value cache (call before rendering / on DB change).
+            _rebuildFilterCache() {
+                this._filterCache = new Map();
+                for (const ev of this.events) {
+                    this._filterCache.set(ev, this._resolveEventValues(ev));
+                }
+            },
+
+            // Events passing ALL active filters (AND; strict — missing value fails).
+            filteredEvents() {
+                const all = this.events;
+                if (this.filters.length === 0) return all;
+                return all.filter(ev => {
+                    const vals = this._filterCache.get(ev);
+                    if (!vals) return false;
+                    return this.filters.every(f => {
+                        const v = vals[f.key];
+                        return v != null && String(v) === f.value;
+                    });
+                });
+            },
+
+            // Candidate options per key, constrained to values that still match the
+            // currently selected tags (so impossible combinations never appear).
+            availableFilterOptions() {
+                const groups = this.FILTER_KEYS.map(def => ({ ...def, options: [] }));
+                const byKey = Object.fromEntries(groups.map(g => [g.key, g]));
+
+                for (const ev of this.events) {
+                    const vals = this._filterCache.get(ev);
+                    if (!vals) continue;
+                    // Event must already satisfy every active filter to contribute candidates.
+                    if (!this.filters.every(f => {
+                        const v = vals[f.key];
+                        return v != null && String(v) === f.value;
+                    })) continue;
+
+                    for (const g of groups) {
+                        const raw = vals[g.key];
+                        if (raw == null) continue;
+                        let label;
+                        if (g.key === 'taskType') {
+                            label = this.TASK_TYPE_NAMES[raw] || raw;
+                        } else if (g.key === 'lot') {
+                            label = String(raw);
+                            const s = vals.strain;
+                            if (s && s !== 'TBA') label += ` — ${s}`;
+                        } else {
+                            label = String(raw); // room/building labels are pre-formatted "Name (ID)"
+                        }
+                        let opt = g.options.find(o => o.value === String(raw));
+                        if (!opt) {
+                            opt = { value: String(raw), label, count: 0 };
+                            g.options.push(opt);
+                        }
+                        opt.count++;
+                    }
+                }
+
+                for (const g of groups) {
+                    g.options.sort((a, b) => a.label.localeCompare(b.label));
+                }
+                return groups;
+            },
+
+            _filterLabel(key, value) {
+                const def = this.FILTER_KEYS.find(k => k.key === key);
+                if (key === 'taskType') return this.TASK_TYPE_NAMES[value] || value;
+                if (key === 'lot') {
+                    const lotRec = DB.data?.lots?.[value];
+                    const s = lotRec?.strain;
+                    return s ? `${value} — ${s}` : value;
+                }
+                return value; // room/building/strain values are already display-ready
+            },
+
+            openFilterMenu() {
+                const menu = $('filterMenu');
+                if (this.events.length === 0) return;
+                this._rebuildFilterCache();
+                const groups = this.availableFilterOptions();
+                const hasAny = groups.some(g => g.options.length > 0);
+
+                let html = '';
+                for (const g of groups) {
+                    if (g.options.length === 0) continue;
+                    html += `<div class="filter-menu-group">
+                        <div class="filter-menu-key">${g.icon} ${escapeHtml(g.label)}</div>`;
+                    for (const o of g.options) {
+                        html += `<div class="filter-menu-option" data-key="${g.key}" data-value="${escapeHtml(o.value)}">
+                            <span>${escapeHtml(o.label)}</span>
+                            <span class="filter-menu-count">${o.count}</span>
+                        </div>`;
+                    }
+                    html += `</div>`;
+                }
+                menu.innerHTML = hasAny ? html : '<div class="filter-menu-empty">No filterable events in the database.</div>';
+
+                menu.querySelectorAll('.filter-menu-option').forEach(el => {
+                    el.addEventListener('click', () => {
+                        this.filters.push({ key: el.dataset.key, value: el.dataset.value });
+                        this.closeFilterMenu();
+                        this.render();
+                    });
+                });
+
+                menu.classList.remove('hidden');
+            },
+
+            closeFilterMenu() {
+                $('filterMenu').classList.add('hidden');
+            },
+
+            renderFilterTags() {
+                const bar = $('calendarFilterBar');
+                const tagsEl = $('filterTags');
+                const clearBtn = $('clearFiltersBtn');
+                // Only show the bar when there are events to filter. (DB.data is not a
+                // reliable "loaded" signal — ensureStructure() makes it truthy on load.)
+                if (this.events.length === 0) {
+                    bar.classList.add('hidden');
+                    return;
+                }
+                bar.classList.remove('hidden');
+
+                tagsEl.innerHTML = '';
+                this.filters.forEach((f, i) => {
+                    const def = this.FILTER_KEYS.find(k => k.key === f.key);
+                    const chip = document.createElement('span');
+                    chip.className = 'filter-tag';
+                    chip.innerHTML = `<span class="filter-tag-key">${def ? def.icon + ' ' + escapeHtml(def.label) : escapeHtml(f.key)}</span>
+                        <span>${escapeHtml(this._filterLabel(f.key, f.value))}</span>`;
+                    const x = document.createElement('button');
+                    x.type = 'button';
+                    x.className = 'filter-tag-x';
+                    x.title = `Remove filter: ${this._filterLabel(f.key, f.value)}`;
+                    x.textContent = '✕';
+                    x.addEventListener('click', () => {
+                        this.filters.splice(i, 1);
+                        this.render();
+                    });
+                    chip.appendChild(x);
+                    tagsEl.appendChild(chip);
+                });
+
+                clearBtn.classList.toggle('hidden', this.filters.length === 0);
+            },
+
+            // Called after DB.data is replaced (import or subtool update): rebuild the
+            // cache and drop any filter whose value no longer exists in the data.
+            onDbChanged() {
+                if (!DB.data) {
+                    this.filters = [];
+                    this._filterCache = new Map();
+                    return;
+                }
+                this._rebuildFilterCache();
+                const present = { room: new Set(), building: new Set(), lot: new Set(), strain: new Set(), taskType: new Set() };
+                for (const vals of this._filterCache.values()) {
+                    for (const k of Object.keys(present)) {
+                        if (vals[k] != null) present[k].add(String(vals[k]));
+                    }
+                }
+                const before = this.filters.length;
+                this.filters = this.filters.filter(f => present[f.key].has(f.value));
+                if (this.filters.length !== before) {
+                    console.log('[Calendar] Dropped stale filter(s) after DB change');
+                }
+            },
+
             render() {
-                console.log('[Calendar] Rendering - events count:', this.events.length);
+                // Rebuild the filter value cache, then compute the visible (filtered) set.
+                // Grid + terminal both render from _visibleEvents; event indices always
+                // refer to the full DB.data.calendarEvents array.
+                this._rebuildFilterCache();
+                this._visibleEvents = this.filteredEvents();
+
+                console.log('[Calendar] Rendering - events count:', this.events.length, 'visible:', this._visibleEvents.length);
                 if (this.events.length > 0) {
                     console.log('[Calendar] First 3 events:', this.events.slice(0, 3));
                 }
                 this.updateTitle();
+                this.renderFilterTags();
                 this.renderGrid();
-                this.renderTerminal();
+                this.renderTerminal(this._visibleEvents);
             },
 
             updateTitle() {
@@ -4375,8 +4942,9 @@
                     cell.appendChild(holidayEl);
                 }
 
-                // Events for this day — include multi-day events that span this date
-                const dayEvents = this.events.filter(e => {
+                // Events for this day — include multi-day events that span this date.
+                // Uses the filtered set so active tag filters hide non-matching events.
+                const dayEvents = (this._visibleEvents || this.events).filter(e => {
                     const start = e.date;
                     const end = e.endDate || e.date;
                     const match = dateStr >= start && dateStr <= end;
@@ -4710,9 +5278,11 @@
                 this.render();
             },
 
-            renderTerminal() {
+            renderTerminal(visibleEvents) {
                 const body = $('terminalBody');
                 const status = $('terminalStatus');
+                // Render from the filtered set when provided (render() always passes it).
+                const events = visibleEvents || this.events;
 
                 if (!DB.data || this.events.length === 0) {
                     body.innerHTML = '<div class="terminal-line text-secondary">No events found. Create events using tools at the bottom of the page.</div>';
@@ -4744,7 +5314,7 @@
                 };
 
                 // Sort events by date, then show upcoming ones first
-                const sorted = [...this.events].sort((a, b) => {
+                const sorted = [...events].sort((a, b) => {
                     const dateCompare = (a.date || '').localeCompare(b.date || '');
                     if (dateCompare !== 0) return dateCompare;
                     return (a.title || '').localeCompare(b.title || '');
@@ -4795,7 +5365,12 @@
                 }
 
                 body.innerHTML = lines.join('');
-                status.textContent = `${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+                // When filters are active, show how many of the total events are visible.
+                if (this.filters.length > 0) {
+                    status.textContent = `${events.length} of ${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+                } else {
+                    status.textContent = `${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+                }
 
                 // Click terminal line to select event
                 body.querySelectorAll('.terminal-line[data-event-index]').forEach(line => {
@@ -5304,9 +5879,377 @@
             `;
         }
 
+        // =====================================================
+        // SitkaTools — Building Manager Module
+        // Database Keys: "buildings" (object of all buildings), "rooms"
+        // A room's building is stored on the room itself (room.buildingId);
+        // each building mirrors its rooms in building.assignedRooms[].
+        // =====================================================
+
+        const BuildingManager = {
+            expandedBuildingId: null,
+
+            get buildings() {
+                return DB.data?.buildings || {};
+            },
+
+            init() {
+                const buildingForm = $('buildingForm');
+                buildingForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.createBuilding();
+                });
+
+                $('clearBuildingFormBtn').addEventListener('click', () => {
+                    buildingForm.reset();
+                });
+            },
+
+            createBuilding() {
+                DB.ensureStructure();
+
+                const buildingId = $('buildingId').value.trim();
+                const buildingName = $('buildingName').value.trim();
+                const description = $('buildingDescription').value.trim();
+
+                if (!buildingId || !buildingName) {
+                    alert('Please fill in Building ID and Building Name.');
+                    return;
+                }
+
+                if (this.buildings[buildingId]) {
+                    alert(`A building with ID "${buildingId}" already exists.`);
+                    return;
+                }
+
+                const today = localDate();
+
+                DB.data.buildings[buildingId] = {
+                    name: buildingName,
+                    description: description || null,
+                    createdDate: today,
+                    assignedRooms: []
+                };
+
+                markUnsaved();
+                alert(`Building "${buildingName}" created successfully!\n\nID: ${buildingId}\nAssign rooms to it below, or pick it in the room form when creating a room.\nRemember to export the database to save.`);
+
+                $('buildingForm').reset();
+                this.renderBuildingList();
+                RoomManager.updateBuildingDatalist();
+                updateRoomStatusBar();
+            },
+
+            renderBuildingList() {
+                const buildings = this.buildings;
+                const buildingKeys = Object.keys(buildings);
+                const buildingListCard = $('buildingListCard');
+                const buildingListEl = $('buildingList');
+
+                if (buildingKeys.length === 0) {
+                    buildingListCard.style.display = 'none';
+                    return;
+                }
+
+                buildingListCard.style.display = 'block';
+                buildingListEl.innerHTML = '';
+
+                // Sort by created date (newest first)
+                const sorted = buildingKeys.sort((a, b) => {
+                    return buildings[b].createdDate.localeCompare(buildings[a].createdDate);
+                });
+
+                sorted.forEach(key => {
+                    const building = buildings[key];
+                    const item = document.createElement('div');
+                    item.className = 'room-item';
+                    item.dataset.buildingId = key;
+
+                    const roomCount = (building.assignedRooms || []).length;
+                    const isExpanded = this.expandedBuildingId === key;
+
+                    item.innerHTML = `
+                        <div class="room-header">
+                            <div class="lot-info">
+                                <span class="lot-name">🏢 ${escapeHtml(building.name)}</span>
+                                <span class="lot-meta">${key}${building.description ? ' · ' + escapeHtml(building.description) : ''} · ${roomCount} room${roomCount !== 1 ? 's' : ''} assigned</span>
+                            </div>
+                            <div class="room-header-actions">
+                                <span class="building-badge">Building</span>
+                                <button class="room-expand-btn" data-building-id="${key}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
+                                <button class="lot-delete-btn" data-building-id="${key}" data-building-name="${escapeHtml(building.name)}" title="Delete building" style="opacity: 1;">✕</button>
+                            </div>
+                        </div>
+                        <div class="room-body ${isExpanded ? 'expanded' : ''}" id="building-body-${key}">
+                            ${this.renderBuildingBody(key, building)}
+                        </div>
+                    `;
+
+                    buildingListEl.appendChild(item);
+                });
+
+                this.bindBuildingEvents();
+            },
+
+            renderBuildingBody(buildingId, building) {
+                const rooms = RoomManager.rooms;
+                const assignedRooms = building.assignedRooms || [];
+
+                let html = `
+                    <div class="room-detail-panel">
+                        <div class="room-detail-row">
+                            <span class="detail-label">ID:</span>
+                            <span>${escapeHtml(buildingId)}</span>
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Name:</span>
+                            <span>${escapeHtml(building.name)}</span>
+                        </div>
+                        ${building.description ? `<div class="room-detail-row">
+                            <span class="detail-label">Description:</span>
+                            <span>${escapeHtml(building.description)}</span>
+                        </div>` : ''}
+                        <div class="room-detail-row">
+                            <span class="detail-label">Created:</span>
+                            <span>${building.createdDate || 'N/A'}</span>
+                        </div>
+                    </div>
+                `;
+
+                // Assigned rooms section
+                html += `<div class="assigned-lots-section">`;
+                html += `<h3>Assigned Rooms</h3>`;
+                html += `<div class="assigned-lot-list" id="assigned-room-list-${buildingId}">`;
+
+                // Only rooms not already in ANY building are assignable (room.buildingId is the source of truth)
+                const unassignedRooms = Object.keys(rooms).filter(rid => !rooms[rid].buildingId);
+
+                if (assignedRooms.length === 0) {
+                    html += `
+                        <div class="no-lots-row" id="no-rooms-row-${buildingId}">
+                            <span class="no-lots-message">No rooms assigned to this building.</span>
+                            ${unassignedRooms.length > 0 ? `
+                                <button class="btn-assign-plus" data-building-id="${buildingId}" title="Assign a room">+</button>
+                                <select class="assign-lot-select hidden" id="quick-assign-room-${buildingId}">
+                                    <option value="">Select a room…</option>
+                                    ${unassignedRooms.map(rid => {
+                                        const r = rooms[rid];
+                                        return `<option value="${rid}">${escapeHtml(r.name)} (${rid})</option>`;
+                                    }).join('')}
+                                </select>
+                            ` : ''}
+                        </div>
+                    `;
+                } else {
+                    assignedRooms.forEach(rid => {
+                        const room = rooms[rid];
+                        if (room) {
+                            html += `
+                                <div class="assigned-lot-item" data-room-id="${rid}">
+                                    <div class="assigned-lot-info">
+                                        <span class="assigned-lot-name">${escapeHtml(room.name)}</span>
+                                        <span class="assigned-lot-meta">${rid}${room.isFlowering ? ' · 🌸 flowering' : ''}</span>
+                                    </div>
+                                    <div class="assigned-lot-actions">
+                                        <button class="btn-remove-x" data-room-id="${rid}" data-building-id="${buildingId}" title="Remove from building">✕</button>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="assigned-lot-item" data-room-id="${rid}">
+                                    <div class="assigned-lot-info">
+                                        <span class="assigned-lot-name">${escapeHtml(rid)} <em>(deleted)</em></span>
+                                        <span class="assigned-lot-meta">Room no longer exists in database</span>
+                                    </div>
+                                    <div class="assigned-lot-actions">
+                                        <button class="btn-remove-x" data-room-id="${rid}" data-building-id="${buildingId}" title="Remove from building">✕</button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                }
+
+                html += `</div>`;
+
+                // Assign room row (always show when there are unassigned rooms)
+                if (unassignedRooms.length > 0) {
+                    html += `
+                        <div class="assign-lot-row">
+                            <select class="unassigned-lot-select" id="unassigned-room-select-${buildingId}">
+                                <option value="">Assign a room…</option>
+                                ${unassignedRooms.map(rid => {
+                                    const r = rooms[rid];
+                                    return `<option value="${rid}">${escapeHtml(r.name)} (${rid})</option>`;
+                                }).join('')}
+                            </select>
+                            <button class="btn btn-primary btn-sm" id="assign-room-btn-${buildingId}" data-building-id="${buildingId}">Assign</button>
+                        </div>
+                    `;
+                }
+
+                html += `</div>`;
+
+                return html;
+            },
+
+            bindBuildingEvents() {
+                // Expand/collapse buttons
+                document.querySelectorAll('.room-expand-btn[data-building-id]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const buildingId = btn.dataset.buildingId;
+                        this.toggleBuilding(buildingId);
+                    });
+                });
+
+                // Building header click to expand
+                document.querySelectorAll('#buildingList .room-header').forEach(header => {
+                    header.addEventListener('click', (e) => {
+                        if (e.target.closest('.room-expand-btn') || e.target.closest('.lot-delete-btn')) return;
+                        const buildingId = header.closest('.room-item').dataset.buildingId;
+                        this.toggleBuilding(buildingId);
+                    });
+                });
+
+                // Delete building buttons
+                document.querySelectorAll('.lot-delete-btn[data-building-id]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const buildingId = btn.dataset.buildingId;
+                        const buildingName = btn.dataset.buildingName;
+                        if (confirm(`Delete building "${buildingName}" (${buildingId})?\n\nRooms assigned to this building will be unassigned.`)) {
+                            this.deleteBuilding(buildingId);
+                        }
+                    });
+                });
+
+                // Remove room buttons (red X)
+                document.querySelectorAll('.btn-remove-x[data-building-id]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const roomId = btn.dataset.roomId;
+                        const buildingId = btn.dataset.buildingId;
+                        this.removeRoomFromBuilding(roomId, buildingId);
+                    });
+                });
+
+                // Green + quick assign buttons
+                document.querySelectorAll('.btn-assign-plus[data-building-id]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const buildingId = btn.dataset.buildingId;
+                        const select = $(`quick-assign-room-${buildingId}`);
+                        if (select.classList.contains('hidden')) {
+                            select.classList.remove('hidden');
+                            btn.textContent = '✕';
+                            btn.title = 'Cancel';
+                        } else {
+                            const roomId = select.value;
+                            if (roomId) {
+                                this.assignRoomToBuilding(roomId, buildingId);
+                            }
+                            select.classList.add('hidden');
+                            btn.textContent = '+';
+                            btn.title = 'Assign a room';
+                        }
+                    });
+                });
+
+                // Assign room buttons
+                document.querySelectorAll('[id^="assign-room-btn-"]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const buildingId = btn.dataset.buildingId;
+                        const select = $(`unassigned-room-select-${buildingId}`);
+                        const roomId = select.value;
+                        if (!roomId) {
+                            alert('Select a room to assign.');
+                            return;
+                        }
+                        this.assignRoomToBuilding(roomId, buildingId);
+                    });
+                });
+            },
+
+            toggleBuilding(buildingId) {
+                const body = $(`building-body-${buildingId}`);
+                if (body.classList.contains('expanded')) {
+                    body.classList.remove('expanded');
+                    this.expandedBuildingId = null;
+                } else {
+                    document.querySelectorAll('#buildingList .room-body.expanded').forEach(b => b.classList.remove('expanded'));
+                    body.classList.add('expanded');
+                    this.expandedBuildingId = buildingId;
+                }
+                this.renderBuildingList();
+            },
+
+            assignRoomToBuilding(roomId, buildingId) {
+                const building = this.buildings[buildingId];
+                const room = RoomManager.rooms[roomId];
+                if (!building || !room) return;
+
+                // Unassign the room from any other building first (a room lives in one building)
+                Object.values(DB.buildings).forEach(b => {
+                    if (b && b !== building && Array.isArray(b.assignedRooms)) {
+                        b.assignedRooms = b.assignedRooms.filter(id => id !== roomId);
+                    }
+                });
+
+                if (!building.assignedRooms) building.assignedRooms = [];
+                if (!building.assignedRooms.includes(roomId)) {
+                    building.assignedRooms.push(roomId);
+                }
+                room.buildingId = buildingId;
+
+                markUnsaved();
+                this.renderBuildingList();
+                RoomManager.renderRoomList();
+            },
+
+            removeRoomFromBuilding(roomId, buildingId) {
+                const building = this.buildings[buildingId];
+                if (!building) return;
+
+                building.assignedRooms = (building.assignedRooms || []).filter(id => id !== roomId);
+
+                const room = RoomManager.rooms[roomId];
+                if (room && room.buildingId === buildingId) {
+                    room.buildingId = null;
+                }
+
+                markUnsaved();
+                this.renderBuildingList();
+                RoomManager.renderRoomList();
+            },
+
+            deleteBuilding(buildingId) {
+                const building = this.buildings[buildingId];
+                if (!building) return;
+
+                // Unassign all of the building's rooms (room.buildingId → null)
+                (building.assignedRooms || []).forEach(rid => {
+                    const room = RoomManager.rooms[rid];
+                    if (room && room.buildingId === buildingId) {
+                        room.buildingId = null;
+                    }
+                });
+
+                delete DB.data.buildings[buildingId];
+                markUnsaved();
+                this.renderBuildingList();
+                RoomManager.renderRoomList();
+                RoomManager.updateBuildingDatalist();
+                updateRoomStatusBar();
+            }
+        };
+
         // ---- Start ----
         init();
         RoomManager.init();
+        BuildingManager.init();
         Calendar.init();
         CalendarIO.init();
     </script>

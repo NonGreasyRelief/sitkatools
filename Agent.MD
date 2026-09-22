@@ -59,6 +59,24 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "_tool_<ToolName>": { ... }
     }
   },
+  "rooms": {
+    "<RoomID>": {
+      "name": "string",
+      "description": "string | null",
+      "createdDate": "YYYY-MM-DD",
+      "assignedLots": ["<LotID>"],
+      "isFlowering": "boolean",       // Crop Projection eligibility flag
+      "buildingId": "string | null"   // building the room is in (also tracked in buildings.<buildingId>.assignedRooms)
+    }
+  },
+  "buildings": {
+    "<BuildingID>": {
+      "name": "string",
+      "description": "string | null",
+      "createdDate": "YYYY-MM-DD",
+      "assignedRooms": ["<RoomID>"]   // rooms in this building (mirrors room.buildingId)
+    }
+  },
   "calendarEvents": [
     {
       "lotId": "string",
@@ -145,7 +163,7 @@ function openModuleInTab(url) {
     }, 1000);
 
     // Send DB via postMessage with retry mechanism
-    const dbPayload = DB.data || { lots: {}, rooms: {}, calendarEvents: [] };
+    const dbPayload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
     let attempts = 0, acknowledged = false;
 
     function trySend() {
@@ -301,7 +319,10 @@ Include these styles in SitkaTools.html:
 The central hub with two modes:
 
 1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database.
-2. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
+2. **Room Manager:** Create rooms (with an optional flowering flag) and buildings, then assign rooms to buildings. A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
+3. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
+
+   The calendar has a **tag filter bar** at the top-left of the grid (visible only when a DB is loaded). A "＋ Add filter" button opens a dropdown grouped by tag key — **room**, **building**, **lot**, **strain**, and **task type** — listing every value present in events that already match the currently active filters, so each successive dropdown only offers values that can still produce results. Selecting a value adds it as a removable pill (with an ✕) above the calendar; multiple filters combine with AND logic. Events without a resolvable value for a filtered key are hidden (strict matching). Room/building/strain/task-type values are resolved per event: CropLabourWizard real-lot events get their physical room from the task's phase rules (cloning tasks → cloning room, veg-phase tasks → veg room, everything else → flower room), projected lots use their stored `roomId`, and equipment maintenance uses its `roomId`. Filters apply to both the calendar grid and the terminal list (which shows "N of M events" while filtering); they are session-only and never persisted to the DB. When the DB is replaced (import or subtool update), filters whose values no longer exist are dropped automatically.
 
 ### Subtools — Popup Window Convention
 
@@ -324,6 +345,22 @@ Each room in `DB.data.rooms[roomId]` may carry a boolean flag:
 - Set via the "Flowering room" checkbox in SitkaTools' Room Manager (room form + per-room toggle row in the room detail panel).
 - Only rooms with `isFlowering === true` are eligible for projection.
 - The flag is informational — only CropLabourWizard reads it to decide which rooms get projection entries in its lot selector.
+
+### Buildings — `buildings` key, `room.buildingId`
+
+Buildings group rooms. They live in the top-level `buildings` key and are managed in SitkaTools' Room Manager (a building editor below the room editor, styled identically):
+
+```js
+DB.data.buildings = {
+    "B66D": { name: "Building 66D", description: null, createdDate: "2026-09-21", assignedRooms: ["B66DG1", "B66DG2"] }
+}
+```
+
+- **Source of truth for a room's building is the room itself:** `rooms.<roomId>.buildingId` (the building ID, or `null`). Each building mirrors its rooms in `buildings.<buildingId>.assignedRooms[]` for display.
+- A room belongs to at most one building. Assigning a room to a building unassigns it from any other building first; removing it clears `room.buildingId`.
+- The room form has a "Building" dropdown (populated from `DB.data.buildings`) so a room can be assigned to an existing building on day 1. Creating a room with a selected building registers it in that building's `assignedRooms`.
+- Deleting a room removes it from its building's `assignedRooms`; deleting a building nulls out `buildingId` on all of its rooms.
+- Buildings are informational — no other tool currently reads them.
 
 ### Projected Lot Map — `_CropLabourWizard.projectedLots`
 
@@ -829,11 +866,13 @@ const DB = {
 
     get lots() { return this.data?.lots || {}; },
     get rooms() { return this.data?.rooms || {}; },
+    get buildings() { return this.data?.buildings || {}; },
 
     ensureStructure() {
-        if (!this.data) this.data = { lots: {}, rooms: {}, calendarEvents: [] };
+        if (!this.data) this.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
         if (!this.data.lots) this.data.lots = {};
         if (!this.data.rooms) this.data.rooms = {};
+        if (!this.data.buildings) this.data.buildings = {};
         if (!this.data.calendarEvents) this.data.calendarEvents = [];
         return this.data;
     },
