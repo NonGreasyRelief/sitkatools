@@ -1051,7 +1051,12 @@
             if (ev.lotId && d.lots[ev.lotId]) {
                 const lot = d.lots[ev.lotId];
                 let roomName = null;
-                if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) roomName = lot.cloningRoom;
+                // Explicit roomPhase (written by CropLabourWizard when the recipe task
+                // specifies one) wins over the known-type lists below.
+                if (ev.roomPhase === 'cloning') roomName = lot.cloningRoom;
+                else if (ev.roomPhase === 'veg') roomName = lot.vegRoom;
+                else if (ev.roomPhase === 'flower') roomName = lot.destRoom;
+                else if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) roomName = lot.cloningRoom;
                 else if (CLW_VEG_ROOM_TYPES.includes(ev.taskType)) roomName = lot.vegRoom;
                 else roomName = lot.destRoom; // everything else, incl. transplant & post-transplant
                 for (const r of Object.values(d.rooms)) {

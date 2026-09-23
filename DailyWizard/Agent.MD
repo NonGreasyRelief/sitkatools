@@ -162,6 +162,14 @@ Rules:
 - **Orphaned entries:** if a building exists in `_DailyWizard.buildings` but no longer exists in `DB.data.buildings` (deleted in SitkaTools), it still appears in the building selector with a ⚠️ suffix so the manager can review and delete its task list. Orphaned buildings are excluded from the All Buildings view.
 - **No calendar events:** this tool appends nothing to `calendarEvents`.
 
+## Shared Suite Standard — Tool-Owned Keys & JSON Import/Export
+
+DailyWizard's pattern is now the **shared suite standard** for per-tool data: each tool owns exactly one top-level DB key (DailyWizard → `_DailyWizard`, CropLabourWizard → `_CropLabourWizard`, etc.), reads/writes only its own key, and supports standalone file import/export of that data. CropLabourWizard's **Task Recipes** feature follows this same pattern — recipes live under `_CropLabourWizard.recipes` and are imported/exported as self-contained `recipe-<id>.json` files via an explicit file picker (no auto-loading of adjacent JSONs). See the root `Agent.MD` → "Task Recipes" for the full contract.
+
+### CLW Event Attribution — `roomPhase`
+
+When attributing CropLabourWizard events to a building (`buildingForEvent`), DailyWizard checks an **explicit `ev.roomPhase` first** (written by CropLabourWizard when the recipe task specifies one): `'cloning'` → the lot's cloning room, `'veg'` → veg room, `'flower'` → destination room. Only when `roomPhase` is absent does it fall back to the known-type lists (`CLW_CLONE_ROOM_TYPES`, `CLW_VEG_ROOM_TYPES`) and then default to the destination room. This lets custom recipe tasks carry their own room attribution without DailyWizard needing to know about each new task type.
+
 ## Relationship to SitkaTools
 
 DailyWizard is part of the SitkaGit suite: a standalone single-file HTML application, vanilla HTML/CSS/JS, no build step, no network calls, running in the browser sandbox (`file://`).

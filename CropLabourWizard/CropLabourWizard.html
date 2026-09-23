@@ -169,10 +169,6 @@
         /* Project Crop button in the header — same height as the lot dropdown (matching its padding);
            greys out when the selected lot can't be projected */
         .btn-project { padding: 10px 12px; white-space: nowrap; }
-        /* Bloom length toggle — two small stacked buttons left of Project Crop (8 / 9 weeks) */
-        .bloom-toggle { display: flex; flex-direction: column; gap: 4px; }
-        .bloom-btn { padding: 3px 8px; font-size: 0.7rem; white-space: nowrap; }
-        .bloom-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
         .header-right .form-group { margin-bottom: 0; } /* bottom-align button + dropdown in the header row */
         .btn:disabled { opacity: 0.45; cursor: not-allowed; }
         .btn:disabled:hover { border-color: var(--border); background: var(--bg-card); }
@@ -265,6 +261,8 @@
         }
 
         .form-row .form-group { flex: 1; }
+
+        .recipe-btn { padding: 10px 14px; font-size: 0.85rem; white-space: nowrap; }
 
         /* ---- Task List ---- */
         .task-list {
@@ -786,6 +784,100 @@
         .preview-task-item.disabled {
             opacity: 0.35;
         }
+
+        /* ---- Recipe Manager Overlay (Stage 4) ---- */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            z-index: 250;
+            display: none;
+            flex-direction: column;
+        }
+        .overlay.open { display: flex; }
+        .overlay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        .overlay-title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+        .overlay-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .overlay-body > * { width: 100%; max-width: 940px; }
+        .overlay-footer {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 20px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        /* Recipe list */
+        .recipe-list { display: flex; flex-direction: column; gap: 10px; }
+        .recipe-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+        }
+        .recipe-row-main { flex: 1; min-width: 0; cursor: pointer; }
+        .recipe-row-name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .recipe-row-meta { font-size: 0.78rem; color: var(--text-secondary); margin-top: 3px; word-break: break-all; }
+        .recipe-badge {
+            font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 2px 7px; border-radius: 20px; background: var(--bg-card); color: var(--accent);
+            border: 1px solid var(--border); white-space: nowrap;
+        }
+        .recipe-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+        .recipe-actions .btn { padding: 6px 10px; font-size: 0.8rem; }
+
+        /* Task table */
+        .task-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .task-table th {
+            text-align: left; padding: 6px 8px; color: var(--text-secondary);
+            font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px;
+            border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+        .task-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .task-table input, .task-table select {
+            width: 100%; padding: 7px 8px; border-radius: 6px;
+            border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 0.85rem;
+        }
+        .task-table input:focus, .task-table select:focus { outline: none; border-color: var(--accent); }
+        .task-table .t-emoji { width: 46px; text-align: center; }
+        .task-table .t-type { min-width: 130px; }
+        .task-table .t-offset { width: 72px; }
+        .task-table .t-ref, .task-table .t-phase { min-width: 96px; }
+        .task-table .t-check { text-align: center; width: 42px; }
+        .task-table .t-check input { width: 16px; height: 16px; margin: 0 auto; }
+        .task-table .t-move, .task-table .t-del { display: flex; gap: 3px; justify-content: center; white-space: nowrap; }
+        .task-table .t-move button, .task-table .t-del button {
+            padding: 4px 7px; font-size: 0.8rem; border-radius: 6px; cursor: pointer;
+            background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border);
+        }
+        .task-table .t-move button:hover, .task-table .t-del button:hover { border-color: var(--text-secondary); }
+        .task-table .t-del button.danger:hover { border-color: var(--danger); color: var(--danger); }
+        .task-table .t-move button:disabled, .task-table .t-del button:disabled { opacity: 0.35; cursor: not-allowed; }
+        .task-table tr.mandatory td { background: rgba(83, 216, 168, 0.06); }
+
+        @media (max-width: 768px) {
+            .overlay-body { padding: 14px; }
+            .recipe-row { flex-direction: column; align-items: stretch; }
+            .recipe-actions { justify-content: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -795,9 +887,9 @@
             <span class="logo">👷 Crop Labour Wizard</span>
         </div>
         <div class="header-right">
-            <div class="bloom-toggle" title="Bloom length used when projecting crops (clone cut stays at harvest − 21)">
-                <button type="button" id="bloom8Btn" class="btn btn-secondary bloom-btn">8 weeks</button>
-                <button type="button" id="bloom9Btn" class="btn btn-secondary bloom-btn active">9 weeks</button>
+            <div class="form-group projection-recipe-group">
+                <label for="projectionRecipeSelect">Projection Recipe</label>
+                <select id="projectionRecipeSelect"></select>
             </div>
             <button type="button" class="btn btn-secondary btn-project" id="generateProjectionsBtn" disabled title="Select a lot to project its crop">🔮 Project Crop</button>
             <button type="button" class="btn btn-secondary btn-project" id="clearProjectionsBtn" disabled title="Clears all projections for the selected lot's room">🧹 Clear Projections</button>
@@ -810,8 +902,9 @@
         </div>
     </header>
 
-    <!-- Hidden file input for mobile DB import -->
+    <!-- Hidden file inputs (mobile DB import + recipe import) -->
     <input type="file" id="dbImportInput" accept=".json">
+    <input type="file" id="recipeImportInput" accept=".json">
 
     <!-- Main Content -->
     <main class="main">
@@ -834,6 +927,20 @@
         <div class="card">
             <h2 class="card-title">Schedule Config</h2>
             <form id="scheduleForm">
+                <div class="form-row">
+                    <div class="form-group" style="flex:2;">
+                        <label for="recipeSelect">Task Recipe</label>
+                        <select id="recipeSelect"></select>
+                    </div>
+                    <div class="form-group" style="flex:1; justify-content:flex-end;">
+                        <label>&nbsp;</label>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-secondary recipe-btn" id="manageRecipesBtn" title="Create, edit, duplicate or delete recipes">✏️ Manage</button>
+                            <button type="button" class="btn btn-secondary recipe-btn" id="importRecipeBtn" title="Import a task recipe from a .json file">⬆️ Import</button>
+                            <button type="button" class="btn btn-secondary recipe-btn" id="exportRecipeBtn" title="Download the selected recipe as a .json file">⬇️ Export</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label id="anchorDateLabel" for="plantingDate">Planting Date (Day 0)</label>
                     <input type="date" id="plantingDate" required>
@@ -876,6 +983,70 @@
     <!-- Custom Date Picker Popup (opened by clicking a task's computed date) -->
     <div class="dp-popup" id="datePickerPopup" hidden></div>
 
+    <!-- Recipe Manager Overlay (Stage 4) — create / edit / duplicate / delete / export recipes -->
+    <div class="overlay" id="recipeManagerOverlay">
+        <header class="overlay-header">
+            <button type="button" class="btn btn-secondary" id="recipeMgrBackBtn" style="visibility:hidden;">←</button>
+            <span class="overlay-title" id="recipeMgrTitle">Manage Recipes</span>
+            <span style="width:44px;"></span>
+        </header>
+        <div class="overlay-body">
+            <!-- List view -->
+            <div id="recipeListPane">
+                <button type="button" class="btn btn-primary" id="recipeNewBtn" style="margin-bottom:16px;">＋ New Recipe</button>
+                <div class="recipe-list" id="recipeList"></div>
+            </div>
+            <!-- Editor view -->
+            <div id="recipeEditorPane" style="display:none;">
+                <div class="form-row">
+                    <div class="form-group" style="flex:2;">
+                        <label for="recipeNameInput">Recipe Name *</label>
+                        <input type="text" id="recipeNameInput" placeholder="e.g., Sitka Standard (no IPM)">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label for="recipeIdInput">ID</label>
+                        <input type="text" id="recipeIdInput" readonly title="Stable machine id — do not change">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="recipeChainInput">Clone cut before harvest (days)</label>
+                    <input type="number" id="recipeChainInput" min="1" step="1" value="21">
+                    <div style="font-size:0.78rem; color:var(--text-secondary);">Days before harvest start that clone cutting lands — also drives the projection cadence.</div>
+                </div>
+                <div class="form-group">
+                    <label>Tasks (top → bottom = chronological order)</label>
+                    <div style="overflow-x:auto;">
+                        <table class="task-table" id="recipeTaskTable">
+                            <thead>
+                                <tr>
+                                    <th title="Emoji">Em</th>
+                                    <th>Name</th>
+                                    <th title="Event tag (snake_case)">Type</th>
+                                    <th title="Reference anchor">Ref</th>
+                                    <th title="Days from reference">+d</th>
+                                    <th title="Room phase override (optional)">Phase</th>
+                                    <th title="Toggleable (can be switched off)" class="t-check">Tgl</th>
+                                    <th title="On by default" class="t-check">On</th>
+                                    <th title="Lock offset (not editable in preview)" class="t-check">Lck</th>
+                                    <th></th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="recipeTaskBody"></tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="recipeAddTaskBtn" style="margin-top:10px;">＋ Add Task</button>
+                </div>
+            </div>
+        </div>
+        <footer class="overlay-footer">
+            <button class="btn btn-secondary" id="recipeMgrCloseBtn">Close</button>
+            <span style="flex:1;"></span>
+            <button class="btn btn-secondary" id="recipeEditorCancelBtn" style="display:none;">Cancel</button>
+            <button class="btn btn-primary" id="recipeEditorSaveBtn" style="display:none;">Save Recipe</button>
+        </footer>
+    </div>
+
     <script>
         // =====================================================
         // CropLabourWizard — Crop Schedule Calculator
@@ -892,6 +1063,17 @@
                 if (!this.data.lots) this.data.lots = {};
                 if (!this.data.rooms) this.data.rooms = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                // CropLabourWizard top-level state — additive backfill so old DB files load unchanged.
+                // (BUILTIN_RECIPE is defined below; the first ensureStructure() call happens after it.)
+                if (!this.data._CropLabourWizard) this.data._CropLabourWizard = { generations: [] };
+                if (!this.data._CropLabourWizard.recipes) this.data._CropLabourWizard.recipes = {};
+                if (!this.data._CropLabourWizard.taskTypes) {
+                    // Seed the task-type registry with the built-in recipe's labels/emojis so
+                    // SitkaTools can render events for custom-recipe task types consistently.
+                    const tt = {};
+                    for (const t of BUILTIN_RECIPE.tasks) tt[t.taskType] = { name: t.name, emoji: t.emoji };
+                    this.data._CropLabourWizard.taskTypes = tt;
+                }
                 return this.data;
             }
         };
@@ -914,6 +1096,8 @@
                     DB.ensureStructure();
                     buildDefaultOffsets();
                     populateLotSelector();
+                    populateRecipeSelector(true);
+                    populateProjectionRecipeSelector(true);
                     renderScheduleList();
                     updateStatusBar();
                     refreshPreview();
@@ -960,10 +1144,17 @@
             }
         }
 
-        // ---- Task Definitions (reference + default offset) ----
-        // reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
-        // defaultOffset: days from the reference point
-        const TASK_DEFS = [
+        // ---- Built-in Recipe (the original hard-coded task list, now data-driven) ----
+        // Recipe schema: { id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...] }
+        // Task fields — reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
+        // defaultOffset: days from the reference point. Array order = chronological display order
+        // (load-bearing: room resolution compares a task's position vs "transplant" in this list).
+        const BUILTIN_RECIPE = {
+            id: 'sitka-9week',
+            name: 'Sitka Standard (9-week bloom)',
+            version: 1,
+            chain: { cloneCutBeforeHarvest: 21 },
+            tasks: [
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
             { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
@@ -1008,7 +1199,531 @@
             { name: 'Machine Trim Smalls', emoji: '⚙️', taskType: 'machine_trim', reference: 'trim', defaultOffset: 7, hasToggle: true },
             { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
             { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8 }
-        ];
+            ]
+        };
+
+        // ---- Active Recipe state ----
+        // The recipe whose tasks drive the preview + generation for the currently selected lot.
+        // Built-in always resolves; user/imported recipes live in _CropLabourWizard.recipes.
+        let activeRecipe = BUILTIN_RECIPE;
+
+        // Resolve a recipe by id: built-in first, then DB recipes; falls back to built-in.
+        function getRecipeById(id) {
+            if (!id || id === BUILTIN_RECIPE.id) return BUILTIN_RECIPE;
+            const r = DB.data?._CropLabourWizard?.recipes?.[id];
+            return (r && Array.isArray(r.tasks)) ? r : BUILTIN_RECIPE;
+        }
+
+        // Default anchor offsets read from a recipe's own tasks. Numeric last-resort fallbacks
+        // keep odd recipes working — validation requires planting/flip/harvest anyway.
+        function recipeAnchorDefaults(recipe) {
+            const off = tt => { const t = recipe.tasks.find(x => x.taskType === tt); return Number.isInteger(t?.defaultOffset) ? t.defaultOffset : null; };
+            return {
+                planting: off('planting') ?? 14,
+                flip: off('flip') ?? 20,
+                harvest: off('harvest') ?? 63,
+                trim: off('trim') ?? 11
+            };
+        }
+
+        // Days before harvest start that clone cutting happens (chain param; default 21).
+        function cloneCutDays(recipe) {
+            const n = recipe?.chain?.cloneCutBeforeHarvest;
+            return Number.isInteger(n) && n > 0 ? n : 21;
+        }
+
+        // ---- Projection recipe state (Stage 3) ----
+        // The header dropdown picks the recipe used for FRESH projection lots and for the
+        // chain cadence. Per-lot override: generating a TBA lot with the form's (different)
+        // recipe uses that recipe and records it in the map entry config (generateLotSchedule).
+        let projectionRecipeId = BUILTIN_RECIPE.id;
+
+        function getProjectionRecipe() {
+            return getRecipeById(projectionRecipeId);
+        }
+
+        // Bloom length of a recipe = its harvest task's default offset from flip.
+        function recipeBloomDays(recipe) {
+            const t = recipe?.tasks?.find(x => x.taskType === 'harvest');
+            return Number.isInteger(t?.defaultOffset) ? t.defaultOffset : 63;
+        }
+
+        // Task types whose dates move with the bloom length — derived from a recipe:
+        // everything referenced from flip/harvest/trim (i.e. from flip onward, except flip
+        // itself). Identical to the old hard-coded BLOOM_DEPENDENT_TASKS set for the built-in
+        // recipe (verified: reference ∈ {flip, harvest, trim} matches the 17 known ids).
+        function bloomDependentTaskTypes(recipe) {
+            return new Set(
+                (recipe?.tasks || [])
+                    .filter(t => t.reference === 'flip' || t.reference === 'harvest' || t.reference === 'trim')
+                    .map(t => t.taskType)
+            );
+        }
+
+        // Day-0 spans of a fresh lot, read from its recipe (fallbacks = built-in behavior):
+        // flip/transplant are measured from Day 0; irrClean is the tank_irrigation_clean task's
+        // offset from harvest END. The regen cadence span is flip + bloom + irrClean (harvest
+        // follows FLIP, not transplant — for the built-in: 34 + 63 + 2 = 99 days).
+        function freshLotDay0Offsets(recipe) {
+            const off = tt => { const t = recipe?.tasks?.find(x => x.taskType === tt); return Number.isInteger(t?.defaultOffset) ? t.defaultOffset : null; };
+            const planting = off('planting') ?? 14;
+            return {
+                planting,
+                flip: planting + (off('flip') ?? 20),
+                transplant: planting + (off('transplant') ?? 10),
+                irrClean: off('tank_irrigation_clean') ?? 2
+            };
+        }
+
+        // The recipe a lot's schedule was generated from — per-lot override (config.recipeId) or the
+        // header projection recipe. Works for real lots and projected lots alike.
+        function lotRecipeFor(lotId) {
+            return getRecipeById(getScheduleConfig(lotId)?.recipeId || projectionRecipeId);
+        }
+
+        // Days from Day 0 to a fresh lot's simulated irrigation-clean under the given recipe:
+        // flip offset + bloom length + irr-clean offset (built-in: 34 + 63 + 2 = 99).
+        function freshIrrSpanDays(recipe) {
+            const f = freshLotDay0Offsets(recipe);
+            return f.flip + recipeBloomDays(recipe) + f.irrClean;
+        }
+
+        // ---- Recipe validation — must pass BEFORE any DB mutation ----
+        const RECIPE_ANCHORS = ['cloning', 'planting', 'flip', 'harvest', 'trim'];
+        function validateRecipe(obj) {
+            const errors = [];
+            if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return ['Recipe must be a JSON object'];
+            if (typeof obj.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(obj.id)) {
+                errors.push('id: required — letters, digits, "-" or "_"');
+            }
+            if (typeof obj.name !== 'string' || !obj.name.trim()) errors.push('name: required non-empty string');
+            if (!Array.isArray(obj.tasks) || obj.tasks.length === 0) {
+                return [...errors, 'tasks: required non-empty array'];
+            }
+            const seen = new Set();
+            const present = new Set();
+            for (let i = 0; i < obj.tasks.length; i++) {
+                const t = obj.tasks[i];
+                const label = `tasks[${i}]`;
+                if (!t || typeof t !== 'object') { errors.push(`${label}: must be an object`); continue; }
+                const who = t.taskType ? `"${t.taskType}"` : (t.name ? `"${t.name}"` : '?');
+                if (typeof t.taskType !== 'string' || !/^[a-z][a-z0-9_]*$/.test(t.taskType)) {
+                    errors.push(`${label} ${who}: taskType must be snake_case (lowercase letters/digits/underscores)`);
+                } else {
+                    if (seen.has(t.taskType)) errors.push(`${label} ${who}: duplicate taskType`);
+                    seen.add(t.taskType);
+                    present.add(t.taskType);
+                }
+                if (typeof t.name !== 'string' || !t.name.trim()) errors.push(`${label} ${who}: name is required`);
+                if (typeof t.emoji !== 'string' || !t.emoji) errors.push(`${label} ${who}: emoji is required`);
+                if (!RECIPE_ANCHORS.includes(t.reference)) {
+                    errors.push(`${label} ${who}: reference must be one of ${RECIPE_ANCHORS.join(' / ')}`);
+                }
+                if (!Number.isInteger(t.defaultOffset)) errors.push(`${label} ${who}: defaultOffset must be an integer`);
+                if (t.roomPhase != null && !['cloning', 'veg', 'flower'].includes(t.roomPhase)) {
+                    errors.push(`${label} ${who}: roomPhase must be "cloning", "veg" or "flower"`);
+                }
+            }
+            // Mandatory anchor tasks (they drive the other dates)
+            for (const a of ['planting', 'flip', 'harvest']) {
+                if (!present.has(a)) errors.push(`tasks: missing mandatory anchor task "${a}"`);
+            }
+            // Every referenced anchor must exist in the recipe ('cloning' is always available as Day 0)
+            for (const t of obj.tasks) {
+                if (t && typeof t === 'object' && t.reference && t.reference !== 'cloning' && !present.has(t.reference)) {
+                    errors.push(`tasks: "${t.taskType || '?'}" references anchor "${t.reference}" which has no task in this recipe`);
+                }
+            }
+            // Chain params (optional; cloneCutBeforeHarvest defaults to 21 when absent)
+            if (obj.chain != null) {
+                if (typeof obj.chain !== 'object' || Array.isArray(obj.chain)) {
+                    errors.push('chain: must be an object');
+                } else if (obj.chain.cloneCutBeforeHarvest != null &&
+                           (!Number.isInteger(obj.chain.cloneCutBeforeHarvest) || obj.chain.cloneCutBeforeHarvest <= 0)) {
+                    errors.push('chain.cloneCutBeforeHarvest: must be a positive integer');
+                }
+            }
+            return errors;
+        }
+
+        // Merge a recipe's task labels/emojis into the _CropLabourWizard.taskTypes registry.
+        // SitkaTools reads this map to render events for custom task types (Stage 2).
+        function mergeTaskTypeRegistry(recipe) {
+            DB.ensureStructure();
+            if (!DB.data._CropLabourWizard.taskTypes) DB.data._CropLabourWizard.taskTypes = {};
+            for (const t of recipe.tasks || []) {
+                if (!t?.taskType) continue;
+                const existing = DB.data._CropLabourWizard.taskTypes[t.taskType] || {};
+                DB.data._CropLabourWizard.taskTypes[t.taskType] = {
+                    name: t.name || existing.name || t.taskType,
+                    emoji: t.emoji || existing.emoji || '📋',
+                    roomPhase: t.roomPhase || existing.roomPhase || null
+                };
+            }
+        }
+
+        // ---- Recipe selector UI ----
+        // Rebuild the recipe dropdown: built-in first, then DB recipes in insertion order.
+        function populateRecipeSelector(preserveValue = true) {
+            const prev = preserveValue ? (recipeSelect.value || activeRecipe?.id) : BUILTIN_RECIPE.id;
+            recipeSelect.innerHTML = '';
+            const all = [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
+            for (const r of all) {
+                if (!r || !Array.isArray(r.tasks)) continue;
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : r.name;
+                recipeSelect.appendChild(opt);
+            }
+            recipeSelect.value = [...recipeSelect.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
+        }
+
+        // Rebuild the PROJECTION recipe dropdown (header): built-in first, then DB recipes.
+        // Drives fresh projection lots + chain cadence (projectionRecipeId). Independent of the
+        // per-lot form recipe selector — a lot can be generated with one recipe while the room's
+        // projected chain uses another.
+        function populateProjectionRecipeSelector(preserveValue = true) {
+            const sel = $('projectionRecipeSelect');
+            if (!sel) return;
+            const prev = preserveValue ? (sel.value || projectionRecipeId) : BUILTIN_RECIPE.id;
+            sel.innerHTML = '';
+            const all = [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
+            for (const r of all) {
+                if (!r || !Array.isArray(r.tasks)) continue;
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : r.name;
+                sel.appendChild(opt);
+            }
+            sel.value = [...sel.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
+            projectionRecipeId = sel.value;
+        }
+
+        // Point activeRecipe + the dropdown at the selected lot's stored recipe (built-in fallback)
+        function syncActiveRecipeToLot(lotId) {
+            const cfg = getScheduleConfig(lotId);
+            activeRecipe = getRecipeById(cfg?.recipeId);
+            populateRecipeSelector(true);
+        }
+
+        // ---- Recipe import — explicit file picker only (no auto-loading of adjacent JSONs) ----
+        function handleRecipeImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                let parsed;
+                try {
+                    parsed = JSON.parse(ev.target.result);
+                } catch (err) {
+                    alert('Failed to parse recipe JSON: ' + err.message);
+                    e.target.value = '';
+                    return;
+                }
+                // Validate BEFORE mutating anything
+                const errors = validateRecipe(parsed);
+                if (errors.length > 0) {
+                    alert(`Invalid recipe "${file.name}":\n\n` + errors.join('\n'));
+                    e.target.value = '';
+                    return;
+                }
+                DB.ensureStructure();
+                if (!DB.data._CropLabourWizard.recipes) DB.data._CropLabourWizard.recipes = {};
+                const existing = DB.data._CropLabourWizard.recipes[parsed.id];
+                if (existing && !confirm(`A recipe with id "${parsed.id}" (${existing.name}) already exists.\n\nReplace it?`)) {
+                    e.target.value = '';
+                    return;
+                }
+                DB.data._CropLabourWizard.recipes[parsed.id] = parsed;
+                mergeTaskTypeRegistry(parsed);
+                // Select the imported recipe and rebuild the preview from its defaults
+                populateRecipeSelector(false);
+                populateProjectionRecipeSelector(true);
+                recipeSelect.value = parsed.id;
+                activeRecipe = getRecipeById(parsed.id);
+                buildDefaultOffsets();
+                refreshPreview();
+                notifySitkaTools();
+                showToast(`Recipe imported: ${parsed.name}`);
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+
+        // ---- Recipe export — download the selected recipe as pretty JSON (share-API-first) ----
+        function handleRecipeExport() {
+            const recipe = getRecipeById(recipeSelect.value);
+            if (!recipe) return;
+            exportRecipeJson(recipe);
+        }
+
+        // ---- Recipe export helper (share-API-first) — used by the form button + manager ----
+        function exportRecipeJson(recipe) {
+            const json = JSON.stringify(recipe, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const filename = `recipe-${recipe.id}.json`;
+
+            // Use Web Share API on mobile (fixes iOS Safari blob URL issue)
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename })
+                    .then(() => showToast('Recipe shared'))
+                    .catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast(`Recipe saved as ${filename}`);
+            }
+        }
+
+        // ---- Recipe Manager (Stage 4) — create / edit / duplicate / delete recipes in-UI ----
+        const RECIPE_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const MANDATORY_RECIPE_TASKS = ['planting', 'flip', 'harvest'];
+        let editorRecipe = null; // working deep-copy while editing
+
+        function cloneRecipeData(recipe) { return JSON.parse(JSON.stringify(recipe)); }
+
+        // Random 6-char id, collision-checked against the built-in + all DB recipes.
+        function generateRecipeId() {
+            const used = new Set(Object.keys(DB.data?._CropLabourWizard?.recipes || {}));
+            used.add(BUILTIN_RECIPE.id);
+            let id;
+            do {
+                id = '';
+                for (let i = 0; i < 6; i++) id += RECIPE_CODE_ALPHABET[Math.floor(Math.random() * RECIPE_CODE_ALPHABET.length)];
+            } while (used.has(id));
+            return id;
+        }
+
+        function allRecipes() {
+            return [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
+        }
+
+        // ---- Manager overlay: open/close + list/editor view switching ----
+        function openRecipeManager() {
+            renderRecipeList();
+            setRecipeMgrView('list');
+            $('recipeManagerOverlay').classList.add('open');
+        }
+        function closeRecipeManager() {
+            $('recipeManagerOverlay').classList.remove('open');
+            editorRecipe = null;
+        }
+        function setRecipeMgrView(view) {
+            const isList = view === 'list';
+            $('recipeListPane').style.display = isList ? '' : 'none';
+            $('recipeEditorPane').style.display = isList ? 'none' : '';
+            $('recipeMgrBackBtn').style.visibility = isList ? 'hidden' : 'visible';
+            $('recipeMgrTitle').textContent = isList ? 'Manage Recipes' : (editorRecipe?.name || 'Edit Recipe');
+            $('recipeMgrCloseBtn').style.display = isList ? '' : 'none';
+            $('recipeEditorCancelBtn').style.display = isList ? 'none' : '';
+            $('recipeEditorSaveBtn').style.display = isList ? 'none' : '';
+        }
+
+        function renderRecipeList() {
+            const list = $('recipeList');
+            list.innerHTML = '';
+            for (const r of allRecipes()) {
+                if (!r || !Array.isArray(r.tasks)) continue;
+                const isBuiltin = r.id === BUILTIN_RECIPE.id;
+
+                const row = document.createElement('div');
+                row.className = 'recipe-row';
+
+                const main = document.createElement('div');
+                main.className = 'recipe-row-main';
+                main.title = 'Use this recipe for the selected lot';
+                const nameEl = document.createElement('div');
+                nameEl.className = 'recipe-row-name';
+                nameEl.innerHTML = `<span>${escapeHtml(r.tasks[0]?.emoji || '📋')}</span> <span>${escapeHtml(r.name)}</span>` +
+                    (isBuiltin ? ' <span class="recipe-badge">built-in</span>' : '');
+                const meta = document.createElement('div');
+                meta.className = 'recipe-row-meta';
+                meta.textContent = `${r.id} · ${r.tasks.length} tasks · clone cut −${cloneCutDays(r)}d`;
+                main.appendChild(nameEl);
+                main.appendChild(meta);
+                main.addEventListener('click', () => selectRecipeFromManager(r.id));
+
+                const actions = document.createElement('div');
+                actions.className = 'recipe-actions';
+                const mkBtn = (label, title, fn, danger) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'btn btn-secondary' + (danger ? ' btn-danger' : '');
+                    b.textContent = label;
+                    b.title = title;
+                    b.addEventListener('click', (ev) => { ev.stopPropagation(); fn(); });
+                    return b;
+                };
+                if (!isBuiltin) actions.appendChild(mkBtn('✏️ Edit', 'Edit this recipe', () => showRecipeEditor(cloneRecipeData(r))));
+                actions.appendChild(mkBtn('⧉ Duplicate', 'Make an editable copy', () => duplicateRecipe(r)));
+                actions.appendChild(mkBtn('⬇️ Export', 'Download as .json', () => exportRecipeJson(r)));
+                if (!isBuiltin) actions.appendChild(mkBtn('🗑 Delete', 'Delete this recipe', () => deleteRecipe(r), true));
+
+                row.appendChild(main);
+                row.appendChild(actions);
+                list.appendChild(row);
+            }
+        }
+
+        // "Select" — make a recipe the active one for the current lot, then close.
+        function selectRecipeFromManager(recipeId) {
+            activeRecipe = getRecipeById(recipeId);
+            populateRecipeSelector(true);
+            recipeSelect.value = activeRecipe.id;
+            buildDefaultOffsets();
+            refreshPreview();
+            closeRecipeManager();
+            showToast(`Using recipe: ${activeRecipe.name}`);
+        }
+
+        function duplicateRecipe(r) {
+            const copy = cloneRecipeData(r);
+            copy.id = generateRecipeId();
+            copy.name = `${r.name} (copy)`;
+            copy.version = 1;
+            showRecipeEditor(copy);
+        }
+
+        // ---- Editor ----
+        function showRecipeEditor(recipe) {
+            editorRecipe = recipe;
+            $('recipeNameInput').value = recipe.name || '';
+            $('recipeIdInput').value = recipe.id || '';
+            $('recipeChainInput').value = cloneCutDays(recipe);
+            renderTaskTable();
+            setRecipeMgrView('editor');
+        }
+
+        function renderTaskTable() {
+            const body = $('recipeTaskBody');
+            body.innerHTML = '';
+            (editorRecipe?.tasks || []).forEach((t, i) => {
+                const tr = document.createElement('tr');
+                if (MANDATORY_RECIPE_TASKS.includes(t.taskType)) tr.className = 'mandatory';
+
+                const refOpts = RECIPE_ANCHORS.map(a => `<option value="${a}" ${t.reference === a ? 'selected' : ''}>${a}</option>`).join('');
+                const curPhase = t.roomPhase || '';
+                const phaseOpts = [['', 'auto'], ['cloning', 'cloning'], ['veg', 'veg'], ['flower', 'flower']]
+                    .map(([v, label]) => `<option value="${v}" ${curPhase === v ? 'selected' : ''}>${label}</option>`).join('');
+
+                tr.innerHTML = `
+                    <td class="t-emoji"><input type="text" class="t-emoji" maxlength="4" value="${escapeHtml(t.emoji || '')}" title="Emoji"></td>
+                    <td><input type="text" class="t-name" value="${escapeHtml(t.name || '')}" placeholder="Task name" title="Name"></td>
+                    <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
+                    <td class="t-ref"><select class="t-ref" title="Reference anchor">${refOpts}</select></td>
+                    <td class="t-offset"><input type="number" class="t-offset" step="1" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
+                    <td class="t-phase"><select class="t-phase" title="Room phase (optional override)">${phaseOpts}</select></td>
+                    <td class="t-check"><input type="checkbox" class="t-toggle" ${t.hasToggle ? 'checked' : ''} title="Toggleable (can be switched off)"></td>
+                    <td class="t-check"><input type="checkbox" class="t-enabled" ${t.hasToggle && t.defaultEnabled !== false ? 'checked' : ''} ${t.hasToggle ? '' : 'disabled'} title="On by default"></td>
+                    <td class="t-check"><input type="checkbox" class="t-locked" ${t.isLocked ? 'checked' : ''} title="Lock offset (not editable in preview)"></td>
+                    <td class="t-move">
+                        <button type="button" data-act="up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
+                        <button type="button" data-act="down" data-i="${i}" ${i === (editorRecipe.tasks.length - 1) ? 'disabled' : ''} title="Move down">↓</button>
+                    </td>
+                    <td class="t-del"><button type="button" class="danger" data-act="del" data-i="${i}" ${MANDATORY_RECIPE_TASKS.includes(t.taskType) ? 'disabled title="Mandatory anchor — cannot remove"' : 'title="Remove task"'}>✕</button></td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function addTaskRow() {
+            if (!editorRecipe) return;
+            editorRecipe.tasks = readTaskTable(); // sync pending DOM edits before mutating
+            editorRecipe.tasks.push({ name: '', emoji: '📋', taskType: '', reference: 'cloning', defaultOffset: 0 });
+            renderTaskTable();
+            const rows = $('recipeTaskBody').querySelectorAll('tr');
+            const last = rows[rows.length - 1];
+            if (last) { last.querySelector('.t-name').focus(); last.scrollIntoView({ block: 'nearest' }); }
+        }
+
+        function readTaskTable() {
+            return [...$('recipeTaskBody').querySelectorAll('tr')].map(tr => {
+                // Note: the <td> wrappers share these class names — scope to the element type.
+                const t = {
+                    emoji: tr.querySelector('input.t-emoji').value.trim() || '📋',
+                    name: tr.querySelector('.t-name').value.trim(),
+                    taskType: tr.querySelector('input.t-type').value.trim().toLowerCase(),
+                    reference: tr.querySelector('select.t-ref').value,
+                    defaultOffset: parseInt(tr.querySelector('input.t-offset').value, 10)
+                };
+                const phase = tr.querySelector('select.t-phase').value;
+                if (phase) t.roomPhase = phase;
+                if (tr.querySelector('.t-toggle').checked) {
+                    t.hasToggle = true;
+                    if (!tr.querySelector('.t-enabled').checked) t.defaultEnabled = false;
+                }
+                if (tr.querySelector('.t-locked').checked) t.isLocked = true;
+                return t;
+            });
+        }
+
+        function saveRecipeFromEditor() {
+            if (!editorRecipe) return;
+            editorRecipe.name = $('recipeNameInput').value.trim();
+            const chainVal = parseInt($('recipeChainInput').value, 10);
+            editorRecipe.chain = { cloneCutBeforeHarvest: Number.isInteger(chainVal) && chainVal > 0 ? chainVal : 21 };
+            editorRecipe.tasks = readTaskTable();
+            if (editorRecipe.version == null) editorRecipe.version = 1;
+
+            const errors = validateRecipe(editorRecipe);
+            if (errors.length > 0) {
+                alert(`Cannot save recipe:\n\n` + errors.join('\n'));
+                return;
+            }
+            DB.ensureStructure();
+            if (!DB.data._CropLabourWizard.recipes) DB.data._CropLabourWizard.recipes = {};
+            const wasNew = !DB.data._CropLabourWizard.recipes[editorRecipe.id];
+            DB.data._CropLabourWizard.recipes[editorRecipe.id] = editorRecipe;
+            mergeTaskTypeRegistry(editorRecipe);
+
+            // If this is the active recipe, refresh the preview from its (possibly changed) defaults.
+            if (activeRecipe?.id === editorRecipe.id) {
+                activeRecipe = getRecipeById(editorRecipe.id);
+                buildDefaultOffsets();
+                refreshPreview();
+            }
+            populateRecipeSelector(true);
+            populateProjectionRecipeSelector(true);
+            notifySitkaTools();
+            const savedName = editorRecipe.name; // closeRecipeManager() nulls the working copy
+            closeRecipeManager();
+            showToast(wasNew ? `Recipe created: ${savedName}` : `Recipe saved: ${savedName}`);
+        }
+
+        function deleteRecipe(r) {
+            const lotsUsing = countLotsUsingRecipe(r.id);
+            const msg = `Delete recipe "${r.name}" (${r.id})?` +
+                (lotsUsing > 0 ? `\n\n${lotsUsing} lot(s) currently use it — they'll fall back to the built-in recipe.` : '');
+            if (!confirm(msg)) return;
+            DB.ensureStructure();
+            delete DB.data._CropLabourWizard.recipes[r.id];
+            if (activeRecipe?.id === r.id) { activeRecipe = BUILTIN_RECIPE; buildDefaultOffsets(); refreshPreview(); }
+            if (projectionRecipeId === r.id) projectionRecipeId = BUILTIN_RECIPE.id;
+            populateRecipeSelector(true);
+            populateProjectionRecipeSelector(true);
+            notifySitkaTools();
+            renderRecipeList();
+            showToast(`Recipe deleted: ${r.name}`);
+        }
+
+        // How many lots (real + projected) reference a recipe id in their stored config.
+        function countLotsUsingRecipe(recipeId) {
+            let n = 0;
+            for (const lotId of Object.keys(DB.lots)) {
+                if (getScheduleConfig(lotId)?.recipeId === recipeId) n++;
+            }
+            for (const entry of Object.values(getProjectedLots())) {
+                if (entry?.config?.recipeId === recipeId) n++;
+            }
+            return n;
+        }
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
@@ -1033,6 +1748,8 @@
 
                 buildDefaultOffsets();
                 populateLotSelector();
+                populateRecipeSelector(true);
+                populateProjectionRecipeSelector(true);
                 renderScheduleList();
                 updateStatusBar();
                 refreshPreview();
@@ -1048,6 +1765,8 @@
                 DB.data = e.data.payload;
                 DB.ensureStructure();
                 populateLotSelector();
+                populateRecipeSelector(true);
+                populateProjectionRecipeSelector(true);
                 renderScheduleList();
                 updateStatusBar();
                 updateGenerateBtnLabel();
@@ -1065,6 +1784,10 @@
         const configSummaryEl = $('configSummary');
         const activeLotSelect = $('activeLot');
         const previewTaskList = $('previewTaskList');
+        const recipeSelect = $('recipeSelect');
+        const importRecipeBtn = $('importRecipeBtn');
+        const exportRecipeBtn = $('exportRecipeBtn');
+        const recipeImportInput = $('recipeImportInput');
 
         // ---- Multi-day task durations (user-editable in the preview) ----
         const DEFAULT_TRIM_DAYS = 7;      // Trim length, editable 1–30
@@ -1072,11 +1795,6 @@
         let trimDays = DEFAULT_TRIM_DAYS;
         let harvestMultiDay = false;
         let harvestDays = DEFAULT_HARVEST_DAYS;
-
-        // Bloom length (days from flip to harvest) used when generating/refreshing projection chains.
-        // 9 weeks = 63 days (default); 8 weeks = 56 days. Clone cut stays at harvest − 21, so the
-        // chain cadence remains correct for either bloom length.
-        let projectionBloomDays = 63;
 
         function clampDuration(v, fallback) {
             const n = parseInt(v);
@@ -1262,9 +1980,9 @@
             if (prevValue && [...sel.options].some(o => o.value === prevValue)) sel.value = prevValue;
         }
 
-        // ---- Build task offsets from defaults (called on init / lot change) ----
+        // ---- Build task offsets from the active recipe's defaults (called on init / lot change) ----
         function buildDefaultOffsets() {
-            taskOffsets = TASK_DEFS.map(def => ({
+            taskOffsets = activeRecipe.tasks.map(def => ({
                 def,
                 offset: def.defaultOffset ?? 0,
                 // Toggleable tasks default to their def's defaultEnabled (off for the IPM sprays);
@@ -1303,13 +2021,16 @@
             // topDate = the date in the top picker (cloning date when clones enabled, planting otherwise)
             const topDate = config.plantingDate;
 
-            // Reconstruct anchor dates from the defining tasks' event dates (default fallbacks if missing)
-            const P = clonesEnabled ? (dateOf('planting') || computeTaskDate(topDate, 14)) : topDate; // planting
-            const F = dateOf('flip') || computeTaskDate(P, 20);                                       // flip
-            const H = dateOf('harvest') || computeTaskDate(F, 63);                                     // harvest start
+            // Reconstruct anchor dates from the defining tasks' event dates. Fallbacks come from
+            // the lot's own recipe (its planting/flip/harvest/trim defaults), with numeric
+            // last-resort values for recipes missing an anchor task.
+            const rd = recipeAnchorDefaults(getRecipeById(config.recipeId));
+            const P = clonesEnabled ? (dateOf('planting') || computeTaskDate(topDate, rd.planting)) : topDate; // planting
+            const F = dateOf('flip') || computeTaskDate(P, rd.flip);                                           // flip
+            const H = dateOf('harvest') || computeTaskDate(F, rd.harvest);                                     // harvest start
             const harvestEnd = (config.harvestMultiDay && config.harvestDays > 1)
                 ? computeTaskDate(H, config.harvestDays - 1) : H;                                      // harvest end
-            const T = dateOf('trim') || computeTaskDate(harvestEnd, 11);                               // trim start
+            const T = dateOf('trim') || computeTaskDate(harvestEnd, rd.trim);                           // trim start
 
             const anchors = { cloning: topDate, planting: P, flip: F, harvest: H, harvestEnd, trim: T };
 
@@ -1756,20 +2477,21 @@
                     isLockedDisplay = true;
                 }
 
-                // Clone cut is derived — always harvest start − 21 days (locked; follows bloom length)
+                // Clone cut is derived — harvest start minus the recipe's chain.cloneCutBeforeHarvest
+                // (locked; follows bloom length)
                 if (def.taskType === 'clone_cut') {
                     displayRef = 'flip';
                     displayLabel = REF_LABELS[displayRef];
-                    effectiveOffset = harvestOffset - 21;
+                    effectiveOffset = harvestOffset - cloneCutDays(activeRecipe);
                     isLockedDisplay = true;
                 }
 
                 // Compute date from anchor + offset (anchor accounts for multi-day harvest/trim)
                 const anchorDate = resolveTaskAnchor(anchors, displayRef);
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
-                // Clone cut derives from harvest START (not end): always harvest − 21 days
+                // Clone cut derives from harvest START (not end): harvest − chain.cloneCutBeforeHarvest
                 if (def.taskType === 'clone_cut') {
-                    startDate = computeTaskDate(anchors.harvest, -21);
+                    startDate = computeTaskDate(anchors.harvest, -cloneCutDays(activeRecipe));
                 }
                 let endDate = taskEndDate(def, startDate, isEnabled);
 
@@ -1823,7 +2545,7 @@
                 const dateBadgeCls = `preview-computed-date${isMultiDayTask(def) ? ' multi' : ''}`;
                 const dateBadgeHtml = canPickDate
                     ? `<button type="button" class="${dateBadgeCls} clickable" data-idx="${idx}" data-date="${startDate}" title="Click to pick a date">${displayDate}</button>`
-                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? `title="${def.taskType === 'clone_cut' ? 'Derived — harvest start − 21 days' : 'Locked to Day 0'}"` : ''}>${displayDate}</span>`;
+                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? `title="${def.taskType === 'clone_cut' ? `Derived — harvest start − ${cloneCutDays(activeRecipe)} days` : 'Locked to Day 0'}"` : ''}>${displayDate}</span>`;
 
                 // Duration controls — Trim length (always) and Harvest multi-day toggle + length
                 let durationControlsHtml = '';
@@ -1980,12 +2702,22 @@
         // ---- Lot Selector Change Handler ----
         activeLotSelect.addEventListener('change', () => {
             renderScheduleList();
+            syncActiveRecipeToLot(activeLotSelect.value);
             updateFormFromStoredConfig();
             buildDefaultOffsets();
             applyStoredScheduleToOffsets(activeLotSelect.value);
             refreshPreview();
             updateGenerateBtnLabel();
             updateProjectBtnState();
+        });
+
+        // ---- Recipe Selector Change Handler ----
+        // Switching recipes rebuilds the preview from that recipe's defaults. Any unsaved
+        // offset edits are discarded (nothing is written to the DB until Generate).
+        recipeSelect.addEventListener('change', () => {
+            activeRecipe = getRecipeById(recipeSelect.value);
+            buildDefaultOffsets();
+            refreshPreview();
         });
 
         // ---- Update Form from Stored Config ----
@@ -1999,10 +2731,12 @@
                 harvestMultiDay = !!config.harvestMultiDay;
                 harvestDays = clampDuration(config.harvestDays, DEFAULT_HARVEST_DAYS);
             } else {
-                // No stored schedule — reset durations to defaults
+                // No stored schedule — reset durations + recipe to defaults (fresh generation)
                 trimDays = DEFAULT_TRIM_DAYS;
                 harvestMultiDay = false;
                 harvestDays = DEFAULT_HARVEST_DAYS;
+                activeRecipe = BUILTIN_RECIPE;
+                populateRecipeSelector(false);
                 // Suggested cloning day defaults to the lot's created date (real lots only)
                 const lot = isProjectedLot(lotId) ? null : (DB.lots[lotId] || null);
                 if (lot && lot.createdDate) plantingDateInput.value = lot.createdDate;
@@ -2038,19 +2772,12 @@
             return `${roomId}-TBA-${String(index).padStart(2, '0')}`;
         }
 
-        // Task types whose dates move with the bloom length (everything from flip onward, except
-        // flip itself). Pre-flip tasks stay anchored to Day 0.
-        const BLOOM_DEPENDENT_TASKS = new Set([
-            'ipm_spray_flower_start', 'trellis_layout', 'ipm_spray_flower_week2',
-            'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest',
-            'room_clean', 'tank_irrigation_clean', 'tote_prep', 'bucking', 'lab_sample',
-            'trim_room_prep', 'trim', 'machine_trim', 'dry_room_clean', 'weigh_ship'
-        ]);
-
         // Default offsets without touching the live preview state (taskOffsets).
         // The harvest offset is set to bloomDays so a fresh lot uses the selected bloom length.
-        function defaultOffsetsSnapshot(bloomDays = 63) {
-            return TASK_DEFS.map(def => ({
+        // recipe: which task list to snapshot (defaults to the built-in; projection paths pass
+        // the header projection recipe explicitly).
+        function defaultOffsetsSnapshot(bloomDays = 63, recipe = BUILTIN_RECIPE) {
+            return recipe.tasks.map(def => ({
                 def,
                 offset: def.taskType === 'harvest' ? bloomDays : (def.defaultOffset ?? 0),
                 // Mirror the manual-preview defaults: toggleable tasks follow defaultEnabled
@@ -2061,7 +2788,10 @@
 
         // Build + persist a full schedule for a lot from explicit offsets and durations.
         // Shared by the Generate button (real & projected lots) and projection chain generation.
-        function generateLotSchedule(lotId, day0, offsets, durations) {
+        // `recipe` is the recipe these offsets came from — recorded in config.recipeId so later
+        // push-plan regen / irr-clean fallbacks use the right per-lot defaults. Defaults to the
+        // form's activeRecipe (the Generate button path); projection paths pass their own recipe.
+        function generateLotSchedule(lotId, day0, offsets, durations, recipe = activeRecipe) {
             const d = durations || { trimDays, harvestMultiDay, harvestDays };
 
             const clonePrepEntry = offsets.find(e => e.def.taskType === 'clone_cut_prep');
@@ -2102,9 +2832,10 @@
                 const anchorDate = resolveTaskAnchor(anchors, anchorRef);
                 let startDate = computeTaskDate(anchorDate, effectiveOffset);
 
-                // Clone cut is derived — always harvest start − 21 days (follows bloom length)
+                // Clone cut is derived — harvest start minus the recipe's chain param
+                // (default 21 days; follows bloom length)
                 if (def.taskType === 'clone_cut') {
-                    startDate = computeTaskDate(anchors.harvest, -21);
+                    startDate = computeTaskDate(anchors.harvest, -cloneCutDays(recipe));
                 }
 
                 const event = {
@@ -2115,6 +2846,10 @@
                     taskType: def.taskType
                 };
                 if (projRoomId) event.roomId = projRoomId;
+
+                // Optional explicit room phase from the recipe task. SitkaTools/DailyWizard
+                // resolve it first; when absent their existing known-type/order rules apply.
+                if (def.roomPhase) event.roomPhase = def.roomPhase;
 
                 // Multi-day events get endDate (Trim always; Harvest when multi-day is checked)
                 let endDate = null;
@@ -2128,9 +2863,11 @@
             // Append to calendarEvents
             DB.data.calendarEvents.push(...newEvents);
 
-            // Store config (real lot: _tool_CropLabourWizard; projected lot: map entry .config)
+            // Store config (real lot: _tool_CropLabourWizard; projected lot: map entry .config).
+            // recipeId is additive — lots without it (old DB files) fall back to the built-in.
             const config = {
                 plantingDate: day0,
+                recipeId: recipe.id,
                 trimDays: d.trimDays,
                 harvestMultiDay: d.harvestMultiDay,
                 harvestDays: d.harvestDays,
@@ -2150,14 +2887,18 @@
             const entry = getProjectedLots()[lotId];
             if (!entry) return;
 
+            // The recipe this lot was generated from (per-lot override; header selection for
+            // lots with no stored config). Drives the bloom-dependent task set + stale regen.
+            const lotRecipe = getRecipeById(entry.config?.recipeId || projectionRecipeId);
+
             const events = eventsForLot(lotId);
             const oldDay0 = entry.config?.plantingDate;
 
             if (events.length === 0) {
-                // Stale — fresh generation from defaults at the new Day 0
-                generateLotSchedule(lotId, day0, defaultOffsetsSnapshot(bloomDays), {
+                // Stale — fresh generation from the lot's recipe defaults at the new Day 0
+                generateLotSchedule(lotId, day0, defaultOffsetsSnapshot(bloomDays, lotRecipe), {
                     trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
-                });
+                }, lotRecipe);
                 return;
             }
 
@@ -2175,8 +2916,11 @@
                 }
             }
 
+            // Derived from the lot's own recipe: everything referenced from flip/harvest/trim.
+            const bloomDependent = bloomDependentTaskTypes(lotRecipe);
+
             for (const ev of events) {
-                const shift = delta + (BLOOM_DEPENDENT_TASKS.has(ev.taskType) ? deltaBloom : 0);
+                const shift = delta + (bloomDependent.has(ev.taskType) ? deltaBloom : 0);
                 if (shift === 0) continue;
                 ev.date = computeTaskDate(ev.date, shift);
                 if (ev.endDate) ev.endDate = computeTaskDate(ev.endDate, shift);
@@ -2190,13 +2934,16 @@
         }
 
         // Re-project lots fromIndex..5 forward in the chain: each lot's new Day 0 =
-        // previous lot's harvest start − 21 (read from its current events).
+        // previous lot's harvest start − its recipe's chain.cloneCutBeforeHarvest (default 21),
+        // read from the previous lot's current events.
         function cascadeProjections(roomId, fromIndex, bloomDays) {
             for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) {
                 const prevEvents = eventsForLot(projectedLotId(roomId, i - 1));
                 const prevHarvest = prevEvents.find(ev => ev.taskType === 'harvest');
                 if (!prevHarvest) continue; // previous lot has no schedule — nothing to chain from
-                reAnchorProjectedLot(roomId, i, computeTaskDate(prevHarvest.date, -21), bloomDays);
+                const prevEntry = getProjectedLots()[projectedLotId(roomId, i - 1)];
+                const cadence = cloneCutDays(getRecipeById(prevEntry?.config?.recipeId || projectionRecipeId));
+                reAnchorProjectedLot(roomId, i, computeTaskDate(prevHarvest.date, -cadence), bloomDays);
             }
         }
 
@@ -2271,8 +3018,9 @@
             }
 
             // Lot 1 anchor: the newest real lot's clone_cut day (or its start day if no clone_cut)
-            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, projectionBloomDays);
-            cascadeProjections(roomId, 2, projectionBloomDays);
+            const projRecipe = getProjectionRecipe();
+            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, recipeBloomDays(projRecipe));
+            cascadeProjections(roomId, 2, recipeBloomDays(projRecipe));
 
             populateLotSelector();
             renderScheduleList();
@@ -2281,18 +3029,23 @@
             updateProjectBtnState();
             refreshPreview();
             notifySitkaTools();
-            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projectionBloomDays / 7}-week bloom)`);
+            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projRecipe.name})`);
         }
 
         // A lot's effective "Tank and Irrigation Line Clean" date — the last room-prep task, i.e. when
         // the room is ready for the next crop to be transplanted in. Reads the actual event; falls back
-        // to harvest end + 2 (the task's default offset) if the task is missing or disabled.
+        // to harvest end + the lot's recipe tank_irrigation_clean offset (default 2) if the task is
+        // missing or disabled.
         function effectiveIrrigationClean(lotId) {
             const events = eventsForLot(lotId);
             const irr = events.find(ev => ev.taskType === 'tank_irrigation_clean');
             if (irr) return irr.date;
             const h = events.find(ev => ev.taskType === 'harvest');
-            if (h) return computeTaskDate(h.endDate || h.date, 2);
+            if (h) {
+                const cfg = getScheduleConfig(lotId);
+                const recipe = getRecipeById(cfg?.recipeId || projectionRecipeId);
+                return computeTaskDate(h.endDate || h.date, freshLotDay0Offsets(recipe).irrClean);
+            }
             return null;
         }
 
@@ -2328,22 +3081,23 @@
                     if (tEv) currentTransplant = tEv.date;
                     else {
                         const cfg = getProjectedLots()[currentLotId]?.config;
-                        if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, 24);
+                        // No transplant event — derive from the lot's recipe fresh-lot offsets
+                        if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     }
                 }
                 const lotIrr = effectiveIrrigationClean(currentLotId);
 
                 if (!currentTransplant || !lotIrr) {
                     // Stale or position-less — regenerate fresh at the required position
-                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     plan.push({ index: i, currentLotId, action: 'regen', delta: null, transplantBefore: null, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(day0, 34 + projectionBloomDays + 2);
+                    prevIrr = computeTaskDate(day0, freshIrrSpanDays(lotRecipeFor(currentLotId)));
                     continue;
                 }
 
                 const delta = daysBetween(currentTransplant, requiredTransplant);
                 if (delta > 0) {
-                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     plan.push({ index: i, currentLotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0 });
                     prevIrr = computeTaskDate(lotIrr, delta); // pushed forward by the same delta
                 } else {
@@ -2352,9 +3106,10 @@
                 }
             }
 
-            // Slot 5 — fresh lot at the required position
+            // Slot 5 — fresh lot at the required position (header projection recipe)
+            const projRecipe = getProjectionRecipe();
             const requiredTransplant5 = computeTaskDate(prevIrr, 1);
-            plan.push({ index: PROJECTION_LOT_COUNT, currentLotId: null, action: 'fresh', delta: null, transplantBefore: null, transplantAfter: requiredTransplant5, day0: computeTaskDate(requiredTransplant5, -24) });
+            plan.push({ index: PROJECTION_LOT_COUNT, currentLotId: null, action: 'fresh', delta: null, transplantBefore: null, transplantAfter: requiredTransplant5, day0: computeTaskDate(requiredTransplant5, -freshLotDay0Offsets(projRecipe).transplant) });
 
             return plan;
         }
@@ -2383,8 +3138,8 @@
             if (irrEntry && irrEntry.enabled !== false) {
                 return computeTaskDate(anchors.harvestEnd, irrEntry.offset);
             }
-            // Task disabled/absent — same fallback as effectiveIrrigationClean
-            return computeTaskDate(anchors.harvestEnd, 2);
+            // Task disabled/absent — same fallback as effectiveIrrigationClean (recipe offset)
+            return computeTaskDate(anchors.harvestEnd, freshLotDay0Offsets(activeRecipe).irrClean);
         }
 
         // Forward push plan for overwriting a projected lot's schedule. Pure — reads only, writes nothing.
@@ -2413,22 +3168,23 @@
                     if (tEv) currentTransplant = tEv.date;
                     else {
                         const cfg = getProjectedLots()[currentLotId]?.config;
-                        if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, 24);
+                        // No transplant event — derive from the lot's recipe fresh-lot offsets
+                        if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     }
                 }
                 const lotIrr = effectiveIrrigationClean(currentLotId);
 
                 if (!currentTransplant || !lotIrr) {
                     // Stale or position-less — regenerate fresh at the required position
-                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     plan.push({ index: i, currentLotId, action: 'regen', delta: null, transplantBefore: null, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(day0, 34 + projectionBloomDays + 2);
+                    prevIrr = computeTaskDate(day0, freshIrrSpanDays(lotRecipeFor(currentLotId)));
                     continue;
                 }
 
                 const delta = daysBetween(currentTransplant, requiredTransplant);
                 if (delta > 0) {
-                    const day0 = computeTaskDate(requiredTransplant, -24);
+                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
                     plan.push({ index: i, currentLotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0 });
                     prevIrr = computeTaskDate(lotIrr, delta); // pushed forward by the same delta
                 } else {
@@ -2532,7 +3288,7 @@
                 day0 = localDateStr(new Date());
                 for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
                     const h = eventsForLot(projectedLotId(roomId, i)).find(ev => ev.taskType === 'harvest');
-                    if (h) { day0 = computeTaskDate(h.date, -21); break; }
+                    if (h) { day0 = computeTaskDate(h.date, -cloneCutDays(getProjectionRecipe())); break; }
                 }
             }
 
@@ -2540,9 +3296,10 @@
             if (!map[tba5Id]) {
                 map[tba5Id] = { name: tba5Id, roomId, roomName: room.name, strain: 'TBA', index: PROJECTION_LOT_COUNT };
             }
-            generateLotSchedule(tba5Id, day0, defaultOffsetsSnapshot(projectionBloomDays), {
+            const projRecipe = getProjectionRecipe();
+            generateLotSchedule(tba5Id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), {
                 trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
-            });
+            }, projRecipe);
 
             populateLotSelector();
             renderScheduleList();
@@ -2555,7 +3312,7 @@
             const pushCount = plan ? plan.filter(s => s.action === 'push' || s.action === 'regen').length : 0;
             const maxDelta = plan ? Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta)) : 0;
             const pushNote = pushCount > 0 ? `, ${pushCount} lot${pushCount === 1 ? '' : 's'} pushed back up to ${maxDelta}d` : '';
-            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projectionBloomDays / 7}-week bloom)`);
+            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projRecipe.name})`);
         }
 
         // True reset for one room: delete ALL of its CropProjection events (matched by roomId) and
@@ -2624,6 +3381,12 @@
             const lot = DB.lots[lotId] || {};
             const rooms = DB.data.rooms || {};
 
+            // Explicit roomPhase from the recipe task wins over all heuristics below
+            const def = activeRecipe.tasks.find(d => d.taskType === taskType);
+            if (def?.roomPhase === 'cloning') return roomCodeForName(lot.cloningRoom);
+            if (def?.roomPhase === 'veg') return roomCodeForName(lot.vegRoom);
+            if (def?.roomPhase === 'flower') return resolveFlowerRoom(lotId, rooms);
+
             // Clone prep and clone-room clean happen in the cloning room
             if (taskType === 'clone_cut_prep' || taskType === 'clone_room_clean') {
                 return roomCodeForName(lot.cloningRoom);
@@ -2636,21 +3399,23 @@
 
             // Undercanopy lights & air socks are installed in the flower room — prepped on
             // transplant day so they're ready when plants arrive. It's listed before
-            // transplant in TASK_DEFS for chronological display, but it's a flower-room task.
+            // transplant in the recipe's task list for chronological display, but it's a flower-room task.
             if (taskType === 'undercanopy_lights') {
                 return resolveFlowerRoom(lotId, rooms);
             }
 
             // Coco blocks are laid out/spiked (day before) and hydrated (transplant day) in the
             // flower room so they're ready when plants arrive. Listed before
-            // transplant in TASK_DEFS for chronological display, but they're flower-room tasks.
+            // transplant in the recipe's task list for chronological display, but they're flower-room tasks.
             if (taskType === 'layout_coco_blocks' || taskType === 'hydrate_coco_blocks') {
                 return resolveFlowerRoom(lotId, rooms);
             }
 
-            // Everything before transplanting to flower happens in the veg room
-            const defIdx = TASK_DEFS.findIndex(d => d.taskType === taskType);
-            const transplantIdx = TASK_DEFS.findIndex(d => d.taskType === 'transplant');
+            // Everything before transplanting to flower happens in the veg room.
+            // Order is read from the active recipe's task list (array order is load-bearing).
+            const tasks = activeRecipe.tasks;
+            const defIdx = tasks.findIndex(d => d.taskType === taskType);
+            const transplantIdx = tasks.findIndex(d => d.taskType === 'transplant');
             if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx) {
                 return roomCodeForName(lot.vegRoom);
             }
@@ -2848,16 +3613,12 @@
                 : `Delete ALL projections (events + map entries) for ${(DB.data.rooms[roomId] || {}).name || roomId}`;
         }
 
-        // ---- Bloom length toggle (8 / 9 weeks) — applies to projection chain generation only ----
-        const bloom8Btn = $('bloom8Btn');
-        const bloom9Btn = $('bloom9Btn');
-        function setProjectionBloom(days) {
-            projectionBloomDays = days;
-            bloom8Btn.classList.toggle('active', days === 56);
-            bloom9Btn.classList.toggle('active', days === 63);
-        }
-        bloom8Btn.addEventListener('click', () => setProjectionBloom(56));
-        bloom9Btn.addEventListener('click', () => setProjectionBloom(63));
+        // ---- Projection recipe dropdown — applies to projection chain generation only ----
+        // Changing it does NOT rewrite existing projections; the new recipe takes effect on the
+        // next Project Crop / Reproject (and drives fresh-lot regen + cadence from that point on).
+        $('projectionRecipeSelect').addEventListener('change', () => {
+            projectionRecipeId = $('projectionRecipeSelect').value;
+        });
 
         // ---- Project Crop / Reproject — one button, two modes (button lives in the header) ----
         // Pending room → reprojectRoom (shift chain down + fresh TBA-5); otherwise generateProjectionsForRoom.
@@ -2887,6 +3648,7 @@
             // If the currently selected lot was one of the wiped projected lots, reset the form
             if (wasProjected) {
                 activeLotSelect.value = '';
+                syncActiveRecipeToLot('');
                 buildDefaultOffsets();
                 updateFormFromStoredConfig();
                 refreshPreview();
@@ -3094,6 +3856,43 @@
             $('saveDbBtn').addEventListener('click', handleDbSave);
         }
 
+        // ---- Recipe Import / Export (all platforms) ----
+        importRecipeBtn.addEventListener('click', () => recipeImportInput.click());
+        recipeImportInput.addEventListener('change', handleRecipeImport);
+        exportRecipeBtn.addEventListener('click', handleRecipeExport);
+
+        // ---- Recipe Manager (Stage 4) ----
+        $('manageRecipesBtn').addEventListener('click', openRecipeManager);
+        $('recipeMgrBackBtn').addEventListener('click', () => { renderRecipeList(); setRecipeMgrView('list'); });
+        $('recipeMgrCloseBtn').addEventListener('click', closeRecipeManager);
+        $('recipeNewBtn').addEventListener('click', () => {
+            const base = cloneRecipeData(BUILTIN_RECIPE);
+            base.id = generateRecipeId();
+            base.name = 'New Recipe';
+            base.version = 1;
+            showRecipeEditor(base);
+        });
+        $('recipeAddTaskBtn').addEventListener('click', addTaskRow);
+        $('recipeEditorCancelBtn').addEventListener('click', () => { renderRecipeList(); setRecipeMgrView('list'); });
+        $('recipeEditorSaveBtn').addEventListener('click', saveRecipeFromEditor);
+        // Task table: delegated move/remove + live enable/disable of the "on by default" box
+        $('recipeTaskBody').addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn || !editorRecipe) return;
+            editorRecipe.tasks = readTaskTable(); // sync pending DOM edits before mutating order
+            const i = Number(btn.dataset.i);
+            const act = btn.dataset.act;
+            if (act === 'up' && i > 0) { [editorRecipe.tasks[i - 1], editorRecipe.tasks[i]] = [editorRecipe.tasks[i], editorRecipe.tasks[i - 1]]; renderTaskTable(); }
+            else if (act === 'down' && i < editorRecipe.tasks.length - 1) { [editorRecipe.tasks[i + 1], editorRecipe.tasks[i]] = [editorRecipe.tasks[i], editorRecipe.tasks[i + 1]]; renderTaskTable(); }
+            else if (act === 'del') { editorRecipe.tasks.splice(i, 1); renderTaskTable(); }
+        });
+        $('recipeTaskBody').addEventListener('change', (e) => {
+            if (e.target.classList.contains('t-toggle')) {
+                const row = e.target.closest('tr');
+                row.querySelector('.t-enabled').disabled = !e.target.checked;
+            }
+        });
+
         // ---- Toast ----
         function showToast(msg) {
             const toast = $('toast');
@@ -3119,6 +3918,8 @@
 
             buildDefaultOffsets();
             populateLotSelector();
+            populateRecipeSelector(false);
+            populateProjectionRecipeSelector(false);
             renderScheduleList();
             updateStatusBar();
             refreshPreview();

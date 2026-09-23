@@ -4803,7 +4803,8 @@
 
             // Fallback emoji for events without a known taskType (GeneralEvent, etc.)
             _eventEmoji(ev) {
-                if (ev.taskType && this.TASK_EMOJI[ev.taskType]) return this.TASK_EMOJI[ev.taskType];
+                const reg = ev.taskType ? this._taskTypeEmoji(ev.taskType) : null;
+                if (reg) return reg;
                 const m = (ev.title || '').match(/^\s*(\p{Extended_Pictographic})/u);
                 return m ? m[1] : '📌';
             },
@@ -4880,7 +4881,7 @@
                     legendHtml += '<span class="annual-legend-empty">No events in this year — add filters or check the database.</span>';
                 } else {
                     taskTypes.slice(0, MAX_LEGEND).forEach(({ taskType, count }) => {
-                        const label = taskType ? (this.TASK_TYPE_NAMES[taskType] || taskType) : 'Other';
+                        const label = this._taskTypeName(taskType) || 'Other';
                         legendHtml += `<span class="legend-item" title="${escapeHtml(label)} — ${count} event${count !== 1 ? 's' : ''}">
                             <span class="legend-emoji">${this._eventEmoji({ taskType, title: label })}</span>
                             <span>${escapeHtml(label)}</span>
@@ -4974,7 +4975,7 @@
                 const titleParts = [`${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}`];
                 if (holiday) titleParts.push(`🏛️ ${holiday.name}`);
                 if (cluster) {
-                    const name = cluster.taskType ? (this.TASK_TYPE_NAMES[cluster.taskType] || cluster.taskType) : 'Other';
+                    const name = this._taskTypeName(cluster.taskType) || 'Other';
                     titleParts.push(`⚠️ Clustered: ${cluster.count}× ${name} within ${this.CLUSTER_WINDOW_DAYS} days`);
                 }
 
@@ -5038,6 +5039,18 @@
                 equipment_maintenance: 'Equipment Maintenance'
             },
 
+            // Task-type registry fallback: CropLabourWizard recipes can define custom task
+            // types; their labels/emojis live in _CropLabourWizard.taskTypes (merged on every
+            // recipe import/save). The hard-coded maps above win for the 32 known types.
+            _taskTypeName(tt) {
+                if (!tt) return null;
+                return this.TASK_TYPE_NAMES[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.name || tt;
+            },
+            _taskTypeEmoji(tt) {
+                if (!tt) return null;
+                return this.TASK_EMOJI[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.emoji || null;
+            },
+
             // Task order used only for the pre/post-transplant room split (mirrors CLW's TASK_DEFS).
             _CLW_TASK_ORDER: [
                 'clone_cut_prep', 'planting', 'clone_room_clean', 'ipm_spray_veg_early', 'topping',
@@ -5096,7 +5109,15 @@
                     })();
 
                     const tt = ev.taskType;
-                    if (isProjected) {
+                    // Explicit roomPhase (written by CropLabourWizard when the recipe task
+                    // specifies one) wins over the known-type rules and the order split below.
+                    if (!isProjected && ev.roomPhase === 'cloning') {
+                        room = roomForName(lotRec.cloningRoom);
+                    } else if (!isProjected && ev.roomPhase === 'veg') {
+                        room = roomForName(lotRec.vegRoom);
+                    } else if (!isProjected && ev.roomPhase === 'flower') {
+                        room = flowerRoom;
+                    } else if (isProjected) {
                         room = ev.roomId || projected[ev.lotId]?.roomId || null;
                     } else if (tt === 'clone_cut_prep' || tt === 'clone_room_clean') {
                         room = roomForName(lotRec.cloningRoom);
@@ -5183,7 +5204,7 @@
                         if (raw == null) continue;
                         let label;
                         if (g.key === 'taskType') {
-                            label = this.TASK_TYPE_NAMES[raw] || raw;
+                            label = this._taskTypeName(raw);
                         } else if (g.key === 'lot') {
                             label = String(raw);
                             const s = vals.strain;
@@ -5210,7 +5231,7 @@
 
             _filterLabel(key, value) {
                 const def = this.FILTER_KEYS.find(k => k.key === key);
-                if (key === 'taskType') return this.TASK_TYPE_NAMES[value] || value;
+                if (key === 'taskType') return this._taskTypeName(value) || value;
                 if (key === 'lot') {
                     const lotRec = DB.data?.lots?.[value];
                     const s = lotRec?.strain;
