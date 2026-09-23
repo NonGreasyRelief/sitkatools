@@ -1,0 +1,2055 @@
+<!-- DailyWizard.html — Daily task list builder & floor view for SitkaGit suite -->
+<!-- Tool: DailyWizard | Purpose: Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-off UI -->
+<!-- Database Keys: "_DailyWizard" (top-level, read/write), "calendarEvents" (read-only) -->
+<!-- Status: Complete (Stage 5 of 5) — polish & verification. See Agent.MD in this directory. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DailyWizard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- Header (sticky) ---- */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* ---- Form controls ---- */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select, input[type="date"], input[type="text"], input[type="number"] {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            min-height: 48px; /* tablet touch target */
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* ---- Buttons ---- */
+        .btn {
+            border: none;
+            border-radius: var(--radius);
+            padding: 10px 18px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            min-height: 48px; /* tablet touch target */
+            transition: background 0.15s ease;
+        }
+
+        .btn-primary { background: var(--accent); color: #08301f; }
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { background: var(--danger-hover); }
+
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        /* Header buttons (Load / Export) — ≥48px touch target */
+        .db-btn { padding: 8px 12px; min-height: 48px; font-size: 0.85rem; }
+
+        /* ---- Main content ---- */
+        .main {
+            flex: 1;
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* ---- Status bar ---- */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .status-bar.loaded { border-color: var(--accent); }
+
+        /* ---- Task rows (core tablet UI) ---- */
+        .task-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            min-height: 64px;
+        }
+
+        .task-row.done {
+            background: rgba(83, 216, 168, 0.07);
+            border-color: rgba(83, 216, 168, 0.35);
+        }
+
+        /* Large checkbox — 48×48 touch target, ~32px visual box */
+        .task-check {
+            width: 48px;
+            height: 48px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .task-check input {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 32px;
+            height: 32px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            background: var(--input-bg);
+            cursor: pointer;
+            display: grid;
+            place-content: center;
+        }
+
+        .task-check input:checked {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .task-check input:checked::after {
+            content: '✓';
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #08301f;
+        }
+
+        .task-emoji { font-size: 1.5rem; flex-shrink: 0; }
+
+        .task-name {
+            flex: 1;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .task-row.done .task-name {
+            color: var(--text-secondary);
+            text-decoration: line-through;
+        }
+
+        /* ---- Chips ---- */
+        .chip {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 3px 10px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .chip-code {
+            font-family: 'Consolas', 'Menlo', monospace;
+            letter-spacing: 1px;
+        }
+
+        /* ---- Move buttons (single-building mode) ---- */
+        .move-btns { display: flex; gap: 4px; flex-shrink: 0; }
+
+        .move-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            width: 48px;
+            height: 48px; /* tablet touch target */
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .move-btn:hover:not(:disabled) { background: var(--border); color: var(--text-primary); }
+        .move-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* ---- Section divider ("Scheduled today") ---- */
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 20px 0 12px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ---- Building section (All Buildings view) ---- */
+        .building-section { margin-bottom: 28px; }
+
+        .building-section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        .building-section-header.muted { color: var(--text-secondary); }
+
+        /* ---- Add Task bar (single-building mode) ---- */
+        .add-task-bar { margin-bottom: 14px; }
+        .add-task-bar .btn { min-height: 48px; }
+
+        /* ---- Muted inline note (empty day lines) ---- */
+        .muted-line {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 12px 4px;
+        }
+
+        /* ---- Read-only row name (calendar events) ---- */
+        .task-name.readonly { cursor: default; }
+
+        /* ---- Upcoming section (next calendar events, read-only) ---- */
+        .task-row.upcoming { opacity: 0.85; }
+        .chip-date {
+            font-family: 'Consolas', 'Menlo', monospace;
+            letter-spacing: 0.5px;
+        }
+
+        /* ---- Overlay header / body / footer ---- */
+        .overlay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .overlay-title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+
+        .overlay-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .editor-card {
+            width: 100%;
+            max-width: 560px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .overlay-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        /* ---- Editor form extras ---- */
+        .editor-row { display: flex; gap: 16px; }
+        .editor-row .form-group { flex: 1; }
+
+        .weekday-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .pill {
+            min-width: 48px;
+            min-height: 48px;
+            padding: 8px 10px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .pill.on { background: var(--accent); border-color: var(--accent); color: #08301f; }
+
+        .preset-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .chip-btn { cursor: pointer; min-height: 48px; display: inline-flex; align-items: center; } /* tablet touch target */
+        .chip-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+
+        /* ---- Emoji picker ---- */
+        .emoji-picker { position: relative; }
+
+        .emoji-current {
+            font-size: 1.6rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 14px;
+            min-height: 48px;
+            cursor: pointer;
+            color: var(--text-primary);
+        }
+
+        .emoji-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 50;
+            width: min(380px, calc(100vw - 72px));
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 12px;
+        }
+
+        .emoji-panel input { width: 100%; margin-bottom: 10px; }
+
+        .emoji-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+
+        .emoji-tab {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            border-radius: 20px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            font-family: inherit;
+            cursor: pointer;
+            min-height: 48px; /* tablet touch target */
+        }
+
+        .emoji-tab.on { background: var(--accent); border-color: var(--accent); color: #08301f; font-weight: 600; }
+
+        .emoji-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+            gap: 2px;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
+        .emoji-cell {
+            font-size: 1.35rem;
+            background: none;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 4px;
+            min-width: 48px; /* tablet touch target */
+            min-height: 48px; /* tablet touch target */
+        }
+
+        .emoji-cell:hover { background: var(--border); }
+
+        /* ---- Task detail view (Stage 4) ---- */
+        .detail-header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .detail-emoji { font-size: 2rem; flex-shrink: 0; }
+
+        .detail-name {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .detail-summary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .summary-line { font-size: 0.95rem; }
+
+        .steps-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .steps-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .step-row {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .step-top { display: flex; align-items: center; gap: 10px; }
+
+        .step-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+
+        .step-text { flex: 1; font-size: 0.95rem; cursor: pointer; min-width: 0; min-height: 48px; display: flex; align-items: center; } /* tablet touch target */
+        .step-text.placeholder { color: var(--text-secondary); font-style: italic; }
+
+        .step-text-input { flex: 1; min-width: 0; }
+
+        .step-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+        .step-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            width: 48px;
+            height: 48px;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .step-btn:hover:not(:disabled) { background: var(--border); color: var(--text-primary); }
+        .step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .step-btn.danger { color: var(--danger); }
+
+        .step-img-wrap { margin-top: 10px; }
+
+        .step-img {
+            max-width: 100%;
+            max-height: 280px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            display: block;
+        }
+
+        .chip.missing { color: var(--text-secondary); }
+
+        .overlay-footer.spread { justify-content: space-between; }
+
+        /* ---- Empty state ---- */
+        .empty-state {
+            text-align: center;
+            padding: 64px 24px;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .empty-state .empty-icon { font-size: 3rem; }
+        .empty-state .empty-title { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
+        .empty-state .empty-sub { font-size: 0.9rem; max-width: 420px; line-height: 1.5; }
+
+        /* ---- Footer (sticky) ---- */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        /* ---- Toast ---- */
+        .toast {
+            position: fixed;
+            bottom: 76px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 300;
+            max-width: 90vw;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ---- Overlay base (detail view / editor — later stages) ---- */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+        }
+
+        .overlay.open { display: flex; }
+
+        /* ---- Narrow screens: stack header controls gracefully ---- */
+        @media (max-width: 768px) {
+            .header { padding: 10px 14px; }
+            .main { padding: 14px; }
+            .footer { padding: 10px 14px; }
+            .task-name { white-space: normal; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <span class="logo">📋 DailyWizard</span>
+        <div class="header-right">
+            <div class="form-group">
+                <label for="buildingSelect">Building</label>
+                <select id="buildingSelect">
+                    <option value="ALL">— All Buildings —</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="dateInput">📅 Date</label>
+                <input type="date" id="dateInput">
+            </div>
+            <button type="button" class="btn btn-secondary db-btn" id="loadDbBtn" style="display:none;">📂 Load</button>
+            <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
+        </div>
+    </header>
+
+    <!-- Hidden file input for standalone DB import -->
+    <input type="file" id="dbImportInput" accept=".json" style="display:none;">
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <span id="statusText">No database loaded.</span>
+        </div>
+
+        <!-- Day list (task rows + scheduled events) — rendered by JS -->
+        <div id="listContainer"></div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <button class="btn btn-secondary" id="resetDayBtn" disabled>Reset Day</button>
+        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+    </footer>
+
+    <!-- Task Editor Overlay (add / edit) -->
+    <div class="overlay" id="editorOverlay">
+        <header class="overlay-header">
+            <button type="button" class="btn btn-secondary" id="editorBackBtn">←</button>
+            <span class="overlay-title" id="editorTitle">Add Task</span>
+            <span style="width:44px;"></span>
+        </header>
+        <div class="overlay-body">
+            <div class="card editor-card">
+                <!-- Emoji picker -->
+                <div class="form-group">
+                    <label>Emoji</label>
+                    <div class="emoji-picker" id="emojiPicker">
+                        <button type="button" class="emoji-current" id="emojiCurrentBtn">📋</button>
+                        <div class="emoji-panel" id="emojiPanel" style="display:none;">
+                            <input type="text" id="emojiSearch" placeholder="Search (water, clean, gloves…)">
+                            <div class="emoji-tabs" id="emojiTabs"></div>
+                            <div class="emoji-grid" id="emojiGrid"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="taskNameInput">Name *</label>
+                    <input type="text" id="taskNameInput" placeholder="e.g., Water plants">
+                </div>
+                <div class="editor-row">
+                    <div class="form-group">
+                        <label for="taskMinutesInput">Estimated time (min)</label>
+                        <input type="number" id="taskMinutesInput" min="5" step="5" value="30">
+                    </div>
+                    <div class="form-group">
+                        <label for="taskStaffInput">Staff required</label>
+                        <input type="number" id="taskStaffInput" min="1" step="1" value="1">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Weekdays</label>
+                    <div class="weekday-pills" id="weekdayPills"></div>
+                </div>
+                <div class="form-group">
+                    <label for="monthDaysInput">Also on day(s) of month (1–31, comma-separated)</label>
+                    <input type="text" id="monthDaysInput" placeholder="e.g., 1, 15">
+                    <div class="preset-chips" id="monthDayPresets">
+                        <button type="button" class="chip chip-btn" data-preset="1, 15">1st &amp; 15th</button>
+                        <button type="button" class="chip chip-btn" data-preset="1">1st only</button>
+                        <button type="button" class="chip chip-btn" data-preset="">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <footer class="overlay-footer">
+            <button class="btn btn-secondary" id="editorCancelBtn">Cancel</button>
+            <button class="btn btn-primary" id="editorSaveBtn">Save Task</button>
+        </footer>
+    </div>
+
+    <!-- Task Detail Overlay (Stage 4) -->
+    <div class="overlay" id="detailOverlay">
+        <header class="overlay-header">
+            <button type="button" class="btn btn-secondary" id="detailBackBtn">←</button>
+            <div class="detail-header-title">
+                <span class="detail-emoji" id="detailEmoji"></span>
+                <span class="detail-name" id="detailName"></span>
+                <span class="chip chip-code" id="detailCode"></span>
+            </div>
+        </header>
+        <div class="overlay-body">
+            <div style="width:100%; max-width:720px;">
+                <div class="detail-summary" id="detailSummary"></div>
+                <div class="steps-toolbar">
+                    <span class="steps-title">Steps</span>
+                    <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn">🔄 Refresh images</button>
+                </div>
+                <div id="stepsList"></div>
+            </div>
+        </div>
+        <footer class="overlay-footer spread">
+            <button class="btn btn-danger" id="deleteTaskBtn">Delete Task</button>
+            <button class="btn btn-primary" id="editTaskBtn">Edit Task</button>
+        </footer>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // =====================================================
+        // DailyWizard — Daily task list builder & floor view
+        // Database Keys: "_DailyWizard" (read/write), "calendarEvents" (read-only)
+        // Stage 3: + task editor (add/edit) and full embedded emoji picker
+        // Stage 4: + task detail view, inline step editing, step pictures
+        // =====================================================
+
+        const DB = {
+            data: null,
+            fileName: '',
+
+            get lots() { return this.data?.lots || {}; },
+            get rooms() { return this.data?.rooms || {}; },
+            get buildings() { return this.data?.buildings || {}; },
+            get calendarEvents() { return this.data?.calendarEvents || []; },
+            get dailyBuildings() { return this.data?._DailyWizard?.buildings || {}; },
+
+            ensureStructure() {
+                if (!this.data) this.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.buildings) this.data.buildings = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                if (!this.data._DailyWizard) this.data._DailyWizard = { buildings: {} };
+                if (!this.data._DailyWizard.buildings) this.data._DailyWizard.buildings = {};
+                return this.data;
+            },
+
+            // Sync all in-memory changes before export.
+            // DailyWizard writes directly to DB.data on every mutation,
+            // so no extra flush is needed — but the method exists as convention.
+            sync() {
+                this.ensureStructure();
+                return this.data;
+            }
+        };
+
+        const $ = id => document.getElementById(id);
+
+        // Standalone (tablet) mode: opened directly with no opener window.
+        const isStandalone = !window.opener;
+
+        // ---- Date helpers (local time, YYYY-MM-DD) ----
+        function dateToStr(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        }
+
+        function todayStr() { return dateToStr(new Date()); }
+
+        // Parse YYYY-MM-DD into a local Date (avoids UTC off-by-one from new Date(str)).
+        function parseDate(str) {
+            const [y, m, d] = str.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function selectedDateStr() {
+            return $('dateInput').value || todayStr();
+        }
+
+        // ---- Toast ----
+        let toastTimer = null;
+        function showToast(msg) {
+            const t = $('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+        }
+
+        // True once a DB has arrived (postMessage delivery or file import).
+        // Needed because ensureStructure() makes DB.data truthy from load time.
+        let dbLoaded = false;
+
+        // ---- Completion state — session-only (never persisted, never synced) ----
+        // Key: `${dateStr}:${itemKey}` → true. itemKey is the task code for daily
+        // tasks and a composite of sourceTool + lotId/roomId + date + title for events.
+        const checkoffs = {};
+
+        function checkoffCountForDate(dateStr) {
+            let n = 0;
+            for (const k of Object.keys(checkoffs)) if (k.startsWith(dateStr + ':')) n++;
+            return n;
+        }
+
+        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        DB.ensureStructure();
+
+        function notifySitkaTools() {
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'sitkaGit_db_update',
+                    payload: DB.data
+                }, '*');
+            }
+        }
+
+        window.addEventListener('message', (e) => {
+            // Initial DB delivery from SitkaTools
+            if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                dbLoaded = true;
+
+                // Acknowledge receipt so SitkaTools stops retrying
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                }
+
+                renderAll();
+                syncOpenDetail();
+                showToast('Database loaded from SitkaTools');
+            }
+
+            // Live DB updates pushed by SitkaTools — refresh non-disruptively
+            // (check-off state and any open editor are left untouched).
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                dbLoaded = true;
+                renderAll();
+                syncOpenDetail(); // keep an open detail view consistent (non-disruptive)
+            }
+        });
+
+        // ---- Standalone: Load DB from file ----
+        function handleDbImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    DB.data = parsed;
+                    DB.fileName = file.name;
+                    DB.ensureStructure();
+                    dbLoaded = true;
+                    renderAll();
+                    showToast('Database imported successfully');
+                } catch (err) {
+                    alert('Failed to parse JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            // Reset so the same file can be imported again
+            e.target.value = '';
+        }
+
+        // ---- Standalone: Export DB as downloadable JSON file ----
+        function handleDbExport() {
+            if (!DB.data) {
+                showToast('No database to export');
+                return;
+            }
+            DB.sync();
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            // Use Web Share API where available (fixes iOS Safari blob URL issue)
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename })
+                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
+                    .catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('Database saved — import it in SitkaTools to sync');
+            }
+        }
+
+        // ---- Reset Day — clear check-offs for the selected date (session-only) ----
+        function resetDay() {
+            const date = selectedDateStr();
+            const count = checkoffCountForDate(date);
+            if (!count) return;
+            if (!confirm(`Clear all ${count} check-off(s) for ${date}?`)) return;
+            for (const k of Object.keys(checkoffs)) {
+                if (k.startsWith(date + ':')) delete checkoffs[k];
+            }
+            renderAll();
+        }
+
+        // ---- Rendering ----
+
+        // Building selector: All Buildings + every DB building + orphaned
+        // _DailyWizard buildings (⚠️ suffix) so the manager can review/delete them.
+        function populateBuildingSelector() {
+            const sel = $('buildingSelect');
+            const prev = sel.value;
+            sel.innerHTML = '';
+
+            const allOpt = document.createElement('option');
+            allOpt.value = 'ALL';
+            allOpt.textContent = '— All Buildings —';
+            sel.appendChild(allOpt);
+
+            const d = DB.ensureStructure();
+            const buildings = d.buildings || {};
+
+            for (const [id, b] of Object.entries(buildings)) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = `${id} — ${b?.name || 'Unnamed'}`;
+                sel.appendChild(opt);
+            }
+
+            // Orphaned: task list exists but the building was deleted from the DB
+            for (const id of Object.keys(d._DailyWizard.buildings)) {
+                if (!buildings[id]) {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = `${id} — ⚠️ not in database`;
+                    sel.appendChild(opt);
+                }
+            }
+
+            // Restore previous selection if it still exists
+            if ([...sel.options].some(o => o.value === prev)) {
+                sel.value = prev;
+            }
+        }
+
+        function updateStatusBar() {
+            const bar = $('statusBar');
+            const text = $('statusText');
+
+            if (!dbLoaded) {
+                bar.classList.remove('loaded');
+                text.textContent = isStandalone
+                    ? 'No database loaded — tap 📂 Load to import a DB file.'
+                    : 'No database loaded. Waiting for SitkaTools…';
+            } else {
+                bar.classList.add('loaded');
+                const n = Object.keys(DB.buildings).length;
+                const dateStr = selectedDateStr();
+                const sel = $('buildingSelect').value;
+
+                // Task counts (calendar events excluded) — combined across
+                // buildings in All Buildings mode, single building otherwise.
+                let taskCount = 0, doneCount = 0;
+                const bids = sel === 'ALL' ? Object.keys(DB.buildings) : [sel];
+                for (const bid of bids) {
+                    const tasks = tasksForBuilding(bid, dateStr);
+                    taskCount += tasks.length;
+                    doneCount += tasks.filter(t => checkoffs[`${dateStr}:${t.code}`]).length;
+                }
+
+                text.textContent = `🏢 ${n} building${n === 1 ? '' : 's'} · 📝 ${taskCount} today · ✅ ${doneCount}/${taskCount} done`;
+            }
+
+            // Reset Day is disabled when nothing is checked for the selected date
+            $('resetDayBtn').disabled = checkoffCountForDate(selectedDateStr()) === 0;
+        }
+
+        // ---- Recurrence & event attribution (Agent.MD "Recurrence Rules" /
+        //      "Calendar Event Attribution") ----
+
+        // A task appears when its weekday is in `days` OR its day-of-month is in `monthDays`.
+        function taskOccursOn(task, dateStr) {
+            const d = parseDate(dateStr);
+            return (task.days || []).includes(d.getDay()) ||
+                   (task.monthDays || []).includes(d.getDate());
+        }
+
+        function tasksForBuilding(buildingId, dateStr) {
+            const list = DB.dailyBuildings[buildingId]?.tasks || [];
+            return list.filter(t => taskOccursOn(t, dateStr));
+        }
+
+        // CropLabourWizard taskType → lot room phase rules (for event attribution)
+        const CLW_CLONE_ROOM_TYPES = ['clone_cut_prep', 'clone_room_clean'];
+        const CLW_VEG_ROOM_TYPES = ['planting', 'ipm_spray_veg_early', 'topping', 'order_ipm', 'veg_room_clean'];
+
+        function buildingForEvent(ev) {
+            const d = DB.ensureStructure();
+            // 1. Direct roomId (CropProjection / EquipmentWizard events)
+            if (ev.roomId && d.rooms[ev.roomId]) {
+                return d.rooms[ev.roomId].buildingId || null;
+            }
+            // 2. lotId → resolve the lot's physical room via CLW phase rules
+            if (ev.lotId && d.lots[ev.lotId]) {
+                const lot = d.lots[ev.lotId];
+                let roomName = null;
+                if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) roomName = lot.cloningRoom;
+                else if (CLW_VEG_ROOM_TYPES.includes(ev.taskType)) roomName = lot.vegRoom;
+                else roomName = lot.destRoom; // everything else, incl. transplant & post-transplant
+                for (const r of Object.values(d.rooms)) {
+                    if (r && r.name === roomName) return r.buildingId || null;
+                }
+                // Fallback: the lot has exactly one resolvable room across all its
+                // room fields → attribute there (covers lots with only one room set).
+                const names = [...new Set([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean))];
+                if (names.length === 1) {
+                    for (const r of Object.values(d.rooms)) {
+                        if (r && r.name === names[0]) return r.buildingId || null;
+                    }
+                }
+            }
+            // 3. Last resort: CLW event titles carry a room-ID prefix when the lot's
+            //    room was known at generation time ("🧼 B66DG2-Strain#123, Task" or
+            //    "💡 B66DG2#123, ..."). If the lot record is gone (deleted) but its
+            //    events remain, use that prefix — validated against DB.rooms so only
+            //    real room IDs ever match.
+            const m = (ev.title || '').match(/^[^\p{L}\p{N}]*([A-Za-z0-9]+)[-#]/u);
+            if (m && d.rooms[m[1]]) return d.rooms[m[1]].buildingId || null;
+            // 4. Unattributable → null
+            return null;
+        }
+
+        // Events on a date: multi-day events span [date, endDate] inclusive
+        // (YYYY-MM-DD strings compare lexicographically).
+        function eventsOnDate(dateStr) {
+            return DB.calendarEvents.filter(ev => {
+                if (!ev.date) return false;
+                const end = ev.endDate || ev.date;
+                return dateStr >= ev.date && dateStr <= end;
+            });
+        }
+
+        // Stable session key for an event row's check-off.
+        function eventItemKey(ev, dateStr) {
+            return `${ev.sourceTool || ''}|${ev.lotId || ev.roomId || ''}|${dateStr}|${ev.title || ''}`;
+        }
+
+        // Identity of an event independent of its start date (for dedup).
+        function eventIdentity(ev) {
+            return `${ev.sourceTool || ''}|${ev.lotId || ev.roomId || ''}|${ev.title || ''}`;
+        }
+
+        // Short display date for chips: "Fri 25 Sep".
+        const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function shortDate(str) {
+            const d = parseDate(str);
+            return `${SHORT_DAYS[d.getDay()]} ${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
+        }
+
+        // Upcoming events: start strictly after the selected date, deduped by
+        // identity (a multi-day event already shown in "Scheduled today" won't
+        // reappear), sorted by start date. Returns at most `limit`.
+        function upcomingEvents(dateStr, limit) {
+            const seen = new Set();
+            const list = DB.calendarEvents.filter(ev => {
+                if (!ev.date || ev.date <= dateStr) return false;
+                const id = eventIdentity(ev);
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
+            list.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.title || '').localeCompare(b.title || ''));
+            return list.slice(0, limit);
+        }
+
+        // Split a leading emoji off an event title (same pattern as GeneralEvent).
+        function eventEmojiAndText(title) {
+            const t = title || '';
+            const m = t.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/su);
+            if (m) return { emoji: m[1], text: m[2] || t };
+            return { emoji: '📌', text: t };
+        }
+
+        // ---- Row builders ----
+
+        function makeCheck(key, checked) {
+            const wrap = document.createElement('label');
+            wrap.className = 'task-check';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = checked;
+            cb.addEventListener('change', () => {
+                if (cb.checked) checkoffs[key] = true;
+                else delete checkoffs[key];
+                renderAll(); // session-only — never touches DB.data or SitkaTools
+            });
+            wrap.appendChild(cb);
+            return wrap;
+        }
+
+        function makeTaskRow(buildingId, task, index, total, allowMove) {
+            const dateStr = selectedDateStr();
+            const key = `${dateStr}:${task.code}`;
+            const row = document.createElement('div');
+            row.className = 'task-row' + (checkoffs[key] ? ' done' : '');
+
+            row.appendChild(makeCheck(key, !!checkoffs[key]));
+
+            const emoji = document.createElement('span');
+            emoji.className = 'task-emoji';
+            emoji.textContent = task.emoji || '📋';
+            row.appendChild(emoji);
+
+            const name = document.createElement('span');
+            name.className = 'task-name';
+            name.textContent = task.name;
+            row.appendChild(name);
+
+            const codeChip = document.createElement('span');
+            codeChip.className = 'chip chip-code';
+            codeChip.textContent = task.code;
+            row.appendChild(codeChip);
+
+            // Tapping anywhere on the row body (except the checkbox / move buttons)
+            // opens the task's detail view (Agent.MD "Task Rows").
+            row.addEventListener('click', (e) => {
+                if (e.target.closest('.task-check') || e.target.closest('.move-btns')) return;
+                openTaskDetail(buildingId, task.code);
+            });
+
+            const staffChip = document.createElement('span');
+            staffChip.className = 'chip';
+            staffChip.textContent = `👥 ${task.staff ?? 1}`;
+            row.appendChild(staffChip);
+
+            const minChip = document.createElement('span');
+            minChip.className = 'chip';
+            minChip.textContent = `⏱ ${task.minutes ?? 0}m`;
+            row.appendChild(minChip);
+
+            if (allowMove) {
+                const moveBtns = document.createElement('div');
+                moveBtns.className = 'move-btns';
+                const up = document.createElement('button');
+                up.type = 'button';
+                up.className = 'move-btn';
+                up.textContent = '▲';
+                up.disabled = index === 0;
+                up.title = 'Move up';
+                up.addEventListener('click', () => moveTask(buildingId, index, -1));
+                const down = document.createElement('button');
+                down.type = 'button';
+                down.className = 'move-btn';
+                down.textContent = '▼';
+                down.disabled = index === total - 1;
+                down.title = 'Move down';
+                down.addEventListener('click', () => moveTask(buildingId, index, +1));
+                moveBtns.appendChild(up);
+                moveBtns.appendChild(down);
+                row.appendChild(moveBtns);
+            }
+
+            return row;
+        }
+
+        // mode: 'today' (default) — checkable row for the selected date.
+        //       'upcoming' — read-only row with a date chip, no checkbox.
+        function makeEventRow(ev, mode = 'today') {
+            const { emoji, text } = eventEmojiAndText(ev.title);
+
+            const row = document.createElement('div');
+
+            if (mode === 'upcoming') {
+                row.className = 'task-row upcoming';
+                const spacer = document.createElement('span');
+                spacer.className = 'task-check';
+                spacer.setAttribute('aria-hidden', 'true');
+                row.appendChild(spacer);
+            } else {
+                const dateStr = selectedDateStr();
+                const key = `${dateStr}:${eventItemKey(ev, dateStr)}`;
+                row.className = 'task-row' + (checkoffs[key] ? ' done' : '');
+                row.appendChild(makeCheck(key, !!checkoffs[key]));
+            }
+
+            const em = document.createElement('span');
+            em.className = 'task-emoji';
+            em.textContent = emoji;
+            row.appendChild(em);
+
+            const name = document.createElement('span');
+            name.className = 'task-name readonly';
+            name.textContent = text || ev.title || '(untitled event)';
+            row.appendChild(name);
+
+            if (mode === 'upcoming') {
+                const chip = document.createElement('span');
+                chip.className = 'chip chip-date';
+                chip.textContent = shortDate(ev.date);
+                row.appendChild(chip);
+            }
+
+            return row;
+        }
+
+        // Reorder a task within its building's array (definition mutation → sync).
+        function moveTask(buildingId, index, dir) {
+            const tasks = DB.dailyBuildings[buildingId]?.tasks;
+            if (!tasks) return;
+            const j = index + dir;
+            if (j < 0 || j >= tasks.length) return;
+            [tasks[index], tasks[j]] = [tasks[j], tasks[index]];
+            notifySitkaTools();
+            renderAll();
+        }
+
+        // "Scheduled today" divider + event rows (omitted when there are none).
+        function appendEventsSection(parent, events) {
+            if (!events.length) return;
+            const div = document.createElement('div');
+            div.className = 'section-divider';
+            div.textContent = `Scheduled today (${events.length})`;
+            parent.appendChild(div);
+            for (const ev of events) parent.appendChild(makeEventRow(ev));
+        }
+
+        // "Upcoming" divider + the next calendar events after the selected date
+        // (read-only, no check-offs). Omitted when there are none.
+        function appendUpcomingSection(parent, dateStr, buildingId, limit = 5) {
+            let evs = upcomingEvents(dateStr, Infinity);
+            if (buildingId !== 'ALL') evs = evs.filter(ev => buildingForEvent(ev) === buildingId);
+            evs = evs.slice(0, limit);
+            if (!evs.length) return;
+            const div = document.createElement('div');
+            div.className = 'section-divider';
+            div.textContent = `Upcoming (${evs.length})`;
+            parent.appendChild(div);
+            for (const ev of evs) parent.appendChild(makeEventRow(ev, 'upcoming'));
+        }
+
+        function mutedLine(text) {
+            const div = document.createElement('div');
+            div.className = 'muted-line';
+            div.textContent = text;
+            return div;
+        }
+
+        // ---- Emoji data — embedded, no network (Agent.MD "Emoji Picker") ----
+        const EMOJI_CATEGORIES = [
+            { label: 'Smileys', items: [
+                ['😀','grin smile happy face'], ['😃','smile grin joy'], ['😄','laugh grin bright'], ['😁','grin teeth big'],
+                ['😆','laugh haha joyful'], ['😅','sweat laugh relieved'], ['🤣','rofl laugh floor crying'], ['😂','tears laugh funny'],
+                ['🙂','slight smile pleasant'], ['😉','wink cheeky'], ['😊','blush smile happy'], ['😇','angel halo nice'],
+                ['🥰','love heart eyes adoring'], ['😍','heart eyes love crush'], ['🤩','star eyes wow excited'], ['😘','kiss flying'],
+                ['🥲','smile tear touched moved'], ['😋','yum tasty delicious lick'], ['😜','tongue wink playful silly'], ['🤪','wild tongue crazy goofy'],
+                ['🤗','hug open arms warm'], ['🤭','smile hand over mouth shy'], ['🤫','shush quiet hush secret'], ['🤔','thinking hmm ponder'],
+                ['🤐','zip lips silent quiet'], ['🤨','raised eyebrow skeptical doubtful'], ['😐','neutral meh blank'], ['😶','no mouth speechless'],
+                ['🙄','eye roll unimpressed'], ['😏','smirk confident sly'], ['😴','sleep zzz tired'], ['😪','tired weary sleepy'],
+                ['😌','relaxed content calm'], ['😔','sad downcast disappointed'], ['😷','mask sick ill'], ['🤒','fever sick hot'],
+                ['🤕','bandage hurt injured'], ['🤢','nauseated sick green'], ['🥵','hot face heat flushed'], ['🥶','cold face freeze shiver'],
+                ['🥴','woozy dizzy tipsy'], ['🤯','mind blown shocked amazed'], ['🤠','cowboy hat western'], ['🥳','party celebrate birthday'],
+                ['😎','sunglasses cool stylish'], ['🤓','nerd glasses geeky smart'], ['🧐','monocle inspect examine']
+            ]},
+            { label: 'People & Hands', items: [
+                ['👋','wave hello hand greet'], ['🤚','raised hand palm stop'], ['🖐','open hand fingers five'], ['✋','stop hand high five'],
+                ['👌','ok perfect fine'], ['🤏','pinch small tiny'], ['✌️','victory peace two'], ['🤞','fingers crossed hope luck'],
+                ['🤟','rock on metal horns'], ['👈','point left back'], ['👉','point right forward'], ['👆','point up here'],
+                ['👇','point down below'], ['☝️','point up one first'], ['👍','thumbs up yes good approve'], ['👎','thumbs down no bad reject'],
+                ['✊','fist power strength'], ['👊','punch fist hit'], ['🤛','left fist bump'], ['🤜','right fist bump'],
+                ['🧤','glove gloves hand protection stock'], ['👏','clap applause praise'], ['🙌','raised hands hooray celebrate'], ['👐','open hands welcome receive'], ['🤲','palms up pray give'],
+                ['🤝','handshake deal agree partner'], ['🙏','pray thanks please hope'], ['💪','muscle strong flex bicep'], ['🫶','heart hands love care'],
+                ['👀','eyes look watch see'], ['🧠','brain think mind smart'], ['👃','nose smell sniff'], ['👂','ear hear listen sound'],
+                ['🦷','tooth dental molar'], ['🧑','person adult human'], ['👷','worker hard hat construction build'], ['👩‍🔧','technician woman wrench repair'],
+                ['👨‍🔧','technician man wrench repair'], ['🧑‍🌾','farmer agriculture grow'], ['🕵️','detective investigate scout search'], ['🦸','superhero hero strong'],
+                ['🥷','ninja stealth'], ['🤖','robot bot machine auto'], ['👻','ghost spooky haunt'], ['💀','skull bones dead'],
+                ['🎅','santa christmas holiday']
+            ]},
+            { label: 'Animals & Nature', items: [
+                ['🐶','dog puppy pet'], ['🐱','cat kitten pet'], ['🐭','mouse rodent'], ['🐹','hamster pet'],
+                ['🐰','rabbit bunny pet'], ['🦊','fox animal clever'], ['🐻','bear animal'], ['🐼','panda animal'],
+                ['🐨','koala animal'], ['🐯','tiger animal stripe'], ['🦁','lion animal mane'], ['🐮','cow cattle beef moo'],
+                ['🐷','pig hog pork'], ['🐸','frog toad jump'], ['🐵','monkey ape'], ['🐔','chicken rooster hen cluck'],
+                ['🐧','penguin bird waddle'], ['🐦','bird song fly'], ['🐤','baby chick hatch'], ['🦆','duck waterfowl quack'],
+                ['🦅','eagle hawk soar'], ['🦉','owl night wise hoot'], ['🦇','bat night hang'], ['🐺','wolf howl pack'],
+                ['🐴','horse pony stallion ride'], ['🦄','unicorn magic horn'], ['🐝','bee honey pollinator buzz'], ['🐛','caterpillar worm bug crawl'],
+                ['🦋','butterfly insect wings'], ['🐌','snail slug slow shell'], ['🐞','ladybug beetle red'], ['🐜','ant insect march'],
+                ['🕷','spider arachnid legs'], ['🕸','web spider silk'], ['🦂','scorpion sting desert'], ['🐢','turtle tortoise shell slow'],
+                ['🐍','snake serpent slither'], ['🦎','lizard gecko'], ['🐙','octopus tentacles sea'], ['🦑','squid ink sea'],
+                ['🦀','crab shellfish pinch'], ['🐠','fish tropical swim'], ['🐬','dolphin marine smart'], ['🐳','whale marine big'],
+                ['🌵','cactus plant desert spiky'], ['🌲','pine tree evergreen forest'], ['🌴','palm tree tropical beach'], ['🌿','herb leaf plant green'],
+                ['☘️','shamrock clover luck irish'], ['🍀','clover four luck'], ['🍃','leaf wind blowing flutter'], ['🍂','fallen leaf autumn fall'],
+                ['🍁','maple leaf autumn red'], ['🌾','rice sheaf grain harvest crop']
+            ]},
+            { label: 'Food & Drink', items: [
+                ['🍏','green apple fruit crisp'], ['🍎','apple fruit red'], ['🍐','pear fruit'], ['🍊','orange citrus fruit juice'],
+                ['🍋','lemon citrus sour'], ['🍌','banana fruit peel'], ['🍉','watermelon fruit summer'], ['🍇','grapes fruit purple'],
+                ['🍓','strawberry fruit berry red'], ['🫐','blueberries berries small'], ['🍈','melon fruit'], ['🍒','cherries fruit pair'],
+                ['🍑','peach fruit fuzzy'], ['🥭','mango fruit tropical'], ['🍍','pineapple fruit spiky'], ['🥥','coconut fruit shell'],
+                ['🥝','kiwi fruit green'], ['🍅','tomato vegetable red'], ['🥑','avocado food guacamole'], ['🥦','broccoli vegetable green'],
+                ['🥬','leafy green vegetable lettuce'], ['🥒','cucumber vegetable pickle'], ['🌶️','chili pepper hot spicy'], ['🌽','corn maize vegetable'],
+                ['🥕','carrot vegetable orange'], ['🧄','garlic spice bulb'], ['🧅','onion vegetable layers'], ['🥔','potato vegetable spud'],
+                ['🍠','sweet potato yam roast'], ['🥐','croissant pastry bread buttery'], ['🍞','bread loaf toast slice'], ['🥖','baguette bread french'],
+                ['🥨','pretzel snack twisted'], ['🧀','cheese dairy wedge'], ['🥚','egg food shell'], ['🍳','frying pan egg cooking breakfast'],
+                ['🥓','bacon meat crispy'], ['🍗','chicken leg meat drumstick'], ['🍖','meat bone roast'], ['🌭','hot dog sausage frank'],
+                ['🍔','hamburger burger patty'], ['🍟','fries chips french'], ['🍕','pizza food slice cheese']
+            ]},
+            { label: 'Objects', items: [
+                ['⌚','watch time wrist'], ['📱','phone mobile cell call'], ['💻','laptop computer screen'], ['⌨️','keyboard type keys'],
+                ['🖥','desktop monitor screen display'], ['🖨','printer print paper'], ['🖱','mouse pointer click'], ['💾','floppy save disk storage'],
+                ['📷','camera photo picture snap'], ['📸','camera flash photo instant'], ['📹','video camera record film'], ['📞','telephone handset call dial'],
+                ['☎️','phone dial rotary'], ['📺','tv television screen watch'], ['📻','radio broadcast tune'], ['⏱','stopwatch timer time seconds'],
+                ['⏰','alarm clock wake morning'], ['⌛','hourglass time sand wait'], ['📡','satellite dish signal antenna'], ['🔋','battery power charge energy'],
+                ['🔌','plug electric socket power'], ['💡','light bulb lamp idea glow'], ['🔦','flashlight torch light beam'], ['🕯','candle flame light wax'],
+                ['🧯','extinguisher fire safety red'], ['💵','dollar bill money cash usd'], ['💰','money bag cash coins'], ['💳','credit card payment swipe'],
+                ['💎','gem diamond jewel sparkle'], ['⚖️','scales balance weigh fair'], ['🧰','toolbox tools repair kit'], ['🪛','screwdriver tool turn'],
+                ['🪚','saw cut wood blade'], ['🔧','wrench tool fix repair spanner'], ['🔨','hammer strike nail hit'], ['⚒','hammer pick tools forge'],
+                ['🛠','hammer wrench tools work fix'], ['⛏','pick mine dig rock'], ['🧲','magnet attract metal'], ['🔪','knife blade cut sharp'],
+                ['🗡','dagger sword blade'], ['⚔️','crossed swords fight battle'], ['🛡','shield protect defense guard'], ['🧹','broom sweep clean floor'],
+                ['🧺','basket laundry hamper carry'], ['🧻','toilet paper roll towel stock'], ['🧼','soap wash clean bar'], ['🧽','sponge scrub clean absorb'],
+                ['🧴','lotion bottle spray pump'], ['📎','paperclip clip attach paper'], ['🖇','linked clips attach'], ['📐','triangular ruler measure angle'],
+                ['📏','straight ruler measure length'], ['✂️','scissors cut snip trim'], ['🖊','pen write ink marker'], ['🖋','fountain pen write sign'],
+                ['✒️','pen nib write black'], ['📝','memo pencil note write jot'], ['📁','folder file documents store'], ['📂','open folder files browse'],
+                ['📅','calendar date schedule month'], ['📆','tear off calendar dates day'], ['📊','bar chart graph data stats'], ['📋','clipboard checklist tasks list'],
+                ['📌','pushpin pin tack board'], ['📍','round pushpin location map'], ['📄','page document file paper'], ['📜','scroll document ancient'],
+                ['📰','newspaper news read'], ['🏷','label tag sticker mark']
+            ]},
+            { label: 'Activities', items: [
+                ['🎯','dart target aim goal hit'], ['🎳','bowling pins game alley'], ['🎮','video game controller play'], ['🕹','joystick game arcade'],
+                ['🎲','game die dice roll chance'], ['🧩','puzzle piece solve fit'], ['🎭','theater mask drama act'], ['🎨','artist palette paint art color'],
+                ['🎬','clapper movie film action'], ['🎤','microphone sing announce speak'], ['🎧','headphones audio listen music'], ['🎼','musical score notes sheet'],
+                ['🎹','piano keys music play'], ['🥁','drum beat rhythm music'], ['🎷','saxophone music jazz'], ['🎺','trumpet music brass'],
+                ['🎸','guitar music strings rock'], ['🪕','banjo music folk'], ['🎻','violin music fiddle'], ['🏀','basketball ball hoop sport'],
+                ['⚽','soccer football ball pitch'], ['🏈','american football ball yard'], ['⚾','baseball ball bat diamond'], ['🥎','softball ball small'],
+                ['🎾','tennis ball racket court'], ['🏐','volleyball ball net'], ['🏉','rugby ball oval'], ['🎱','pool billiards 8 ball cue'],
+                ['🏓','ping pong table tennis paddle'], ['🏸','badminton shuttlecock racket'], ['🏒','hockey puck stick ice'], ['🏑','field hockey stick'],
+                ['🥅','goal net sport score'], ['⛳','golf flag hole course'], ['🏹','archery bow arrow shoot'], ['🎣','fishing rod catch line'],
+                ['🤿','diving mask swim underwater'], ['🥊','boxing glove fight ring'], ['🥋','martial arts gi karate belt'], ['🎽','running shirt race jersey'],
+                ['🛹','skateboard board ride'], ['🛼','roller skates wheels'], ['⛸','ice skate blade'], ['🥌','curling stone ice'],
+                ['🎿','skis snow pair'], ['⛷','skier snow slope'], ['🏂','snowboard snow ride'], ['🏋️','weightlifting gym strength barbell'],
+                ['🤸','cartwheel gymnastics flip'], ['🧘','yoga meditate calm pose'], ['🏄','surfing wave board ocean'], ['🏊','swimming swim pool stroke'],
+                ['🚣','rowing boat canoe paddle'], ['🧗','climbing rock wall'], ['🚵','mountain biking trail'], ['🚴','cycling bike ride road'],
+                ['🏆','trophy winner champion prize'], ['🥇','gold medal first place win'], ['🥈','silver medal second place'], ['🥉','bronze medal third place']
+            ]},
+            { label: 'Travel', items: [
+                ['🚗','car auto drive vehicle road'], ['🚕','taxi cab ride'], ['🚙','suv car wagon'], ['🚌','bus transit route'],
+                ['🏎','racing car fast speed'], ['🚓','police car patrol siren'], ['🚑','ambulance emergency medical rescue'], ['🚒','fire truck engine blaze'],
+                ['🚐','minivan van people'], ['🛻','pickup truck bed'], ['🚚','truck delivery cargo box'], ['🚛','articulated truck lorry freight'],
+                ['🚜','tractor farm agriculture field'], ['🛵','scooter moped ride'], ['🏍','motorcycle bike speed two wheel'], ['🚲','bicycle bike cycle pedal'],
+                ['🛴','kick scooter push'], ['🚨','rotating light siren emergency'], ['🚡','aerial lift cable car mountain'], ['🚠','suspension railway gondola'],
+                ['🚟','monorail train rail'], ['🚃','railway car wagon freight'], ['🚋','tram streetcar trolley'], ['🚞','mountain railway scenic'],
+                ['🚄','bullet train fast speed'], ['🚅','train shinkansen rail'], ['🚂','locomotive steam train engine'], ['✈️','airplane plane fly flight airport'],
+                ['🛫','airplane takeoff depart leave'], ['🛬','airplane landing arrive'], ['🛰','satellite orbit space signal'], ['🚀','rocket launch space blast off'],
+                ['🛸','ufo alien disc'], ['🚁','helicopter chopper rotor fly'], ['⛵','sailboat yacht water sail'], ['🚤','speedboat motorboat fast'],
+                ['🛥','motor boat water'], ['🛳','cruise ship ocean voyage'], ['⛴','ferry boat cross water'], ['🚢','ship vessel ocean big'],
+                ['⚓','anchor dock harbor'], ['⛽','fuel pump gas station refuel'], ['🚧','construction road work barrier'], ['🚦','traffic light signal stop go'],
+                ['🗺','world map location route']
+            ]},
+            { label: 'Symbols', items: [
+                ['❤️','red heart love like'], ['🧡','orange heart warm'], ['💛','yellow heart sunny'], ['💚','green heart eco fresh'],
+                ['💙','blue heart calm'], ['💜','purple heart royal'], ['🖤','black heart dark'], ['🤍','white heart pure'],
+                ['🤎','brown heart earthy'], ['💔','broken heart sad hurt'], ['❣️','heart exclamation love'], ['💕','two hearts love affection'],
+                ['💞','revolving hearts in love'], ['💓','beating heart pulse alive'], ['💗','growing heart expanding'], ['💖','sparkling heart adore shine'],
+                ['💘','heart arrow cupid love'], ['💝','heart ribbon gift love'], ['☮️','peace dove sign calm'], ['✅','check mark done yes complete ok'],
+                ['❌','cross no wrong cancel x'], ['❎','cross button no reject'], ['✔️','heavy check yes confirm'], ['☑️','check box ballot select tick'],
+                ['🔘','radio button select option'], ['🔴','red circle record dot stop'], ['🟠','orange circle dot'], ['🟡','yellow circle dot caution wait'],
+                ['🟢','green circle go ok pass'], ['🔵','blue circle dot info'], ['🟣','purple circle dot'], ['⚫','black circle bullet'],
+                ['⚪','white circle bullet empty'], ['🟤','brown circle dot'], ['➕','plus add increase more'], ['➖','minus subtract decrease less'],
+                ['✳️','eight sparkles shine'], ['❇️','sparkle glitter clean'], ['💯','hundred perfect score full'], ['💢','anger mark angry pout'],
+                ['⚡','lightning bolt zap energy fast'], ['🔥','fire flame hot burn blazing'], ['💧','droplet water drip moist'], ['🌊','wave water ocean splash'],
+                ['☀️','sun sunny bright day warm'], ['🌤','sun behind cloud morning'], ['⛅','sun cloud partly cloudy'], ['☁️','cloud overcast gray'],
+                ['🌧','rain cloud drizzle wet'], ['⛈','thunderstorm lightning rain storm'], ['🌨','snow cloud flake winter'], ['❄️','snowflake cold winter freeze'],
+                ['☃️','snowman winter smile'], ['⛄','snowman without snow'], ['🌬','wind face breeze gust'], ['💨','dash wind whoosh fast'],
+                ['💫','dizzy stars sparkle wow'], ['💥','collision explosion boom crash'], ['💦','sweat droplets splash effort'], ['💤','zzz sleep snooze rest'],
+                ['🌈','rainbow colors sky hope']
+            ]}
+        ];
+
+        // ---- Emoji picker (embedded data, no network) ----
+        let editorEmoji = '📋';
+        let emojiActiveTab = 0;
+
+        function buildEmojiTabs() {
+            const tabs = $('emojiTabs');
+            tabs.innerHTML = '';
+            EMOJI_CATEGORIES.forEach((cat, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'emoji-tab' + (i === emojiActiveTab ? ' on' : '');
+                b.textContent = cat.label;
+                // stopPropagation: this handler rebuilds the tab list (removing the clicked
+                // button from the DOM), which would otherwise make the document-level
+                // outside-click check see a detached target and close the panel.
+                b.addEventListener('click', (e) => { e.stopPropagation(); emojiActiveTab = i; buildEmojiTabs(); renderEmojiGrid(); });
+                tabs.appendChild(b);
+            });
+        }
+
+        function renderEmojiGrid() {
+            const grid = $('emojiGrid');
+            grid.innerHTML = '';
+            const q = $('emojiSearch').value.trim().toLowerCase();
+            // With a search query, match across ALL categories; otherwise show the active tab.
+            const cats = q ? EMOJI_CATEGORIES : [EMOJI_CATEGORIES[emojiActiveTab]];
+            let count = 0;
+            for (const cat of cats) {
+                for (const [ch, kw] of cat.items) {
+                    if (q && !(kw.includes(q) || ch.toLowerCase().includes(q))) continue;
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'emoji-cell';
+                    b.textContent = ch;
+                    b.title = kw.split(' ')[0];
+                    b.addEventListener('click', () => { setEditorEmoji(ch); closeEmojiPanel(); });
+                    grid.appendChild(b);
+                    count++;
+                }
+            }
+            if (!count) {
+                const div = document.createElement('div');
+                div.className = 'muted-line';
+                div.textContent = 'No matching emoji.';
+                grid.appendChild(div);
+            }
+        }
+
+        function setEditorEmoji(ch) { editorEmoji = ch; $('emojiCurrentBtn').textContent = ch; }
+
+        function openEmojiPanel() {
+            $('emojiPanel').style.display = '';
+            $('emojiSearch').value = '';
+            buildEmojiTabs();
+            renderEmojiGrid();
+        }
+
+        function closeEmojiPanel() { $('emojiPanel').style.display = 'none'; }
+
+        // ---- Task editor (add / edit) ----
+        const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+        let editorBuildingId = null;
+        let editorTaskCode = null; // null = new task
+
+        // Random 4-char code, globally unique across all buildings (regenerate on collision).
+        function generateTaskCode() {
+            const d = DB.ensureStructure();
+            const used = new Set();
+            for (const b of Object.values(d._DailyWizard.buildings)) {
+                for (const t of (b.tasks || [])) if (t.code) used.add(t.code);
+            }
+            let code;
+            do {
+                code = '';
+                for (let i = 0; i < 4; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+            } while (used.has(code));
+            return code;
+        }
+
+        function openTaskEditor(buildingId, code) {
+            editorBuildingId = buildingId;
+            editorTaskCode = code || null;
+            const task = editorTaskCode
+                ? (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === editorTaskCode)
+                : null;
+
+            $('editorTitle').textContent = task ? `Edit Task — ${task.name}` : 'Add Task';
+            setEditorEmoji(task?.emoji || '📋');
+            $('taskNameInput').value = task?.name || '';
+            $('taskMinutesInput').value = task?.minutes ?? 30;
+            $('taskStaffInput').value = task?.staff ?? 1;
+            $('monthDaysInput').value = (task?.monthDays || []).join(', ');
+
+            // Weekday pills — display order Mon → Sun, values 1..6,0; default all on for new tasks
+            const days = new Set(task?.days || [0, 1, 2, 3, 4, 5, 6]);
+            const pills = $('weekdayPills');
+            pills.innerHTML = '';
+            const order = [1, 2, 3, 4, 5, 6, 0];
+            const labels = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 0: 'Sun' };
+            for (const d of order) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'pill' + (days.has(d) ? ' on' : '');
+                b.textContent = labels[d];
+                b.dataset.day = d;
+                b.addEventListener('click', () => b.classList.toggle('on'));
+                pills.appendChild(b);
+            }
+
+            closeEmojiPanel();
+            $('editorOverlay').classList.add('open');
+            $('taskNameInput').focus();
+        }
+
+        function closeTaskEditor() {
+            $('editorOverlay').classList.remove('open');
+            closeEmojiPanel();
+            editorBuildingId = null;
+            editorTaskCode = null;
+        }
+
+        // Parse a comma-separated list of 1–31, deduplicated and sorted.
+        function parseMonthDays(str) {
+            const out = new Set();
+            for (const part of String(str).split(',')) {
+                const n = parseInt(part.trim(), 10);
+                if (!Number.isNaN(n) && n >= 1 && n <= 31) out.add(n);
+            }
+            return [...out].sort((a, b) => a - b);
+        }
+
+        function saveTaskFromEditor() {
+            const name = $('taskNameInput').value.trim();
+            const minutes = parseInt($('taskMinutesInput').value, 10);
+            const staff = parseInt($('taskStaffInput').value, 10);
+            const days = [...document.querySelectorAll('#weekdayPills .pill.on')]
+                .map(b => Number(b.dataset.day)).sort((a, b) => a - b);
+            const monthDays = parseMonthDays($('monthDaysInput').value);
+
+            // Validation (Agent.MD "Task Editor")
+            if (!name) { showToast('Task name is required'); return; }
+            if (Number.isNaN(minutes) || minutes < 5) { showToast('Estimated time must be at least 5 minutes'); return; }
+            if (Number.isNaN(staff) || staff < 1) { showToast('Staff required must be at least 1'); return; }
+            if (!days.length && !monthDays.length) { showToast('Pick at least one weekday or one day-of-month'); return; }
+
+            const d = DB.ensureStructure();
+            if (!d._DailyWizard.buildings[editorBuildingId]) d._DailyWizard.buildings[editorBuildingId] = { tasks: [] };
+            const tasks = d._DailyWizard.buildings[editorBuildingId].tasks;
+            const wasEdit = !!editorTaskCode;
+
+            if (wasEdit) {
+                const task = tasks.find(t => t.code === editorTaskCode);
+                if (task) {
+                    task.emoji = editorEmoji;
+                    task.name = name;
+                    task.minutes = minutes;
+                    task.staff = staff;
+                    task.days = days;
+                    task.monthDays = monthDays;
+                    // steps preserved — edited in the detail view (Stage 4)
+                }
+            } else {
+                tasks.push({ code: generateTaskCode(), emoji: editorEmoji, name, minutes, staff, days, monthDays, steps: [] });
+            }
+
+            notifySitkaTools(); // definition mutation → sync back to SitkaTools
+            closeTaskEditor();
+            renderAll();
+            showToast(wasEdit ? 'Task updated' : 'Task added');
+        }
+
+        // ---- Task detail view & step pictures (Stage 4) ----
+        let detailBuildingId = null;
+        let detailTaskCode = null;
+
+        const DAY_LABELS = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+
+        function ordinal(n) {
+            if (n % 100 >= 11 && n % 100 <= 13) return n + 'th';
+            switch (n % 10) {
+                case 1: return n + 'st';
+                case 2: return n + 'nd';
+                case 3: return n + 'rd';
+                default: return n + 'th';
+            }
+        }
+
+        // Plain-language recurrence (Agent.MD "Task Detail View"):
+        // "Every day" / "Mon, Wed, Fri" / "1st & 15th of each month", joined with "and".
+        function describeRecurrence(task) {
+            const days = [...(task.days || [])];
+            const monthDays = [...(task.monthDays || [])].sort((a, b) => a - b);
+            const parts = [];
+            if (days.length === 7) parts.push('Every day');
+            else if (days.length) {
+                const order = [1, 2, 3, 4, 5, 6, 0]; // display order Mon → Sun
+                parts.push(order.filter(d => days.includes(d)).map(d => DAY_LABELS[d]).join(', '));
+            }
+            if (monthDays.length) {
+                const list = monthDays.map(ordinal);
+                const head = list.slice(0, -1).join(', ');
+                parts.push(`${head ? head + ' & ' : ''}${list[list.length - 1]} of each month`);
+            }
+            return parts.join(' and ');
+        }
+
+        // ---- Step pictures: pics/{code}_{n}.{ext}, 1-based position, probe png→jpg→webp ----
+        const STEP_IMG_EXTS = ['png', 'jpg', 'webp'];
+        const stepImageCache = {}; // `${code}_${n}` → ext | null (null = probed, missing)
+
+        function probeStepImage(code, n, bust, cb) {
+            const key = `${code}_${n}`;
+            let i = 0;
+            const tryNext = () => {
+                if (i >= STEP_IMG_EXTS.length) { stepImageCache[key] = null; cb(null); return; }
+                const ext = STEP_IMG_EXTS[i++];
+                const img = new Image();
+                const q = bust ? `?t=${Date.now()}` : '';
+                img.onload = () => { stepImageCache[key] = ext; cb(ext); };
+                img.onerror = tryNext;
+                img.src = `pics/${code}_${n}.${ext}${q}`;
+            };
+            tryNext();
+        }
+
+        function makeStepImageWrap(code, n) {
+            const wrap = document.createElement('div');
+            wrap.className = 'step-img-wrap';
+            const key = `${code}_${n}`;
+            const fill = (ext) => {
+                wrap.innerHTML = '';
+                if (ext) {
+                    const img = document.createElement('img');
+                    img.className = 'step-img';
+                    img.src = `pics/${code}_${n}.${ext}`;
+                    img.alt = `${code}_${n}`;
+                    wrap.appendChild(img);
+                } else {
+                    const chip = document.createElement('span');
+                    chip.className = 'chip missing';
+                    chip.textContent = `🖼 ${code}_${n}.png not found`;
+                    wrap.appendChild(chip);
+                }
+            };
+            if (key in stepImageCache) fill(stepImageCache[key]);
+            else {
+                const chip = document.createElement('span');
+                chip.className = 'chip missing';
+                chip.textContent = `🖼 ${code}_${n}.png …`;
+                wrap.appendChild(chip);
+                probeStepImage(code, n, false, (ext) => { if (wrap.isConnected) fill(ext); });
+            }
+            return wrap;
+        }
+
+        function getDetailTask() {
+            return detailBuildingId && detailTaskCode
+                ? (DB.dailyBuildings[detailBuildingId]?.tasks || []).find(t => t.code === detailTaskCode)
+                : null;
+        }
+
+        function openTaskDetail(buildingId, code) {
+            const task = (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === code);
+            if (!task) return;
+            detailBuildingId = buildingId;
+            detailTaskCode = code;
+            renderDetail();
+            $('detailOverlay').classList.add('open');
+        }
+
+        function closeTaskDetail() {
+            $('detailOverlay').classList.remove('open');
+            detailBuildingId = null;
+            detailTaskCode = null;
+        }
+
+        // Keep an open detail view consistent with a freshly delivered DB
+        // (closes itself if its task no longer exists).
+        function syncOpenDetail() {
+            if ($('detailOverlay').classList.contains('open')) renderDetail();
+        }
+
+        function renderDetail() {
+            const task = getDetailTask();
+            if (!task) { closeTaskDetail(); return; }
+
+            $('detailEmoji').textContent = task.emoji || '📋';
+            $('detailName').textContent = task.name;
+            $('detailCode').textContent = task.code;
+
+            // Summary block: labour + plain-language recurrence
+            const sum = $('detailSummary');
+            sum.innerHTML = '';
+            const staff = task.staff ?? 1, minutes = task.minutes ?? 0;
+            const labour = document.createElement('div');
+            labour.className = 'summary-line';
+            labour.textContent = `👥 ${staff} · ⏱ ${minutes}m · ≈ ${((staff * minutes) / 60).toFixed(1)} h labour`;
+            sum.appendChild(labour);
+            const rec = document.createElement('div');
+            rec.className = 'summary-line';
+            rec.textContent = `🔁 ${describeRecurrence(task) || 'Never'}`;
+            sum.appendChild(rec);
+
+            renderStepsList(task);
+        }
+
+        function makeStepRow(task, index) {
+            const steps = task.steps;
+            const n = index + 1; // pictures are positionally bound (1-based)
+
+            const row = document.createElement('div');
+            row.className = 'step-row';
+
+            const top = document.createElement('div');
+            top.className = 'step-top';
+
+            const num = document.createElement('span');
+            num.className = 'step-num';
+            num.textContent = n;
+            top.appendChild(num);
+
+            const text = document.createElement('span');
+            text.className = 'step-text' + (steps[index].text ? '' : ' placeholder');
+            text.textContent = steps[index].text || '(tap to add instruction)';
+            text.addEventListener('click', () => beginStepEdit(row, task, index));
+            top.appendChild(text);
+
+            const actions = document.createElement('div');
+            actions.className = 'step-actions';
+            const mkBtn = (label, title, disabled, danger, fn) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'step-btn' + (danger ? ' danger' : '');
+                b.textContent = label;
+                b.title = title;
+                b.disabled = disabled;
+                b.addEventListener('click', fn);
+                actions.appendChild(b);
+            };
+            mkBtn('▲', 'Move step up', index === 0, false, () => moveStep(task, index, -1));
+            mkBtn('▼', 'Move step down', index === steps.length - 1, false, () => moveStep(task, index, +1));
+            mkBtn('🗑', 'Delete step', false, true, () => deleteStep(task, index));
+            top.appendChild(actions);
+
+            row.appendChild(top);
+            row.appendChild(makeStepImageWrap(task.code, n));
+            return row;
+        }
+
+        // Tap-to-edit: swap the text span for an input; commit on Enter/blur, discard on Escape.
+        function beginStepEdit(rowEl, task, index) {
+            if (rowEl.querySelector('.step-text-input')) return;
+            const textEl = rowEl.querySelector('.step-text');
+            if (!textEl) return;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'step-text-input';
+            input.value = task.steps[index].text || '';
+            input.placeholder = 'Step instruction…';
+
+            let done = false;
+            const finish = (commit) => {
+                if (done) return;
+                done = true;
+                if (commit) {
+                    const v = input.value.trim();
+                    if (v !== (task.steps[index].text || '')) {
+                        task.steps[index].text = v;
+                        notifySitkaTools(); // step mutation → sync
+                        showToast(v ? 'Step updated' : 'Step text cleared');
+                    }
+                }
+                renderDetail();
+            };
+            input.addEventListener('blur', () => finish(true));
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                else if (e.key === 'Escape') finish(false);
+            });
+
+            textEl.replaceWith(input);
+            input.focus();
+        }
+
+        function renderStepsList(task) {
+            const list = $('stepsList');
+            list.innerHTML = '';
+            const steps = task.steps || [];
+            steps.forEach((s, i) => list.appendChild(makeStepRow(task, i)));
+            if (!steps.length) list.appendChild(mutedLine('No steps yet — add the first one below.'));
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-secondary';
+            addBtn.style.minHeight = '48px';
+            addBtn.textContent = '+ Add Step';
+            addBtn.addEventListener('click', () => {
+                task.steps = task.steps || [];
+                task.steps.push({ text: '' });
+                notifySitkaTools();
+                renderDetail();
+                const rows = document.querySelectorAll('#stepsList .step-row');
+                const last = rows[rows.length - 1];
+                if (last) beginStepEdit(last, task, task.steps.length - 1);
+            });
+            list.appendChild(addBtn);
+        }
+
+        function moveStep(task, index, dir) {
+            const steps = task.steps || [];
+            const j = index + dir;
+            if (j < 0 || j >= steps.length) return;
+            [steps[index], steps[j]] = [steps[j], steps[index]];
+            notifySitkaTools(); // pictures are positionally bound — they follow the step
+            renderDetail();
+        }
+
+        function deleteStep(task, index) {
+            task.steps.splice(index, 1);
+            notifySitkaTools();
+            renderDetail();
+            showToast('Step deleted');
+        }
+
+        // 🔄 Refresh images: clear this task's probe cache and re-probe with a
+        // cache-busting query string (picks up pictures added since first load).
+        function refreshStepImages() {
+            const task = getDetailTask();
+            if (!task) return;
+            const steps = task.steps || [];
+            if (!steps.length) { showToast('No steps to refresh'); return; }
+            for (const k of Object.keys(stepImageCache)) if (k.startsWith(task.code + '_')) delete stepImageCache[k];
+            let remaining = steps.length;
+            steps.forEach((s, i) => {
+                probeStepImage(task.code, i + 1, true, () => {
+                    remaining--;
+                    if (remaining === 0 && $('detailOverlay').classList.contains('open') && getDetailTask()?.code === task.code) {
+                        renderDetail();
+                        showToast('Step pictures refreshed');
+                    }
+                });
+            });
+        }
+
+        function deleteCurrentTask() {
+            const task = getDetailTask();
+            if (!task) return;
+            if (!confirm(`Delete task "${task.name}" (${task.code})?\nThis removes it from _DailyWizard.`)) return;
+            const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
+            const i = tasks.findIndex(t => t.code === detailTaskCode);
+            if (i !== -1) tasks.splice(i, 1);
+            for (const k of Object.keys(stepImageCache)) if (k.startsWith(task.code + '_')) delete stepImageCache[k];
+            notifySitkaTools(); // definition mutation → sync
+            closeTaskDetail();
+            renderAll();
+            showToast('Task deleted');
+        }
+
+        // ---- Views ----
+
+        function renderBuildingView(container, buildingId, dateStr) {
+            const b = DB.buildings[buildingId];
+            const allTasks = DB.dailyBuildings[buildingId]?.tasks || [];
+            const tasks = allTasks.filter(t => taskOccursOn(t, dateStr));
+            const events = eventsOnDate(dateStr).filter(ev => buildingForEvent(ev) === buildingId);
+
+            // + Add Task bar (single-building mode only; editor lands in Stage 3)
+            const addBar = document.createElement('div');
+            addBar.className = 'add-task-bar';
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-primary';
+            addBtn.textContent = '+ Add Task';
+            addBtn.addEventListener('click', () => openTaskEditor(buildingId));
+            addBar.appendChild(addBtn);
+            container.appendChild(addBar);
+
+            if (allTasks.length === 0) {
+                container.appendChild(mutedLine(`No daily tasks defined for ${b?.name || buildingId} yet.`));
+            } else if (tasks.length === 0) {
+                container.appendChild(mutedLine('No daily tasks scheduled for this date.'));
+            } else {
+                tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, i, tasks.length, true)));
+            }
+
+            appendEventsSection(container, events);
+            appendUpcomingSection(container, dateStr, buildingId);
+        }
+
+        function renderAllBuildings(container, dateStr) {
+            const dayEvents = eventsOnDate(dateStr);
+
+            for (const [bid, b] of Object.entries(DB.buildings)) {
+                const section = document.createElement('div');
+                section.className = 'building-section';
+
+                const tasks = tasksForBuilding(bid, dateStr);
+                const done = tasks.filter(t => checkoffs[`${dateStr}:${t.code}`]).length;
+                const events = dayEvents.filter(ev => buildingForEvent(ev) === bid);
+
+                const header = document.createElement('div');
+                header.className = 'building-section-header';
+                const label = document.createElement('span');
+                label.textContent = `🏢 ${b?.name || bid}`;
+                const chip = document.createElement('span');
+                chip.className = 'chip';
+                chip.textContent = `✅ ${done}/${tasks.length}`;
+                header.appendChild(label);
+                header.appendChild(chip);
+                section.appendChild(header);
+
+                if (tasks.length === 0) {
+                    section.appendChild(mutedLine('No daily tasks for this date.'));
+                } else {
+                    tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, 0, tasks.length, false)));
+                }
+
+                appendEventsSection(section, events);
+                container.appendChild(section);
+            }
+
+            // 📌 Unassigned / General — unattributable events (never silently dropped)
+            const unassigned = dayEvents.filter(ev => !buildingForEvent(ev));
+            if (unassigned.length) {
+                const section = document.createElement('div');
+                section.className = 'building-section';
+                const header = document.createElement('div');
+                header.className = 'building-section-header muted';
+                header.textContent = '📌 Unassigned / General';
+                section.appendChild(header);
+                for (const ev of unassigned) section.appendChild(makeEventRow(ev));
+                container.appendChild(section);
+            }
+
+            // Upcoming — next calendar events across all buildings (incl. unassigned)
+            appendUpcomingSection(container, dateStr, 'ALL');
+        }
+
+        function renderList() {
+            const container = $('listContainer');
+            container.innerHTML = '';
+
+            if (!dbLoaded) {
+                // Empty state: no DB loaded
+                const div = document.createElement('div');
+                div.className = 'empty-state';
+                div.innerHTML = `
+                    <div class="empty-icon">📂</div>
+                    <div class="empty-title">No database loaded</div>
+                    <div class="empty-sub">${isStandalone
+                        ? 'Load the current DB-YY-MM-DD.json file to see daily tasks and scheduled events.'
+                        : 'Waiting for SitkaTools to deliver the database…'}</div>
+                `;
+                if (isStandalone) {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-primary';
+                    btn.textContent = '📂 Load Database File';
+                    btn.addEventListener('click', () => $('dbImportInput').click());
+                    div.appendChild(btn);
+                }
+                container.appendChild(div);
+                return;
+            }
+
+            const dateStr = selectedDateStr();
+            const sel = $('buildingSelect').value;
+            if (sel === 'ALL') renderAllBuildings(container, dateStr);
+            else renderBuildingView(container, sel, dateStr);
+        }
+
+        function renderAll() {
+            populateBuildingSelector();
+            updateStatusBar();
+            renderList();
+        }
+
+        // ---- Init ----
+        function init() {
+            $('dateInput').value = todayStr();
+
+            if (isStandalone) {
+                $('loadDbBtn').style.display = '';
+                $('exportDbBtn').style.display = '';
+            }
+
+            $('dbImportInput').addEventListener('change', handleDbImport);
+            $('loadDbBtn').addEventListener('click', () => $('dbImportInput').click());
+            $('exportDbBtn').addEventListener('click', handleDbExport);
+            $('buildingSelect').addEventListener('change', renderAll);
+            $('dateInput').addEventListener('change', renderAll);
+            $('resetDayBtn').addEventListener('click', resetDay);
+            $('closeToolBtn').addEventListener('click', () => window.close());
+
+            // Task editor + emoji picker
+            $('emojiCurrentBtn').addEventListener('click', () => {
+                const panel = $('emojiPanel');
+                if (panel.style.display === 'none') openEmojiPanel(); else closeEmojiPanel();
+            });
+            $('emojiSearch').addEventListener('input', renderEmojiGrid);
+            $('editorBackBtn').addEventListener('click', closeTaskEditor);
+            $('editorCancelBtn').addEventListener('click', closeTaskEditor);
+            $('editorSaveBtn').addEventListener('click', saveTaskFromEditor);
+            document.querySelectorAll('#monthDayPresets .chip-btn').forEach(b => {
+                b.addEventListener('click', () => { $('monthDaysInput').value = b.dataset.preset; });
+            });
+            // Click outside the picker closes the panel. composedPath() is used instead of
+            // contains(e.target) because a handler may remove the clicked element from the
+            // DOM mid-dispatch (e.g., tab rebuild), which would break contains().
+            document.addEventListener('click', (e) => {
+                if (!e.composedPath().includes($('emojiPicker'))) closeEmojiPanel();
+            });
+
+            // Task detail view + step pictures
+            $('detailBackBtn').addEventListener('click', closeTaskDetail);
+            $('editTaskBtn').addEventListener('click', () => {
+                const bid = detailBuildingId, code = detailTaskCode;
+                closeTaskDetail();
+                openTaskEditor(bid, code); // pre-filled edit mode (Stage 3)
+            });
+            $('deleteTaskBtn').addEventListener('click', deleteCurrentTask);
+            $('refreshImagesBtn').addEventListener('click', refreshStepImages);
+
+            renderAll();
+        }
+
+        init();
+    </script>
+</body>
+</html>
