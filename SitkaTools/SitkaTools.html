@@ -1300,6 +1300,151 @@
         }
 
         /* =====================================================
+           7-day view — vertically stacked days, full task text
+           ===================================================== */
+
+        .week-view {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .week-day {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .week-day.first {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(83, 216, 168, 0.35);
+        }
+
+        .week-day-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 14px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+
+        .week-day-header:hover { background: rgba(83, 216, 168, 0.1); }
+
+        .week-dow {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            min-width: 88px;
+        }
+
+        .week-date-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .week-today-badge {
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+
+        .week-holiday {
+            color: var(--warning);
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .week-count {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .week-day-body {
+            padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .week-empty {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-style: italic;
+            padding: 2px 2px 4px;
+        }
+
+        .week-event {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            line-height: 1.35;
+            cursor: pointer;
+            background: rgba(168, 168, 184, 0.12);
+            color: var(--text-primary);
+            transition: all 0.15s;
+        }
+
+        .week-event:hover {
+            background: rgba(83, 216, 168, 0.12);
+            transform: translateX(2px);
+        }
+
+        .week-event.selected {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+            font-weight: 700;
+        }
+
+        /* Multi-day events in the 7-day view */
+        .week-event.multi-day {
+            background: rgba(83, 216, 168, 0.15);
+            color: var(--accent);
+            border-left: 3px solid var(--accent);
+        }
+
+        .week-event.range-start { font-weight: 600; }
+
+        .week-event.range-end {
+            border-left: none;
+            border-right: 3px solid var(--accent);
+        }
+
+        .week-event.multi-day:not(.range-start):not(.range-end) {
+            border-left: 3px solid rgba(83, 216, 168, 0.4);
+        }
+
+        /* Completed + projection events in the 7-day view */
+        .week-event.completed {
+            text-decoration: line-through;
+            opacity: 0.5;
+            filter: grayscale(0.6);
+        }
+
+        .week-event.projection {
+            background: rgba(168, 168, 184, 0.1);
+            color: var(--text-secondary);
+            border-left: 3px dashed var(--text-secondary);
+            opacity: 0.8;
+        }
+
+        /* =====================================================
            Annual view — 12 mini-months, emoji dots per task
            ===================================================== */
 
@@ -2003,6 +2148,16 @@
                 padding: 6px 8px;
             }
 
+            /* 7-day view mobile fixes */
+            .week-dow {
+                min-width: 72px;
+                font-size: 0.85rem;
+            }
+
+            .week-event {
+                font-size: 0.85rem;
+            }
+
             /* Annual view mobile fixes */
             .annual-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -2512,15 +2667,15 @@
 
             <!-- Calendar navigation -->
             <div class="calendar-nav">
-                <button class="btn btn-secondary" id="prevMonthBtn">◀ Prev</button>
+                <button class="btn btn-secondary" id="prevMonthBtn" title="Previous month / day / year (depends on view)">◀ Prev</button>
                 <h2 class="calendar-month-title" id="calendarTitle">August 2026</h2>
-                <button class="btn btn-secondary" id="nextMonthBtn">Next ▶</button>
+                <button class="btn btn-secondary" id="nextMonthBtn" title="Next month / day / year (depends on view)">Next ▶</button>
                 <button class="btn btn-primary" id="todayBtn" style="margin-left: 16px;">Today</button>
                 <label class="holiday-toggle" title="Show BC civic holidays on the calendar (on by default)">
                     <input type="checkbox" id="showHolidaysToggle" checked>
                     <span>🏛️ Holidays</span>
                 </label>
-                <button class="btn btn-secondary view-toggle-btn" id="viewToggleBtn" title="Flip between monthly and annual (12-month) views">📅 Annual</button>
+                <button class="btn btn-secondary view-toggle-btn" id="viewToggleBtn" title="Cycle views: Monthly → 7-Day → Annual">📅 7-Day</button>
             </div>
 
             <!-- Calendar grid -->
@@ -2543,6 +2698,9 @@
                     <div class="annual-grid" id="annualGrid"></div>
                 </div>
             </div>
+
+            <!-- 7-day view: vertically stacked days with full task text -->
+            <div class="week-view hidden" id="weekView"></div>
 
             <!-- Event details/operations panel -->
             <div class="event-panel" id="eventPanel">
@@ -4674,8 +4832,10 @@
             draggedEvent: null,
             showHolidays: true,
 
-            // ---- View mode: 'month' (default) or 'year' (12-month annual view) ----
+            // ---- View mode: 'month' | 'week' (7-day stacked) | 'year' (12-month annual) ----
             viewMode: 'month',
+            // First day of the 7-day window in week view ('YYYY-MM-DD')
+            weekAnchorDate: null,
             // Days of the week in which a task-type cluster is "too close together"
             // (e.g. two harvests 3 days apart). Session-only tuning, not persisted.
             CLUSTER_WINDOW_DAYS: 7,
@@ -4694,9 +4854,16 @@
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
 
-                // View toggle — flip between monthly and annual (12-month) views
+                // View toggle — cycle monthly → 7-day → annual
                 $('viewToggleBtn').addEventListener('click', () => {
-                    this.viewMode = this.viewMode === 'month' ? 'year' : 'month';
+                    const order = ['month', 'week', 'year'];
+                    this.viewMode = order[(order.indexOf(this.viewMode) + 1) % order.length];
+                    if (this.viewMode === 'week' && !this.weekAnchorDate) {
+                        // Default the window to today when first entering week view
+                        const d = new Date();
+                        d.setDate(d.getDate() - d.getDay()); // back to Sunday
+                        this.weekAnchorDate = localDate(d);
+                    }
                     this.render();
                 });
 
@@ -4760,6 +4927,14 @@
                     this.render();
                     return;
                 }
+                if (this.viewMode === 'week') {
+                    // In 7-day view, Prev/Next slide the window one day at a time
+                    const anchor = parseLocalDate(this.weekAnchorDate || localDate());
+                    anchor.setDate(anchor.getDate() + delta);
+                    this.weekAnchorDate = localDate(anchor);
+                    this.render();
+                    return;
+                }
                 this.currentMonth += delta;
                 if (this.currentMonth > 11) {
                     this.currentMonth = 0;
@@ -4775,6 +4950,10 @@
                 const today = new Date();
                 this.currentMonth = today.getMonth();
                 this.currentYear = today.getFullYear();
+                if (this.viewMode === 'week') {
+                    // Slide the 7-day window so today is its first day
+                    this.weekAnchorDate = localDate(today);
+                }
                 this.render();
             },
 
@@ -4869,6 +5048,7 @@
                 // Swap which container is visible
                 view.classList.remove('hidden');
                 if (monthGrid) monthGrid.classList.add('hidden');
+                $('weekView').classList.add('hidden');
 
                 const todayStr = localDate();
                 const taskTypes = this._annualTaskTypes();
@@ -4928,15 +5108,124 @@
                 }
                 grid.innerHTML = html;
 
-                // Click a day to jump into the monthly view for that month
+                // Click a day to jump into the 7-day view with that day as the first day
                 grid.querySelectorAll('.annual-month').forEach((monthEl, m) => {
                     monthEl.querySelectorAll('.annual-day:not(.other-month)').forEach(cell => {
                         cell.dataset.month = m;
                         cell.addEventListener('click', () => {
-                            this.currentMonth = parseInt(cell.dataset.month, 10);
-                            this.viewMode = 'month';
+                            this.weekAnchorDate = cell.dataset.date || null;
+                            if (!this.weekAnchorDate) {
+                                const day = parseInt(cell.querySelector('.annual-day-num')?.textContent, 10);
+                                this.weekAnchorDate = `${this.currentYear}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            }
+                            this.viewMode = 'week';
                             this.render();
                         });
+                    });
+                });
+            },
+
+            // =====================================================
+            // 7-day view — vertically stacked days with full task text.
+            // Prev/Next slide the window one day at a time; clicking a
+            // day header slides the window so that day becomes first.
+            // =====================================================
+
+            renderWeek() {
+                const view = $('weekView');
+                // Hide the other calendar containers
+                const monthGrid = $('calendarGrid').closest('.calendar-grid-wrapper');
+                if (monthGrid) monthGrid.classList.add('hidden');
+                $('annualView').classList.add('hidden');
+                view.classList.remove('hidden');
+
+                // Default anchor: most recent Sunday (so the window is Sun–Sat)
+                if (!this.weekAnchorDate) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - d.getDay());
+                    this.weekAnchorDate = localDate(d);
+                }
+
+                const todayStr = localDate();
+                const anchor = parseLocalDate(this.weekAnchorDate);
+                const dowNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+                let html = '';
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(anchor);
+                    d.setDate(d.getDate() + i);
+                    const dateStr = localDate(d);
+                    const isToday = dateStr === todayStr;
+                    const holiday = this.showHolidays ? Holidays.forDate(dateStr) : null;
+
+                    // Events spanning this date (multi-day aware), from the filtered set
+                    const dayEvents = (this._visibleEvents || []).filter(e => {
+                        const start = e.date;
+                        const end = e.endDate || e.date;
+                        return dateStr >= start && dateStr <= end;
+                    });
+
+                    html += `<div class="week-day${i === 0 ? ' first' : ''}" data-date="${dateStr}">`;
+                    html += `<div class="week-day-header" title="Click to make this day the first day of the window">
+                        <span class="week-dow">${dowNames[d.getDay()]}</span>
+                        <span class="week-date-label">${monthShort[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}</span>
+                        ${isToday ? '<span class="week-today-badge">Today</span>' : ''}
+                        ${holiday ? `<span class="week-holiday">🏛️ ${escapeHtml(holiday.name)}</span>` : ''}
+                        <span class="week-count">${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>
+                    </div>`;
+
+                    if (dayEvents.length === 0) {
+                        html += `<div class="week-day-body"><div class="week-empty">No tasks scheduled</div></div>`;
+                    } else {
+                        html += '<div class="week-day-body">';
+                        dayEvents.forEach(event => {
+                            const isSelected = this.selectedEvent === event;
+                            const isMultiDay = event.endDate && event.endDate !== event.date;
+                            const isStart = dateStr === event.date;
+                            const isEnd = dateStr === event.endDate;
+                            const isCompleted = event.completed === true;
+                            let cssClass = 'week-event' + (isSelected ? ' selected' : '');
+                            if (isMultiDay) {
+                                cssClass += ' multi-day';
+                                if (isStart) cssClass += ' range-start';
+                                if (isEnd) cssClass += ' range-end';
+                            }
+                            if (isCompleted) cssClass += ' completed';
+                            if (event.sourceTool === 'CropProjection') cssClass += ' projection';
+
+                            // Time prefix, same format as the month grid
+                            let displayText = event.title || 'Event';
+                            if (event.startTime) {
+                                const [h, m] = event.startTime.split(':');
+                                const hour = parseInt(h, 10);
+                                const ampm = hour >= 12 ? 'PM' : 'AM';
+                                const displayHour = hour % 12 || 12;
+                                displayText = `${displayHour}:${m}${ampm} ${displayText}`;
+                            }
+
+                            html += `<div class="${cssClass}" data-event-index="${this.events.indexOf(event)}">${escapeHtml(displayText)}</div>`;
+                        });
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                view.innerHTML = html;
+
+                // Click a day header → slide the window so that day is first
+                view.querySelectorAll('.week-day-header').forEach(header => {
+                    header.addEventListener('click', () => {
+                        this.weekAnchorDate = header.closest('.week-day').dataset.date;
+                        this.render();
+                    });
+                });
+
+                // Click an event → select it (opens the detail panel)
+                view.querySelectorAll('.week-event').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const idx = parseInt(el.dataset.eventIndex, 10);
+                        if (DB.data.calendarEvents[idx]) this.selectEvent(DB.data.calendarEvents[idx]);
                     });
                 });
             },
@@ -5355,6 +5644,8 @@
                 this.renderFilterTags();
                 if (this.viewMode === 'year') {
                     this.renderAnnual();
+                } else if (this.viewMode === 'week') {
+                    this.renderWeek();
                 } else {
                     this.renderGrid();
                 }
@@ -5366,27 +5657,38 @@
                     'July', 'August', 'September', 'October', 'November', 'December'];
                 if (this.viewMode === 'year') {
                     $('calendarTitle').textContent = `${this.currentYear} — Annual View`;
+                } else if (this.viewMode === 'week') {
+                    const a = parseLocalDate(this.weekAnchorDate || localDate());
+                    const b = new Date(a);
+                    b.setDate(b.getDate() + 6);
+                    const fmt = d => `${months[d.getMonth()].slice(0, 3)} ${d.getDate()}, ${d.getFullYear()}`;
+                    $('calendarTitle').textContent = `${fmt(a)} – ${fmt(b)} — 7-Day View`;
                 } else {
                     $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
                 }
                 // Keep the toggle button label in sync with the active view
                 const btn = $('viewToggleBtn');
                 if (btn) {
-                    btn.textContent = this.viewMode === 'year' ? '📆 Monthly' : '📅 Annual';
-                    btn.classList.toggle('active', this.viewMode === 'year');
-                    btn.title = this.viewMode === 'year'
-                        ? 'Switch back to the monthly view'
-                        : 'Flip between monthly and annual (12-month) views';
+                    const labels = { month: '📅 7-Day', week: '📅 Annual', year: '📆 Monthly' };
+                    const titles = {
+                        month: 'Cycle views: Monthly → 7-Day → Annual',
+                        week: 'Cycle views: 7-Day → Annual → Monthly',
+                        year: 'Cycle views: Annual → Monthly → 7-Day'
+                    };
+                    btn.textContent = labels[this.viewMode];
+                    btn.title = titles[this.viewMode];
+                    btn.classList.toggle('active', this.viewMode !== 'month');
                 }
             },
 
             renderGrid() {
                 const grid = $('calendarGrid');
-                // Coming back from annual view — restore the month grid, hide annual
+                // Coming back from another view — restore the month grid, hide the others
                 if (grid.closest('.calendar-grid-wrapper')) {
                     grid.closest('.calendar-grid-wrapper').classList.remove('hidden');
                 }
                 $('annualView').classList.add('hidden');
+                $('weekView').classList.add('hidden');
 
                 // Keep headers, remove day cells
                 const headers = grid.querySelectorAll('.calendar-day-header');
