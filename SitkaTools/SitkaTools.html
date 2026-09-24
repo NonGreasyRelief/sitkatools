@@ -1448,6 +1448,12 @@
            Annual view — 12 mini-months, emoji dots per task
            ===================================================== */
 
+        .view-toggle-group {
+            display: flex;
+            gap: 6px;
+            margin-left: 16px;
+        }
+
         .view-toggle-btn.active {
             background: var(--accent);
             color: var(--bg-primary);
@@ -2675,7 +2681,11 @@
                     <input type="checkbox" id="showHolidaysToggle" checked>
                     <span>🏛️ Holidays</span>
                 </label>
-                <button class="btn btn-secondary view-toggle-btn" id="viewToggleBtn" title="Cycle views: Monthly → 7-Day → Annual">📅 7-Day</button>
+                <div class="view-toggle-group" role="group" aria-label="Calendar view">
+                    <button type="button" class="btn btn-secondary view-toggle-btn active" id="viewMonthBtn" title="Monthly grid view">📆 Monthly</button>
+                    <button type="button" class="btn btn-secondary view-toggle-btn" id="viewWeekBtn" title="7-day stacked view">📅 7-Day</button>
+                    <button type="button" class="btn btn-secondary view-toggle-btn" id="viewYearBtn" title="Annual (12-month) overview">🗓️ Annual</button>
+                </div>
             </div>
 
             <!-- Calendar grid -->
@@ -4854,18 +4864,20 @@
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
                 $('todayBtn').addEventListener('click', () => this.goToToday());
 
-                // View toggle — cycle monthly → 7-day → annual
-                $('viewToggleBtn').addEventListener('click', () => {
-                    const order = ['month', 'week', 'year'];
-                    this.viewMode = order[(order.indexOf(this.viewMode) + 1) % order.length];
-                    if (this.viewMode === 'week' && !this.weekAnchorDate) {
+                // View buttons — monthly / 7-day / annual
+                const setView = (mode) => {
+                    this.viewMode = mode;
+                    if (mode === 'week' && !this.weekAnchorDate) {
                         // Default the window to today when first entering week view
                         const d = new Date();
                         d.setDate(d.getDate() - d.getDay()); // back to Sunday
                         this.weekAnchorDate = localDate(d);
                     }
                     this.render();
-                });
+                };
+                $('viewMonthBtn').addEventListener('click', () => setView('month'));
+                $('viewWeekBtn').addEventListener('click', () => setView('week'));
+                $('viewYearBtn').addEventListener('click', () => setView('year'));
 
                 // Holiday display toggle (on by default)
                 $('showHolidaysToggle').addEventListener('change', (e) => {
@@ -5666,18 +5678,10 @@
                 } else {
                     $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
                 }
-                // Keep the toggle button label in sync with the active view
-                const btn = $('viewToggleBtn');
-                if (btn) {
-                    const labels = { month: '📅 7-Day', week: '📅 Annual', year: '📆 Monthly' };
-                    const titles = {
-                        month: 'Cycle views: Monthly → 7-Day → Annual',
-                        week: 'Cycle views: 7-Day → Annual → Monthly',
-                        year: 'Cycle views: Annual → Monthly → 7-Day'
-                    };
-                    btn.textContent = labels[this.viewMode];
-                    btn.title = titles[this.viewMode];
-                    btn.classList.toggle('active', this.viewMode !== 'month');
+                // Keep the view buttons in sync with the active view
+                const viewBtns = { month: $('viewMonthBtn'), week: $('viewWeekBtn'), year: $('viewYearBtn') };
+                for (const [mode, btn] of Object.entries(viewBtns)) {
+                    if (btn) btn.classList.toggle('active', mode === this.viewMode);
                 }
             },
 
