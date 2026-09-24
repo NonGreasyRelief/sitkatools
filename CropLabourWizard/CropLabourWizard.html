@@ -2963,6 +2963,22 @@
             return bestId;
         }
 
+        // The room's ACTIVE real lot — the LAST non-projected lot in assignedLots order, i.e. the
+        // crop that most recently came into the room and took TBA-1's slot (SitkaTools' deletion hook
+        // fires when a lot is created/moved/assigned in, which appends to assignedLots). This is the
+        // lot whose schedule gates Reprojection: until IT has a generated schedule, reprojecting
+        // would shift the chain down on top of an unscheduled crop. (An OLDER real lot still in the
+        // room already has a schedule — gating on it would let Reproject run too early.)
+        function activeRealLotId(roomId) {
+            const room = (DB.data.rooms || {})[roomId];
+            if (!room) return null;
+            for (let i = (room.assignedLots || []).length - 1; i >= 0; i--) {
+                const lotId = room.assignedLots[i];
+                if (!isProjectedLot(lotId)) return lotId;
+            }
+            return null;
+        }
+
         // Resolve the Lot-1 anchor + gate for a room's projection chain. Projections anchor off the
         // NEWEST real lot in the room (latest createdDate) — specifically its "Cut Clones to Replace
         // Lot" (clone_cut) day, or its start day (Day 0 / plantingDate) if it has no clone_cut event.
@@ -3209,13 +3225,11 @@
                 return;
             }
 
-            // Gate: the room's active real lot (first non-projected in assignedLots) must have a CLW schedule
-            let activeRealLotId = null;
-            for (const lotId of room.assignedLots || []) {
-                if (!isProjectedLot(lotId)) { activeRealLotId = lotId; break; }
-            }
-            if (!activeRealLotId || eventsForLot(activeRealLotId).length === 0) {
-                showToast(`🔁 Generate a schedule for ${activeRealLotId || "the room's new lot"} first — reprojection needs it`);
+            // Gate: the room's active real lot (LAST non-projected in assignedLots — the newest crop
+            // that took TBA-1's slot) must have a CLW schedule. An older scheduled lot does not unblock.
+            const gatedLotId = activeRealLotId(roomId);
+            if (!gatedLotId || eventsForLot(gatedLotId).length === 0) {
+                showToast(`🔁 Generate a schedule for ${gatedLotId || "the room's new lot"} first — reprojection needs it`);
                 return;
             }
 
@@ -3224,13 +3238,13 @@
 
             // Late-arrival push-back: compute the per-slot plan BEFORE mutating anything, so a cancelled
             // warning leaves the chain completely untouched.
-            const plan = computeReprojectionPushes(roomId, activeRealLotId);
+            const plan = computeReprojectionPushes(roomId, gatedLotId);
             if (plan) {
                 const affected = plan.filter(s => s.action === 'push' || s.action === 'regen');
                 if (affected.length > 0) {
                     const firstPushed = plan.find(s => s.action === 'push');
                     const headlineDelta = firstPushed ? firstPushed.delta : Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta));
-                    let msg = `⚠️ The new lot (${activeRealLotId}) arrived late — its room cleaning lands too close to the next transplant.\n\n`;
+                    let msg = `⚠️ The new lot (${gatedLotId}) arrived late — its room cleaning lands too close to the next transplant.\n\n`;
                     msg += `This will push back the schedule of the next lot by ${headlineDelta} day${headlineDelta === 1 ? '' : 's'}.\n\n`;
                     for (const s of plan) {
                         const label = `TBA-${String(s.index).padStart(2, '0')}`;
@@ -3460,15 +3474,34 @@
 
             DB.ensureStructure();
 
-            // Projected lot: compute the forward push plan BEFORE mutating anything, so a cancelled
-            // warning leaves the chain completely untouched (same guarantee as reprojection). The gate
-            // is room readiness only — later lots are pushed forward solely when their transplant
-            // would land before this lot's new irrigation-clean + 1 day; they are never pulled back.
+            // Forward push plan (room-readiness gate) — computed BEFORE mutating anything, so a
+            // cancelled warning leaves the chain completely untouched (same guarantee as
+            // reprojection). The gate is room readiness only — later lots are pushed forward solely
+            // when their transplant would land before this lot's new irrigation-clean + 1 day; they
+            // are never pulled back. Applies to:
+            //   • a projected lot — the later TBA slots (index+1..5);
+            //   • the room's ACTIVE real lot (the newest crop that took TBA-1's slot) — the room's
+            //     surviving TBA chain, exactly like overwriting a TBA lot. Overwriting an OLDER real
+            //     lot in the same room does not push the TBA chain (its cleaning doesn't gate it).
             const projEntry = isProjectedLot(lotId) ? getProjectedLots()[lotId] : null;
             let pushPlan = null;
+            let pushRoomId = null;
+            let pushFromIndex = null;
             if (projEntry) {
+                pushRoomId = projEntry.roomId;
+                pushFromIndex = projEntry.index + 1;
+            } else {
+                const realRoomId = resolveFlowerRoom(lotId, DB.data.rooms || {});
+                if (realRoomId && activeRealLotId(realRoomId) === lotId) {
+                    const map = getProjectedLots();
+                    for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
+                        if (map[projectedLotId(realRoomId, i)]) { pushRoomId = realRoomId; pushFromIndex = i; break; }
+                    }
+                }
+            }
+            if (pushRoomId && pushFromIndex) {
                 const newIrr = simulatedIrrigationClean(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays });
-                pushPlan = computeForwardPushPlan(projEntry.roomId, projEntry.index + 1, newIrr);
+                pushPlan = computeForwardPushPlan(pushRoomId, pushFromIndex, newIrr);
                 const affected = pushPlan.filter(s => s.action === 'push' || s.action === 'regen');
                 if (affected.length > 0) {
                     const firstPushed = pushPlan.find(s => s.action === 'push');
@@ -3504,10 +3537,10 @@
             // Without bloomDays, reAnchorProjectedLot shifts every event by the uniform delta —
             // per-task offsets preserved. "keep" slots are untouched; the chain may drift from its
             // nominal cadence when the overwrite leaves extra slack (Project Crop re-tightens it).
-            if (pushPlan && projEntry) {
+            if (pushPlan && pushRoomId) {
                 for (const s of pushPlan) {
                     if ((s.action === 'push' || s.action === 'regen') && s.day0) {
-                        reAnchorProjectedLot(projEntry.roomId, s.index, s.day0);
+                        reAnchorProjectedLot(pushRoomId, s.index, s.day0);
                     }
                 }
             }
@@ -3569,14 +3602,13 @@
 
             if (roomId && isPendingReprojection(roomId)) {
                 btn.textContent = '🔁 Reproject';
-                let activeRealLotId = null;
-                for (const lotId of (DB.data.rooms[roomId].assignedLots || [])) {
-                    if (!isProjectedLot(lotId)) { activeRealLotId = lotId; break; }
-                }
-                const gated = !activeRealLotId || eventsForLot(activeRealLotId).length === 0;
+                // Gate on the room's active real lot — the newest crop that took TBA-1's slot. An
+                // older scheduled lot in the same room does NOT unblock reprojection.
+                const gatedLotId = activeRealLotId(roomId);
+                const gated = !gatedLotId || eventsForLot(gatedLotId).length === 0;
                 btn.disabled = gated;
                 btn.title = gated
-                    ? `Reproject is available once ${activeRealLotId || "the room's new lot"} has a generated schedule`
+                    ? `Reproject is available once ${gatedLotId || "the room's new lot"} has a generated schedule`
                     : 'Shift the surviving TBA chain down one slot and generate a fresh TBA-05';
             } else {
                 btn.textContent = '🔮 Project Crop';
