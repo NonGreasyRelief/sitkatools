@@ -91,7 +91,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 ```
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
-- Tools only read/write their own keys — they do not modify other tools' data.
+- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly two fields on lot records (`plantCount`, `stage`) when a grow-log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/Agent.MD`).
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Multi-Day Events
@@ -696,6 +696,7 @@ Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking |
 | DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs |
+| PaperWizard | `PaperWizard/` | Designing | Fill controlled PDF paperwork via wizards; overlay text on just-in-time loaded PDFs and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
 

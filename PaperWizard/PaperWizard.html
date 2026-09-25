@@ -1,0 +1,184 @@
+<!-- PaperWizard.html — Controlled paperwork fill & print tool for SitkaGit suite -->
+<!-- Tool: PaperWizard | Purpose: Fill controlled PDF sheets via wizards, overlay text, print -->
+<!-- Database Keys: "_PaperWizard" (top-level) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Wizard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #53d8a8;
+            --accent-hover: #3fb98b;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a8a8b8;
+            --border: #2a2a4a;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --warning: #f39c12;
+            --input-bg: #1a1a3e;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left { display: flex; align-items: center; gap: 24px; }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+        }
+
+        /* ---- Main Content ---- */
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .placeholder {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .placeholder .big { font-size: 2.5rem; margin-bottom: 12px; }
+
+        /* ---- Footer ---- */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { border-color: var(--text-secondary); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">📄 Paper Wizard</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="placeholder">
+            <div class="big">🚧</div>
+            <p><strong>Paper Wizard is under construction.</strong></p>
+            <p>Design document: <code>Agent.MD</code> in this folder.</p>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+    </footer>
+
+    <script>
+        // ---- Shared Database Object Pattern (suite standard) ----
+        const DB = {
+            data: null,
+            fileName: '',
+
+            get lots() { return this.data?.lots || {}; },
+            get rooms() { return this.data?.rooms || {}; },
+            get buildings() { return this.data?.buildings || {}; },
+
+            ensureStructure() {
+                if (!this.data) this.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
+                if (!this.data.lots) this.data.lots = {};
+                if (!this.data.rooms) this.data.rooms = {};
+                if (!this.data.buildings) this.data.buildings = {};
+                if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                return this.data;
+            },
+
+            sync() {
+                this.ensureStructure();
+                return this.data;
+            }
+        };
+
+        const $ = id => document.getElementById(id);
+
+        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        DB.ensureStructure();
+
+        function notifySitkaTools() {
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'sitkaGit_db_update',
+                    payload: DB.data
+                }, '*');
+            }
+        }
+
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                }
+            }
+        });
+
+        // ---- Close Tool ----
+        $('closeToolBtn').addEventListener('click', () => window.close());
+    </script>
+</body>
+</html>
