@@ -696,7 +696,7 @@ Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking |
 | DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs |
-| PaperWizard | `PaperWizard/` | Designing | Fill controlled PDF paperwork via wizards; overlay text on just-in-time loaded PDFs and print |
+| PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded PNG/JPG page images and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
 

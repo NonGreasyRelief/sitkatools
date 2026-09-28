@@ -1,5 +1,5 @@
 <!-- PaperWizard.html — Controlled paperwork fill & print tool for SitkaGit suite -->
-<!-- Tool: PaperWizard | Purpose: Fill controlled PDF sheets via wizards, overlay text, print -->
+<!-- Tool: PaperWizard | Purpose: Fill controlled paperwork from PNG/JPG page images via wizards, overlay text, print -->
 <!-- Database Keys: "_PaperWizard" (top-level) -->
 <!DOCTYPE html>
 <html lang="en">
@@ -58,25 +58,170 @@
             letter-spacing: 0.5px;
         }
 
+        /* ---- Tabs (segmented) ---- */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 3px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            font-family: inherit;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            min-height: 42px;
+            transition: all 0.15s ease;
+        }
+
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active { background: var(--accent); color: #08301f; }
+
+        /* ---- Header right side ---- */
+        .header-right {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* ---- Form controls ---- */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select, input[type="date"], input[type="text"], input[type="number"] {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            min-height: 48px; /* tablet touch target */
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ---- Buttons ---- */
+        .btn {
+            border: none;
+            border-radius: var(--radius);
+            padding: 10px 18px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            min-height: 48px; /* tablet touch target */
+            transition: background 0.15s ease;
+        }
+
+        .btn-primary { background: var(--accent); color: #08301f; }
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { background: var(--danger-hover); }
+
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        /* Header buttons (Load / Export) — ≥48px touch target */
+        .db-btn { padding: 8px 12px; min-height: 48px; font-size: 0.85rem; }
+
         /* ---- Main Content ---- */
         .main {
             flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
             padding: 24px;
         }
 
-        .placeholder {
-            text-align: center;
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* ---- Status bar ---- */
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
             color: var(--text-secondary);
-            font-size: 0.95rem;
-            line-height: 1.6;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
 
-        .placeholder .big { font-size: 2.5rem; margin-bottom: 12px; }
+        .status-bar.loaded { border-color: var(--accent); }
 
-        /* ---- Footer ---- */
+        /* ---- Empty state ---- */
+        .empty-state {
+            margin-bottom: 12px;
+            text-align: center;
+            padding: 64px 24px;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .empty-state .empty-icon { font-size: 3rem; }
+        .empty-state .empty-title { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
+        .empty-state .empty-sub { font-size: 0.9rem; max-width: 420px; line-height: 1.5; }
+
+        /* ---- Toast ---- */
+        .toast {
+            position: fixed;
+            bottom: 76px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 300;
+            max-width: 90vw;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ---- Footer (sticky) ---- */
         .footer {
             background: var(--bg-secondary);
             border-top: 1px solid var(--border);
@@ -84,51 +229,537 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 12px;
             position: sticky;
             bottom: 0;
             z-index: 100;
         }
 
-        .btn {
-            padding: 10px 24px;
+        /* ---- Configure Sheets tab (Step 2) ---- */
+        .cfg-toolbar {
+            display: flex;
+            align-items: flex-end;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
             border-radius: var(--radius);
-            border: none;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
+            padding: 12px 16px;
+            margin-bottom: 16px;
         }
 
-        .btn-secondary {
+        .seg {
+            display: flex;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .seg button {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 8px 14px;
+            min-height: 42px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .seg button.active { background: var(--accent); color: #08301f; }
+
+        .file-chip {
+            margin-left: auto;
             background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            padding: 6px 12px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .cfg-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 16px;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) {
+            .cfg-grid { grid-template-columns: 1fr; }
+        }
+
+        .page-stage {
+            display: flex;
+            background: #0b1220;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            height: calc(100vh - 320px);
+            min-height: 420px;
+            overflow: auto;
+        }
+
+        .page-stage > .empty-state { margin: auto; }
+
+        .page-stack {
+            margin: auto;                 /* centers when small, scrolls when zoomed */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+            padding: 16px;
+            width: max-content;
+        }
+
+        .page-stack > div {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .zoom-ctl {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #0b1220;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 3px 6px;
+        }
+        .zoom-ctl button {
+            min-width: 28px;
+            height: 28px;
+            padding: 0 6px;
+            line-height: 1;
+            font-size: 0.95rem;
+            border-radius: 6px;
+            background: #131c2e;
             color: var(--text-primary);
             border: 1px solid var(--border);
+            cursor: pointer;
+        }
+        .zoom-ctl button:hover { background: #1b2740; }
+        .zoom-ctl #zoomPct {
+            min-width: 46px;
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
         }
 
-        .btn-secondary:hover { border-color: var(--text-secondary); }
+        .page-label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            letter-spacing: 0.4px;
+        }
+
+        .form-page {
+            position: relative;
+            background: #fff;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+            touch-action: none;
+            width: calc(var(--fitw, 800px) * var(--zoom, 1));
+        }
+
+        .form-page img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+        }
+
+        /* ---- Field boxes (Step 3) — normalized geometry, positioned in % ---- */
+        .field-box {
+            position: absolute;
+            background: rgba(83, 216, 168, 0.14);
+            border: 1.5px solid var(--accent);
+            cursor: move;
+            z-index: 2;
+        }
+
+        .field-box.selected {
+            border-width: 2px;
+            background: rgba(83, 216, 168, 0.24);
+        }
+
+        .field-box.sig {
+            border-style: dashed;
+            border-color: var(--warning);
+            background: rgba(243, 156, 18, 0.12);
+        }
+
+        .field-box.sig.selected { background: rgba(243, 156, 18, 0.22); }
+
+        .field-box .box-label {
+            position: absolute;
+            top: -9px;
+            left: -2px;
+            transform: translateY(-100%);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-size: 10px;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+            pointer-events: none;
+            max-width: calc(100% + 4px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .field-box.selected .box-label { border-color: var(--accent); }
+        .field-box.sig.selected .box-label { border-color: var(--warning); }
+
+        /* Checkbox-field indicator (Configure preview) */
+        .field-box .box-check {
+            position: absolute;
+            top: 1px; right: 2px;
+            font-size: 11px; line-height: 1;
+            color: var(--accent);
+            pointer-events: none;
+        }
+
+        .field-box .handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            border: 2px solid var(--accent);
+            border-radius: 3px;
+            z-index: 3;
+        }
+
+        .field-box.sig .handle { border-color: var(--warning); }
+        .field-box .handle.nw { top: -7px; left: -7px; cursor: nwse-resize; }
+        .field-box .handle.ne { top: -7px; right: -7px; cursor: nesw-resize; }
+        .field-box .handle.sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+        .field-box .handle.se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+
+        /* ---- Field properties panel (Step 3) ---- */
+        .fp-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .fp-id {
+            font-family: 'Consolas', 'Menlo', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--accent);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 3px 8px;
+        }
+
+        .fp-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .fp-grid .form-group, .field-properties .form-group { margin-bottom: 0; }
+        .field-properties > .form-group { margin-bottom: 10px; }
+
+        .cfg-side { display: flex; flex-direction: column; gap: 16px; }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+
+        .card-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; }
+
+        .cfg-hint { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
+
+        /* Wizard builder (Step 4) */
+        textarea {
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            padding: 7px 9px;
+            box-sizing: border-box;
+        }
+        textarea:focus { outline: none; border-color: var(--accent); }
+
+        .q-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .q-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        .q-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .q-num {
+            font-size: 0.75rem; font-weight: 700; color: var(--text-secondary);
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 4px; padding: 2px 7px;
+        }
+        .q-id {
+            font-family: 'Consolas', 'Menlo', monospace; font-size: 0.75rem;
+            color: var(--accent); font-weight: 700;
+        }
+        .q-spacer { flex: 1; }
+        .q-btn {
+            background: none; border: 1px solid var(--border); border-radius: 4px;
+            color: var(--text-secondary); cursor: pointer; font-size: 0.75rem;
+            padding: 2px 8px; line-height: 1.4;
+        }
+        .q-btn:hover:not(:disabled) { background: var(--bg-secondary); color: var(--text-primary); }
+        .q-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .q-btn.q-del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .q-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .q-controls > .form-group { margin-bottom: 0; }
+        .q-controls .q-full { grid-column: 1 / -1; }
+        .q-checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+        .q-check {
+            display: flex; align-items: center; gap: 6px; cursor: pointer;
+            font-size: 0.8rem; color: var(--text-primary);
+        }
+        .q-check input { width: 16px; height: 16px; min-height: 0; margin: 0; }
+
+        .save-row { display: flex; gap: 10px; margin-top: 16px; }
+        .save-row .btn { flex: 1; min-height: 42px; }
+
+        /* ---- Filing Cabinet tree (Step 5) ---- */
+        .cab-head {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .cab-head .cab-sub { color: var(--text-secondary); font-weight: 400; font-size: 0.8rem; }
+        .cab-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .cab-loaddoc {
+            background: none; border: 1px solid var(--accent); border-radius: 6px;
+            color: var(--accent); cursor: pointer; font-size: 0.8rem; font-weight: 600; padding: 5px 12px;
+        }
+        .cab-loaddoc:hover { background: var(--accent); color: #08301f; }
+        .cab-printdoc { font-size: 0.75rem; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 2px 9px; }
+        .cab-printdoc.none { color: var(--warning); border-color: var(--warning); }
+        .cab-hint { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 14px; line-height: 1.5; }
+        .cab-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .cab-section > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 10px 14px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        .cab-section > summary::-webkit-details-marker { display: none; }
+        .cab-section > summary::before { content: '▸'; color: var(--text-secondary); font-size: 0.8rem; }
+        .cab-section[open] > summary::before { content: '▾'; }
+        .cab-count { margin-left: auto; font-weight: 400; font-size: 0.78rem; color: var(--text-secondary); }
+        .cab-count .cab-miss { color: var(--warning); }
+        .cab-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+        .cab-leaf {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 0.85rem;
+        }
+        .cab-leaf .cab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cab-leaf .cab-from { color: var(--text-secondary); font-size: 0.75rem; }
+        .cab-leaf.ref { border-style: dashed; }
+        .cab-status {
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .cab-status.ok { color: #08301f; background: var(--accent); border-color: var(--accent); }
+        .cab-status.due, .cab-status.warn { color: #4a2c00; background: var(--warning); border-color: var(--warning); }
+        .cab-status.miss { color: #fff; background: var(--danger); border-color: var(--danger); }
+        .cab-fill {
+            background: none; border: 1px solid var(--accent); border-radius: 4px;
+            color: var(--accent); cursor: pointer; font-size: 0.72rem; font-weight: 600;
+            padding: 2px 9px; white-space: nowrap;
+        }
+        .cab-fill:hover { background: var(--accent); color: #08301f; }
+
+        /* Print button on leaves (Step 10) — enabled only when the instance is complete
+           AND a matching page set is loaded this session. */
+        .cab-print {
+            background: none; border: 1px solid var(--border); border-radius: 4px;
+            color: var(--text-dim); cursor: pointer; font-size: 0.72rem; font-weight: 600;
+            padding: 2px 9px; white-space: nowrap; margin-left: 6px;
+        }
+        .cab-print:hover:not(:disabled) { background: var(--accent); color: #08301f; border-color: var(--accent); }
+        .cab-print:disabled { opacity: .45; cursor: not-allowed; }
+
+        /* ---- Wizard runner modal (Step 6) ---- */
+        .wiz-overlay {
+            position: fixed; inset: 0; z-index: 200;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .wiz-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: 100%; max-width: 520px;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .wiz-head {
+            display: flex; align-items: center; gap: 8px;
+            padding: 14px 16px; border-bottom: 1px solid var(--border);
+        }
+        .wiz-title { font-weight: 700; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .wiz-prog { color: var(--text-secondary); font-size: 0.78rem; white-space: nowrap; }
+        .wiz-close {
+            background: none; border: none; color: var(--text-secondary);
+            font-size: 1.1rem; cursor: pointer; padding: 2px 6px; line-height: 1;
+        }
+        .wiz-close:hover { color: var(--danger); }
+        .wiz-body { padding: 18px 16px; }
+        .wiz-daychips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .day-chip {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            color: var(--text-secondary); font-size: 0.75rem; padding: 3px 10px; cursor: pointer;
+        }
+        .day-chip:hover { color: var(--text-primary); }
+        .day-chip.sel { background: var(--accent); border-color: var(--accent); color: #08301f; font-weight: 700; }
+        .day-chip.filled::after { content: ' ✓'; }
+        .wiz-hint { color: var(--text-secondary); font-size: 0.75rem; margin-top: 6px; }
+        .wiz-q-label { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; }
+        .wiz-q-ctl input, .wiz-q-ctl select {
+            width: 100%; background: var(--input-bg); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-primary); font-size: 1rem; padding: 10px 12px;
+        }
+        .wiz-q-ctl input:focus, .wiz-q-ctl select:focus { outline: none; border-color: var(--accent); }
+        .wiz-same {
+            margin-top: 10px; background: none; border: 1px dashed var(--border); border-radius: 6px;
+            color: var(--text-secondary); font-size: 0.8rem; padding: 6px 12px; cursor: pointer;
+        }
+        .wiz-same:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+        .wiz-same:disabled { opacity: 0.4; cursor: not-allowed; }
+        .wiz-foot {
+            display: flex; align-items: center; gap: 10px;
+            padding: 14px 16px; border-top: 1px solid var(--border);
+        }
+        .wiz-foot .btn { min-height: 38px; }
+        .wiz-foot .spacer { flex: 1; }
+
+        /* ---- Signature pad (Step 8) ---- */
+        .sig-pad-wrap { margin-bottom: 12px; }
+        .sig-pad {
+            width: 100%; display: block; touch-action: none; cursor: crosshair;
+            background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px;
+        }
+        .sig-name {
+            width: 100%; box-sizing: border-box; background: var(--input-bg); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-primary); font-size: 0.95rem; padding: 8px 12px;
+        }
+        .sig-name:focus { outline: none; border-color: var(--accent); }
+        .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
+        .sig-clear {
+            background: none; border: 1px dashed var(--border); border-radius: 6px;
+            color: var(--text-secondary); font-size: 0.8rem; padding: 6px 12px; cursor: pointer;
+        }
+        .sig-clear:hover { color: var(--danger); border-color: var(--danger); }
     </style>
 </head>
 <body>
+    <!-- Header -->
     <header class="header">
         <div class="header-left">
             <span class="logo">📄 Paper Wizard</span>
+            <nav class="tabs" id="tabBar">
+                <button type="button" class="tab-btn active" id="tabCabinetBtn">Filing Cabinet</button>
+                <button type="button" class="tab-btn" id="tabConfigureBtn">Configure Sheets</button>
+            </nav>
+        </div>
+        <div class="header-right">
+            <div class="form-group">
+                <label for="lotSelect">Active Lot</label>
+                <select id="lotSelect"></select>
+            </div>
+            <button type="button" class="btn btn-secondary db-btn" id="loadDbBtn" style="display:none;">📂 Load</button>
+            <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
         </div>
     </header>
 
+    <!-- Hidden file input for standalone DB import -->
+    <input type="file" id="dbImportInput" accept=".json" style="display:none;">
+
+    <!-- Hidden file input for just-in-time controlled page-image load (never stored) -->
+    <input type="file" id="pageImportInput" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple style="display:none;">
+
+    <!-- Hidden file input for the print path: loads a page set matching a sheet's id -->
+    <input type="file" id="printImportInput" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple style="display:none;">
+
+    <!-- Main Content -->
     <main class="main">
-        <div class="placeholder">
-            <div class="big">🚧</div>
-            <p><strong>Paper Wizard is under construction.</strong></p>
-            <p>Design document: <code>Agent.MD</code> in this folder.</p>
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <span id="statusText">No database loaded.</span>
         </div>
+
+        <!-- Filing Cabinet tab (first page) -->
+        <section class="tab-panel active" id="cabinetPanel"></section>
+
+        <!-- Configure Sheets tab -->
+        <section class="tab-panel" id="configurePanel"></section>
     </main>
 
+    <!-- Footer -->
     <footer class="footer">
         <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
     </footer>
 
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
     <script>
-        // ---- Shared Database Object Pattern (suite standard) ----
+        // =====================================================
+        // PaperWizard — Controlled paperwork fill & print tool
+        // Database Keys: "_PaperWizard" (read/write), lot records
+        //   (may write exactly two fields on lots: plantCount, stage)
+        // Step 1: shell, DB structure, sync plumbing
+        // Step 2: just-in-time page-image load + preview canvas (Configure tab)
+        // =====================================================
+
         const DB = {
             data: null,
             fileName: '',
@@ -136,6 +767,8 @@
             get lots() { return this.data?.lots || {}; },
             get rooms() { return this.data?.rooms || {}; },
             get buildings() { return this.data?.buildings || {}; },
+            get calendarEvents() { return this.data?.calendarEvents || []; },
+            get paperWizard() { return this.data?._PaperWizard; },
 
             ensureStructure() {
                 if (!this.data) this.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
@@ -143,9 +776,16 @@
                 if (!this.data.rooms) this.data.rooms = {};
                 if (!this.data.buildings) this.data.buildings = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                if (!this.data._PaperWizard) this.data._PaperWizard = { sheets: {}, wizards: {}, entries: {} };
+                if (!this.data._PaperWizard.sheets) this.data._PaperWizard.sheets = {};
+                if (!this.data._PaperWizard.wizards) this.data._PaperWizard.wizards = {};
+                if (!this.data._PaperWizard.entries) this.data._PaperWizard.entries = {};
                 return this.data;
             },
 
+            // Sync all in-memory changes before export.
+            // PaperWizard writes directly to DB.data on every mutation,
+            // so no extra flush is needed — but the method exists as convention.
             sync() {
                 this.ensureStructure();
                 return this.data;
@@ -153,6 +793,2163 @@
         };
 
         const $ = id => document.getElementById(id);
+
+        // Standalone (tablet) mode: opened directly with no opener window.
+        const isStandalone = !window.opener;
+
+        // True once a DB has arrived (postMessage delivery or file import).
+        // Needed because ensureStructure() makes DB.data truthy from load time.
+        let dbLoaded = false;
+
+        // ---- Date helpers (local time, YYYY-MM-DD) ----
+        function dateToStr(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        }
+
+        function todayStr() { return dateToStr(new Date()); }
+
+        // Parse YYYY-MM-DD into a local Date (avoids UTC off-by-one from new Date(str)).
+        function parseDate(str) {
+            const [y, m, d] = str.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        // ---- HTML escaping (quote-safe — see Bugs.MD #2) ----
+        function escapeHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // ---- Toast ----
+        let toastTimer = null;
+        function showToast(msg) {
+            const t = $('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+        }
+
+        // ---- Tab state ----
+        let activeTab = 'cabinet'; // 'cabinet' | 'configure'
+
+        function switchTab(tab) {
+            activeTab = tab;
+            $('tabCabinetBtn').classList.toggle('active', tab === 'cabinet');
+            $('tabConfigureBtn').classList.toggle('active', tab === 'configure');
+            $('cabinetPanel').classList.toggle('active', tab === 'cabinet');
+            $('configurePanel').classList.toggle('active', tab === 'configure');
+            // Configuration is lot-independent — disable the lot selector on this tab.
+            const lotSel = $('lotSelect');
+            lotSel.disabled = (tab === 'configure');
+            lotSel.title = (tab === 'configure') ? 'Configuration is lot-independent' : '';
+            renderAll();
+        }
+
+        // ---- Active lot state ----
+        let activeLotId = null;
+
+        function sortedLotIds() {
+            // Lots from the main DB plus orphaned lots that only exist in PaperWizard entries.
+            const ids = new Set(Object.keys(DB.lots));
+            Object.keys(DB.paperWizard?.entries || {}).forEach(id => ids.add(id));
+            return [...ids].sort((a, b) =>
+                String(DB.lots[b]?.createdDate || '').localeCompare(String(DB.lots[a]?.createdDate || '')));
+        }
+
+        function populateLotSelector() {
+            const sel = $('lotSelect');
+            const prev = activeLotId;
+            const ids = sortedLotIds();
+            sel.innerHTML = '';
+            if (!ids.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '— No lots —';
+                sel.appendChild(opt);
+                activeLotId = null;
+                return;
+            }
+            for (const id of ids) {
+                const lot = DB.lots[id];
+                const opt = document.createElement('option');
+                opt.value = id;
+                if (lot) {
+                    opt.textContent = lot.strain ? `${id} — ${lot.strain}` : id;
+                } else {
+                    opt.textContent = `${id} — (closed)`; // orphaned: entries exist, lot record gone
+                }
+                sel.appendChild(opt);
+            }
+            // Keep current selection if still valid, else default to most recent lot.
+            activeLotId = (prev && ids.includes(prev)) ? prev : ids[0];
+            sel.value = activeLotId;
+        }
+
+        function updateStatusBar() {
+            const bar = $('statusBar');
+            const txt = $('statusText');
+            if (!dbLoaded) {
+                bar.classList.remove('loaded');
+                txt.textContent = 'No database loaded — tap 📂 Load… or open from SitkaTools.';
+                return;
+            }
+            bar.classList.add('loaded');
+            const sheetCount = Object.keys(DB.paperWizard.sheets).length;
+            const lot = activeLotId ? DB.lots[activeLotId] : null;
+            let html = `📋 ${sheetCount} sheet${sheetCount === 1 ? '' : 's'} configured`;
+            if (activeLotId) {
+                html += ` · 🌱 ${escapeHtml(activeLotId)}` + (lot?.strain ? ` ${escapeHtml(lot.strain)}` : '');
+            }
+            const due = activeLotId ? dueTodayCount(activeLotId) : 0;
+            if (due > 0) {
+                html += ` · <span style="color:var(--warning)">⏳ ${due} entr${due === 1 ? 'y' : 'ies'} due today</span>`;
+            }
+            txt.innerHTML = html;
+        }
+
+        // ---- Empty state helper ----
+        function emptyStateHtml(icon, title, sub) {
+            return `<div class="empty-state">
+                <div class="empty-icon">${icon}</div>
+                <div class="empty-title">${title}</div>
+                <div class="empty-sub">${sub}</div>
+            </div>`;
+        }
+
+        // ---- Configure Sheets — just-in-time page-image load (Step 2/3b) ----
+        // Golden rule: the controlled page images are NEVER stored — not in the DB,
+        // not in browser storage. Only in-memory blob URLs for this session; the DB
+        // stores the expected file names (sheet id + -pN pages) and geometry only.
+        let loadedDoc = null;      // { name, baseName, pageCount, pages: [{ url, wPx, hPx }] } | null
+        let configSheetId = null;  // sheet id (= expected page-image base name) being configured
+        let orientation = 'portrait';
+        let cfgName = '';
+        let cfgCadence = 'one-shot';
+        let cfgWidthIn = 8.5;
+        let cfgHeightIn = 11;
+        let cfgRowY0 = 0;       // top edge (normalized) of the first day row — daily-weekly sheets
+        let cfgRowPitch = 0;    // vertical spacing between consecutive day rows (normalized)
+        let cfgRowCount = 7;    // number of day rows (grow-log = 7)
+        let cfgPageCount = 1;   // number of loaded page images
+        let cfgZoom = 1;        // page zoom (1 = fit-to-width)
+        let cfgFields = [];     // working copy of the sheet's fields[]
+        let cfgSignature = null;// working copy of the sheet's signature box
+        let cfgSelection = null;// { kind: 'field'|'signature', id } | null
+        // Wizard builder (Step 4) — working copy, saved to _PaperWizard.wizards on Save.
+        let cfgWizard = null;       // { id, sheetId, name, questions[] }
+        let cfgQuestionSel = null;  // id of the question currently being edited
+
+        // Print document (Step 10) — separate from loadedDoc (the Configure-tab doc).
+        // The print path needs a page set whose base name matches the SHEET being printed,
+        // which may differ from whatever is open in Configure. Same golden rule: blob URLs
+        // only, revoked on close / new load.
+        let printDoc = null;        // { sheetId, pages: [{ url, wPx, hPx }] } | null
+
+        function revokeLoadedDoc() {
+            loadedDoc?.pages.forEach(p => URL.revokeObjectURL(p.url));
+            loadedDoc = null;
+        }
+
+        function revokePrintDoc() {
+            printDoc?.pages.forEach(p => URL.revokeObjectURL(p.url));
+            printDoc = null;
+        }
+
+        // ---- Page zoom (Step 3b) ----
+        // Pages are sized in CSS: width = --fitw * --zoom. Changing zoom is a pure
+        // CSS-variable update, so it never reloads the page images and the %-positioned
+        // boxes track automatically. The box editor reads live getBoundingClientRect(),
+        // so normalized coords stay correct at any zoom.
+        function setZoom(z) {
+            cfgZoom = Math.max(0.5, Math.min(4, z));
+            applyZoom();
+        }
+        function applyZoom() {
+            const stage = $('pageStage');
+            if (!stage) return;
+            stage.style.setProperty('--zoom', cfgZoom);
+            const pct = $('zoomPct');
+            if (pct) pct.textContent = Math.round(cfgZoom * 100) + '%';
+        }
+        function updateFitWidth() {
+            const stage = $('pageStage');
+            if (!stage || !loadedDoc) return;
+            const avail = stage.clientWidth - 32;      // minus .page-stack padding
+            const w = Math.max(320, Math.min(avail, 1200));
+            stage.style.setProperty('--fitw', w + 'px');
+        }
+
+        // Page images carry their own aspect ratio (inline aspect-ratio on each
+        // .form-page), so no JS sizing is needed — window resizes are pure CSS and
+        // the %-positioned boxes track automatically.
+
+        // ---- Page-image helpers (Step 3b) ----
+        const PAGE_IMG_RE = /^(.+)-p(\d+)(?:\.[a-z0-9]+)?$/i;
+
+        // Parse the selected files into a validated, ordered page set.
+        // Convention: <base>-p1.png, <base>-p2.png, … — all same base name, numbered
+        // 1..N with no gaps. Returns { baseName, pages } or throws an Error with a
+        // user-facing message (the file-name check is the wrong-revision guard).
+        function parsePageFiles(fileList) {
+            const files = Array.from(fileList || []);
+            if (!files.length) throw new Error('No page images selected.');
+            const badType = files.find(f => !/\.png$/i.test(f.name) && !/\.jpe?g$/i.test(f.name));
+            if (badType) throw new Error(`"${badType.name}" is not a PNG or JPG — export each form page as PNG/JPG.`);
+
+            const parsed = files.map(f => {
+                const m = f.name.match(PAGE_IMG_RE);
+                if (!m) throw new Error(`"${f.name}" doesn't follow the naming convention <base>-pN.png (e.g. grow-log-p1.png).`);
+                return { file: f, baseName: m[1], n: parseInt(m[2], 10) };
+            });
+
+            const bases = new Set(parsed.map(p => p.baseName));
+            if (bases.size > 1) throw new Error(`Mixed page sets detected (${[...bases].join(', ')}). All pages must share the same base name.`);
+            const baseName = parsed[0].baseName;
+
+            const byNum = new Map();
+            for (const p of parsed) {
+                if (byNum.has(p.n)) throw new Error(`Duplicate page number: ${p.file.name}.`);
+                byNum.set(p.n, p);
+            }
+            const nums = [...byNum.keys()].sort((a, b) => a - b);
+            for (let i = 1; i <= nums.length; i++) {
+                if (!byNum.has(i)) throw new Error(`Missing page ${i} — expected consecutive pages starting at p1.`);
+            }
+
+            return { baseName, pages: nums.map(n => byNum.get(n).file) };
+        }
+
+        // Decode each file into a blob URL + natural pixel size (for aspect ratio).
+        async function loadPageImages(files) {
+            const pages = [];
+            for (const f of files) {
+                const url = URL.createObjectURL(f);
+                try {
+                    const img = await new Promise((res, rej) => {
+                        const el = new Image();
+                        el.onload = () => res(el);
+                        el.onerror = () => rej(new Error(`Could not decode "${f.name}".`));
+                        el.src = url;
+                    });
+                    pages.push({ url, wPx: img.naturalWidth, hPx: img.naturalHeight });
+                } catch (err) {
+                    URL.revokeObjectURL(url);
+                    throw err;
+                }
+            }
+            return pages;
+        }
+
+        async function handlePageImport(e) {
+            const files = Array.from(e.target.files || []); // copy — input.files is a live FileList, cleared by the reset below
+            e.target.value = ''; // allow re-picking the same file
+            if (!files.length) return;
+
+            let parsed;
+            try {
+                parsed = parsePageFiles(files);
+            } catch (err) {
+                alert(err.message);
+                return;
+            }
+
+            const existing = DB.paperWizard.sheets[parsed.baseName];
+            if (existing) {
+                const boxCount = (existing.fields?.length || 0) + (existing.signature ? 1 : 0);
+                if (boxCount > 0 && !confirm(`"${parsed.baseName}" is already configured with ${boxCount} box(es).\nOpen it for editing?`)) {
+                    return; // cancelled — keep the current document
+                }
+            }
+
+            // Swap in the new document — revoke the previous blob URLs (lifecycle rule).
+            revokeLoadedDoc();
+            let pages;
+            try {
+                pages = await loadPageImages(parsed.pages);
+                loadedDoc = { name: parsed.baseName, baseName: parsed.baseName, pageCount: pages.length, pages };
+            } catch (err) {
+                alert(err.message);
+                return;
+            }
+            configSheetId = parsed.baseName;
+
+            // Prefill sheet-level settings from an existing sheet, else defaults.
+            const s = DB.paperWizard.sheets[parsed.baseName];
+            orientation = pages[0].wPx > pages[0].hPx ? 'landscape' : 'portrait'; // derived from the page image
+            cfgName = s?.name || parsed.baseName;
+            cfgCadence = s?.cadence || 'one-shot';
+            cfgWidthIn = s?.pageWidthIn ?? 8.5;
+            cfgHeightIn = s?.pageHeightIn ?? 11;
+            // Day-row grid (daily-weekly): explicit y₀/pitch/rows, else sensible defaults.
+            cfgRowY0 = s?.rowGrid?.y0 ?? 0.27;
+            cfgRowPitch = s?.rowGrid?.pitch ?? 0.095;
+            cfgRowCount = s?.rowGrid?.count ?? 7;
+            cfgPageCount = Math.max(1, Math.min(20, pages.length));
+            // Working copies of the layout (saved to DB in Step 4).
+            cfgFields = (s?.fields || []).map(f => ({ ...f, page: f.page ?? 1 }));
+            cfgSignature = s?.signature ? { ...s.signature } : null;
+            cfgSelection = null;
+            // Wizard working copy: reopen the saved wizard for this sheet, else start fresh.
+            const existingWiz = Object.values(DB.paperWizard.wizards).find(w => w.sheetId === parsed.baseName) || null;
+            cfgWizard = existingWiz
+                ? { id: existingWiz.id, sheetId: parsed.baseName, name: existingWiz.name || '', questions: (existingWiz.questions || []).map(q => ({ ...q })) }
+                : { id: generateFieldId(), sheetId: parsed.baseName, name: cfgName + ' Wizard', questions: [] };
+            cfgQuestionSel = null;
+
+            renderConfigure();
+            showToast(existing ? `Opened "${parsed.baseName}" for editing` : `Loaded "${parsed.baseName}" — new sheet configuration`);
+        }
+
+        // Load the page set used by the PRINT popup. The file base name names the sheet
+        // (the wrong-revision guard): it must match a configured sheet id. Independent of
+        // loadedDoc (Configure tab). Blob lifecycle: replaces any previously loaded print doc.
+        async function loadPrintDocument(files) {
+            let parsed;
+            try {
+                parsed = parsePageFiles(files);
+            } catch (err) {
+                alert(err.message);
+                return false;
+            }
+            const sheet = DB.paperWizard?.sheets?.[parsed.baseName];
+            if (!sheet) {
+                alert(`No sheet configured with id "${parsed.baseName}".\n\nConfigure the sheet first (Configure Sheets tab), then load its page set here.`);
+                return false;
+            }
+            revokePrintDoc(); // lifecycle: a new print doc replaces the old one
+            let pages;
+            try {
+                pages = await loadPageImages(parsed.pages);
+            } catch (err) {
+                alert(err.message);
+                return false;
+            }
+            printDoc = { sheetId: parsed.baseName, pages };
+            renderAll();
+            showToast(`Print document "${parsed.baseName}" loaded (${pages.length} page${pages.length > 1 ? 's' : ''})`);
+            return true;
+        }
+
+        // ---- Box placement editor + field properties (Step 3) ----
+        const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+
+        // Random 4-char id, unique across the working sheet's fields, signature,
+        // and wizard questions (immutable once created).
+        function generateFieldId() {
+            const used = new Set(cfgFields.map(f => f.id));
+            if (cfgSignature?.id) used.add(cfgSignature.id);
+            cfgWizard?.questions.forEach(q => used.add(q.id));
+            let code;
+            do {
+                code = '';
+                for (let i = 0; i < 4; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+            } while (used.has(code));
+            return code;
+        }
+
+        const clamp01 = v => Math.max(0, Math.min(1, v));
+        const r4 = v => Math.round(v * 10000) / 10000; // normalized coords stored at 4 dp
+
+        function findCfgItem(kind, id) {
+            return kind === 'signature'
+                ? (cfgSignature && cfgSignature.id === id ? cfgSignature : null)
+                : cfgFields.find(f => f.id === id) || null;
+        }
+
+        // The wizard question (if any) whose answer fills the given field.
+        function findQuestionForField(fieldId) {
+            return cfgWizard?.questions.find(q => q.targetFieldId === fieldId) || null;
+        }
+
+        // Overlay HTML for one box (shared by the full render and the light refresh).
+        function boxOverlayHtml(kind, item) {
+            const sel = cfgSelection && cfgSelection.id === item.id;
+            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${sel ? ' selected' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
+                (item.checkbox ? '<span class="box-check" title="Checkbox field">☑</span>' : '') +
+                `<span class="box-label">${escapeHtml(item.label || item.id)}</span>` +
+                (sel ? ['nw', 'ne', 'sw', 'se'].map(c => `<span class="handle ${c}" data-corner="${c}"></span>`).join('') : '') +
+                `</div>`;
+        }
+
+        function pageBoxesHtml(pageNum) {
+            let html = '';
+            for (const f of cfgFields) if ((f.page ?? 1) === pageNum) html += boxOverlayHtml('field', f);
+            if (cfgSignature && (cfgSignature.page ?? 1) === pageNum) html += boxOverlayHtml('signature', cfgSignature);
+            return html;
+        }
+
+        // Light refresh: re-render ONLY the box overlays + properties panel.
+        // Never rebuilds the panel — that would reload the page images.
+        function refreshCfgOverlays() {
+            const stage = $('pageStage');
+            if (stage) {
+                stage.querySelectorAll('.form-page').forEach(pageEl => {
+                    const pageNum = parseInt(pageEl.dataset.page, 10) || 1;
+                    pageEl.querySelectorAll('.field-box').forEach(el => el.remove());
+                    const html = pageBoxesHtml(pageNum);
+                    if (html) pageEl.insertAdjacentHTML('beforeend', html);
+                });
+            }
+            const fpBody = $('fpBody');
+            if (fpBody) {
+                fpBody.outerHTML = fieldPropertiesPanelHtml();
+                wireFieldProperties();
+            }
+        }
+
+        function selectCfgItem(kind, id) {
+            cfgSelection = { kind, id };
+            refreshCfgOverlays();
+        }
+
+        function deleteSelectedCfgItem() {
+            if (!cfgSelection) return;
+            if (cfgSelection.kind === 'field') {
+                // Release any wizard question that targeted the deleted field.
+                cfgWizard?.questions.forEach(q => { if (q.targetFieldId === cfgSelection.id) q.targetFieldId = null; });
+                cfgFields = cfgFields.filter(f => f.id !== cfgSelection.id);
+            } else {
+                cfgSignature = null;
+            }
+            cfgSelection = null;
+            refreshCfgOverlays();
+            refreshWizardBuilder();
+        }
+
+        function addSignatureBox() {
+            if (cfgSignature) { selectCfgItem('signature', cfgSignature.id); return; }
+            cfgSignature = { id: generateFieldId(), label: 'Signature', x: 0.58, y: 0.86, w: 0.32, h: 0.07, page: 1 };
+            cfgSelection = { kind: 'signature', id: cfgSignature.id };
+            refreshCfgOverlays();
+        }
+
+        // Pointer-based editor on the page stack: click-drag empty space to create a
+        // box; drag a box body to move it; drag a corner handle to resize. All
+        // geometry is normalized 0–1 within its page.
+        function attachBoxEditor(stage) {
+            stage.querySelectorAll('.form-page').forEach(pageEl => {
+                const pageNum = parseInt(pageEl.dataset.page, 10) || 1;
+                let drag = null; // { mode:'create'|'move'|'resize', ... }
+
+                pageEl.addEventListener('pointerdown', (e) => {
+                    if (e.button !== 0) return;
+                    const rect = pageEl.getBoundingClientRect();
+                    if (!rect.width || !rect.height) return;
+                    const px = clamp01((e.clientX - rect.left) / rect.width);
+                    const py = clamp01((e.clientY - rect.top) / rect.height);
+
+                    const handle = e.target.closest('.handle');
+                    const boxEl = e.target.closest('.field-box');
+                    if (boxEl && boxEl.dataset.id) {
+                        const id = boxEl.dataset.id;
+                        const kind = boxEl.dataset.kind || 'field';
+                        if (handle) {
+                            drag = { mode: 'resize', id, kind, corner: handle.dataset.corner };
+                        } else {
+                            const item = findCfgItem(kind, id);
+                            if (!item) return;
+                            cfgSelection = { kind, id };
+                            refreshCfgOverlays(); // selection visuals + properties panel
+                            drag = { mode: 'move', id, kind, offX: px - item.x, offY: py - item.y };
+                        }
+                    } else {
+                        drag = { mode: 'create', x0: px, y0: py };
+                        const el = document.createElement('div');
+                        el.className = 'field-box';
+                        el.style.left = (px * 100) + '%';
+                        el.style.top = (py * 100) + '%';
+                        el.style.width = '0%';
+                        el.style.height = '0%';
+                        pageEl.appendChild(el);
+                        drag.el = el;
+                    }
+                    e.preventDefault();
+                    try { pageEl.setPointerCapture(e.pointerId); } catch (_) {}
+                });
+
+                pageEl.addEventListener('pointermove', (e) => {
+                    if (!drag) return;
+                    const rect = pageEl.getBoundingClientRect();
+                    if (!rect.width || !rect.height) return;
+                    const px = clamp01((e.clientX - rect.left) / rect.width);
+                    const py = clamp01((e.clientY - rect.top) / rect.height);
+
+                    if (drag.mode === 'create') {
+                        const x = Math.min(drag.x0, px), y = Math.min(drag.y0, py);
+                        const w = Math.abs(px - drag.x0), h = Math.abs(py - drag.y0);
+                        drag.el.style.left = (x * 100) + '%';
+                        drag.el.style.top = (y * 100) + '%';
+                        drag.el.style.width = (w * 100) + '%';
+                        drag.el.style.height = (h * 100) + '%';
+                        drag.geo = { x, y, w, h };
+                    } else if (drag.mode === 'move') {
+                        const item = findCfgItem(drag.kind, drag.id);
+                        if (!item) return;
+                        item.x = r4(clamp01(px - drag.offX));
+                        item.y = r4(clamp01(py - drag.offY));
+                        const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
+                        if (el) { el.style.left = (item.x * 100) + '%'; el.style.top = (item.y * 100) + '%'; }
+                    } else if (drag.mode === 'resize') {
+                        const item = findCfgItem(drag.kind, drag.id);
+                        if (!item) return;
+                        let { x, y, w, h } = item;
+                        if (drag.corner.includes('e')) w = clamp01(px - x);
+                        if (drag.corner.includes('s')) h = clamp01(py - y);
+                        if (drag.corner.includes('w')) { const right = x + w; x = Math.min(clamp01(px), right - 0.02); w = right - x; }
+                        if (drag.corner.includes('n')) { const bottom = y + h; y = Math.min(clamp01(py), bottom - 0.02); h = bottom - y; }
+                        item.x = r4(x); item.y = r4(y); item.w = r4(Math.max(w, 0.02)); item.h = r4(Math.max(h, 0.02));
+                        const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
+                        if (el) {
+                            el.style.left = (item.x * 100) + '%';
+                            el.style.top = (item.y * 100) + '%';
+                            el.style.width = (item.w * 100) + '%';
+                            el.style.height = (item.h * 100) + '%';
+                        }
+                    }
+                });
+
+                const finishDrag = () => {
+                    if (!drag) return;
+                    if (drag.mode === 'create') {
+                        const g = drag.geo;
+                        if (g && g.w >= 0.02 && g.h >= 0.015) {
+                            const f = {
+                                id: generateFieldId(), label: `Field ${cfgFields.length + 1}`,
+                                x: r4(g.x), y: r4(g.y), w: r4(g.w), h: r4(g.h),
+                                page: pageNum, fontSize: 10, align: 'left',
+                                source: null, questionId: null, row: false, rowIndexOffset: 0, rowYOffset: 0,
+                                checkbox: false, checkValue: ''
+                            };
+                            cfgFields.push(f);
+                            cfgSelection = { kind: 'field', id: f.id };
+                        } else {
+                            cfgSelection = null; // plain click on empty space deselects
+                        }
+                    }
+                    drag = null;
+                    refreshCfgOverlays();
+                };
+                pageEl.addEventListener('pointerup', finishDrag);
+                pageEl.addEventListener('pointercancel', () => { if (drag) { drag = null; refreshCfgOverlays(); } });
+            });
+        }
+
+        // ---- Field properties panel (Step 3) ----
+        const BINDING_OPTIONS = [
+            ['lot.name', 'lot.name — lot #'],
+            ['lot.strain', 'lot.strain — strain name'],
+            ['lot.stage', 'lot.stage — phase'],
+            ['lot.plantCount', 'lot.plantCount — plant count'],
+            ['lot.parentLotId', 'lot.parentLotId — parent lot #'],
+            ['lot.createdDate', 'lot.createdDate — creation date'],
+            ['lot.destRoom', 'lot.destRoom — grow room'],
+            ['lot.vegRoom', 'lot.vegRoom — veg room'],
+            ['lot.cloningRoom', 'lot.cloningRoom — clone room'],
+            ['instance.phase', 'instance.phase — phase snapshot'],
+            ['sheet.periodStart', 'sheet.periodStart — window start'],
+            ['sheet.periodEnd', 'sheet.periodEnd — window end'],
+            ['day.date', 'day.date — date of the current day (MM/DD, row fields only)']
+        ];
+
+        function fieldPropertiesPanelHtml() {
+            if (!loadedDoc) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Load the form pages first, then click-drag over any page to create a text box.</p></div>';
+            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it; corner handles resize. Click a box to edit its properties here (Delete key removes it).</p></div>';
+
+            const isSig = cfgSelection.kind === 'signature';
+            const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
+            if (!item) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Selected box no longer exists.</p></div>';
+
+            const pageOpts = Array.from({ length: cfgPageCount }, (_, i) =>
+                `<option value="${i + 1}"${(item.page ?? 1) === i + 1 ? ' selected' : ''}>Page ${i + 1}</option>`).join('');
+            const geo = `
+                <div class="fp-grid">
+                    <div class="form-group"><label for="fpX">X</label><input type="number" id="fpX" min="0" max="1" step="0.005" value="${item.x}"></div>
+                    <div class="form-group"><label for="fpY">Y</label><input type="number" id="fpY" min="0" max="1" step="0.005" value="${item.y}"></div>
+                    <div class="form-group"><label for="fpW">W</label><input type="number" id="fpW" min="0.01" max="1" step="0.005" value="${item.w}"></div>
+                    <div class="form-group"><label for="fpH">H</label><input type="number" id="fpH" min="0.01" max="1" step="0.005" value="${item.h}"></div>
+                </div>`;
+            const pageSel = `
+                <div class="form-group"><label for="fpPage">Page</label><select id="fpPage">${pageOpts}</select></div>`;
+
+            let body;
+            if (isSig) {
+                body = `
+                    <div class="form-group" style="margin-bottom:10px;"><label for="fpLabel">Label</label><input type="text" id="fpLabel" value="${escapeHtml(item.label || '')}" placeholder="e.g., Initials"></div>
+                    ${geo}${pageSel}`;
+            } else {
+                const srcOpts = `<option value=""${!item.source ? ' selected' : ''}>— wizard question —</option>` +
+                    BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${item.source === v ? ' selected' : ''}>${l}</option>`).join('');
+                body = `
+                    <div class="form-group" style="margin-bottom:10px;"><label for="fpLabel">Label</label><input type="text" id="fpLabel" value="${escapeHtml(item.label || '')}" placeholder="e.g., Strain Name"></div>
+                    ${geo}${pageSel}
+                    <div class="fp-grid">
+                        <div class="form-group"><label for="fpFontSize">Font (pt)</label><input type="number" id="fpFontSize" min="4" max="72" step="0.5" value="${item.fontSize ?? 10}"></div>
+                        <div class="form-group"><label for="fpAlign">Align</label><select id="fpAlign">
+                            <option value="left"${item.align === 'left' ? ' selected' : ''}>left</option>
+                            <option value="center"${item.align === 'center' ? ' selected' : ''}>center</option>
+                            <option value="right"${item.align === 'right' ? ' selected' : ''}>right</option>
+                        </select></div>
+                    </div>
+                    <div class="form-group"><label for="fpSource">Auto-fill source</label><select id="fpSource">${srcOpts}</select></div>
+                    <div class="form-group" id="fpQuestionWrap" style="display:${item.source ? 'none' : ''};">
+                        <label for="fpQuestionLink">Filled by question</label>
+                        <select id="fpQuestionLink">
+                            <option value="">— none (unbound) —</option>
+                            ${(cfgWizard?.questions || []).map(q => `<option value="${q.id}"${item.questionId === q.id ? ' selected' : ''}>${escapeHtml(q.label || q.id)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
+                            <input type="checkbox" id="fpRow"${item.row ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> Day-row field (cloned per day)
+                        </label>
+                    </div>
+                    <div class="form-group" id="fpRowOffsetWrap" style="display:${item.row ? '' : 'none'};"><label for="fpRowOffset">Row index offset</label><input type="number" id="fpRowOffset" min="0" max="6" step="1" value="${item.rowIndexOffset ?? 0}"></div>
+                    <div class="form-group" id="fpRowYOffsetWrap" style="display:${item.row ? '' : 'none'};"><label for="fpRowYOffset">In-row Y offset (normalized, e.g. 0.02)</label><input type="number" id="fpRowYOffset" min="-0.5" max="0.5" step="0.005" value="${item.rowYOffset ?? 0}"></div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
+                            <input type="checkbox" id="fpCheckbox"${item.checkbox ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ☑ Checkbox field (prints an X when its value matches)
+                        </label>
+                    </div>
+                    <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label><input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom"></div>`;
+            }
+
+            return `
+                <div class="fp-body" id="fpBody">
+                    <div class="field-properties">
+                        <div class="fp-head">
+                            <span class="fp-id">${isSig ? '✍️' : ''} ${escapeHtml(item.id)}</span>
+                            <button type="button" class="btn btn-danger" id="fpDeleteBtn" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">🗑 Delete</button>
+                        </div>
+                        ${body}
+                    </div>
+                </div>`;
+        }
+
+        function wireFieldProperties() {
+            if (!cfgSelection) return;
+            const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
+            if (!item) return;
+            const isSig = cfgSelection.kind === 'signature';
+            // Light refresh — updates box + panel without reloading the page images.
+            const num = (id, apply) => { const el = $(id); if (!el) return; el.addEventListener('change', () => { apply(parseFloat(el.value)); refreshCfgOverlays(); }); };
+
+            $('fpLabel').addEventListener('change', () => { item.label = $('fpLabel').value.trim(); refreshCfgOverlays(); });
+            num('#fpX', v => { if (!isNaN(v)) item.x = r4(clamp01(v)); });
+            num('#fpY', v => { if (!isNaN(v)) item.y = r4(clamp01(v)); });
+            num('#fpW', v => { if (!isNaN(v)) item.w = r4(Math.max(0.01, Math.min(1, v))); });
+            num('#fpH', v => { if (!isNaN(v)) item.h = r4(Math.max(0.01, Math.min(1, v))); });
+            $('fpPage').addEventListener('change', () => { item.page = parseInt($('fpPage').value, 10) || 1; refreshCfgOverlays(); });
+
+            if (!isSig) {
+                num('#fpFontSize', v => { if (!isNaN(v)) item.fontSize = Math.max(4, Math.min(72, v)); });
+                $('fpAlign').addEventListener('change', () => { item.align = $('fpAlign').value; refreshCfgOverlays(); });
+                $('fpSource').addEventListener('change', () => {
+                    // A field is either auto-filled or question-filled — never both.
+                    if ($('fpSource').value) item.questionId = null;
+                    item.source = $('fpSource').value || null;
+                    refreshCfgOverlays();
+                    refreshWizardBuilder();
+                });
+                const qWrap = $('fpQuestionWrap');
+                if (qWrap) {
+                    qWrap.style.display = item.source ? 'none' : '';
+                    $('fpQuestionLink').addEventListener('change', () => {
+                        const qid = $('fpQuestionLink').value || null;
+                        // One question per field: release this field from any other question.
+                        cfgWizard?.questions.forEach(x => { if (x.targetFieldId === item.id && x.id !== qid) x.targetFieldId = null; });
+                        item.questionId = qid;
+                        const q = cfgWizard?.questions.find(x => x.id === qid);
+                        if (q) q.targetFieldId = item.id;
+                        refreshCfgOverlays();
+                        refreshWizardBuilder();
+                    });
+                }
+                const rowWrap = $('fpRowOffsetWrap');
+                if (rowWrap) {
+                    rowWrap.style.display = item.row ? '' : 'none';
+                    $('fpRowYOffsetWrap').style.display = item.row ? '' : 'none';
+                    $('fpRow').addEventListener('change', () => {
+                        item.row = $('fpRow').checked;
+                        rowWrap.style.display = item.row ? '' : 'none';
+                        $('fpRowYOffsetWrap').style.display = item.row ? '' : 'none';
+                        refreshCfgOverlays();
+                    });
+                    num('#fpRowOffset', v => { if (!isNaN(v)) item.rowIndexOffset = Math.max(0, Math.min(6, Math.round(v))); });
+                    num('#fpRowYOffset', v => { if (!isNaN(v)) item.rowYOffset = Math.max(-0.5, Math.min(0.5, v)); });
+                }
+                const cbWrap = $('fpCheckValueWrap');
+                if (cbWrap) {
+                    cbWrap.style.display = item.checkbox ? '' : 'none';
+                    $('fpCheckbox').addEventListener('change', () => { item.checkbox = $('fpCheckbox').checked; refreshCfgOverlays(); });
+                    $('fpCheckValue').addEventListener('change', () => { item.checkValue = $('fpCheckValue').value.trim(); refreshCfgOverlays(); });
+                }
+            }
+            $('fpDeleteBtn').addEventListener('click', deleteSelectedCfgItem);
+        }
+
+        // ---- Filing Cabinet (Step 5) — pure computed view, stores nothing ----
+
+        // Map a configured sheet to one of the fixed cabinet sections.
+        function sheetSection(sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return null;
+            if (sheet.cadence === 'daily-weekly') return 'grow-log';
+            if (sheet.cadence === 'one-shot') return 'propagation';
+            // event sheets: classify by sheet id / name keywords
+            const s = (sheetId + ' ' + (sheet.name || '')).toLowerCase();
+            if (/clean/.test(s)) return 'room-clean';
+            if (/ipm|pest|spray|treat/.test(s)) return 'ipm';
+            if (/harvest|trim|dry|cure/.test(s)) return 'harvest';
+            return 'other';
+        }
+
+        const CAB_SECTIONS = [
+            { key: 'propagation', icon: '📄', label: 'Propagation' },
+            { key: 'room-clean', icon: '🧼', label: 'Room Cleans (pre-move-in)' },
+            { key: 'grow-log', icon: '📗', label: 'Grow Logs' },
+            { key: 'ipm', icon: '🐛', label: 'IPM Log' },
+            { key: 'harvest', icon: '🌾', label: 'Harvest' },
+            { key: 'other', icon: '📄', label: 'Other' }
+        ];
+
+        function wizardForSheet(sheetId) {
+            return Object.values(DB.paperWizard?.wizards || {}).find(w => w.sheetId === sheetId) || null;
+        }
+
+        // Question ids that must be answered for a day slot to count as filled.
+        function rowScopedQuestionIds(sheetId) {
+            const wiz = wizardForSheet(sheetId);
+            if (!wiz) return [];
+            return (wiz.questions || []).filter(q => q.rowScoped).map(q => q.id);
+        }
+
+        // Instance-level questions (one-shot / event completion).
+        function instanceQuestionIds(sheetId) {
+            const wiz = wizardForSheet(sheetId);
+            if (!wiz) return [];
+            return (wiz.questions || []).filter(q => !q.rowScoped).map(q => q.id);
+        }
+
+        function hasAnswer(map, qid) {
+            const v = map?.[qid];
+            return v !== null && v !== undefined && String(v).trim() !== '';
+        }
+
+        // Is a given day fully answered for the sheet's row-scoped questions?
+        function dayAnswered(instance, dateStr, sheetId) {
+            const day = instance.days?.[dateStr];
+            if (!day) return false;
+            const qids = rowScopedQuestionIds(sheetId);
+            if (qids.length === 0) return Object.keys(day).some(k => hasAnswer(day, k));
+            return qids.every(qid => hasAnswer(day, qid));
+        }
+
+        // Active window for a daily-weekly instance: [periodStart, min(periodEnd, phaseChangeDate)].
+        function activeWindow(inst, key) {
+            const start = parseDate(key);
+            const endFull = new Date(start.getTime());
+            endFull.setDate(endFull.getDate() + 6);
+            let end = endFull;
+            if (inst.phaseChangeDate) {
+                const pc = parseDate(inst.phaseChangeDate);
+                if (pc < end) end = pc;
+                if (end < start) end = new Date(start.getTime()); // safety: never invert
+            }
+            return { start, end };
+        }
+
+        function daysBetween(a, b) {
+            return Math.round((b - a) / 86400000) + 1;
+        }
+
+        // Completion rule (spec): daily-weekly = every active-window day answered for all
+        // row-scoped questions (+ signature if defined; strikeInitials when phaseChangeDate set).
+        // one-shot/event = all instance-level questions answered (+ signature if defined).
+        function instanceComplete(sheetId, key, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return false;
+            const needsSig = !!sheet.signature;
+            if (sheet.cadence === 'daily-weekly') {
+                const { start, end } = activeWindow(inst, key);
+                const total = daysBetween(start, end);
+                let filled = 0;
+                for (const d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) {
+                    if (dayAnswered(inst, dateToStr(d), sheetId)) filled++;
+                }
+                const strikeOk = !inst.phaseChangeDate || !!inst.strikeInitials;
+                return filled === total && (!needsSig || inst.signature) && strikeOk;
+            }
+            const qids = instanceQuestionIds(sheetId);
+            const answered = qids.filter(qid => hasAnswer(inst.header, qid)).length;
+            return qids.length > 0 && answered === qids.length && (!needsSig || inst.signature);
+        }
+
+        // Re-evaluate completion after a save: completedAt is set/cleared — never a flag.
+        function evaluateCompletion(sheetId, key, inst) {
+            inst.completedAt = instanceComplete(sheetId, key, inst) ? new Date().toISOString() : null;
+        }
+
+        // ---- Phase change / write-back (Step 9) ----
+
+        // Strike-out computation (spec: derived, never stored). Takes the instance's
+        // phaseChangeDate + the sheet's day-row geometry and returns the struck rows,
+        // one diagonal across them, and label positions — all in normalized page coords.
+        // Feeds the print popup (SVG overlay) and any on-screen preview.
+        function computeStrikeOut(sheet, inst) {
+            if (!inst?.phaseChangeDate) return null;
+            const rows = (sheet.fields || []).filter(f => f.row && f.page === 1);
+            if (!rows.length) return null; // no day-row geometry configured
+            const xs = rows.map(f => f.x), ws = rows.map(f => f.w);
+            const x0 = Math.min(...xs), x1 = Math.max(...xs.map((x, i) => x + ws[i]));
+            const ys = rows.map(f => f.y).sort((a, b) => a - b);
+            // Row pitch: spacing between consecutive day-row fields; fall back to field height.
+            let pitch = null;
+            for (let i = 1; i < ys.length; i++) {
+                const d = ys[i] - ys[i - 1];
+                if (d > 0 && (pitch === null || d < pitch)) pitch = d;
+            }
+            if (pitch === null) pitch = Math.max(...rows.map(f => f.h));
+            const y0 = Math.min(...ys);
+            const start = parseDate(inst.phaseChangeDate);
+            const struckRows = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(start.getTime());
+                d.setDate(d.getDate() + i);
+                if (d > start) struckRows.push({ dayIndex: i, y: y0 + i * pitch });
+            }
+            if (!struckRows.length) return null;
+            const first = struckRows[0], last = struckRows[struckRows.length - 1];
+            // One diagonal: top-right of the first struck row → bottom-left of the last.
+            const line = { x1: x1, y1: first.y, x2: x0, y2: last.y + pitch };
+            const midX = (line.x1 + line.x2) / 2, midY = (line.y1 + line.y2) / 2;
+            return {
+                struckRows,
+                line,
+                initials: { x: midX, y: midY - pitch * 0.5 }, // centered just above the midpoint
+                date: { x: midX, y: midY + pitch * 0.5 }      // centered just below it
+            };
+        }
+
+        // Phase-change rollover (spec "Phase Change") — data-only: closes the open daily-weekly
+        // instance (phaseChangeDate = today + confirmer's strikeInitials) and creates a fresh
+        // instance for the new phase (periodStart = move date, header carries the new phase),
+        // optionally writing the new stage back to the main DB. Returns { inst, newKey, newPhase,
+        // reused } or null if cancelled — callers handle notify/close/render + double-entry offer.
+        function phaseRollover(writeBack) {
+            const ctx = runnerCtx;
+            if (!ctx) return null;
+            const wiz = wizardForSheet(ctx.sheetId);
+            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
+            const newPhase = String(phaseQ ? (ctx.draft[phaseQ.id] ?? '') : '').trim();
+            if (!newPhase) return null;
+            const today = todayStr();
+            const oldInst = ctx.inst;
+            const pw = DB.paperWizard;
+            if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
+            if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
+            const sheetData = pw.entries[ctx.lotId][ctx.sheetId];
+            if (!sheetData.instances) sheetData.instances = {};
+            // Collision at the move date with an empty old instance (phase change recorded on the
+            // window's very first entry): two instances can't share a key, and an empty log has
+            // nothing to strike through — repurpose it in place instead.
+            if (sheetData.instances[today] === oldInst && !oldInst.signature
+                && Object.keys(oldInst.days || {}).length === 0
+                && !Object.entries(oldInst.header || {}).some(([, v]) => String(v ?? '').trim() !== '')) {
+                oldInst.phase = newPhase;
+                oldInst.phaseChangeDate = null;
+                oldInst.strikeInitials = null;
+                for (const q of wiz.questions) {
+                    if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') oldInst.header[q.id] = ctx.draft[q.id];
+                }
+                if (writeBack && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = newPhase;
+                captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
+                evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
+                return { inst: oldInst, newKey: ctx.key, newPhase, reused: true };
+            }
+            const initials = (prompt(
+                `Record phase change to ${newPhase}?\n\n` +
+                'This closes the current grow-log (rows after today are struck through) and starts a fresh one.\n' +
+                'Enter your initials for the strike-out:', '') || '').trim();
+            if (!initials) { showToast('Phase change cancelled — no changes made'); return null; }
+            // 1) Close the old instance: window ends at the move date, initials captured.
+            oldInst.phaseChangeDate = today;
+            oldInst.strikeInitials = initials;
+            // 2) Fresh instance for the new phase. periodStart = move date; if a non-empty log
+            //    already owns that key, shift forward so nothing is clobbered — the new log then
+            //    starts the day after the old one closed.
+            let newKey = today;
+            while (sheetData.instances[newKey]) newKey = addDaysStr(newKey, 1);
+            const newInst = { phase: newPhase, header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                              snapshots: {}, signature: null, completedAt: null, printedAt: null };
+            // Header carries the new phase + any other instance-level answers from this save.
+            for (const q of wiz.questions) {
+                if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') newInst.header[q.id] = ctx.draft[q.id];
+            }
+            sheetData.instances[newKey] = newInst;
+            // 3) Write-back: the wizard-recorded change updates the main DB (the only field
+            //    PaperWizard may write besides plantCount). Reverse-direction rollovers skip this.
+            if (writeBack && DB.lots[ctx.lotId]) {
+                DB.lots[ctx.lotId].stage = newPhase;
+            }
+            captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
+            evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
+            captureSnapshots(ctx.sheetId, ctx.lotId, newKey, newInst);
+            evaluateCompletion(ctx.sheetId, newKey, newInst);
+            return { inst: newInst, newKey, newPhase, reused: false };
+        }
+
+        // Reverse-direction detection (spec): the lot's live stage changed in SitkaTools and no
+        // longer matches this instance's stored phase → prompt to confirm the move. Rolls over
+        // WITHOUT writing back — the main DB is already correct. Called from openRunner after
+        // runnerCtx is set up for this instance; returns true when the open was handled.
+        function checkStageMismatch(lotId, sheetId, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || sheet.cadence !== 'daily-weekly') return false;
+            if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
+            const lot = DB.lots[lotId];
+            if (!lot || !inst.phase || !lot.stage || inst.phase === lot.stage) return false;
+            const ok = confirm(`Lot is now in ${lot.stage} — close this grow-log?\n\n` +
+                `The open log was started in ${inst.phase}. Confirming records the phase change (rows after today are struck through) and starts a fresh log for ${lot.stage}.`);
+            if (!ok) return false; // proceed to open the runner normally
+            const wiz = wizardForSheet(sheetId);
+            const phaseQ = wiz?.questions.find(q => q.writesTo === 'lot.stage');
+            if (!phaseQ) { showToast('No Phase question on this sheet — record the move in SitkaTools instead'); return false; }
+            // Point the Phase question's draft at the new stage so the rollover records it.
+            runnerCtx.draft[phaseQ.id] = lot.stage;
+            const roll = phaseRollover(false);
+            if (!roll) return false; // cancelled at the initials prompt — open normally
+            notifySitkaTools();
+            closeRunner();
+            renderAll();
+            showToast(`Phase change to ${lot.stage} recorded — new grow-log started ${fmtShort(roll.newKey)}`);
+            if (!roll.reused && confirm('Start filling the new grow-log now?')) openRunner(lotId, sheetId, roll.newKey);
+            return true;
+        }
+
+        // Status chip for an owned instance. Returns { text, cls }.
+        function instanceStatus(sheetId, key, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return { text: '—', cls: '' };
+            if (instanceComplete(sheetId, key, inst)) return { text: '✓ complete', cls: 'ok' };
+
+            if (sheet.cadence === 'daily-weekly') {
+                const { start, end } = activeWindow(inst, key);
+                const total = daysBetween(start, end);
+                let filled = 0;
+                for (const d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) {
+                    if (dayAnswered(inst, dateToStr(d), sheetId)) filled++;
+                }
+                // Due: today inside the active window and today's slot not filled.
+                const today = parseDate(todayStr());
+                if (today >= start && today <= end && !dayAnswered(inst, todayStr(), sheetId))
+                    return { text: '⏳ due', cls: 'due' };
+                if (filled === 0) return { text: '— not started', cls: '' };
+                let txt = `${filled}/${total} days`;
+                if (inst.phaseChangeDate) txt += ` · phase change ${fmtShort(inst.phaseChangeDate)}`;
+                return { text: txt, cls: '' };
+            }
+
+            // one-shot / event progress.
+            const qids = instanceQuestionIds(sheetId);
+            const answered = qids.filter(qid => hasAnswer(inst.header, qid)).length;
+            if (answered === 0) return { text: '— not started', cls: '' };
+            let txt = `${answered}/${qids.length} fields`;
+            if (inst.phaseChangeDate) txt += ` · phase change ${fmtShort(inst.phaseChangeDate)}`;
+            return { text: txt, cls: '' };
+        }
+
+        // Count of daily-weekly instances whose entry is due today for a lot.
+        function dueTodayCount(lotId) {
+            const entries = DB.paperWizard?.entries?.[lotId] || {};
+            let n = 0;
+            for (const [sheetId, sheetData] of Object.entries(entries)) {
+                const sheet = DB.paperWizard?.sheets?.[sheetId];
+                if (!sheet || sheet.cadence !== 'daily-weekly') continue;
+                for (const [key, inst] of Object.entries(sheetData.instances || {})) {
+                    if (instanceStatus(sheetId, key, inst).cls === 'due') n++;
+                }
+            }
+            return n;
+        }
+
+        // All room names known to the DB (rooms table + lot room fields). Names may duplicate.
+        function knownRoomNames() {
+            const names = new Set();
+            Object.values(DB.rooms || {}).forEach(r => { if (r?.name) names.add(String(r.name)); });
+            Object.values(DB.lots || {}).forEach(l => {
+                ['cloningRoom', 'vegRoom', 'destRoom'].forEach(k => { if (l?.[k]) names.add(String(l[k])); });
+            });
+            return [...names];
+        }
+
+        // Move-in dates for a lot's three rooms (spec: Filing Cabinet sourcing rule).
+        function moveInDates(lotId) {
+            const today = todayStr();
+            const entries = DB.paperWizard?.entries?.[lotId] || {};
+            // Earliest periodStart of a grow-log instance with the given phase.
+            const firstPhase = phase => {
+                let best = null;
+                for (const [sheetId, sd] of Object.entries(entries)) {
+                    const sheet = DB.paperWizard?.sheets?.[sheetId];
+                    if (!sheet || sheet.cadence !== 'daily-weekly') continue;
+                    for (const [key, inst] of Object.entries(sd.instances || {})) {
+                        if (String(inst.phase || '').toLowerCase() === phase.toLowerCase()) {
+                            if (!best || key < best) best = key;
+                        }
+                    }
+                }
+                return best;
+            };
+            const lot = DB.lots[lotId];
+            return {
+                clone: (lot?.createdDate && String(lot.createdDate).slice(0, 10)) || today,
+                veg: firstPhase('Veg') || today,
+                grow: firstPhase('Bloom') || today
+            };
+        }
+
+        // Scan ALL lots' room-clean event instances. Returns [{ lotId, sheetId, key, date, roomName }].
+        function allRoomCleans() {
+            const out = [];
+            const roomNames = knownRoomNames();
+            for (const [lotId, sheets] of Object.entries(DB.paperWizard?.entries || {})) {
+                for (const [sheetId, sd] of Object.entries(sheets || {})) {
+                    if (sheetSection(sheetId) !== 'room-clean') continue;
+                    for (const [key, inst] of Object.entries(sd.instances || {})) {
+                        // The room name lives somewhere in the header values.
+                        const roomName = Object.values(inst.header || {})
+                            .map(v => String(v ?? '').trim())
+                            .find(v => v && roomNames.some(n => n.toLowerCase() === v.toLowerCase())) || null;
+                        out.push({ lotId, sheetId, key, date: key, roomName });
+                    }
+                }
+            }
+            return out;
+        }
+
+        // Most recent clean of a room dated on/before `byDate`. Null if none.
+        // Reference nodes are other lots' documents — exclude the lot's own cleans
+        // (those appear as owned leaves instead).
+        function cleanBefore(roomName, byDate, excludeLotId) {
+            const matches = allRoomCleans().filter(c =>
+                c.lotId !== excludeLotId &&
+                c.roomName && c.roomName.toLowerCase() === roomName.toLowerCase() && c.date <= byDate);
+            if (!matches.length) return null;
+            matches.sort((a, b) => b.date.localeCompare(a.date));
+            return matches[0];
+        }
+
+        // ---- Tab renderers ----
+
+        const CAB_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function fmtShort(dateStr) {
+            const d = parseDate(dateStr);
+            return `${CAB_MONTHS[d.getMonth()]} ${d.getDate()}`;
+        }
+
+        function addDaysStr(dateStr, n) {
+            const d = parseDate(dateStr);
+            d.setDate(d.getDate() + n);
+            return dateToStr(d);
+        }
+
+        // 🖨️ Print button for a leaf (Step 10). Always rendered; disabled with a tooltip
+        // listing exactly what's missing until the instance is complete AND a matching
+        // page set is loaded this session (spec: "Print is locked … document not loaded").
+        function printButtonHtml({ lotId, sheetId, key }) {
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
+            const blockers = printBlockers(sheetId, key, inst);
+            const disabled = blockers.length > 0;
+            const title = disabled ? `Print locked — ${blockers.join(' · ')}` : 'Open print popup';
+            return `<button type="button" class="cab-print" data-print="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}"${disabled ? ' disabled' : ''} title="${escapeHtml(title)}">🖨️ Print</button>`;
+        }
+
+        // One cabinet leaf row. `label` must be pre-escaped HTML.
+        function cabLeaf(label, status, opts = {}) {
+            const refCls = opts.ref ? ' ref' : '';
+            const from = opts.from ? `<span class="cab-from">from ${escapeHtml(opts.from)}</span>` : '';
+            // Reference nodes open the same print popup as owned instances (no Fill action).
+            const printBtn = opts.print ? printButtonHtml(opts.print) : '';
+            return `<div class="cab-leaf${refCls}">
+                <span class="cab-label">${label}</span>
+                ${from}
+                ${printBtn}
+                <span class="cab-status ${status.cls}">${status.text}</span>
+            </div>`;
+        }
+
+        // Owned leaf with an inline Fill button (reference nodes stay read-only).
+        function cabLeafFill(label, status, sheetId, key, lotId) {
+            return `<div class="cab-leaf" data-fill="1" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}">
+                <span class="cab-label">${label}</span>
+                <button type="button" class="cab-fill">Fill</button>
+                ${printButtonHtml({ lotId: lotId || activeLotId, sheetId, key })}
+                <span class="cab-status ${status.cls}">${status.text}</span>
+            </div>`;
+        }
+
+        // ---- Wizard runner (Step 6) — centered card, one question at a time ----
+        let runnerCtx = null; // { lotId, sheetId, key, day, idx, draft } while the modal is open
+
+        // Resolve a binding string against the current DB (prefill only — the stored answer prints).
+        function resolveBinding(binding, ctx) {
+            if (!binding) return null;
+            const [kind, field] = String(binding).split('.');
+            if (kind === 'lot') {
+                const lot = DB.lots[ctx.lotId];
+                const v = lot ? lot[field] : null;
+                return (v === null || v === undefined) ? null : String(v);
+            }
+            if (kind === 'instance' && field === 'phase') return ctx.inst?.phase || null;
+            if (kind === 'day' && field === 'date') return ctx.dayDate ? fmtMMDD(ctx.dayDate) : null;
+            if (kind === 'sheet') {
+                const start = ctx.key;
+                // periodEnd only makes sense for a real date key (daily-weekly windows).
+                const end = /^\d{4}-\d{2}-\d{2}$/.test(start) ? addDaysStr(start, 6) : null;
+                if (field === 'periodStart') return start;
+                if (field === 'periodEnd') return end;
+            }
+            return null;
+        }
+
+        // Every binding a sheet uses: field sources + question prefillFrom values.
+        function sheetBindings(sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return [];
+            const set = new Set();
+            for (const f of sheet.fields || []) if (f.source) set.add(f.source);
+            const wiz = wizardForSheet(sheetId);
+            for (const q of wiz?.questions || []) if (q.prefillFrom) set.add(q.prefillFrom);
+            return [...set];
+        }
+
+        // Capture save-time binding snapshots on the instance (spec: captured at creation and
+        // refreshed on every entry save — the stored snapshot, not the live DB, is what prints).
+        function captureSnapshots(sheetId, lotId, key, inst) {
+            if (!inst.snapshots) inst.snapshots = {};
+            for (const b of sheetBindings(sheetId)) {
+                if (b === 'day.date') continue; // derived per row at print time — never snapshotted
+                inst.snapshots[b] = resolveBinding(b, { lotId, key, inst });
+            }
+        }
+
+        // Previous daily-weekly instance key for this lot+sheet (for same-as-last at a chain start).
+        // The current instance may be an unsaved draft, so take the largest stored key before it.
+        function prevInstanceKey(lotId, sheetId, key) {
+            const keys = Object.keys(DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances || {}).sort();
+            let best = null;
+            for (const k of keys) if (k < key) best = k;
+            return best;
+        }
+
+        function openRunner(lotId, sheetId, key) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            const wiz = wizardForSheet(sheetId);
+            if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
+
+            let instKey = key;
+            let inst = DB.paperWizard.entries[lotId]?.[sheetId]?.instances?.[instKey] || null;
+            const today = todayStr();
+            if (!inst) {
+                // No instance yet — create a draft (persisted on Save).
+                if (sheet.cadence === 'daily-weekly') instKey = today;
+                else if (sheet.cadence === 'event') instKey = key || today;
+                else instKey = 'single';
+                inst = { phase: sheet.cadence === 'daily-weekly' ? (DB.lots[lotId]?.stage || null) : null,
+                         header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                         snapshots: {}, signature: null, completedAt: null, printedAt: null };
+            }
+
+            let day = null;
+            if (sheet.cadence === 'daily-weekly') {
+                const winEnd = addDaysStr(instKey, 6);
+                if (today >= instKey && today <= winEnd) day = today; // today inside this window
+                else { // otherwise the first unfilled day in the window
+                    for (let i = 0; i < 7; i++) {
+                        const ds = addDaysStr(instKey, i);
+                        if (!dayAnswered(inst, ds, sheetId)) { day = ds; break; }
+                    }
+                    if (!day) day = instKey;
+                }
+            }
+            runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst,
+                sigDraft: inst.signature
+                    ? { name: inst.signature.name || '', strokes: (inst.signature.strokes || []).map(s => s.slice()) }
+                    : { name: '', strokes: [] } };
+            // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
+            // instance was created → confirm the move and roll over (no write-back — DB is current).
+            if (checkStageMismatch(lotId, sheetId, inst)) return;
+            resetRunnerDraft();
+            renderRunner();
+        }
+
+        // (Re)load the draft answers for the current scope from saved data / prefill bindings.
+        function resetRunnerDraft() {
+            const { sheetId, inst, day } = runnerCtx;
+            const wiz = wizardForSheet(sheetId);
+            const draft = {};
+            for (const q of wiz.questions) {
+                let v = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
+                if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom) {
+                    // day.date prefills from the current day (row-scoped only).
+                    v = resolveBinding(q.prefillFrom, { lotId: runnerCtx.lotId, key: runnerCtx.key, inst, dayDate: q.rowScoped ? day : null });
+                }
+                draft[q.id] = (v === null || v === undefined) ? '' : String(v);
+            }
+            runnerCtx.draft = draft;
+        }
+
+        // Sources for "⏪ Same as last time": row-scoped questions copy the previous day's
+        // answers (falling back to the previous instance's last day at a chain start);
+        // instance-level questions copy the previous instance's header.
+        function runnerSameSources() {
+            const { sheetId, inst, key, day } = runnerCtx;
+            let daySrc = null, instSrc = null;
+            if (day) {
+                const prevDay = addDaysStr(day, -1);
+                if (inst.days?.[prevDay]) daySrc = inst.days[prevDay];
+                const pk = prevInstanceKey(runnerCtx.lotId, sheetId, key);
+                if (pk) {
+                    const pinst = DB.paperWizard.entries[runnerCtx.lotId][sheetId].instances[pk];
+                    const pkeys = Object.keys(pinst.days || {}).sort();
+                    if (pkeys.length && !daySrc) daySrc = pinst.days[pkeys[pkeys.length - 1]];
+                    instSrc = pinst.header || null;
+                }
+            } else {
+                const pk = prevInstanceKey(runnerCtx.lotId, sheetId, key);
+                if (pk) instSrc = DB.paperWizard.entries[runnerCtx.lotId][sheetId].instances[pk].header || null;
+            }
+            return { daySrc, instSrc };
+        }
+
+        // "⏪ Same as last time" — pre-fills unanswered sameAsLast questions. Never auto-saves.
+        function runnerSameAsLast() {
+            const wiz = wizardForSheet(runnerCtx.sheetId);
+            const { daySrc, instSrc } = runnerSameSources();
+            let n = 0;
+            for (const q of wiz.questions) {
+                if (!q.sameAsLast) continue;
+                const src = q.rowScoped ? daySrc : instSrc;
+                const v = src ? src[q.id] : null;
+                if (v !== null && v !== undefined && String(v).trim() !== '' && String(runnerCtx.draft[q.id] ?? '').trim() === '') {
+                    runnerCtx.draft[q.id] = String(v);
+                    n++;
+                }
+            }
+            renderRunner();
+            showToast(n ? `Copied ${n} answer${n === 1 ? '' : 's'} from last time` : 'Nothing new to copy');
+        }
+
+        function runnerGo(delta) {
+            const sheet = DB.paperWizard.sheets[runnerCtx.sheetId];
+            const wiz = wizardForSheet(runnerCtx.sheetId);
+            const totalSteps = wiz.questions.length + (sheet.signature ? 1 : 0);
+            runnerCtx.idx = Math.max(0, Math.min(totalSteps - 1, runnerCtx.idx + delta));
+            renderRunner();
+        }
+
+        function closeRunner() {
+            runnerCtx = null;
+            const ov = $('wizOverlay');
+            if (ov) ov.remove();
+            document.removeEventListener('keydown', runnerEscHandler);
+        }
+
+        function runnerEscHandler(e) { if (e.key === 'Escape') closeRunner(); }
+
+        // Signature pad (Step 8): pointer-captured strokes stored as normalized [x,y] arrays
+        // within the box. No image is generated — pure vector data, re-drawn on open.
+        function initSigPad(ctx) {
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const sig = sheet.signature;
+            const canvas = $('sigPad');
+            const ar = (sig.w && sig.h) ? (sig.w / sig.h) : 4; // box aspect ratio
+            const W = 480;
+            const H = Math.max(60, Math.round(W / ar));
+            canvas.width = W;
+            canvas.height = H;
+            const g = canvas.getContext('2d');
+            g.clearRect(0, 0, W, H);
+            g.lineWidth = 2.5;
+            g.lineCap = 'round';
+            g.lineJoin = 'round';
+            g.strokeStyle = '#1a1a1a';
+
+            const drawStroke = (pts) => {
+                if (!pts.length) return;
+                g.beginPath();
+                g.moveTo(pts[0][0] * W, pts[0][1] * H);
+                for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0] * W, pts[i][1] * H);
+                g.stroke();
+            };
+            for (const s of ctx.sigDraft.strokes) drawStroke(s); // repaint existing (re-sign view)
+
+            let drawing = false;
+            const toNorm = (e) => {
+                const r = canvas.getBoundingClientRect();
+                return [
+                    Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+                    Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+                ];
+            };
+            canvas.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                drawing = true;
+                try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+                ctx.sigDraft.strokes.push([toNorm(e)]);
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (!drawing) return;
+                const stroke = ctx.sigDraft.strokes[ctx.sigDraft.strokes.length - 1];
+                const p = toNorm(e);
+                const prev = stroke[stroke.length - 1] || p;
+                stroke.push(p);
+                g.beginPath();
+                g.moveTo(prev[0] * W, prev[1] * H);
+                g.lineTo(p[0] * W, p[1] * H);
+                g.stroke();
+            });
+            const endStroke = () => { drawing = false; };
+            canvas.addEventListener('pointerup', endStroke);
+            canvas.addEventListener('pointercancel', endStroke);
+        }
+
+        function renderRunner() {
+            const ctx = runnerCtx;
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const wiz = wizardForSheet(ctx.sheetId);
+            const qs = wiz.questions;
+            const hasSig = !!sheet.signature;
+            const totalSteps = qs.length + (hasSig ? 1 : 0);
+            const isSigStep = hasSig && ctx.idx === qs.length;
+            const q = isSigStep ? null : qs[ctx.idx];
+            const isLast = ctx.idx === totalSteps - 1;
+
+            // Day selector (daily-weekly only): the instance's 7-day window.
+            let dayChipsHtml = '';
+            if (sheet.cadence === 'daily-weekly' && !isSigStep) {
+                const chips = [];
+                for (let i = 0; i < 7; i++) {
+                    const ds = addDaysStr(ctx.key, i);
+                    const filled = dayAnswered(ctx.inst, ds, ctx.sheetId);
+                    const selCls = ds === ctx.day ? ' sel' : '';
+                    chips.push(`<button type="button" class="day-chip${selCls}${filled ? ' filled' : ''}" data-day="${ds}">${fmtShort(ds)}</button>`);
+                }
+                dayChipsHtml = `<div class="wiz-daychips">${chips.join('')}</div>
+                    <div class="wiz-hint">Answers are saved per day — pick a day, answer, then Save.</div>`;
+            }
+
+            // Question step body vs signature step body.
+            let bodyInner;
+            if (isSigStep) {
+                bodyInner = `
+                <div class="wiz-q-label">✍️ ${escapeHtml(sheet.signature.label || 'Signature')}</div>
+                <div class="sig-pad-wrap"><canvas id="sigPad" class="sig-pad"></canvas></div>
+                <input type="text" id="sigName" class="sig-name" placeholder="Signer name / initials" value="${escapeHtml(ctx.sigDraft?.name ?? '')}">
+                <div class="sig-actions"><button type="button" class="sig-clear" id="sigClearBtn">🧹 Clear signature</button></div>`;
+            } else {
+                const val = escapeHtml(ctx.draft[q.id] ?? '');
+                let ctl;
+                if (q.type === 'select') {
+                    const opts = ['<option value="">— select —</option>']
+                        .concat((q.options || []).map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
+                    ctl = `<select id="wizCtl">${opts.join('')}</select>`;
+                } else if (q.type === 'number') {
+                    ctl = `<input type="number" step="any" id="wizCtl" value="${val}">`;
+                } else {
+                    ctl = `<input type="text" id="wizCtl" value="${val}">`;
+                }
+                const anySame = qs.some(x => x.sameAsLast);
+                const sameSrcs = anySame ? runnerSameSources() : { daySrc: null, instSrc: null };
+                const sameEnabled = (qs.some(x => x.sameAsLast && x.rowScoped) && sameSrcs.daySrc)
+                    || (qs.some(x => x.sameAsLast && !x.rowScoped) && sameSrcs.instSrc);
+                bodyInner = `
+                <div class="wiz-q-label">${escapeHtml(q.label)}</div>
+                <div class="wiz-q-ctl">${ctl}</div>
+                ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
+            }
+
+            const progText = isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`;
+            const card = `
+            <div class="wiz-head">
+                <span class="wiz-title">${escapeHtml(wiz.name || sheet.name)}</span>
+                <span class="wiz-prog">${progText}</span>
+                <button type="button" class="wiz-close" id="wizCloseBtn" title="Close">✕</button>
+            </div>
+            <div class="wiz-body">
+                ${dayChipsHtml}
+                ${bodyInner}
+            </div>
+            <div class="wiz-foot">
+                <button type="button" class="btn btn-secondary" id="wizBackBtn"${ctx.idx === 0 ? ' disabled' : ''}>← Back</button>
+                <span class="spacer"></span>
+                ${isLast
+                    ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">💾 Save entry</button>`
+                    : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`}
+            </div>`;
+
+            let ov = $('wizOverlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'wizOverlay';
+                ov.className = 'wiz-overlay';
+                ov.addEventListener('mousedown', e => { if (e.target === ov) closeRunner(); });
+                document.body.appendChild(ov);
+                document.addEventListener('keydown', runnerEscHandler);
+            }
+            ov.innerHTML = `<div class="wiz-card">${card}</div>`;
+
+            $('wizCloseBtn').addEventListener('click', closeRunner);
+            $('wizBackBtn').addEventListener('click', () => runnerGo(-1));
+            if (isLast) $('wizSaveBtn').addEventListener('click', saveRunnerEntry);
+            else $('wizNextBtn').addEventListener('click', () => runnerGo(1));
+            const sameBtn = $('wizSameBtn');
+            if (sameBtn) sameBtn.addEventListener('click', runnerSameAsLast);
+
+            // Day chips: switch the active day and restart at question 1.
+            ov.querySelectorAll('.day-chip').forEach(b => b.addEventListener('click', () => {
+                ctx.day = b.dataset.day;
+                ctx.idx = 0;
+                resetRunnerDraft();
+                renderRunner();
+            }));
+
+            if (isSigStep) {
+                initSigPad(ctx);
+                const nameEl = $('sigName');
+                nameEl.addEventListener('input', () => { ctx.sigDraft.name = nameEl.value; });
+                $('sigClearBtn').addEventListener('click', () => {
+                    ctx.sigDraft.strokes = [];
+                    renderRunner();
+                });
+            } else {
+                const ctlEl = $('wizCtl');
+                ctlEl.addEventListener('input', () => { ctx.draft[q.id] = ctlEl.value; });
+                ctlEl.addEventListener('change', () => { ctx.draft[q.id] = ctlEl.value; });
+                ctlEl.focus();
+            }
+        }
+
+        // Persist the draft answers into the instance, refresh binding snapshots, and
+        // re-evaluate completion (spec: snapshots captured at creation AND on every save;
+        // completedAt set/cleared after every save — never a flag).
+        function saveRunnerEntry() {
+            const ctx = runnerCtx;
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const wiz = wizardForSheet(ctx.sheetId);
+            const pw = DB.paperWizard;
+            if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
+            if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
+            const sheetData = pw.entries[ctx.lotId][ctx.sheetId];
+            if (!sheetData.instances) sheetData.instances = {};
+            let inst = sheetData.instances[ctx.key];
+            if (!inst) {
+                inst = { phase: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.stage || null) : null,
+                         header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                         snapshots: {}, signature: null, completedAt: null, printedAt: null };
+                sheetData.instances[ctx.key] = inst;
+            }
+            // Phase change (Step 9) — checked BEFORE writing answers: a new phase closes this
+            // instance and starts a fresh one; the old log keeps its original phase snapshot.
+            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage' && !q.rowScoped);
+            let rolled = null;
+            if (phaseQ) {
+                const nv = String(ctx.draft[phaseQ.id] ?? '').trim();
+                if (nv && sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && inst.phase !== nv) {
+                    rolled = phaseRollover(true); // prompts for strike initials; null = cancelled
+                    if (!rolled) return;          // nothing saved — runner stays open
+                }
+            }
+            for (const q of wiz.questions) {
+                const v = ctx.draft[q.id];
+                if (q === phaseQ && rolled) continue; // old log keeps its original phase
+                if (q.rowScoped) {
+                    if (!inst.days) inst.days = {};
+                    if (!inst.days[ctx.day]) inst.days[ctx.day] = {};
+                    inst.days[ctx.day][q.id] = v;
+                } else {
+                    if (!inst.header) inst.header = {};
+                    inst.header[q.id] = v;
+                }
+            }
+            // Signature (Step 8): the pad is the source of truth for this save — re-signing
+            // replaces stored strokes; an empty pad clears the signature.
+            if (sheet.signature) {
+                inst.signature = ctx.sigDraft.strokes.length
+                    ? { name: ctx.sigDraft.name.trim(), strokes: ctx.sigDraft.strokes }
+                    : null;
+            }
+            // Plant count write-back (Step 9): row-scoped question whose value differs from the
+            // live lot record. Same value = no write; per-day entries keep the full history.
+            for (const q of wiz.questions) {
+                if (q.writesTo === 'lot.plantCount' && q.rowScoped) {
+                    const v = String(ctx.draft[q.id] ?? '').trim();
+                    if (v !== '' && DB.lots[ctx.lotId] && Number(DB.lots[ctx.lotId].plantCount) !== Number(v)) {
+                        DB.lots[ctx.lotId].plantCount = Number(v);
+                    }
+                }
+            }
+            captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
+            evaluateCompletion(ctx.sheetId, ctx.key, inst);
+            notifySitkaTools();
+            closeRunner();
+            renderAll();
+            if (rolled) {
+                showToast(`Entry saved · phase change to ${rolled.newPhase} recorded`);
+                // Double entry on the move day: offer to run today's entry on the new instance.
+                if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
+            } else {
+                showToast('Entry saved');
+            }
+        }
+
+        // ---- Print popup (Step 10) ----
+
+        // Day-row grid for a daily-weekly sheet: explicit rowGrid (y0/pitch/count) when set,
+        // else inferred from the page-1 row fields (min positive Δy = pitch, min y = y0).
+        function rowGrid(sheet) {
+            if (sheet.rowGrid && sheet.rowGrid.pitch > 0) {
+                return { y0: sheet.rowGrid.y0 || 0, pitch: sheet.rowGrid.pitch, count: sheet.rowGrid.count || 7 };
+            }
+            const rows = (sheet.fields || []).filter(f => f.row && f.page === 1);
+            if (!rows.length) return null;
+            const ys = rows.map(f => f.y).sort((a, b) => a - b);
+            let pitch = null;
+            for (let i = 1; i < ys.length; i++) { const d = ys[i] - ys[i - 1]; if (d > 0 && (pitch === null || d < pitch)) pitch = d; }
+            if (pitch === null) pitch = Math.max(...rows.map(f => f.h));
+            return { y0: ys[0], pitch, count: 7 };
+        }
+
+        // What is missing before an instance can be printed — drives the disabled tooltip.
+        function printBlockers(sheetId, key, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return ['Sheet not configured'];
+            if (!printDoc || printDoc.sheetId !== sheetId) return [`Document "${sheetId}" not loaded this session`];
+            if (!inst) return ['No entry yet — fill it first'];
+            const out = [];
+            if (instanceComplete(sheetId, key, inst)) return out;
+            if (sheet.cadence === 'daily-weekly') {
+                const { start, end } = activeWindow(inst, key);
+                const total = daysBetween(start, end);
+                let filled = 0;
+                for (const d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) if (dayAnswered(inst, dateToStr(d), sheetId)) filled++;
+                if (filled < total) out.push(`${total - filled} day(s) left`);
+                if (sheet.signature && !inst.signature) out.push('signature missing');
+                if (inst.phaseChangeDate && !inst.strikeInitials) out.push('strike initials missing');
+            } else {
+                const qids = instanceQuestionIds(sheetId);
+                const answered = qids.filter(qid => hasAnswer(inst.header, qid)).length;
+                if (answered < qids.length) out.push(`${qids.length - answered} field(s) left`);
+                if (sheet.signature && !inst.signature) out.push('signature missing');
+            }
+            return out;
+        }
+
+        // MM/DD for the form's Date column.
+        function fmtMMDD(dateStr) { const p = String(dateStr).split('-'); return p.length === 3 ? `${p[1]}/${p[2]}` : dateStr; }
+
+        // Resolve what a field prints. Snapshot-first (spec), live binding as fallback for
+        // legacy instances without snapshots. Empty/missing → 'N/A' (checkboxes → empty box).
+        function printFieldValue(sheet, inst, lotId, key, f, dayDate) {
+            let v;
+            if (f.source) {
+                // day.date is derived per row — never snapshotted.
+                if (f.source === 'day.date') v = resolveBinding(f.source, { lotId, key, inst, dayDate });
+                else v = (inst.snapshots && inst.snapshots[f.source] != null) ? inst.snapshots[f.source] : resolveBinding(f.source, { lotId, key, inst });
+            } else if (f.row) {
+                v = inst.days?.[dayDate]?.[f.questionId];
+            } else {
+                v = inst.header?.[f.questionId];
+            }
+            const s = (v === null || v === undefined) ? '' : String(v).trim();
+            if (f.checkbox) return { checked: !!s && s === (f.checkValue || ''), text: '' };
+            return { checked: false, text: s || 'N/A' };
+        }
+
+        // Signature as an inline SVG polyline set over the box (strokes are normalized 0–1).
+        // `box` = sheet.signature geometry; `sig` = inst.signature strokes (normalized 0–1).
+        function sigSvgHtml(box, sig) {
+            const polys = ((sig && sig.strokes) || [])
+                .filter(st => st.length >= 2)
+                .map(st => `<polyline points="${st.map(p => `${(p[0] * 100).toFixed(2)},${(p[1] * 100).toFixed(2)}`).join(' ')}"/>`)
+                .join('');
+            return `<svg class="ov-sig" style="left:${box.x * 100}%;top:${box.y * 100}%;width:${box.w * 100}%;height:${box.h * 100}%;" viewBox="0 0 100 100" preserveAspectRatio="none">${polys}</svg>`;
+        }
+
+        // Build + open the self-contained print popup. Light theme (paper preview), one section
+        // per page at physical size, %-positioned overlays, signature + strike-out as SVG.
+        function openPrintPopup(lotId, sheetId, key) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || !printDoc || printDoc.sheetId !== sheetId) { showToast('Load the matching document first'); return; }
+            const inst = DB.paperWizard.entries?.[lotId]?.[sheetId]?.instances?.[key];
+            if (!inst) { showToast('No entry to print yet'); return; }
+
+            const W = sheet.pageWidthIn || 8.5, H = sheet.pageHeightIn || 11;
+            const grid = sheet.cadence === 'daily-weekly' ? rowGrid(sheet) : null;
+            const strike = (sheet.cadence === 'daily-weekly' && inst.phaseChangeDate) ? computeStrikeOut(sheet, inst) : null;
+
+            // One overlay span for a field at normalized y.
+            const overlaySpan = (f, y, val) => {
+                const left = f.x * 100, top = y * 100, w = f.w * 100, h = f.h * 100;
+                if (f.checkbox) {
+                    // Square box sized to the field's height in inches (the placed box over the form's checkbox).
+                    const boxIn = Math.max(0.08, f.h * H);
+                    return `<span class="ov-cb${val.checked ? ' on' : ''}" style="left:${left}%;top:${top}%;width:${boxIn}in;height:${boxIn}in;${val.checked ? `font-size:${(boxIn * 0.72).toFixed(3)}in;` : ''}">${val.checked ? '✕' : ''}</span>`;
+                }
+                const fs = (f.fontSize ?? 10) / 72;
+                return `<span class="ov" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
+            };
+
+            // Overlay spans for one page.
+            const overlayFor = (pageNum) => {
+                let html = '';
+                for (const f of sheet.fields || []) {
+                    if ((f.page ?? 1) !== pageNum) continue;
+                    if (f.row && grid) {
+                        for (let i = 0; i < grid.count; i++) {
+                            const dayDate = addDaysStr(key, i);
+                            // rowYOffset: extra vertical offset within the day-row (for stacked fields like a column of checkboxes).
+                            const y = grid.y0 + i * grid.pitch + (f.rowYOffset || 0);
+                            html += overlaySpan(f, y, printFieldValue(sheet, inst, lotId, key, f, dayDate));
+                        }
+                    } else {
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, inst, lotId, key, f, null));
+                    }
+                }
+                if (sheet.signature && (sheet.signature.page ?? 1) === pageNum) html += sigSvgHtml(sheet.signature, inst.signature);
+                if (strike && strike.line && pageNum === 1) {
+                    const L = strike.line;
+                    const fsIn = 10 / 72;
+                    html += `<svg class="ov-strike" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="${L.x1 * 100}" y1="${L.y1 * 100}" x2="${L.x2 * 100}" y2="${L.y2 * 100}"/></svg>`;
+                    html += `<span class="ov-strike-txt" style="left:${strike.initials.x * 100}%;top:${strike.initials.y * 100}%;font-size:${fsIn}in;">${escapeHtml(inst.strikeInitials || '')}</span>`;
+                    html += `<span class="ov-strike-date" style="left:${strike.date.x * 100}%;top:${strike.date.y * 100}%;font-size:${fsIn}in;">${fmtMMDD(inst.phaseChangeDate)}</span>`;
+                }
+                return html;
+            };
+
+            const pages = printDoc.pages.map((pg, i) => {
+                const n = i + 1;
+                return `<section class="pp-page" style="width:${W}in;height:${H}in;">
+                    <img src="${pg.url}" alt="" draggable="false">
+                    ${overlayFor(n)}
+                </section>`;
+            }).join('');
+
+            const title = `${sheet.name || sheetId} — ${lotId} · ${fmtMMDD(key)}`;
+            const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  .pp-toolbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #f3f4f6; border-bottom: 1px solid #d1d5db; }
+  .pp-toolbar .pp-title { font-size: 13px; font-weight: 700; color: #111827; }
+  .pp-print-btn { margin-left: auto; font-size: 14px; font-weight: 700; padding: 6px 16px; border: none; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+  .pp-print-btn:hover { background: #1d4ed8; }
+  .pp-page { position: relative; margin: 0 auto 14px; overflow: hidden; page-break-after: always; }
+  .pp-page img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .ov { position: absolute; margin: 0; line-height: 1.15; color: #000; overflow: hidden; word-break: break-word; }
+  .ov-cb { position: absolute; display: flex; align-items: center; justify-content: center; border: 1px solid #000; font-weight: 700; line-height: 1; color: #000; }
+  .ov-cb.on { font-size: 0.9em; }
+  .ov-sig { position: absolute; overflow: visible; }
+  .ov-sig polyline { fill: none; stroke: #000; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+  .ov-strike { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .ov-strike line { stroke: #b00020; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+  .ov-strike-txt, .ov-strike-date { position: absolute; transform: translate(-50%, -50%); color: #b00020; font-weight: 700; white-space: nowrap; }
+  @page { size: ${W}in ${H}in; margin: 0; }
+  @media print { .pp-toolbar { display: none; } .pp-page { margin: 0; } }
+</style></head>
+<body>
+  <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span><button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
+  ${pages}
+</body></html>`;
+
+            const win = window.open('', '_blank', 'width=1000,height=1200');
+            if (!win) { showToast('Popup blocked — allow popups to print'); return; }
+            win.document.open();
+            win.document.write(html);
+            win.document.close();
+            // Informational: record that this instance was rendered for print (re-print always allowed).
+            inst.printedAt = new Date().toISOString();
+            notifySitkaTools();
+        }
+
+        function renderCabinet() {
+            const panel = $('cabinetPanel');
+            if (!dbLoaded) {
+                panel.innerHTML = emptyStateHtml('🗄️', 'No database loaded',
+                    isStandalone
+                        ? 'Tap 📂 Load in the header to import a DB-YY-MM-DD.json file.'
+                        : 'Open PaperWizard from SitkaTools to receive the database.');
+                return;
+            }
+            if (!activeLotId) {
+                panel.innerHTML = emptyStateHtml('🗄️', 'No lots in database',
+                    'Create a lot in SitkaTools first — each lot gets its own filing cabinet.');
+                return;
+            }
+
+            const lot = DB.lots[activeLotId] || null; // orphaned (closed) lots still get a cabinet
+            const pw = DB.paperWizard;
+            const entries = pw.entries?.[activeLotId] || {};
+            const sections = {};
+            CAB_SECTIONS.forEach(s => { sections[s.key] = []; });
+
+            // Propagation — one expected instance per configured one-shot sheet.
+            for (const [sheetId, sheet] of Object.entries(pw.sheets || {})) {
+                if (sheet.cadence !== 'one-shot') continue;
+                const inst = entries[sheetId]?.instances?.['single'] || null;
+                sections.propagation.push(inst
+                    ? { html: cabLeafFill(escapeHtml(sheet.name || sheetId), instanceStatus(sheetId, 'single', inst), sheetId, 'single'), missing: false }
+                    : { html: cabLeafFill(escapeHtml(sheet.name || sheetId), { text: '⚠️ missing', cls: 'miss' }, sheetId, 'single'), missing: true });
+            }
+
+            // Room Cleans (pre-move-in) — reference nodes from other lots + cleans this lot logged.
+            const moveIn = moveInDates(activeLotId);
+            const roomByDate = new Map(); // roomName -> earliest move-in date across roles
+            if (lot) {
+                [['clone', lot.cloningRoom], ['veg', lot.vegRoom], ['grow', lot.destRoom]].forEach(([role, name]) => {
+                    if (!name) return;
+                    const d = moveIn[role];
+                    const prev = roomByDate.get(name);
+                    if (!prev || d < prev) roomByDate.set(name, d);
+                });
+            }
+            // (Orphaned lots have no room assignments, so no pre-move-in reference
+            // nodes — only cleans they logged themselves appear below.)
+            for (const [roomName, byDate] of [...roomByDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+                const clean = cleanBefore(roomName, byDate, activeLotId);
+                sections['room-clean'].push(clean
+                    ? { html: cabLeaf(`🧼 ${escapeHtml(roomName)} · ${fmtShort(clean.date)}`, { text: '✓ on file', cls: 'ok' }, { ref: true, from: clean.lotId, print: { lotId: clean.lotId, sheetId: clean.sheetId, key: clean.key } }), missing: false }
+                    : { html: cabLeaf(`🧼 ${escapeHtml(roomName)}`, { text: '⚠️ missing', cls: 'miss' }), missing: true });
+            }
+            for (const c of allRoomCleans().filter(c => c.lotId === activeLotId)) {
+                const sheet = pw.sheets[c.sheetId];
+                sections['room-clean'].push({
+                    html: cabLeafFill(`🧼 ${escapeHtml(c.roomName || sheet?.name || c.sheetId)} · ${fmtShort(c.key)}`,
+                        instanceStatus(c.sheetId, c.key, entries[c.sheetId].instances[c.key]), c.sheetId, c.key),
+                    missing: false
+                });
+            }
+
+            // Grow Logs — one node per daily-weekly instance, oldest first.
+            const grow = [];
+            for (const [sheetId, sheet] of Object.entries(pw.sheets).filter(([, s]) => s.cadence === 'daily-weekly')) {
+                const insts = entries[sheetId]?.instances || {};
+                const keys = Object.keys(insts).sort();
+                for (const key of keys) {
+                    grow.push({ key, html: cabLeafFill(
+                        `${fmtShort(key)}–${fmtShort(addDaysStr(key, 6))}${insts[key].phase ? ' · ' + escapeHtml(insts[key].phase) : ''}`,
+                        instanceStatus(sheetId, key, insts[key]), sheetId, key) });
+                }
+                // Rollover: when today is outside every existing window (or no instances
+                // exist yet), offer a fresh 7-day window starting today — the first entry
+                // saved in it creates the new instance.
+                const inWindow = keys.some(k => k <= todayStr() && todayStr() <= addDaysStr(k, 6));
+                if (!inWindow) {
+                    grow.push({ key: 'new', html: cabLeafFill(
+                        `📅 Start new week · ${escapeHtml(sheet.name || sheetId)}`,
+                        { text: '⏳ due', cls: 'due' }, sheetId, todayStr()) });
+                }
+            }
+            grow.sort((a, b) => a.key.localeCompare(b.key));
+            sections['grow-log'] = grow.map(g => ({ html: g.html, missing: false }));
+
+            // IPM / Harvest / Other — event instances (room cleans handled above).
+            for (const [sheetId, sd] of Object.entries(entries)) {
+                const sheet = pw.sheets[sheetId];
+                if (!sheet || sheet.cadence !== 'event') continue;
+                const sec = sheetSection(sheetId);
+                if (sec === 'room-clean' || !sections[sec]) continue;
+                for (const [key, inst] of Object.entries(sd.instances || {})) {
+                    sections[sec].push({ html: cabLeafFill(`${escapeHtml(sheet.name || sheetId)} · ${fmtShort(key)}`, instanceStatus(sheetId, key, inst), sheetId, key), missing: false });
+                }
+            }
+
+            // Cabinet header + collapsible sections. The 'other' fallback bucket
+            // only renders when it actually holds something.
+            let totalDocs = 0, totalMissing = 0;
+            const sectionHtml = CAB_SECTIONS.filter(sec => sec.key !== 'other' || sections[sec.key].length > 0).map(sec => {
+                const leaves = sections[sec.key];
+                const missing = leaves.filter(l => l.missing).length;
+                totalDocs += leaves.length;
+                totalMissing += missing;
+                const countTxt = leaves.length
+                    ? `${leaves.length} doc${leaves.length === 1 ? '' : 's'}${missing ? ` · <span class="cab-miss">⚠️ ${missing} missing</span>` : ''}`
+                    : 'empty';
+                const body = leaves.length
+                    ? leaves.map(l => l.html).join('')
+                    : `<div class="cab-leaf" style="opacity:.5; justify-content:center;">— none yet</div>`;
+                return `<details class="cab-section"${leaves.length ? ' open' : ''}>
+                    <summary>${sec.icon} ${sec.label}<span class="cab-count">${countTxt}</span></summary>
+                    <div class="cab-body">${body}</div>
+                </details>`;
+            }).join('');
+
+            const strain = lot?.strain ? ` ${escapeHtml(lot.strain)}` : '';
+            // Print-document status chip: which sheet's page set is loaded this session.
+            const printDocChip = printDoc
+                ? `<span class="cab-printdoc" title="Page set loaded for the print popup">📄 ${escapeHtml(printDoc.sheetId)} · ${printDoc.pages.length}p</span>`
+                : `<span class="cab-printdoc none" title="No page set loaded — print buttons stay locked">📄 no document</span>`;
+            panel.innerHTML = `
+                <div class="cab-head">🗄️ ${escapeHtml(activeLotId)}${strain} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}${totalMissing ? ` · <span style="color:var(--warning)">⚠️ ${totalMissing} missing</span>` : ''}${lot ? '' : '<div class="cab-sub">Lot no longer in database — history kept for reference.</div>'}</div>
+                <div class="cab-toolbar">
+                    <button type="button" class="cab-loaddoc" id="cabLoadDocBtn">📂 Load document</button>
+                    ${printDocChip}
+                </div>
+                ${Object.keys(pw.sheets || {}).length === 0 ? '<div class="cab-hint">No sheets configured yet — load a document and configure it in the <b>Configure Sheets</b> tab.</div>' : ''}
+                ${sectionHtml}`;
+
+            // Fill buttons open the wizard runner for that instance.
+            panel.querySelectorAll('[data-fill]').forEach(el => {
+                el.querySelector('.cab-fill').addEventListener('click', () =>
+                    openRunner(activeLotId, el.dataset.sheet, el.dataset.key));
+            });
+            // Print buttons open the print popup (only enabled when complete + doc loaded).
+            panel.querySelectorAll('[data-print]').forEach(btn => {
+                btn.addEventListener('click', () =>
+                    openPrintPopup(btn.dataset.plot, btn.dataset.sheet, btn.dataset.key));
+            });
+            // "Load document" picker — the file base name names the sheet (wrong-revision guard).
+            $('cabLoadDocBtn').addEventListener('click', () => $('printImportInput').click());
+        }
+
+        let configureRenderKey = '';
+        function configureKey() {
+            return [dbLoaded, configSheetId, cfgName, cfgCadence].join('|');
+        }
+
+        function renderConfigure() {
+            const panel = $('configurePanel');
+            // Idempotent: skip the rebuild (and page image reload) when nothing changed.
+            const key = configureKey();
+            if (key === configureRenderKey && panel.hasChildNodes()) return;
+            configureRenderKey = key;
+
+            if (!dbLoaded) {
+                panel.innerHTML = emptyStateHtml('📄', 'No database loaded',
+                    isStandalone
+                        ? 'Tap 📂 Load in the header to import a DB-YY-MM-DD.json file.'
+                        : 'Open PaperWizard from SitkaTools to receive the database.');
+                return;
+            }
+
+            const loaded = !!loadedDoc;
+            // Non-auto-filled fields not yet claimed by a wizard question.
+            const unboundCount = cfgFields.filter(f => !f.source && !findQuestionForField(f.id)).length;
+            panel.innerHTML = `
+                <div class="cfg-toolbar">
+                    <button type="button" class="btn btn-primary" id="loadDocBtn">⬆️ Load document</button>
+                    <div class="form-group">
+                        <label for="pageWidthIn">Width (in)</label>
+                        <input type="number" id="pageWidthIn" min="1" max="40" step="0.25" value="${cfgWidthIn}">
+                    </div>
+                    <div class="form-group">
+                        <label for="pageHeightIn">Height (in)</label>
+                        <input type="number" id="pageHeightIn" min="1" max="40" step="0.25" value="${cfgHeightIn}">
+                    </div>
+                    ${loaded ? `<span class="file-chip" id="docChip">📄 ${escapeHtml(loadedDoc.name)} · ${cfgPageCount} page${cfgPageCount > 1 ? 's' : ''} · ${cfgWidthIn} × ${cfgHeightIn} in</span>` : ''}
+                    ${loaded ? `<div class="zoom-ctl" title="Zoom the pages (or Ctrl/⌘ + scroll)">
+                        <button type="button" id="zoomOutBtn" title="Zoom out">−</button>
+                        <span id="zoomPct">100%</span>
+                        <button type="button" id="zoomInBtn" title="Zoom in">+</button>
+                        <button type="button" id="zoomFitBtn" title="Fit to width">⤢</button>
+                    </div>` : ''}
+                </div>
+                <div class="cfg-grid">
+                    <div class="page-stage" id="pageStage">
+                        ${loaded
+                            ? `<div class="page-stack">${Array.from({ length: cfgPageCount }, (_, i) => {
+                                const n = i + 1;
+                                const pg = loadedDoc.pages[n - 1];
+                                return `<div>
+                                    ${cfgPageCount > 1 ? `<div class="page-label">Page ${n} of ${cfgPageCount}</div>` : ''}
+                                    <div class="form-page" data-page="${n}" style="aspect-ratio:${pg.wPx} / ${pg.hPx};"><img src="${pg.url}" alt="" draggable="false">${pageBoxesHtml(n)}</div>
+                                </div>`;
+                            }).join('')}</div>`
+                            : emptyStateHtml('📄', 'No document loaded',
+                                'Tap ⬆️ Load document to pick the controlled form pages (PNG/JPG, named <base>-p1.png, -p2.png…). Held in memory only — never stored (the Golden Rule). The base name becomes the sheet id.')}
+                    </div>
+                    <div class="cfg-side">
+                        <div class="card">
+                            <div class="card-title">Sheet</div>
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label for="sheetNameInput">Name</label>
+                                <input type="text" id="sheetNameInput" value="${escapeHtml(cfgName)}" placeholder="e.g., Weekly Grow-Log">
+                            </div>
+                            <div class="form-group">
+                                <label for="cadenceSelect">Cadence</label>
+                                <select id="cadenceSelect">
+                                    <option value="one-shot"${cfgCadence === 'one-shot' ? ' selected' : ''}>one-shot — one instance per lot</option>
+                                    <option value="daily-weekly"${cfgCadence === 'daily-weekly' ? ' selected' : ''}>daily-weekly — rolling 7-day windows</option>
+                                    <option value="event"${cfgCadence === 'event' ? ' selected' : ''}>event — one instance per event date</option>
+                                </select>
+                            </div>
+                            <div id="rowGridWrap" style="display:${cfgCadence === 'daily-weekly' ? '' : 'none'}; margin-top:10px;">
+                                <label style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);">Day-row grid (page 1)</label>
+                                <div class="fp-grid" style="margin-top:6px;">
+                                    <div class="form-group"><label for="rowY0">Row top (y₀)</label><input type="number" id="rowY0" min="0" max="1" step="0.005" value="${cfgRowY0}"></div>
+                                    <div class="form-group"><label for="rowPitch">Pitch</label><input type="number" id="rowPitch" min="0.005" max="0.2" step="0.005" value="${cfgRowPitch}"></div>
+                                </div>
+                                <div class="form-group"><label for="rowCount">Rows</label><input type="number" id="rowCount" min="1" max="14" step="1" value="${cfgRowCount}"></div>
+                                <p class="cfg-hint">Day-row fields clone down this grid — day <i>n</i> sits at y₀ + (n−1)·pitch. Set it to match the form's table rows.</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary" id="addSigBtn" style="width:100%; margin-top:12px; min-height:42px;">✍️ Add signature box</button>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Field properties</div>
+                            ${fieldPropertiesPanelHtml()}
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Wizard builder</div>
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label for="wizNameInput">Wizard name</label>
+                                <input type="text" id="wizNameInput" value="${escapeHtml(cfgWizard?.name || '')}" placeholder="e.g., Grow-Log Daily Entry">
+                            </div>
+                            <p class="cfg-hint" style="margin-bottom:10px;">Ordered questions that fill this sheet's non-auto-filled fields. ${unboundCount} field(s) still waiting for a question.</p>
+                            <button type="button" class="btn btn-secondary" id="addQuestionBtn" style="width:100%; min-height:40px;">＋ Add question</button>
+                            <div class="q-list" id="wizBody" style="margin-top:12px;"></div>
+                        </div>
+                        <div class="save-row">
+                            <button type="button" class="btn btn-primary" id="saveSheetBtn"${loaded ? '' : ' disabled'} title="Save the sheet + wizard to the database">💾 Save sheet</button>
+                            <button type="button" class="btn btn-danger" id="deleteSheetBtn"${loaded ? '' : ' disabled'}>🗑 Delete sheet</button>
+                        </div>
+                    </div>
+                </div>`;
+
+            $('loadDocBtn').addEventListener('click', () => $('pageImportInput').click());
+            $('sheetNameInput').addEventListener('change', () => { cfgName = $('sheetNameInput').value.trim(); });
+            $('cadenceSelect').addEventListener('change', () => {
+                cfgCadence = $('cadenceSelect').value;
+                const rgw = $('rowGridWrap'); if (rgw) rgw.style.display = cfgCadence === 'daily-weekly' ? '' : 'none';
+            });
+            // Day-row grid (daily-weekly sheets): explicit y₀/pitch/rows for the 7-day table.
+            const rowNum = (id, apply) => { const el = $(id); if (!el) return; el.addEventListener('change', () => { const v = parseFloat(el.value); if (!isNaN(v)) apply(v); }); };
+            rowNum('#rowY0', v => { cfgRowY0 = Math.max(0, Math.min(1, v)); });
+            rowNum('#rowPitch', v => { cfgRowPitch = Math.max(0.005, Math.min(0.2, v)); });
+            rowNum('#rowCount', v => { cfgRowCount = Math.max(1, Math.min(14, Math.round(v))); });
+            $('addSigBtn').addEventListener('click', addSignatureBox);
+
+            // Wizard builder (Step 4)
+            refreshWizardBuilder();
+            $('wizNameInput').addEventListener('change', () => { if (cfgWizard) cfgWizard.name = $('wizNameInput').value.trim(); });
+            $('addQuestionBtn').addEventListener('click', addCfgQuestion);
+            $('saveSheetBtn').addEventListener('click', saveSheet);
+            $('deleteSheetBtn').addEventListener('click', deleteSheet);
+
+            if (loaded) {
+                attachBoxEditor($('pageStage'));
+                wireFieldProperties();
+                $('zoomInBtn').addEventListener('click', () => setZoom(cfgZoom + 0.25));
+                $('zoomOutBtn').addEventListener('click', () => setZoom(cfgZoom - 0.25));
+                $('zoomFitBtn').addEventListener('click', () => setZoom(1));
+                const stage = $('pageStage');
+                stage.addEventListener('wheel', (e) => {
+                    if (!(e.ctrlKey || e.metaKey)) return;   // plain scroll still scrolls the page
+                    e.preventDefault();
+                    setZoom(cfgZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+                }, { passive: false });
+                requestAnimationFrame(updateFitWidth);
+                applyZoom();
+            }
+        }
+
+        // ---- Wizard builder (Step 4) ----
+        function addCfgQuestion() {
+            if (!cfgWizard) return;
+            const q = { id: generateFieldId(), label: `Question ${cfgWizard.questions.length + 1}`, type: 'text', options: [], targetFieldId: null, rowScoped: false, sameAsLast: false, writesTo: null, prefillFrom: null };
+            cfgWizard.questions.push(q);
+            cfgQuestionSel = q.id;
+            refreshWizardBuilder();
+        }
+
+        function questionCardHtml(q, i) {
+            const n = cfgWizard.questions.length;
+            const fieldOpts = `<option value="">— none (notes only) —</option>` +
+                cfgFields.map(f => `<option value="${f.id}"${q.targetFieldId === f.id ? ' selected' : ''}>${escapeHtml(f.label || f.id)} (${f.id})</option>`).join('');
+            const prefillOpts = `<option value="">— none —</option>` +
+                BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
+            const writesOpts = `<option value="">— none —</option>` +
+                [['lot.plantCount', 'lot.plantCount — plant count'], ['lot.stage', 'lot.stage — phase']]
+                    .map(([v, l]) => `<option value="${v}"${q.writesTo === v ? ' selected' : ''}>${l}</option>`).join('');
+            return `
+                <div class="q-card" data-qid="${q.id}">
+                    <div class="q-head">
+                        <span class="q-num">Q${i + 1}</span>
+                        <span class="q-id">${escapeHtml(q.id)}</span>
+                        <span class="q-spacer"></span>
+                        <button type="button" class="q-btn q-up" title="Move up"${i === 0 ? ' disabled' : ''}>↑</button>
+                        <button type="button" class="q-btn q-down" title="Move down"${i === n - 1 ? ' disabled' : ''}>↓</button>
+                        <button type="button" class="q-btn q-del" title="Delete question">🗑</button>
+                    </div>
+                    <div class="q-controls">
+                        <div class="form-group q-full"><label>Label</label><input type="text" class="q-label" value="${escapeHtml(q.label)}" placeholder="e.g., Temp high (°C)?"></div>
+                        <div class="form-group"><label>Type</label><select class="q-type">
+                            <option value="text"${q.type === 'text' ? ' selected' : ''}>text</option>
+                            <option value="number"${q.type === 'number' ? ' selected' : ''}>number</option>
+                            <option value="select"${q.type === 'select' ? ' selected' : ''}>select</option>
+                        </select></div>
+                        <div class="form-group"><label>Fills field</label><select class="q-target">${fieldOpts}</select></div>
+                        ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
+                        <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
+                        <div class="form-group"><label>Writes back to</label><select class="q-writes">${writesOpts}</select></div>
+                    </div>
+                    <div class="q-checks">
+                        <label class="q-check"><input type="checkbox" class="q-row"${q.rowScoped ? ' checked' : ''}> Row-scoped (per day)</label>
+                        <label class="q-check"><input type="checkbox" class="q-same"${q.sameAsLast ? ' checked' : ''}> ⏪ Same-as-last offered</label>
+                    </div>
+                </div>`;
+        }
+
+        // Light refresh: re-render only the question list (never the page images).
+        function refreshWizardBuilder() {
+            const body = $('wizBody');
+            if (!body || !cfgWizard) return;
+            body.innerHTML = cfgWizard.questions.length
+                ? cfgWizard.questions.map((q, i) => questionCardHtml(q, i)).join('')
+                : '<p class="cfg-hint">No questions yet — add the first one above.</p>';
+            wireWizardBuilder();
+        }
+
+        function wireWizardBuilder() {
+            document.querySelectorAll('#wizBody .q-card').forEach(card => {
+                const q = cfgWizard.questions.find(x => x.id === card.dataset.qid);
+                if (!q) return;
+                card.querySelector('.q-label').addEventListener('change', () => { q.label = card.querySelector('.q-label').value.trim(); refreshCfgOverlays(); });
+                card.querySelector('.q-type').addEventListener('change', () => { q.type = card.querySelector('.q-type').value; refreshWizardBuilder(); });
+                const optsEl = card.querySelector('.q-options');
+                if (optsEl) optsEl.addEventListener('change', () => {
+                    q.options = optsEl.value.split(/\n|,/).map(s => s.trim()).filter(Boolean);
+                    refreshCfgOverlays();
+                });
+                card.querySelector('.q-target').addEventListener('change', () => {
+                    const fid = card.querySelector('.q-target').value || null;
+                    // Release the field this question previously filled.
+                    if (q.targetFieldId && q.targetFieldId !== fid) {
+                        const prev = cfgFields.find(x => x.id === q.targetFieldId);
+                        if (prev && prev.questionId === q.id) prev.questionId = null;
+                    }
+                    // One question per field: release the field from any other question first.
+                    if (fid) {
+                        const other = cfgWizard.questions.find(x => x.id !== q.id && x.targetFieldId === fid);
+                        if (other) other.targetFieldId = null;
+                    }
+                    q.targetFieldId = fid;
+                    const f = cfgFields.find(x => x.id === fid);
+                    if (f) f.questionId = q.id;
+                    refreshCfgOverlays();
+                    refreshWizardBuilder();
+                });
+                card.querySelector('.q-prefill').addEventListener('change', () => { q.prefillFrom = card.querySelector('.q-prefill').value || null; refreshCfgOverlays(); });
+                card.querySelector('.q-writes').addEventListener('change', () => { q.writesTo = card.querySelector('.q-writes').value || null; refreshCfgOverlays(); });
+                card.querySelector('.q-row').addEventListener('change', () => { q.rowScoped = card.querySelector('.q-row').checked; refreshCfgOverlays(); });
+                card.querySelector('.q-same').addEventListener('change', () => { q.sameAsLast = card.querySelector('.q-same').checked; refreshCfgOverlays(); });
+                const up = card.querySelector('.q-up');
+                if (up && !up.disabled) up.addEventListener('click', () => {
+                    const i = cfgWizard.questions.indexOf(q);
+                    [cfgWizard.questions[i - 1], cfgWizard.questions[i]] = [cfgWizard.questions[i], cfgWizard.questions[i - 1]];
+                    refreshWizardBuilder();
+                });
+                const down = card.querySelector('.q-down');
+                if (down && !down.disabled) down.addEventListener('click', () => {
+                    const i = cfgWizard.questions.indexOf(q);
+                    [cfgWizard.questions[i + 1], cfgWizard.questions[i]] = [cfgWizard.questions[i], cfgWizard.questions[i + 1]];
+                    refreshWizardBuilder();
+                });
+                card.querySelector('.q-del').addEventListener('click', () => {
+                    const f = cfgFields.find(x => x.questionId === q.id);
+                    if (f) f.questionId = null;
+                    cfgWizard.questions = cfgWizard.questions.filter(x => x.id !== q.id);
+                    if (cfgQuestionSel === q.id) cfgQuestionSel = null;
+                    refreshCfgOverlays();
+                    refreshWizardBuilder();
+                });
+            });
+        }
+
+        // ---- Save / delete sheet (Step 4) ----
+        function saveSheet() {
+            if (!configSheetId || !loadedDoc) { showToast('Load the form pages first'); return; }
+            if (!cfgName.trim()) { alert('Give the sheet a name before saving.'); $('sheetNameInput')?.focus(); return; }
+            if (!cfgWizard || !cfgWizard.questions.length) { alert('Add at least one wizard question before saving.'); return; }
+            for (const q of cfgWizard.questions) {
+                if (!q.label.trim()) { alert(`Question ${q.id} needs a label.`); return; }
+                if (q.type === 'select' && !(q.options || []).length) { alert(`"${q.label}" is a select question but has no options.`); return; }
+            }
+            const pw = DB.paperWizard;
+            pw.sheets[configSheetId] = {
+                name: cfgName.trim(),
+                orientation,
+                pageWidthIn: cfgWidthIn,
+                pageHeightIn: cfgHeightIn,
+                pageCount: cfgPageCount,
+                cadence: cfgCadence,
+                rowGrid: cfgCadence === 'daily-weekly' ? { y0: cfgRowY0, pitch: cfgRowPitch, count: cfgRowCount } : null,
+                fields: cfgFields.map(f => ({ ...f })),
+                signature: cfgSignature ? { ...cfgSignature } : null
+            };
+            pw.wizards[cfgWizard.id] = {
+                sheetId: configSheetId,
+                name: cfgWizard.name.trim() || cfgName.trim(),
+                questions: cfgWizard.questions.map(q => ({ ...q, options: [...(q.options || [])] }))
+            };
+            notifySitkaTools();
+            showToast(`Saved sheet "${configSheetId}" (${cfgWizard.questions.length} question${cfgWizard.questions.length > 1 ? 's' : ''})`);
+        }
+
+        function deleteSheet() {
+            if (!configSheetId) return;
+            const s = DB.paperWizard.sheets[configSheetId];
+            const wizCount = Object.values(DB.paperWizard.wizards).filter(w => w.sheetId === configSheetId).length;
+            const what = s ? `sheet "${s.name}"` : `"${configSheetId}"`;
+            if (!confirm(`Delete ${wizCount ? what + ' and its wizard(s)' : what}? This cannot be undone.`)) return;
+            delete DB.paperWizard.sheets[configSheetId];
+            Object.keys(DB.paperWizard.wizards).forEach(id => {
+                if (DB.paperWizard.wizards[id].sheetId === configSheetId) delete DB.paperWizard.wizards[id];
+            });
+            // Reset the working copies to a fresh configuration for this base name.
+            cfgName = configSheetId;
+            cfgCadence = 'one-shot';
+            cfgWidthIn = 8.5;
+            cfgHeightIn = 11;
+            cfgRowY0 = 0.27;
+            cfgRowPitch = 0.095;
+            cfgRowCount = 7;
+            cfgFields = [];
+            cfgSignature = null;
+            cfgSelection = null;
+            cfgWizard = { id: generateFieldId(), sheetId: configSheetId, name: cfgName + ' Wizard', questions: [] };
+            cfgQuestionSel = null;
+            notifySitkaTools();
+            renderConfigure();
+            showToast(`Deleted ${what}`);
+        }
+
+        // Keep fit-to-width current as the window resizes.
+        window.addEventListener('resize', updateFitWidth);
+
+        // Delete/Backspace removes the selected box (unless typing in a control).
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && cfgSelection) {
+                const t = e.target;
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+                e.preventDefault();
+                deleteSelectedCfgItem();
+            }
+        });
+
+        function renderAll() {
+            populateLotSelector();
+            updateStatusBar();
+            renderCabinet();
+            renderConfigure(); // idempotent — skips rebuild when nothing changed
+        }
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
@@ -167,18 +2964,130 @@
         }
 
         window.addEventListener('message', (e) => {
+            // Initial DB delivery from SitkaTools
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
+                dbLoaded = true;
 
+                // Acknowledge receipt so SitkaTools stops retrying
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
                 }
+
+                renderAll();
+                showToast('Database loaded from SitkaTools');
+            }
+
+            // Live DB updates pushed by SitkaTools — refresh non-disruptively.
+            // (Later steps: an open wizard runner keeps its in-progress answers.)
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                dbLoaded = true;
+                renderAll();
             }
         });
 
-        // ---- Close Tool ----
-        $('closeToolBtn').addEventListener('click', () => window.close());
+        // ---- Standalone: Load DB from file ----
+        function handleDbImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    DB.data = parsed;
+                    DB.fileName = file.name;
+                    DB.ensureStructure();
+                    dbLoaded = true;
+                    renderAll();
+                    showToast('Database imported successfully');
+                } catch (err) {
+                    alert('Failed to parse JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            // Reset so the same file can be imported again
+            e.target.value = '';
+        }
+
+        // ---- Standalone: Export DB as downloadable JSON file ----
+        function handleDbExport() {
+            if (!DB.data) {
+                showToast('No database to export');
+                return;
+            }
+            DB.sync();
+            const json = JSON.stringify(DB.data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `DB-${yy}-${mm}-${dd}.json`;
+
+            // Use Web Share API where available (fixes iOS Safari blob URL issue)
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename })
+                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
+                    .catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('Database saved — import it in SitkaTools to sync');
+            }
+        }
+
+        // ---- Init ----
+        function init() {
+            if (isStandalone) {
+                $('loadDbBtn').style.display = '';
+                $('exportDbBtn').style.display = '';
+            }
+
+            $('dbImportInput').addEventListener('change', handleDbImport);
+            $('pageImportInput').addEventListener('change', handlePageImport);
+            // Print-document picker (Filing Cabinet): base name names the sheet.
+            $('printImportInput').addEventListener('change', e => {
+                const files = Array.from(e.target.files || []); // copy — input.files is a live FileList, cleared by the reset below
+                e.target.value = ''; // allow re-picking the same file
+                if (!files.length) return;
+                loadPrintDocument(files);
+            });
+            $('loadDbBtn').addEventListener('click', () => $('dbImportInput').click());
+            $('exportDbBtn').addEventListener('click', handleDbExport);
+
+            $('tabCabinetBtn').addEventListener('click', () => switchTab('cabinet'));
+            $('tabConfigureBtn').addEventListener('click', () => switchTab('configure'));
+
+            $('lotSelect').addEventListener('change', () => {
+                activeLotId = $('lotSelect').value || null;
+                renderAll();
+            });
+
+            // ---- Close Tool ----
+            $('closeToolBtn').addEventListener('click', () => window.close());
+
+            // Page-image blob lifecycle: revoke both the Configure doc and the print doc on close.
+            window.addEventListener('beforeunload', () => {
+                revokeLoadedDoc();
+                revokePrintDoc();
+            });
+
+            renderAll();
+        }
+
+        init();
     </script>
 </body>
 </html>
