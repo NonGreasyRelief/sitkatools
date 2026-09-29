@@ -1881,14 +1881,17 @@
             return dateToStr(d);
         }
 
-        // 🖨️ Print button for a leaf (Step 10). Always rendered; disabled with a tooltip
-        // listing exactly what's missing until the instance is complete AND a matching
-        // page set is loaded this session (spec: "Print is locked … document not loaded").
+        // 🖨️ Print button for a leaf (Step 10). Always rendered and always clickable once an
+        // entry exists and the matching page set is loaded this session — incomplete instances
+        // print too (unanswered fields show N/A / empty boxes). The tooltip still lists what's
+        // missing so the user knows the copy isn't final; only "no entry yet" or "document not
+        // loaded" actually disable the button.
         function printButtonHtml({ lotId, sheetId, key }) {
             const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
             const blockers = printBlockers(sheetId, key, inst);
-            const disabled = blockers.length > 0;
-            const title = disabled ? `Print locked — ${blockers.join(' · ')}` : 'Open print popup';
+            // Hard locks only: nothing to print yet, or no page set for this sheet this session.
+            const disabled = !inst || (blockers.length > 0 && /not loaded/.test(blockers[0]));
+            const title = blockers.length ? `Print — ${blockers.join(' · ')}` : 'Open print popup';
             return `<button type="button" class="cab-print" data-print="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}"${disabled ? ' disabled' : ''} title="${escapeHtml(title)}">🖨️ Print</button>`;
         }
 

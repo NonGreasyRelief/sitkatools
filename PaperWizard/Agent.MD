@@ -30,7 +30,7 @@ A naming or completeness mismatch means the wrong form revision is being used �
 ### Intended Use
 
 - **Daily (floor staff, tablet or desktop):** open PaperWizard — the active lot's filing cabinet is already on screen. Tap the leaf that needs today's entry (e.g. "Grow-Log — Sep 21–27: 4/7 days"), answer a handful of questions (with **"⏪ Same as last time"** pre-filling most of them from yesterday), sign if required, done in under a minute.
-- **Weekly / on completion (manager):** when a sheet's instance is complete (e.g. all 7 grow-log days filled), its **🖨️ Print** button enables. Clicking it opens the "Load document" picker; after the matching page set is loaded, a popup window shows each page image with all text overlaid in place plus a print button. The user hits print and files the paper.
+- **Weekly / on completion (manager):** the grow-log's **🖨️ Print** button is available at all times — as soon as an entry exists and the matching page set is loaded this session, clicking it opens a popup window showing each page image with all text overlaid in place plus a print button. An incomplete instance prints too (unanswered fields show N/A / empty boxes); the button's tooltip lists what's still missing so the user knows the copy isn't final. The user hits print and files the paper.
 - **Setup (manager, once per form):** in Configure Sheets, export the controlled form's pages as PNG/JPG (`<base>-pN.png`), load them, drag boxes over every fill-in spot, bind header boxes to lot keys (strain, lot #, dates…), drop a signature box, then build the wizard's question list. Save — the sheet is live for every lot.
 
 ### What This Tool Is NOT
@@ -105,7 +105,7 @@ A sheet may have signature boxes (`signature`: normalized `x/y/w/h` + optional l
 2. Capture uses pointer events; each stroke is stored as an array of `[x, y]` points **normalized 0–1 within the signature box**. No image is generated or stored — strokes are pure vector data (small: a few dozen points per stroke).
 3. At print time the popup renders the strokes as an inline **SVG polyline** positioned over the page image at the box location, scaled to the box's rendered size. The signer's typed name is *not* printed unless a field is bound to it — the stroke is the signature.
 
-Re-signing replaces the stored strokes. A completed instance without a signature (when the sheet defines one) cannot be printed.
+Re-signing replaces the stored strokes. An instance without a signature (when the sheet defines one) can still be printed — the signature box simply prints empty and the Print tooltip notes "signature missing".
 
 ### Wizard
 
@@ -151,7 +151,7 @@ An instance stores:
 | `header` | map `questionId → value` | Instance-level (non-row) answers. |
 | `days` | map `YYYY-MM-DD → { questionId → value }` | Per-day answers for row-scoped questions. |
 | `phaseChangeDate` | `YYYY-MM-DD` \| null | Set when the lot moved to a new phase mid-window (see "Phase Change"). Rows after this date are struck through at render time and no longer require entries. |
-| `strikeInitials` | string \| null | Initials captured when the early end was confirmed — printed **above** the strike line (the date prints below it). Required before a struck-through instance can complete/print. |
+| `strikeInitials` | string \| null | Initials captured when the early end was confirmed — printed **above** the strike line (the date prints below it). Required for the instance to *complete*; without them a struck-through instance can still be printed, but the strike line simply doesn't render. |
 | `snapshots` | map `binding → value` | Save-time binding values (see "Auto-Fill Bindings"). Captured at instance creation and refreshed on every entry save; this — not the live DB — is what prints. |
 | `signature` | `{ name, strokes: [[x,y,…], …] } \| null` | Captured signature (normalized points). |
 | `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
@@ -225,7 +225,7 @@ Because bindings snapshot at save time (see "Auto-Fill Bindings"), a one-shot sh
 
 ### Completion Rules
 
-- **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question, and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — the "7 days before being completed for printing" rule — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. The 🖨️ Print button stays disabled until then, showing progress (`4/7 days`, or `3/5 · phase change Sep 24`).
+- **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question, and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. Completion drives the leaf's status chip (`✓ complete`, `4/7 days`, `3/5 · phase change Sep 24`) and the Print tooltip — **not** the button: 🖨️ Print is clickable whenever an entry exists and the page set is loaded, so a partial week can be printed on demand (missing fields print N/A).
 - **`one-shot`:** complete when all instance-level questions are answered (+ signature if defined).
 - **`event`:** complete when its questions are answered (+ signature if defined) — each event is a self-contained sheet.
 
@@ -243,7 +243,7 @@ Completion is re-evaluated after every save; it is never stored as a flag, only 
 
 ## Print Popup
 
-When Print is activated (instance complete + matching page set loaded):
+When Print is clicked (entry exists + matching page set loaded — the instance does **not** need to be complete):
 
 1. The tool builds a **self-contained HTML document** for the popup: one section per page, each page image rendered at its physical size (inches), every field's resolved text absolutely positioned over it (normalized coords → % of the page container), the signature as an inline SVG polyline, and a single **🖨️ Print** button in a slim toolbar. Pages are separated by `page-break-after: always`.
 2. The popup opens via `window.open()`; the page images' blob URLs are transferred to it (or re-created from the `File`s) so the popup owns its own rendering — the opener can be closed without breaking the print view.
@@ -429,7 +429,7 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 ```
 
 - **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right (lot-focused tool). The lot selector is disabled/hidden in Configure Sheets (configuration is lot-independent).
-- **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — five sections (Propagation, Room Cleans, Grow Logs, IPM Log, Harvest), one leaf per instance with its status and the two actions inline. Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is locked (with a tooltip explaining what's missing: days remaining / signature / strike initials / document not loaded) until the completion rule is met.
+- **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — five sections (Propagation, Room Cleans, Grow Logs, IPM Log, Harvest), one leaf per instance with its status and the two actions inline. Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
 - **Configure Sheets tab:** left = page image preview canvas (boxes are click-drag to create, drag to move, corner handles to resize; the signature box is a distinct style); right = properties panel for the selected box + the wizard builder below it. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
 - **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`, and the signature pad as the final step when the sheet defines one.
 
