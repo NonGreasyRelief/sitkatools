@@ -53,6 +53,7 @@ A **sheet** is one configured controlled form. Its id **is the expected page-ima
 | `pageWidthIn` / `pageHeightIn` | number | Page size in inches (default Letter 8.5 × 11). Needed to convert point-based font sizes to overlay pixels for print. Entered manually at configure time (the images supply the aspect ratio, not the physical size). |
 | `pageCount` | number | Number of pages in the form (= number of page images loaded at configure time). |
 | `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` | How sheet *instances* are formed (see "Entry & Instance"). Grow-log = `daily-weekly`; propagation worksheet = `one-shot`; room-clean / IPM / harvest = `event`. |
+| `rowGrid` | `{ y0, pitch, count }` \| null | Daily-weekly sheets only. `pitch` = vertical spacing between consecutive day rows (normalized); `count` = number of day rows (7). Row fields clone from their *own* placed position by this pitch (see "Day rows") — `y0` is kept for reference but the per-field `y` is what anchors each column. |
 | `fields[]` | array | Text boxes (below). |
 | `signature` | object \| null | Signature box geometry + config (below). |
 
@@ -70,9 +71,8 @@ Each field is a rectangle placed over a page image in the Configure tab:
 | `align` | `'left' \| 'center' \| 'right'` | Horizontal text alignment inside the box. |
 | `source` | string \| null | Auto-fill binding (below). `null` means the field is filled by a wizard question instead. |
 | `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field. A day-row field on a weekly sheet receives *that day's* answer to the question. |
-| `rowYOffset` | number (default 0) | Extra vertical offset **within** a day-row, normalized to page height. Lets several fields stack inside one row (e.g. the grow-log's four monitoring checkboxes in a single cell). Added to the cloned row's `y` at render time; ignored for non-row fields. |
 
-**Day rows:** a weekly sheet's main section has one row per day (7 rows for the grow-log). The Configure tab marks which fields are **row fields** (`row: true` + `rowIndexOffset`) — at render time the tool clones the row field geometry 7×, stepping `y` by the row pitch, and fills each clone with the corresponding day's answer. A row field may also carry a `rowYOffset` so multiple fields stack vertically inside the same row (the grow-log's "Daily crop monitoring" cell holds four checkboxes, one per question). The header section is made of non-row fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
+**Day rows:** a weekly sheet's main section has one row per day (7 rows for the grow-log). The Configure tab marks which fields are **row fields** (`row: true`). Each row field is placed over the form's **first** day row, and at render time the tool clones it 7× straight down from its *own* placed position — day *n* prints at `field.y + (n−1)·pitch` — filling each clone with that day's answer. Cloning per-field (not onto one shared grid line) is what lets several fields stack inside a single row at different heights (the grow-log's "Daily crop monitoring" cell holds four checkboxes, one per question). The editor shows dashed **ghost clones** of every row field so you see exactly where days 2–N will print. The header section is made of non-row fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
 
 ### Auto-Fill Bindings
 

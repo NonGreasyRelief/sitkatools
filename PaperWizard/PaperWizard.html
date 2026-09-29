@@ -396,6 +396,15 @@
 
         .field-box.sig.selected { background: rgba(243, 156, 18, 0.22); }
 
+        /* Ghost clones of a day-row field — preview where days 2..N will print.
+           Non-interactive so they never intercept box create/move/resize drags. */
+        .field-box.ghost {
+            pointer-events: none;
+            opacity: 0.35;
+            border-style: dashed;
+            background: transparent;
+        }
+
         .field-box .box-label {
             position: absolute;
             top: -9px;
@@ -1200,7 +1209,19 @@
 
         function pageBoxesHtml(pageNum) {
             let html = '';
-            for (const f of cfgFields) if ((f.page ?? 1) === pageNum) html += boxOverlayHtml('field', f);
+            for (const f of cfgFields) if ((f.page ?? 1) === pageNum) {
+                html += boxOverlayHtml('field', f);
+                // Ghost clones: preview where this row field lands on days 2..N — the exact
+                // geometry the print popup uses (own placed y + i·pitch), so what you see is
+                // what prints. Follows the box live while dragging.
+                if (f.row && cfgCadence === 'daily-weekly' && cfgRowPitch > 0) {
+                    for (let i = 1; i < (cfgRowCount || 7); i++) {
+                        const gy = f.y + i * cfgRowPitch;
+                        if (gy + f.h > 1) break;
+                        html += `<div class="field-box ghost" style="left:${(f.x * 100)}%;top:${(gy * 100)}%;width:${(f.w * 100)}%;height:${(f.h * 100)}%"></div>`;
+                    }
+                }
+            }
             if (cfgSignature && (cfgSignature.page ?? 1) === pageNum) html += boxOverlayHtml('signature', cfgSignature);
             return html;
         }
@@ -1344,7 +1365,7 @@
                                 id: generateFieldId(), label: `Field ${cfgFields.length + 1}`,
                                 x: r4(g.x), y: r4(g.y), w: r4(g.w), h: r4(g.h),
                                 page: pageNum, fontSize: 10, align: 'left',
-                                source: null, questionId: null, row: false, rowIndexOffset: 0, rowYOffset: 0,
+                                source: null, questionId: null, row: false,
                                 checkbox: false, checkValue: ''
                             };
                             cfgFields.push(f);
@@ -1430,8 +1451,6 @@
                             <input type="checkbox" id="fpRow"${item.row ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> Day-row field (cloned per day)
                         </label>
                     </div>
-                    <div class="form-group" id="fpRowOffsetWrap" style="display:${item.row ? '' : 'none'};"><label for="fpRowOffset">Row index offset</label><input type="number" id="fpRowOffset" min="0" max="6" step="1" value="${item.rowIndexOffset ?? 0}"></div>
-                    <div class="form-group" id="fpRowYOffsetWrap" style="display:${item.row ? '' : 'none'};"><label for="fpRowYOffset">In-row Y offset (normalized, e.g. 0.02)</label><input type="number" id="fpRowYOffset" min="-0.5" max="0.5" step="0.005" value="${item.rowYOffset ?? 0}"></div>
                     <div class="form-group">
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
                             <input type="checkbox" id="fpCheckbox"${item.checkbox ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ☑ Checkbox field (prints an X when its value matches)
@@ -1491,19 +1510,10 @@
                         refreshWizardBuilder();
                     });
                 }
-                const rowWrap = $('fpRowOffsetWrap');
-                if (rowWrap) {
-                    rowWrap.style.display = item.row ? '' : 'none';
-                    $('fpRowYOffsetWrap').style.display = item.row ? '' : 'none';
-                    $('fpRow').addEventListener('change', () => {
-                        item.row = $('fpRow').checked;
-                        rowWrap.style.display = item.row ? '' : 'none';
-                        $('fpRowYOffsetWrap').style.display = item.row ? '' : 'none';
-                        refreshCfgOverlays();
-                    });
-                    num('#fpRowOffset', v => { if (!isNaN(v)) item.rowIndexOffset = Math.max(0, Math.min(6, Math.round(v))); });
-                    num('#fpRowYOffset', v => { if (!isNaN(v)) item.rowYOffset = Math.max(-0.5, Math.min(0.5, v)); });
-                }
+                $('fpRow').addEventListener('change', () => {
+                    item.row = $('fpRow').checked;
+                    refreshCfgOverlays();
+                });
                 const cbWrap = $('fpCheckValueWrap');
                 if (cbWrap) {
                     cbWrap.style.display = item.checkbox ? '' : 'none';
@@ -1628,15 +1638,12 @@
             if (!rows.length) return null; // no day-row geometry configured
             const xs = rows.map(f => f.x), ws = rows.map(f => f.w);
             const x0 = Math.min(...xs), x1 = Math.max(...xs.map((x, i) => x + ws[i]));
-            const ys = rows.map(f => f.y).sort((a, b) => a - b);
-            // Row pitch: spacing between consecutive day-row fields; fall back to field height.
-            let pitch = null;
-            for (let i = 1; i < ys.length; i++) {
-                const d = ys[i] - ys[i - 1];
-                if (d > 0 && (pitch === null || d < pitch)) pitch = d;
-            }
-            if (pitch === null) pitch = Math.max(...rows.map(f => f.h));
-            const y0 = Math.min(...ys);
+            // Row pitch: the sheet's configured grid (the same value print clones use); else the
+            // row band height. (Inferring from field Δy was wrong — stacked fields within one
+            // row are closer together than the rows themselves.)
+            let pitch = sheet.rowGrid?.pitch > 0 ? sheet.rowGrid.pitch : null;
+            if (!pitch) pitch = Math.max(...rows.map(f => f.h));
+            const y0 = Math.min(...rows.map(f => f.y));
             const start = parseDate(inst.phaseChangeDate);
             const struckRows = [];
             for (let i = 0; i < 7; i++) {
@@ -2345,11 +2352,11 @@
             }
             const rows = (sheet.fields || []).filter(f => f.row && f.page === 1);
             if (!rows.length) return null;
+            // No configured grid: fall back to the row band height (tallest row field). The old
+            // "min positive Δy" inference was wrong — stacked fields within one row (the four
+            // monitoring checkboxes) are closer together than the rows themselves.
             const ys = rows.map(f => f.y).sort((a, b) => a - b);
-            let pitch = null;
-            for (let i = 1; i < ys.length; i++) { const d = ys[i] - ys[i - 1]; if (d > 0 && (pitch === null || d < pitch)) pitch = d; }
-            if (pitch === null) pitch = Math.max(...rows.map(f => f.h));
-            return { y0: ys[0], pitch, count: 7 };
+            return { y0: ys[0], pitch: Math.max(...rows.map(f => f.h)), count: 7 };
         }
 
         // What is missing before an instance can be printed — drives the disabled tooltip.
@@ -2440,8 +2447,11 @@
                     if (f.row && grid) {
                         for (let i = 0; i < grid.count; i++) {
                             const dayDate = addDaysStr(key, i);
-                            // rowYOffset: extra vertical offset within the day-row (for stacked fields like a column of checkboxes).
-                            const y = grid.y0 + i * grid.pitch + (f.rowYOffset || 0);
+                            // Clone this field straight down from its OWN placed position (row 1),
+                            // stepping by the row pitch — so each column lands in its own cell on
+                            // every day. (A single shared y0 was wrong: columns sit at different
+                            // heights within a row, e.g. the stacked monitoring checkboxes.)
+                            const y = f.y + i * grid.pitch;
                             html += overlaySpan(f, y, printFieldValue(sheet, inst, lotId, key, f, dayDate));
                         }
                     } else {
@@ -2722,7 +2732,7 @@
                                     <div class="form-group"><label for="rowPitch">Pitch</label><input type="number" id="rowPitch" min="0.005" max="0.2" step="0.005" value="${cfgRowPitch}"></div>
                                 </div>
                                 <div class="form-group"><label for="rowCount">Rows</label><input type="number" id="rowCount" min="1" max="14" step="1" value="${cfgRowCount}"></div>
-                                <p class="cfg-hint">Day-row fields clone down this grid — day <i>n</i> sits at y₀ + (n−1)·pitch. Set it to match the form's table rows.</p>
+                                <p class="cfg-hint">Place each day-row field on the form's <b>first</b> day row (dashed ghosts preview days 2–N). Set <b>Pitch</b> to the vertical spacing between the table rows — day <i>n</i> prints at the field's own position + (n−1)·pitch.</p>
                             </div>
                             <button type="button" class="btn btn-secondary" id="addSigBtn" style="width:100%; margin-top:12px; min-height:42px;">✍️ Add signature box</button>
                         </div>
