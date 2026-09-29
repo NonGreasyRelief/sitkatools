@@ -53,8 +53,7 @@ A **sheet** is one configured controlled form. Its id **is the expected page-ima
 | `pageWidthIn` / `pageHeightIn` | number | Page size in inches (default Letter 8.5 × 11). Needed to convert point-based font sizes to overlay pixels for print. Entered manually at configure time (the images supply the aspect ratio, not the physical size). |
 | `pageCount` | number | Number of pages in the form (= number of page images loaded at configure time). |
 | `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` | How sheet *instances* are formed (see "Entry & Instance"). Grow-log = `daily-weekly`; propagation worksheet = `one-shot`; room-clean / IPM / harvest = `event`. |
-| `rowGrid` | `{ y0, pitch, count }` \| null | Daily-weekly sheets only. `pitch` = vertical spacing between consecutive day rows (normalized); `count` = number of day rows (7). Row fields clone from their *own* placed position by this pitch (see "Day rows") — `y0` is kept for reference but the per-field `y` is what anchors each column. |
-| `fields[]` | array | Text boxes (below). |
+| `fields[]` | array | Text boxes (below). Daily-weekly sheets have **no grid** — their day rows are explicit daily-entry groups of fields (see "Day rows"). |
 | `signature` | object \| null | Signature box geometry + config (below). |
 
 ### Field (text box)
@@ -69,10 +68,33 @@ Each field is a rectangle placed over a page image in the Configure tab:
 | `w`, `h` | number 0–1 | Normalized box width / height. |
 | `fontSize` | number (pt) | Font size in points at 100% print scale; converted to px via `pageWidthIn`/`pageHeightIn`. |
 | `align` | `'left' \| 'center' \| 'right'` | Horizontal text alignment inside the box. |
-| `source` | string \| null | Auto-fill binding (below). `null` means the field is filled by a wizard question instead. |
-| `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field. A day-row field on a weekly sheet receives *that day's* answer to the question. |
+| `source` | string \| null | Auto-fill binding (below). `null` means the field is filled by a wizard question instead. **Group-level:** setting it on one member sets it on every day of that column. |
+| `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field. A daily-entry group member receives *that day's* answer to the question. **Group-level:** binding a question to one member binds it to every day of that column. |
+| `day` | number \| 1 | The day row this box belongs to (1 = the manually placed first row; 2..N = the other members of its daily-entry group). Only meaningful when `dayGroup` is set. |
+| `dayGroup` | string (4 chars) \| null | Daily-entry group id — boxes sharing an id form one column of the weekly table and **move together as a single block** in the editor. `null` for header/one-shot/event fields. |
+| `initials` | boolean | **Daily-initials box.** When `true`, this field is *not* filled by a question or binding — it is a signature-style pad where whoever fills out that day draws their initials with a stylus, and the strokes print in the box for that specific day. Only functional when the field also has a `dayGroup` (it must be part of a daily-entry group so it clones to every day); an ungrouped `initials: true` field is an intentional no-op. A sheet has at most one such box; it is excluded from the wizard's "Fills field" targets and from question binding. See "Daily-Initials Box". |
 
-**Day rows:** a weekly sheet's main section has one row per day (7 rows for the grow-log). The Configure tab marks which fields are **row fields** (`row: true`). Each row field is placed over the form's **first** day row, and at render time the tool clones it 7× straight down from its *own* placed position — day *n* prints at `field.y + (n−1)·pitch` — filling each clone with that day's answer. Cloning per-field (not onto one shared grid line) is what lets several fields stack inside a single row at different heights (the grow-log's "Daily crop monitoring" cell holds four checkboxes, one per question). The editor shows dashed **ghost clones** of every row field so you see exactly where days 2–N will print. The header section is made of non-row fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
+**Day rows (daily-entry groups):** a weekly sheet's main section has one row per day (7 rows for the grow-log). There is **no grid, no pitch, no auto-positioning** — every day's boxes are real, individually placed fields. The workflow in Configure Sheets:
+
+1. Place the **day-1** boxes manually over the form's first day row (one box per column; several can stack inside one row at different heights — the grow-log's "Daily crop monitoring" cell holds four checkboxes, one per question).
+2. **Multi-select** all of them (Ctrl/⌘-click each, or Shift-drag a marquee over the row).
+3. Hit **🔗 Group as daily entry** in the Field properties panel — the tool copies the selection into real fields for days 2..N (asked how many days; default 7), offset by the measured pitch between day 1 and day 2 (or the tallest box's height if unmeasurable). Each clone carries a `D2`..`DN` badge.
+4. **Slide the group into position** — dragging *any* member moves the whole group as one block; individual members can still be nudged, resized, or deleted on their own. ✂️ Ungroup removes the day 2..N boxes and keeps day 1.
+
+At render time each group member prints on **its own day at its own placed position** — what you slid is what prints; there is no clone math left to get wrong. Bindings (auto-fill source, wizard question) are **group-level**: they apply to every day of the column, and the wizard's "Fills field" dropdown offers each group once (its day-1 rep, marked 🔗). The header section is made of ungrouped fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
+
+*Legacy sheets* configured before this system (fields with `row: true` + a stored `rowGrid`) still print via the old clone-down fallback so existing forms keep working; re-saving them in the editor migrates nothing automatically — group their day-1 boxes to move to the new system.
+
+### Daily-Initials Box (per-day accountability)
+
+A weekly sheet can carry a **daily-initials box** — a small box at the end of each day's row where whoever fills out that day *draws* their initials with a stylus, exactly like the manager's signature pad. This is an accountability record: every person who touches a day leaves a mark, and it prints in that day's box on the controlled form.
+
+- **Configure:** place an "Initials" box as part of the **day-1 row** (at the end of the row), include it in the multi-select, and hit 🔗 Group so it clones to all 7 days. Then tick **"✍️ Daily-initials box"** on it in the Field properties panel — this sets `initials: true` on the whole group. The editor shows a ✍️ badge on the box. It must be grouped; ungrouped it does nothing (there is no per-day data to attach to).
+- **Fill:** the wizard runner inserts a dedicated **"✍️ Initials — {day}"** step *after* that day's questions and *before* the final signature. It shows a canvas pad sized to the box's aspect ratio plus a name/initials input. The person draws their initials; saving stores them on **that specific day**. Re-opening a day repaints what was drawn, so it can be corrected or re-signed.
+- **Storage:** per-day initials live on the instance as `initials: { "YYYY-MM-DD": { name, strokes } | null }` — one entry per day that has been signed. Strokes are normalized `[x, y]` point arrays (same vector format as the signature; no image). An empty pad on save clears that day's initials (`null`), so a day can be re-signed.
+- **Print:** each day's box prints that day's drawn strokes as an inline SVG polyline at the box's placed position for that row. A day with no initials prints an empty box.
+- **Completion:** when a sheet has a daily-initials box, a day only counts as "answered" once it has **both** its question answers *and* its initials. The leaf's progress chip (`4/7 days`) and the day chips in the runner reflect this.
+- **Who signs what:** floor staff initial their own day; the **master grower's signature** (the sheet's `signature` box) is a separate, whole-log sign-off captured on the final step. The two are independent — initials are per-day accountability, the signature is end-of-log review.
 
 ### Auto-Fill Bindings
 
@@ -89,7 +111,7 @@ A field's `source` can bind it to a value derived from the main DB, so headers f
 | `lot.destRoom` / `lot.vegRoom` / `lot.cloningRoom` | Room names stored on the lot |
 | `instance.phase` | Phase snapshot captured when a daily-weekly instance was created (grow-log header — see "Phase Change") |
 | `sheet.periodStart` / `sheet.periodEnd` | The instance's window dates (e.g. grow-log week start/end) |
-| `day.date` | The date of the current day-row (`MM/DD`) — row fields only. Derived per row at print time from the instance key + row index; **never snapshotted** (it is a function of the row, not of DB state). This is what fills the grow-log's Date column with zero questions. |
+| `day.date` | The date of the current day-row (`MM/DD`) — daily-entry group members only. Derived per member at print time from the instance key + the member's `day`; **never snapshotted** (it is a function of the row, not of DB state). This is what fills the grow-log's Date column with zero questions. |
 
 **Source of plant count & parent lot #:** SitkaTools already stores both on the lot record at creation time (`plantCount`, `parentLotId`) — no schema change needed for auto-fill. **Pending SitkaTools change (not PaperWizard):** the parent-lot picker is currently a dropdown of existing lots; it should also accept manual free-text entry so a lot can be created from a parent that isn't in the system.
 
@@ -106,6 +128,8 @@ A sheet may have signature boxes (`signature`: normalized `x/y/w/h` + optional l
 3. At print time the popup renders the strokes as an inline **SVG polyline** positioned over the page image at the box location, scaled to the box's rendered size. The signer's typed name is *not* printed unless a field is bound to it — the stroke is the signature.
 
 Re-signing replaces the stored strokes. An instance without a signature (when the sheet defines one) can still be printed — the signature box simply prints empty and the Print tooltip notes "signature missing".
+
+**Shared draw-pad machinery:** this canvas pad is the single generic pointer-captured drawing surface used by all three drawn-ink features — the end-of-log **signature**, the per-day **daily-initials box** (see "Daily-Initials Box"), and the phase-change **strike-out initials** (see "Phase Change"). All store the same normalized-stroke vector format and print through the same SVG-polyline overlay path.
 
 ### Wizard
 
@@ -135,6 +159,8 @@ Each question:
 **"Same as last time" semantics:** it pre-fills the form — it never auto-saves. The user still reviews and confirms. If there is no previous day/instance, the button is disabled.  The button will pull from last week's 7-day sheet to get "Last time" when a
 a new sheet starts in a chain of sheets.
 
+**Fill flow (the runner):** opening a daily-weekly leaf runs a step-through card, not one big form. For a given day the steps are: **each row-scoped question → (if the sheet has a daily-initials box) a "✍️ Initials — {day}" draw step → (if the sheet defines one) the final "✍️ Signature" step.** Day chips across the top let the user jump between days; each day's answers, initials, and the signature are saved per day / per instance on **Save**. The initials step is inserted only when the sheet actually has a grouped daily-initials box, so sheets without one keep the plain question → signature flow.
+
 ### Entry & Instance (filled data)
 
 Filled answers live per **lot → sheet → instance**:
@@ -150,8 +176,9 @@ An instance stores:
 | `phase` | string \| null | Snapshot of `lot.stage` at instance creation — daily-weekly sheets only. The grow-log header prints this, so a closed (old-phase) log keeps its original phase even after the lot moves on. |
 | `header` | map `questionId → value` | Instance-level (non-row) answers. |
 | `days` | map `YYYY-MM-DD → { questionId → value }` | Per-day answers for row-scoped questions. |
+| `initials` | map `YYYY-MM-DD → { name, strokes } \| null` | **Per-day drawn initials** (see "Daily-Initials Box") — present only on daily-weekly instances of a sheet that has a grouped daily-initials box. One entry per day that has been signed; `null`/absent = that day not yet initialed. Strokes are normalized `[x, y]` point arrays (same vector format as the signature). |
 | `phaseChangeDate` | `YYYY-MM-DD` \| null | Set when the lot moved to a new phase mid-window (see "Phase Change"). Rows after this date are struck through at render time and no longer require entries. |
-| `strikeInitials` | string \| null | Initials captured when the early end was confirmed — printed **above** the strike line (the date prints below it). Required for the instance to *complete*; without them a struck-through instance can still be printed, but the strike line simply doesn't render. |
+| `strikeInitials` | `{ name, strokes }` \| string \| null | The confirmer's **drawn** strike-out initials — captured on a stylus pad when the early end was confirmed (see "Phase Change"). Printed as an SVG polyline **above** the strike line (the date prints below it). Required for the instance to *complete*; without them a struck-through instance can still be printed, but the strike line simply doesn't render. *Legacy:* instances saved before drawn capture store a plain typed string; print falls back to rendering that string centered in the box. |
 | `snapshots` | map `binding → value` | Save-time binding values (see "Auto-Fill Bindings"). Captured at instance creation and refreshed on every entry save; this — not the live DB — is what prints. |
 | `signature` | `{ name, strokes: [[x,y,…], …] } \| null` | Captured signature (normalized points). |
 | `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
@@ -199,16 +226,17 @@ The match is derived at view time from (room name, date) — no link field is st
 
 When a lot moves Clone → Veg → Bloom, its open grow-log instance rolls over:
 
-1. **Detection / recording:** a phase change can originate in either direction. If the lot's live `stage` (changed in SitkaTools) no longer matches the open instance's stored `phase`, PaperWizard prompts the user to confirm the move ("Lot is now in Bloom — close this grow-log?"). Alternatively the change is recorded directly in the daily grow-log wizard via the Phase question (`writesTo: 'lot.stage'`), which also writes the new phase back to the main DB (see "Write-Back to the Main DB"). Either way, confirmation records `phaseChangeDate` = today **and captures the confirmer's initials** (`strikeInitials`) on the old instance, then creates a fresh instance for the new phase.
+1. **Detection / recording:** a phase change can originate in either direction. If the lot's live `stage` (changed in SitkaTools) no longer matches the open instance's stored `phase`, PaperWizard prompts the user to confirm the move ("Lot is now in Bloom — close this grow-log?"). Alternatively the change is recorded directly in the daily grow-log wizard via the Phase question (`writesTo: 'lot.stage'`), which also writes the new phase back to the main DB (see "Write-Back to the Main DB"). Either way, confirmation records `phaseChangeDate` = today **and captures the confirmer's drawn strike-out initials** on the old instance, then creates a fresh instance for the new phase.
+   - **Drawn capture (not a typed prompt):** confirming opens a modal with a stylus pad (the shared draw-pad machinery) + a name input — "Strike-out initials — {newPhase}". The confirmer *draws* their initials; an empty pad is rejected ("Draw your initials first") and Cancel aborts the whole phase change with no changes. The result is stored as `strikeInitials = { name, strokes }` on the old instance (legacy instances may hold a plain string — print falls back to centered text).
 2. **Double entry on the move day:** both instances carry an entry for the move date — one row filled under the old phase (old sheet), one under the new phase (new sheet, whose first entry is that day). The new instance's `periodStart` is the move date and its header carries the new phase.
 3. **Strike-through on the old sheet:** when a 7-day grow-log ends early, policy is a **diagonal strike-out across the remaining day rows, with the confirmer's initials above the line and the change date below it**. Those rows no longer require entries — the old instance completes when all days from `periodStart` through `phaseChangeDate` are filled (+ signature if defined).
 
-   **Strike-out computation:** the overlay is derived, never stored. A pure function takes the instance (`phaseChangeDate`, `strikeInitials`) plus the sheet's row geometry (first row field position, row pitch, day-column extent) and returns:
-   - **struck rows** — every day row whose date is after `phaseChangeDate` (through `periodEnd`);
+   **Strike-out computation:** the overlay is derived, never stored. A pure function takes the instance (`phaseChangeDate`, `strikeInitials`) plus the sheet's explicit day-row geometry (the daily-entry groups' placed boxes — no pitch math) and returns:
+   - **struck rows** — every day row whose date (instance key + member's `day` − 1) is after `phaseChangeDate`;
    - **the diagonal** — one line from the top-right corner of the first struck row to the bottom-left corner of the last struck row, in normalized page coordinates;
-   - **label positions** — initials centered just above the line's midpoint, date centered just below it.
+   - **label positions** — an `initialsRect` (a wide/short box centered just above the line's midpoint) for the drawn strike initials, and a date position centered just below it.
 
-   The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data.
+   The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data. The drawn `strikeInitials` render as an SVG polyline inside `initialsRect`; a legacy string renders as centered text in the same rect.
 
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
@@ -225,7 +253,7 @@ Because bindings snapshot at save time (see "Auto-Fill Bindings"), a one-shot sh
 
 ### Completion Rules
 
-- **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question, and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. Completion drives the leaf's status chip (`✓ complete`, `4/7 days`, `3/5 · phase change Sep 24`) and the Print tooltip — **not** the button: 🖨️ Print is clickable whenever an entry exists and the page set is loaded, so a partial week can be printed on demand (missing fields print N/A).
+- **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question — **and, if the sheet has a daily-initials box, drawn initials for that day** (see "Daily-Initials Box") — and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. Completion drives the leaf's status chip (`✓ complete`, `4/7 days`, `3/5 · phase change Sep 24`) and the Print tooltip — **not** the button: 🖨️ Print is clickable whenever an entry exists and the page set is loaded, so a partial week can be printed on demand (missing fields print N/A).
 - **`one-shot`:** complete when all instance-level questions are answered (+ signature if defined).
 - **`event`:** complete when its questions are answered (+ signature if defined) — each event is a self-contained sheet.
 
@@ -281,13 +309,23 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
         "cadence": "daily-weekly",
         "fields": [
           { "id": "a3k9", "label": "Strain Name", "x": 0.12, "y": 0.07, "w": 0.4, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "lot.strain", "questionId": null, "row": false },
+            "fontSize": 12, "align": "left", "source": "lot.strain", "questionId": null, "day": 1, "dayGroup": null },
           { "id": "b7m2", "label": "Lot #", "x": 0.62, "y": 0.07, "w": 0.3, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "lot.name", "questionId": null, "row": false },
+            "fontSize": 12, "align": "left", "source": "lot.name", "questionId": null, "day": 1, "dayGroup": null },
           { "id": "c4p8", "label": "Phase", "x": 0.12, "y": 0.11, "w": 0.3, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "instance.phase", "questionId": null, "row": false },
+            "fontSize": 12, "align": "left", "source": "instance.phase", "questionId": null, "day": 1, "dayGroup": null },
           { "id": "d9q1", "label": "Temp high (°C)", "x": 0.45, "y": 0.30, "w": 0.12, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "row": true }
+            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 1, "dayGroup": "g7xk" },
+          { "id": "e2m4", "label": "Temp high (°C)", "x": 0.45, "y": 0.395, "w": 0.12, "h": 0.03,
+            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 2, "dayGroup": "g7xk" },
+          { "id": "f8n5", "label": "Temp high (°C)", "x": 0.45, "y": 0.49, "w": 0.12, "h": 0.03,
+            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 3, "dayGroup": "g7xk" },
+          { "id": "…", "label": "Temp high (°C)", "x": 0.45, "y": "…", "w": 0.12, "h": 0.03,
+            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": "4..7", "dayGroup": "g7xk" },
+          { "id": "i9z2", "label": "Initials", "x": 0.68, "y": 0.30, "w": 0.16, "h": 0.03,
+            "fontSize": 10, "align": "center", "source": null, "questionId": null, "day": 1, "dayGroup": "gInit", "initials": true },
+          { "id": "…", "label": "Initials", "x": 0.68, "y": "…", "w": 0.16, "h": 0.03,
+            "fontSize": 10, "align": "center", "source": null, "questionId": null, "day": "2..7", "dayGroup": "gInit", "initials": true }
         ],
         "signature": { "x": 0.6, "y": 0.92, "w": 0.32, "h": 0.05, "label": "Initials" }
       },
@@ -312,12 +350,35 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
       "LOT-001": {
         "grow-log": {
           "instances": {
+            "2026-09-14": {
+              "phase": "Clone",
+              "header": {},
+              "days": {
+                "2026-09-14": { "t1hi": "24.0" },
+                "2026-09-15": { "t1hi": "24.5" }
+              },
+              "initials": {
+                "2026-09-14": { "name": "J.D.", "strokes": [[0.2, 0.5, 0.8, 0.4]] },
+                "2026-09-15": { "name": "M.K.", "strokes": [[0.3, 0.6, 0.7, 0.3]] }
+              },
+              "phaseChangeDate": "2026-09-15",
+              "strikeInitials": { "name": "R.V.", "strokes": [[0.15, 0.55, 0.85, 0.4]] },
+              "snapshots": { "lot.name": "LOT-001", "lot.strain": "Purple Haze",
+                              "lot.stage": "Clone", "lot.plantCount": "48" },
+              "signature": null,
+              "completedAt": "2026-09-15T16:20:00Z",
+              "printedAt": null
+            },
             "2026-09-21": {
               "phase": "Veg",
               "header": {},
               "days": {
                 "2026-09-21": { "t1hi": "27.5", "obs1": "Looking strong." },
                 "2026-09-22": { "t1hi": "28.0", "obs1": "" }
+              },
+              "initials": {
+                "2026-09-21": { "name": "J.D.", "strokes": [[0.2, 0.5, 0.8, 0.4]] },
+                "2026-09-22": null
               },
               "phaseChangeDate": null,
               "strikeInitials": null,
@@ -338,6 +399,7 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
               "phase": null,
               "header": { "rm1x": "Veg Room 2" },
               "days": {},
+              "initials": {},
               "phaseChangeDate": null,
               "strikeInitials": null,
               "snapshots": { "lot.name": "LOT-000", "lot.vegRoom": "Veg Room 2" },
@@ -368,7 +430,7 @@ These are the controlled forms the facility will configure in the Configure Shee
 | Sheet (page-image base name) | Cadence | Notes |
 |---|---|---|
 | Propagation worksheet (`propagation-worksheet`, pages `propagation-worksheet-p1.png`…) | one-shot | Filled once at lot creation; header auto-filled from lot keys (strain, lot #, parent lot #, dates). Starting plant count is a wizard question pre-filled from `lot.plantCount` so re-prints show the value at creation. |
-| Weekly Grow-Log (`grow-log`, pages `grow-log-p1.png`…) | daily-weekly | 7 day rows + phase header (Clone / Veg / Bloom via `instance.phase`). Rolling 7-day window from first entry; rolls over on phase change with strike-through. Completes when the window fills → print. |
+| Weekly Grow-Log (`grow-log`, pages `grow-log-p1.png`…) | daily-weekly | 7 day rows + phase header (Clone / Veg / Bloom via `instance.phase`). Rolling 7-day window from first entry; rolls over on phase change with strike-through. Each day row ends in a **daily-initials box** (grouped, `initials: true`) so whoever fills the day draws their initials for accountability. Completes when the window fills (answers + per-day initials) → print. |
 | Room-clean sheet (`room-clean`, pages `room-clean-p1.png`… — one generic page set) | event | A single controlled form for all room cleans (clone room, veg room, grow room); the room name is an overlaid field bound to the lot's room for that phase. One instance per clean event, filed under the lot that performed the clean. The *next* lot to occupy that room references it read-only in its filing cabinet as proof of pre-move-in cleaning (see "Filing Cabinet"). |
 | IPM log (`ipm-log`, pages `ipm-log-p1.png`…) | event | Pesticide/IPM application entries; print on demand (e.g. end of week or at close-out). |
 | Harvest log (`harvest-log`, pages `harvest-log-p1.png`…) | event | Harvest-day entries; print on demand. |
@@ -411,12 +473,16 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 │ └─▸ 📁 Harvest                                            │
 │                                                           │
 │ CONFIGURE SHEETS tab:                                     │
-│ [⬆️ Load document]  [Portrait|Landscape]  page size in    │
+│ [⬆️ Load document]  page size in                          │
 │ ┌───────────────────┬──────────────────────────────┐     │
 │ │                   │ Field properties:             │     │
 │ │   Page image      │  label / x y w h / font /     │     │
 │ │   with draggable  │  align / source binding /     │     │
-│ │   boxes + sig box │  question link / row toggle   │     │
+│ │   boxes + sig box │  question link / group info   │     │
+│ │   (D2..DN badges) ├──────────────────────────────┤     │
+│ │                   │ Multi-select: N boxes         │     │
+│ │                   │  [🔗 Group as daily entry]    │     │
+│ │                   │  [✂️ Ungroup]                 │     │
 │ │                   ├──────────────────────────────┤     │
 │ │                   │ Wizard builder:               │     │
 │ │                   │  questions list, add/move/    │     │
@@ -430,7 +496,7 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 
 - **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right (lot-focused tool). The lot selector is disabled/hidden in Configure Sheets (configuration is lot-independent).
 - **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — five sections (Propagation, Room Cleans, Grow Logs, IPM Log, Harvest), one leaf per instance with its status and the two actions inline. Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
-- **Configure Sheets tab:** left = page image preview canvas (boxes are click-drag to create, drag to move, corner handles to resize; the signature box is a distinct style); right = properties panel for the selected box + the wizard builder below it. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
+- **Configure Sheets tab:** left = page image preview canvas (boxes are click-drag to create, drag to move — a grouped box drags its whole day-column as one block — corner handles to resize; Ctrl/⌘-click or Shift-drag marquee for multi-select; the signature box is a distinct style); right = properties panel for the selection (single field, or multi-select with 🔗 Group / ✂️ Ungroup) + the wizard builder below it. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
 - **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`, and the signature pad as the final step when the sheet defines one.
 
 ## Resolved Design Decisions

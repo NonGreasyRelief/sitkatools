@@ -293,7 +293,7 @@
         }
 
         .page-stage {
-            display: flex;
+            display: flex;                /* flex + margin:auto on the child = centered when it fits, scrollable (both axes) when zoomed past the edges */
             background: #0b1220;
             border: 1px solid var(--border);
             border-radius: var(--radius);
@@ -388,21 +388,57 @@
             background: rgba(83, 216, 168, 0.24);
         }
 
+        /* Multi-selected (part of a selection set) — distinct from the primary box */
+        .field-box.multi-sel {
+            border-width: 2px;
+            background: rgba(83, 216, 168, 0.24);
+            outline: 1px dashed var(--accent);
+            outline-offset: 2px;
+        }
+
         .field-box.sig {
             border-style: dashed;
             border-color: var(--warning);
             background: rgba(243, 156, 18, 0.12);
         }
 
-        .field-box.sig.selected { background: rgba(243, 156, 18, 0.22); }
+        .field-box.sig.selected, .field-box.sig.multi-sel { background: rgba(243, 156, 18, 0.22); }
 
-        /* Ghost clones of a day-row field — preview where days 2..N will print.
-           Non-interactive so they never intercept box create/move/resize drags. */
-        .field-box.ghost {
+        /* Daily-initials box — a per-day drawn-initials field (part of a daily-entry group). */
+        .field-box.initials { border-color: #b98cff; background: rgba(185, 140, 255, 0.14); }
+        .field-box.initials.selected, .field-box.initials.multi-sel { background: rgba(185, 140, 255, 0.26); }
+        .field-box.initials .handle { border-color: #b98cff; }
+        .field-box .box-initials {
+            position: absolute; top: 1px; left: 2px; font-size: 11px; line-height: 1;
+            color: #b98cff; pointer-events: none;
+        }
+
+        /* Day badge — marks a box that belongs to a daily-entry group (day 2..N).
+           Non-interactive so it never intercepts box create/move/resize drags. */
+        .field-box .box-day {
+            position: absolute;
+            top: -9px;
+            right: -2px;
+            transform: translateY(-100%);
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
             pointer-events: none;
-            opacity: 0.35;
-            border-style: dashed;
-            background: transparent;
+        }
+
+        /* Marquee selection rectangle (Shift-drag on empty page space) */
+        .marquee {
+            position: absolute;
+            z-index: 5;
+            background: rgba(83, 216, 168, 0.10);
+            border: 1px dashed var(--accent);
+            pointer-events: none;
         }
 
         .field-box .box-label {
@@ -707,6 +743,20 @@
             color: var(--text-secondary); font-size: 0.8rem; padding: 6px 12px; cursor: pointer;
         }
         .sig-clear:hover { color: var(--danger); border-color: var(--danger); }
+
+        /* ---- Strike-out initials capture (drawn, like the signature pad) ---- */
+        .strike-overlay {
+            position: fixed; inset: 0; z-index: 60; background: rgba(4, 8, 16, 0.72);
+            display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .strike-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); width: 100%; max-width: 420px; padding: 18px 16px;
+        }
+        .strike-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 6px; }
+        .strike-sub { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.5; margin-bottom: 12px; }
+        .strike-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+        .strike-foot .spacer { flex: 1; }
     </style>
 </head>
 <body>
@@ -963,14 +1013,14 @@
         let cfgCadence = 'one-shot';
         let cfgWidthIn = 8.5;
         let cfgHeightIn = 11;
-        let cfgRowY0 = 0;       // top edge (normalized) of the first day row — daily-weekly sheets
-        let cfgRowPitch = 0;    // vertical spacing between consecutive day rows (normalized)
-        let cfgRowCount = 7;    // number of day rows (grow-log = 7)
         let cfgPageCount = 1;   // number of loaded page images
         let cfgZoom = 1;        // page zoom (1 = fit-to-width)
         let cfgFields = [];     // working copy of the sheet's fields[]
         let cfgSignature = null;// working copy of the sheet's signature box
-        let cfgSelection = null;// { kind: 'field'|'signature', id } | null
+        // Multi-select: primary selection + extra selected ids. A daily-entry group is a
+        // set of field ids (day 1 = the manually placed boxes, day n = its clones).
+        let cfgSelection = null;   // { kind: 'field'|'signature', id } | null — the primary box
+        let cfgMultiSel = new Set(); // extra selected field ids (group moves / multi-delete)
         // Wizard builder (Step 4) — working copy, saved to _PaperWizard.wizards on Save.
         let cfgWizard = null;       // { id, sheetId, name, questions[] }
         let cfgQuestionSel = null;  // id of the question currently being edited
@@ -1116,15 +1166,12 @@
             cfgCadence = s?.cadence || 'one-shot';
             cfgWidthIn = s?.pageWidthIn ?? 8.5;
             cfgHeightIn = s?.pageHeightIn ?? 11;
-            // Day-row grid (daily-weekly): explicit y₀/pitch/rows, else sensible defaults.
-            cfgRowY0 = s?.rowGrid?.y0 ?? 0.27;
-            cfgRowPitch = s?.rowGrid?.pitch ?? 0.095;
-            cfgRowCount = s?.rowGrid?.count ?? 7;
             cfgPageCount = Math.max(1, Math.min(20, pages.length));
             // Working copies of the layout (saved to DB in Step 4).
             cfgFields = (s?.fields || []).map(f => ({ ...f, page: f.page ?? 1 }));
             cfgSignature = s?.signature ? { ...s.signature } : null;
             cfgSelection = null;
+            cfgMultiSel = new Set();
             // Wizard working copy: reopen the saved wizard for this sheet, else start fresh.
             const existingWiz = Object.values(DB.paperWizard.wizards).find(w => w.sheetId === parsed.baseName) || null;
             cfgWizard = existingWiz
@@ -1200,9 +1247,12 @@
         // Overlay HTML for one box (shared by the full render and the light refresh).
         function boxOverlayHtml(kind, item) {
             const sel = cfgSelection && cfgSelection.id === item.id;
-            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${sel ? ' selected' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
+            const multi = !sel && kind === 'field' && cfgMultiSel.has(item.id);
+            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${item.initials ? ' initials' : ''}${sel ? ' selected' : multi ? ' multi-sel' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
                 (item.checkbox ? '<span class="box-check" title="Checkbox field">☑</span>' : '') +
+                (item.initials ? '<span class="box-initials" title="Daily-initials box — drawn per day">✍️</span>' : '') +
                 `<span class="box-label">${escapeHtml(item.label || item.id)}</span>` +
+                (kind === 'field' && item.day > 1 ? `<span class="box-day" title="Daily-entry group — day ${item.day}">D${item.day}</span>` : '') +
                 (sel ? ['nw', 'ne', 'sw', 'se'].map(c => `<span class="handle ${c}" data-corner="${c}"></span>`).join('') : '') +
                 `</div>`;
         }
@@ -1210,20 +1260,140 @@
         function pageBoxesHtml(pageNum) {
             let html = '';
             for (const f of cfgFields) if ((f.page ?? 1) === pageNum) {
+                // Every day's boxes are real, individually placed fields — no ghost clones.
+                // A D2..DN badge marks the members of a daily-entry group.
                 html += boxOverlayHtml('field', f);
-                // Ghost clones: preview where this row field lands on days 2..N — the exact
-                // geometry the print popup uses (own placed y + i·pitch), so what you see is
-                // what prints. Follows the box live while dragging.
-                if (f.row && cfgCadence === 'daily-weekly' && cfgRowPitch > 0) {
-                    for (let i = 1; i < (cfgRowCount || 7); i++) {
-                        const gy = f.y + i * cfgRowPitch;
-                        if (gy + f.h > 1) break;
-                        html += `<div class="field-box ghost" style="left:${(f.x * 100)}%;top:${(gy * 100)}%;width:${(f.w * 100)}%;height:${(f.h * 100)}%"></div>`;
-                    }
-                }
             }
             if (cfgSignature && (cfgSignature.page ?? 1) === pageNum) html += boxOverlayHtml('signature', cfgSignature);
             return html;
+        }
+
+        // ---- Daily-entry groups (daily-weekly sheets) ----
+        // A group is a set of field ids: day 1 = the boxes placed manually over the form's
+        // first day row, day n = its clones. Grouping copies the selected day-1 boxes into
+        // real fields for days 2..N (offset by the measured pitch); moving any member moves
+        // the whole group together; ungrouping deletes the day 2..N members.
+
+        function cfgDayGroups() {
+            const map = new Map();
+            for (const f of cfgFields) {
+                if (!f.dayGroup) continue;
+                if (!map.has(f.dayGroup)) map.set(f.dayGroup, []);
+                map.get(f.dayGroup).push(f.id);
+            }
+            return map;
+        }
+
+        // All field ids that move together with `id` (its whole daily-entry group).
+        function cfgGroupMembers(id) {
+            const f = cfgFields.find(x => x.id === id);
+            if (!f?.dayGroup) return [id];
+            return cfgFields.filter(x => x.dayGroup === f.dayGroup).map(x => x.id);
+        }
+
+        // The representative member of a daily-entry group (smallest day, then lowest y).
+        // Dropdowns offer the rep as the binding target; bindings apply to every member.
+        function cfgGroupRep(groupId) {
+            const members = cfgFields.filter(f => f.dayGroup === groupId);
+            if (!members.length) return null;
+            return members.slice().sort((a, b) => (a.day || 1) - (b.day || 1) || a.y - b.y)[0].id;
+        }
+
+        // Apply a mutation to a field AND every member of its daily-entry group — bindings
+        // are group-level: one question / source fills the whole column on every day.
+        function mutateFieldGroup(fieldId, mutate) {
+            const f = cfgFields.find(x => x.id === fieldId);
+            if (!f) return;
+            const targets = f.dayGroup ? cfgFields.filter(x => x.dayGroup === f.dayGroup) : [f];
+            for (const t of targets) mutate(t);
+        }
+
+        // Pitch between consecutive day rows of a group: median Δy of the day-1→day-2 pair.
+        function cfgGroupPitch(groupIds) {
+            const members = cfgFields.filter(f => groupIds.includes(f.id));
+            const d1 = members.filter(f => (f.day || 1) === 1);
+            const d2 = members.filter(f => f.day === 2);
+            if (!d1.length || !d2.length) return null;
+            const deltas = [];
+            for (const a of d1) {
+                const b = d2.find(x => Math.abs(x.x - a.x) < 0.005);
+                if (b) deltas.push(b.y - a.y);
+            }
+            if (!deltas.length) return null;
+            deltas.sort((a, b) => a - b);
+            return deltas[Math.floor(deltas.length / 2)];
+        }
+
+        // Group the selected day-1 boxes into a daily-entry group: copies them into real
+        // fields for days 2..N, offset by the measured pitch. Returns the new group id or null.
+        function groupSelectionAsDailyEntry() {
+            if (cfgCadence !== 'daily-weekly') { showToast('Daily-entry groups are for daily-weekly sheets'); return; }
+            const selIds = cfgSelection?.kind === 'field' ? [cfgSelection.id, ...cfgMultiSel] : [...cfgMultiSel];
+            const selFields = cfgFields.filter(f => selIds.includes(f.id));
+            if (!selFields.length) { showToast('Select the day-1 boxes first (Ctrl/⌘-click or Shift-drag)'); return; }
+            // Refuse to group boxes that already belong to a different group.
+            const foreign = selFields.find(f => f.dayGroup && !selFields.every(x => x.dayGroup === f.dayGroup));
+            if (foreign) { showToast('Selection mixes boxes from different groups — ungroup first'); return; }
+
+            // Pitch: measured from an existing day-1→day-2 pair, else the tallest selected box.
+            let pitch = cfgGroupPitch(selFields.map(f => f.id));
+            if (!pitch || pitch <= 0) pitch = Math.max(...selFields.map(f => f.h));
+            const count = prompt('How many days in this entry (7 for a weekly grow-log)?', '7');
+            const n = Math.max(2, Math.min(14, parseInt(count, 10) || 7));
+
+            // If the selection already contains day-2..N members of one group, re-space them
+            // to the measured pitch instead of duplicating.
+            const existingGroup = selFields[0].dayGroup;
+            if (existingGroup) {
+                for (const f of cfgFields) {
+                    if (f.dayGroup !== existingGroup) continue;
+                    const d1 = cfgFields.find(x => x.dayGroup === existingGroup && (x.day || 1) === 1 && Math.abs(x.x - f.x) < 0.005);
+                    if (d1 && f.day > 1) f.y = r4(clamp01(d1.y + (f.day - 1) * pitch));
+                }
+                refreshCfgOverlays();
+                showToast(`Re-spaced ${existingGroup} to pitch ${pitch.toFixed(3)}`);
+                return;
+            }
+
+            const gid = generateFieldId();
+            for (const f of selFields) {
+                f.dayGroup = gid;
+                f.day = 1;
+                for (let d = 2; d <= n; d++) {
+                    cfgFields.push({ ...f, id: generateFieldId(), day: d, y: r4(clamp01(f.y + (d - 1) * pitch)) });
+                }
+            }
+            refreshCfgOverlays();
+            showToast(`Grouped ${selFields.length} box(es) into daily entry "${gid}" — ${n} days. Drag any member to move the whole group.`);
+        }
+
+        // Ungroup: delete every day 2..N member of each group in the selection; day-1 boxes stay.
+        function ungroupSelection() {
+            const selIds = cfgSelection?.kind === 'field' ? [cfgSelection.id, ...cfgMultiSel] : [...cfgMultiSel];
+            const groups = new Set(cfgFields.filter(f => selIds.includes(f.id) && f.dayGroup).map(f => f.dayGroup));
+            if (!groups.size) { showToast('No daily-entry group in the selection'); return; }
+            // Record each doomed clone's group BEFORE filtering, so questions can be re-pointed.
+            const removedGroupOf = new Map();
+            let removed = 0;
+            cfgFields = cfgFields.filter(f => {
+                if (f.dayGroup && groups.has(f.dayGroup) && (f.day || 1) > 1) {
+                    removed++;
+                    removedGroupOf.set(f.id, f.dayGroup);
+                    return false;
+                }
+                return true;
+            });
+            // Questions targeting a deleted clone: re-point to the group's surviving day-1 box.
+            cfgWizard?.questions.forEach(q => {
+                if (!q.targetFieldId || !removedGroupOf.has(q.targetFieldId)) return;
+                const gid = removedGroupOf.get(q.targetFieldId);
+                const survivor = cfgFields.find(f => f.dayGroup === gid && (f.day || 1) === 1);
+                q.targetFieldId = survivor ? survivor.id : null;
+            });
+            cfgMultiSel = new Set();
+            refreshCfgOverlays();
+            refreshWizardBuilder();
+            showToast(`Ungrouped — removed ${removed} day 2..N box(es); day-1 boxes kept`);
         }
 
         // Light refresh: re-render ONLY the box overlays + properties panel.
@@ -1245,22 +1415,59 @@
             }
         }
 
-        function selectCfgItem(kind, id) {
-            cfgSelection = { kind, id };
+        // Selection model: one primary box (cfgSelection) + a set of extra selected field ids
+        // (cfgMultiSel). Ctrl/⌘-click toggles membership; Shift-drag draws a marquee.
+        function selectCfgItem(kind, id, { additive = false } = {}) {
+            if (kind === 'signature') {
+                cfgSelection = { kind, id };
+                cfgMultiSel = new Set();
+            } else if (additive) {
+                if (cfgSelection?.id === id) {
+                    // Ctrl-click the primary box again → drop it from the selection.
+                    cfgMultiSel.delete(id);
+                    cfgSelection = null;
+                } else {
+                    cfgMultiSel.add(id);
+                    if (!cfgSelection || cfgSelection.kind !== 'field') cfgSelection = { kind: 'field', id };
+                }
+            } else {
+                cfgSelection = { kind, id };
+                cfgMultiSel = new Set();
+            }
             refreshCfgOverlays();
         }
 
-        function deleteSelectedCfgItem() {
-            if (!cfgSelection) return;
-            if (cfgSelection.kind === 'field') {
-                // Release any wizard question that targeted the deleted field.
-                cfgWizard?.questions.forEach(q => { if (q.targetFieldId === cfgSelection.id) q.targetFieldId = null; });
-                cfgFields = cfgFields.filter(f => f.id !== cfgSelection.id);
-            } else {
-                cfgSignature = null;
-            }
+        function clearCfgSelection() {
             cfgSelection = null;
+            cfgMultiSel = new Set();
             refreshCfgOverlays();
+        }
+
+        // All field ids in the current selection (primary + extras).
+        function selectedFieldIds() {
+            const out = [];
+            if (cfgSelection?.kind === 'field') out.push(cfgSelection.id);
+            for (const id of cfgMultiSel) if (!out.includes(id)) out.push(id);
+            return out;
+        }
+
+        // Delete exactly the selected boxes (primary + multi-selected) plus the signature
+        // if it is the primary selection. Moving is block-level (a group moves together);
+        // deleting is exact — to dissolve a group's clones use Ungroup instead.
+        function deleteSelectedCfgItem() {
+            const selIds = new Set(selectedFieldIds());
+            if (!selIds.size && cfgSelection?.kind !== 'signature') return;
+            // Questions targeting a deleted field: re-point to a surviving member of the same
+            // daily-entry group, else release.
+            cfgWizard?.questions.forEach(q => {
+                if (!q.targetFieldId || !selIds.has(q.targetFieldId)) return;
+                const gone = cfgFields.find(f => f.id === q.targetFieldId);
+                const survivor = gone?.dayGroup ? cfgFields.find(f => f.dayGroup === gone.dayGroup && !selIds.has(f.id)) : null;
+                q.targetFieldId = survivor ? survivor.id : null;
+            });
+            cfgFields = cfgFields.filter(f => !selIds.has(f.id));
+            if (cfgSelection?.kind === 'signature') cfgSignature = null;
+            clearCfgSelection();
             refreshWizardBuilder();
         }
 
@@ -1271,13 +1478,15 @@
             refreshCfgOverlays();
         }
 
-        // Pointer-based editor on the page stack: click-drag empty space to create a
-        // box; drag a box body to move it; drag a corner handle to resize. All
-        // geometry is normalized 0–1 within its page.
+        // Pointer-based editor on the page stack: click-drag empty space to create a box;
+        // Shift-drag empty space to marquee-select boxes; Ctrl/⌘-click or Shift-click a box
+        // to multi-select; drag a box body to move it (a whole daily-entry group moves
+        // together); drag a corner handle to resize. All geometry is normalized 0–1 within
+        // its page.
         function attachBoxEditor(stage) {
             stage.querySelectorAll('.form-page').forEach(pageEl => {
                 const pageNum = parseInt(pageEl.dataset.page, 10) || 1;
-                let drag = null; // { mode:'create'|'move'|'resize', ... }
+                let drag = null; // { mode:'create'|'marquee'|'move'|'resize', ... }
 
                 pageEl.addEventListener('pointerdown', (e) => {
                     if (e.button !== 0) return;
@@ -1293,13 +1502,32 @@
                         const kind = boxEl.dataset.kind || 'field';
                         if (handle) {
                             drag = { mode: 'resize', id, kind, corner: handle.dataset.corner };
+                        } else if ((e.ctrlKey || e.metaKey || e.shiftKey) && kind === 'field') {
+                            // Ctrl/⌘-click or Shift-click a box → toggle it in the multi-selection.
+                            selectCfgItem('field', id, { additive: true });
                         } else {
                             const item = findCfgItem(kind, id);
                             if (!item) return;
                             cfgSelection = { kind, id };
+                            cfgMultiSel = new Set();
                             refreshCfgOverlays(); // selection visuals + properties panel
-                            drag = { mode: 'move', id, kind, offX: px - item.x, offY: py - item.y };
+                            // Drag moves the primary box plus every member of each selected
+                            // box's daily-entry group — a grouped block moves as one.
+                            const members = new Set();
+                            for (const sid of [id, ...cfgMultiSel]) for (const m of cfgGroupMembers(sid)) members.add(m);
+                            drag = { mode: 'move', id, kind, offX: px - item.x, offY: py - item.y, members: [...members] };
                         }
+                    } else if (e.shiftKey) {
+                        // Shift-drag on empty space → marquee selection.
+                        drag = { mode: 'marquee', x0: px, y0: py };
+                        const el = document.createElement('div');
+                        el.className = 'marquee';
+                        el.style.left = (px * 100) + '%';
+                        el.style.top = (py * 100) + '%';
+                        el.style.width = '0%';
+                        el.style.height = '0%';
+                        pageEl.appendChild(el);
+                        drag.el = el;
                     } else {
                         drag = { mode: 'create', x0: px, y0: py };
                         const el = document.createElement('div');
@@ -1330,13 +1558,39 @@
                         drag.el.style.width = (w * 100) + '%';
                         drag.el.style.height = (h * 100) + '%';
                         drag.geo = { x, y, w, h };
+                    } else if (drag.mode === 'marquee') {
+                        const x = Math.min(drag.x0, px), y = Math.min(drag.y0, py);
+                        const w = Math.abs(px - drag.x0), h = Math.abs(py - drag.y0);
+                        drag.el.style.left = (x * 100) + '%';
+                        drag.el.style.top = (y * 100) + '%';
+                        drag.el.style.width = (w * 100) + '%';
+                        drag.el.style.height = (h * 100) + '%';
+                        // Live selection: boxes on this page whose center falls inside the rect.
+                        const hits = cfgFields
+                            .filter(f => (f.page ?? 1) === pageNum && f.x + f.w / 2 >= x && f.x + f.w / 2 <= x + w && f.y + f.h / 2 >= y && f.y + f.h / 2 <= y + h)
+                            .map(f => f.id);
+                        cfgMultiSel = new Set(hits.slice(1));
+                        cfgSelection = hits.length ? { kind: 'field', id: hits[0] } : null;
+                        pageEl.querySelectorAll('.field-box').forEach(el => {
+                            const isSel = cfgSelection?.id === el.dataset.id;
+                            el.classList.toggle('selected', isSel);
+                            el.classList.toggle('multi-sel', !isSel && cfgMultiSel.has(el.dataset.id));
+                        });
                     } else if (drag.mode === 'move') {
+                        // Move the primary box AND every member of its daily-entry group(s).
                         const item = findCfgItem(drag.kind, drag.id);
                         if (!item) return;
-                        item.x = r4(clamp01(px - drag.offX));
-                        item.y = r4(clamp01(py - drag.offY));
-                        const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
-                        if (el) { el.style.left = (item.x * 100) + '%'; el.style.top = (item.y * 100) + '%'; }
+                        const nx = clamp01(px - drag.offX), ny = clamp01(py - drag.offY);
+                        const dx = nx - item.x, dy = ny - item.y;
+                        if (!dx && !dy) return;
+                        for (const mid of drag.members) {
+                            const m = cfgFields.find(f => f.id === mid);
+                            if (!m) continue;
+                            m.x = r4(clamp01(m.x + dx));
+                            m.y = r4(clamp01(m.y + dy));
+                            const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
+                            if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                        }
                     } else if (drag.mode === 'resize') {
                         const item = findCfgItem(drag.kind, drag.id);
                         if (!item) return;
@@ -1365,14 +1619,17 @@
                                 id: generateFieldId(), label: `Field ${cfgFields.length + 1}`,
                                 x: r4(g.x), y: r4(g.y), w: r4(g.w), h: r4(g.h),
                                 page: pageNum, fontSize: 10, align: 'left',
-                                source: null, questionId: null, row: false,
+                                source: null, questionId: null,
+                                day: 1, dayGroup: null,
                                 checkbox: false, checkValue: ''
                             };
                             cfgFields.push(f);
                             cfgSelection = { kind: 'field', id: f.id };
                         } else {
-                            cfgSelection = null; // plain click on empty space deselects
+                            clearCfgSelection(); // plain click on empty space deselects
                         }
+                    } else if (drag.mode === 'marquee') {
+                        drag.el?.remove();
                     }
                     drag = null;
                     refreshCfgOverlays();
@@ -1401,7 +1658,25 @@
 
         function fieldPropertiesPanelHtml() {
             if (!loadedDoc) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Load the form pages first, then click-drag over any page to create a text box.</p></div>';
-            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it; corner handles resize. Click a box to edit its properties here (Delete key removes it).</p></div>';
+
+            // Multi-selection: group controls instead of single-box properties.
+            const selIds = selectedFieldIds();
+            if (selIds.length > 1) {
+                const groups = new Set(cfgFields.filter(f => selIds.includes(f.id) && f.dayGroup).map(f => f.dayGroup));
+                return `
+                    <div class="fp-body" id="fpBody">
+                        <div class="field-properties">
+                            <div class="fp-head"><span class="fp-id">${selIds.length} boxes selected</span></div>
+                            ${groups.size ? `<p class="cfg-hint" style="margin-bottom:10px;">Selection includes daily-entry group${groups.size > 1 ? 's' : ''}: <b>${[...groups].join(', ')}</b>. Dragging any member moves the whole group.</p>` : '<p class="cfg-hint" style="margin-bottom:10px;">Place the day-1 boxes over the form\'s first day row, select them all (Ctrl/⌘-click or Shift-drag), then group them — days 2–N are created as real boxes you can slide into position.</p>'}
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                <button type="button" class="btn btn-primary" id="fpGroupBtn" style="min-height:42px;">🔗 Group as daily entry</button>
+                                ${groups.size ? '<button type="button" class="btn btn-secondary" id="fpUngroupBtn" style="min-height:42px;">✂️ Ungroup (remove day 2–N boxes)</button>' : ''}
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it (a daily-entry group moves as one block); corner handles resize. Ctrl/⌘-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
 
             const isSig = cfgSelection.kind === 'signature';
             const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
@@ -1446,17 +1721,26 @@
                             ${(cfgWizard?.questions || []).map(q => `<option value="${q.id}"${item.questionId === q.id ? ' selected' : ''}>${escapeHtml(q.label || q.id)}</option>`).join('')}
                         </select>
                     </div>
+                    ${item.dayGroup ? `
                     <div class="form-group">
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
-                            <input type="checkbox" id="fpRow"${item.row ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> Day-row field (cloned per day)
-                        </label>
-                    </div>
+                        <label style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">Daily-entry group</label>
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                            <span class="fp-id">${escapeHtml(item.dayGroup)} · day ${item.day || 1}</span>
+                            <button type="button" class="btn btn-secondary" id="fpUngroupBtn" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">✂️ Ungroup</button>
+                        </div>
+                    </div>` : ''}
                     <div class="form-group">
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
                             <input type="checkbox" id="fpCheckbox"${item.checkbox ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ☑ Checkbox field (prints an X when its value matches)
                         </label>
                     </div>
-                    <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label><input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom"></div>`;
+                    <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label><input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom"></div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
+                            <input type="checkbox" id="fpInitials"${item.initials ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ✍️ Daily-initials box (drawn per day)
+                        </label>
+                        <p class="cfg-hint" style="margin-top:4px;">Whoever fills a day draws their initials here — printed in the box at the end of that day's row. It must be part of a daily-entry group (🔗) so it clones to every day; ungrouped, it does nothing.</p>
+                    </div>`;
             }
 
             return `
@@ -1472,6 +1756,12 @@
         }
 
         function wireFieldProperties() {
+            // Multi-selection panel: group / ungroup actions only.
+            if (selectedFieldIds().length > 1) {
+                $('fpGroupBtn')?.addEventListener('click', groupSelectionAsDailyEntry);
+                $('fpUngroupBtn')?.addEventListener('click', ungroupSelection);
+                return;
+            }
             if (!cfgSelection) return;
             const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
             if (!item) return;
@@ -1490,9 +1780,10 @@
                 num('#fpFontSize', v => { if (!isNaN(v)) item.fontSize = Math.max(4, Math.min(72, v)); });
                 $('fpAlign').addEventListener('change', () => { item.align = $('fpAlign').value; refreshCfgOverlays(); });
                 $('fpSource').addEventListener('change', () => {
-                    // A field is either auto-filled or question-filled — never both.
-                    if ($('fpSource').value) item.questionId = null;
-                    item.source = $('fpSource').value || null;
+                    // A field is either auto-filled or question-filled — never both. Bindings
+                    // are group-level: the source applies to every day of the column.
+                    const src = $('fpSource').value || null;
+                    mutateFieldGroup(item.id, t => { if (src) t.questionId = null; t.source = src; });
                     refreshCfgOverlays();
                     refreshWizardBuilder();
                 });
@@ -1501,18 +1792,25 @@
                     qWrap.style.display = item.source ? 'none' : '';
                     $('fpQuestionLink').addEventListener('change', () => {
                         const qid = $('fpQuestionLink').value || null;
-                        // One question per field: release this field from any other question.
-                        cfgWizard?.questions.forEach(x => { if (x.targetFieldId === item.id && x.id !== qid) x.targetFieldId = null; });
-                        item.questionId = qid;
+                        // One question per column: release the whole column from other questions.
+                        cfgWizard?.questions.forEach(x => {
+                            if (x.id === qid || !x.targetFieldId) return;
+                            const tf = cfgFields.find(y => y.id === x.targetFieldId);
+                            if (!tf) return;
+                            if (item.dayGroup ? tf.dayGroup === item.dayGroup : tf.id === item.id) x.targetFieldId = null;
+                        });
+                        // Bind the question to the field AND every member of its group.
+                        mutateFieldGroup(item.id, t => { t.questionId = qid; });
                         const q = cfgWizard?.questions.find(x => x.id === qid);
                         if (q) q.targetFieldId = item.id;
                         refreshCfgOverlays();
                         refreshWizardBuilder();
                     });
                 }
-                $('fpRow').addEventListener('change', () => {
-                    item.row = $('fpRow').checked;
-                    refreshCfgOverlays();
+                // Ungroup (single box in a daily-entry group): remove the group's day 2..N boxes.
+                $('fpUngroupBtn')?.addEventListener('click', () => {
+                    cfgMultiSel = new Set();
+                    ungroupSelection();
                 });
                 const cbWrap = $('fpCheckValueWrap');
                 if (cbWrap) {
@@ -1520,6 +1818,13 @@
                     $('fpCheckbox').addEventListener('change', () => { item.checkbox = $('fpCheckbox').checked; refreshCfgOverlays(); });
                     $('fpCheckValue').addEventListener('change', () => { item.checkValue = $('fpCheckValue').value.trim(); refreshCfgOverlays(); });
                 }
+                // Daily-initials box: group-level (applies to every day of the column).
+                $('fpInitials').addEventListener('change', () => {
+                    const on = $('fpInitials').checked;
+                    mutateFieldGroup(item.id, t => { t.initials = on; });
+                    refreshCfgOverlays();
+                    refreshWizardBuilder();
+                });
             }
             $('fpDeleteBtn').addEventListener('click', deleteSelectedCfgItem);
         }
@@ -1572,13 +1877,22 @@
             return v !== null && v !== undefined && String(v).trim() !== '';
         }
 
-        // Is a given day fully answered for the sheet's row-scoped questions?
+        // Is a given day fully answered for the sheet's row-scoped questions — and, when the
+        // sheet requires per-day initials, is that day's initials drawn? (Accountability: the
+        // person who filled the day must initial it before the day counts as complete.)
         function dayAnswered(instance, dateStr, sheetId) {
             const day = instance.days?.[dateStr];
             if (!day) return false;
             const qids = rowScopedQuestionIds(sheetId);
-            if (qids.length === 0) return Object.keys(day).some(k => hasAnswer(day, k));
-            return qids.every(qid => hasAnswer(day, qid));
+            if (qids.length === 0) {
+                if (!Object.keys(day).some(k => hasAnswer(day, k))) return false;
+            } else if (!qids.every(qid => hasAnswer(day, qid))) return false;
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (needsDailyInitials(sheet)) {
+                const init = instance.initials?.[dateStr];
+                if (!init || !(init.strokes || []).length) return false;
+            }
+            return true;
         }
 
         // Active window for a daily-weekly instance: [periodStart, min(periodEnd, phaseChangeDate)].
@@ -1629,47 +1943,89 @@
         // ---- Phase change / write-back (Step 9) ----
 
         // Strike-out computation (spec: derived, never stored). Takes the instance's
-        // phaseChangeDate + the sheet's day-row geometry and returns the struck rows,
-        // one diagonal across them, and label positions — all in normalized page coords.
-        // Feeds the print popup (SVG overlay) and any on-screen preview.
-        function computeStrikeOut(sheet, inst) {
+        // phaseChangeDate + the sheet's day-row geometry (its explicit daily-entry groups)
+        // and returns the struck rows, one diagonal across them, and label positions — all
+        // in normalized page coords. Feeds the print popup (SVG overlay) and any preview.
+        function computeStrikeOut(sheet, inst, key) {
             if (!inst?.phaseChangeDate) return null;
-            const rows = (sheet.fields || []).filter(f => f.row && f.page === 1);
-            if (!rows.length) return null; // no day-row geometry configured
-            const xs = rows.map(f => f.x), ws = rows.map(f => f.w);
-            const x0 = Math.min(...xs), x1 = Math.max(...xs.map((x, i) => x + ws[i]));
-            // Row pitch: the sheet's configured grid (the same value print clones use); else the
-            // row band height. (Inferring from field Δy was wrong — stacked fields within one
-            // row are closer together than the rows themselves.)
-            let pitch = sheet.rowGrid?.pitch > 0 ? sheet.rowGrid.pitch : null;
-            if (!pitch) pitch = Math.max(...rows.map(f => f.h));
-            const y0 = Math.min(...rows.map(f => f.y));
-            const start = parseDate(inst.phaseChangeDate);
+            const rows = dayRowsFromGroups(sheet);
+            if (!rows) return null; // no day-row geometry configured
+            const d1 = (rows.find(r => r.day === 1)?.fields) || [];
+            if (!d1.length) return null;
+            // Horizontal extent of the day section (from the day-1 row).
+            const x0 = Math.min(...d1.map(f => f.x));
+            const x1 = Math.max(...d1.map(f => f.x + f.w));
+            // Struck rows: every day row whose date is after the phase-change date.
             const struckRows = [];
-            for (let i = 0; i < 7; i++) {
-                const d = new Date(start.getTime());
-                d.setDate(d.getDate() + i);
-                if (d > start) struckRows.push({ dayIndex: i, y: y0 + i * pitch });
+            for (const r of rows) {
+                const d = r.day || 1;
+                if (d <= 1) continue;
+                if (addDaysStr(key, d - 1) > inst.phaseChangeDate) {
+                    struckRows.push({
+                        day: d,
+                        yTop: Math.min(...r.fields.map(f => f.y)),
+                        yBot: Math.max(...r.fields.map(f => f.y + f.h))
+                    });
+                }
             }
             if (!struckRows.length) return null;
             const first = struckRows[0], last = struckRows[struckRows.length - 1];
             // One diagonal: top-right of the first struck row → bottom-left of the last.
-            const line = { x1: x1, y1: first.y, x2: x0, y2: last.y + pitch };
+            const line = { x1, y1: first.yTop, x2: x0, y2: last.yBot };
             const midX = (line.x1 + line.x2) / 2, midY = (line.y1 + line.y2) / 2;
+            const gap = Math.max(0.015, (last.yBot - first.yTop) * 0.08);
+            // Drawn strike-initials box: a wide/short rect centered just above the midpoint.
+            const iw = 0.2, ih = 0.07;
             return {
                 struckRows,
                 line,
-                initials: { x: midX, y: midY - pitch * 0.5 }, // centered just above the midpoint
-                date: { x: midX, y: midY + pitch * 0.5 }      // centered just below it
+                initialsRect: { x: midX - iw / 2, y: (midY - gap) - ih / 2, w: iw, h: ih }, // above the line
+                date: { x: midX, y: midY + gap }      // centered just below it
             };
         }
 
+        // Drawn strike-out initials capture: a modal pad (like the signature/initials pads) where
+        // the master grower draws their initials for the phase-change strike-out. Resolves to
+        // { name, strokes } on confirm, or null if cancelled / left empty.
+        function captureStrikeInitials(newPhase) {
+            return new Promise((resolve) => {
+                const ov = document.createElement('div');
+                ov.className = 'strike-overlay';
+                ov.innerHTML = `
+                    <div class="strike-card">
+                        <div class="strike-title">✍️ Strike-out initials — ${escapeHtml(newPhase)}</div>
+                        <div class="strike-sub">This closes the current grow-log (rows after today are struck through) and starts a fresh one. Draw your initials for the strike-out:</div>
+                        <div class="sig-pad-wrap"><canvas id="strikePad" class="sig-pad"></canvas></div>
+                        <input type="text" id="strikeName" class="sig-name" placeholder="Signer name / initials">
+                        <div class="strike-foot">
+                            <button type="button" class="btn btn-secondary" id="strikeClearBtn">🧹 Clear</button>
+                            <span class="spacer"></span>
+                            <button type="button" class="btn btn-secondary" id="strikeCancelBtn">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="strikeOkBtn">Record phase change</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(ov);
+                const strokes = [];
+                const pad = initDrawPad('strikePad', 3, strokes);
+                const nameEl = $('strikeName');
+                const clearAll = () => { strokes.length = 0; if (pad) pad.clear(); };
+                $('strikeClearBtn').addEventListener('click', clearAll);
+                $('strikeCancelBtn').addEventListener('click', () => { ov.remove(); resolve(null); });
+                $('strikeOkBtn').addEventListener('click', () => {
+                    if (!strokes.length) { showToast('Draw your initials first'); return; }
+                    const name = (nameEl.value || '').trim();
+                    ov.remove();
+                    resolve({ name, strokes });
+                });
+            });
+        }
+
         // Phase-change rollover (spec "Phase Change") — data-only: closes the open daily-weekly
-        // instance (phaseChangeDate = today + confirmer's strikeInitials) and creates a fresh
-        // instance for the new phase (periodStart = move date, header carries the new phase),
-        // optionally writing the new stage back to the main DB. Returns { inst, newKey, newPhase,
-        // reused } or null if cancelled — callers handle notify/close/render + double-entry offer.
-        function phaseRollover(writeBack) {
+        // instance (phaseChangeDate = today + confirmer's drawn strikeInitials) and creates a
+        // fresh instance for the new phase (periodStart = move date, header carries the new
+        // phase), optionally writing the new stage back to the main DB. Returns { inst, newKey,
+        // newPhase, reused } or null if cancelled — callers handle notify/close/render + double-entry offer.
+        async function phaseRollover(writeBack) {
             const ctx = runnerCtx;
             if (!ctx) return null;
             const wiz = wizardForSheet(ctx.sheetId);
@@ -1700,20 +2056,17 @@
                 evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
                 return { inst: oldInst, newKey: ctx.key, newPhase, reused: true };
             }
-            const initials = (prompt(
-                `Record phase change to ${newPhase}?\n\n` +
-                'This closes the current grow-log (rows after today are struck through) and starts a fresh one.\n' +
-                'Enter your initials for the strike-out:', '') || '').trim();
-            if (!initials) { showToast('Phase change cancelled — no changes made'); return null; }
-            // 1) Close the old instance: window ends at the move date, initials captured.
+            const drawn = await captureStrikeInitials(newPhase);
+            if (!drawn) { showToast('Phase change cancelled — no changes made'); return null; }
+            // 1) Close the old instance: window ends at the move date, initials captured (drawn).
             oldInst.phaseChangeDate = today;
-            oldInst.strikeInitials = initials;
+            oldInst.strikeInitials = { name: drawn.name, strokes: drawn.strokes };
             // 2) Fresh instance for the new phase. periodStart = move date; if a non-empty log
             //    already owns that key, shift forward so nothing is clobbered — the new log then
             //    starts the day after the old one closed.
             let newKey = today;
             while (sheetData.instances[newKey]) newKey = addDaysStr(newKey, 1);
-            const newInst = { phase: newPhase, header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+            const newInst = { phase: newPhase, header: {}, days: {}, initials: {}, phaseChangeDate: null, strikeInitials: null,
                               snapshots: {}, signature: null, completedAt: null, printedAt: null };
             // Header carries the new phase + any other instance-level answers from this save.
             for (const q of wiz.questions) {
@@ -1736,7 +2089,7 @@
         // longer matches this instance's stored phase → prompt to confirm the move. Rolls over
         // WITHOUT writing back — the main DB is already correct. Called from openRunner after
         // runnerCtx is set up for this instance; returns true when the open was handled.
-        function checkStageMismatch(lotId, sheetId, inst) {
+        async function checkStageMismatch(lotId, sheetId, inst) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
@@ -1751,7 +2104,7 @@
             if (!phaseQ) { showToast('No Phase question on this sheet — record the move in SitkaTools instead'); return false; }
             // Point the Phase question's draft at the new stage (form vocabulary) so the rollover records it.
             runnerCtx.draft[phaseQ.id] = normalizeStage(lot.stage);
-            const roll = phaseRollover(false);
+            const roll = await phaseRollover(false);
             if (!roll) return false; // cancelled at the initials prompt — open normally
             notifySitkaTools();
             closeRunner();
@@ -1981,7 +2334,7 @@
             return best;
         }
 
-        function openRunner(lotId, sheetId, key) {
+        async function openRunner(lotId, sheetId, key) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const wiz = wizardForSheet(sheetId);
             if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
@@ -1995,7 +2348,7 @@
                 else if (sheet.cadence === 'event') instKey = key || today;
                 else instKey = 'single';
                 inst = { phase: sheet.cadence === 'daily-weekly' ? normalizeStage(DB.lots[lotId]?.stage) : null,
-                         header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                         header: {}, days: {}, initials: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
             }
 
@@ -2014,10 +2367,11 @@
             runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst,
                 sigDraft: inst.signature
                     ? { name: inst.signature.name || '', strokes: (inst.signature.strokes || []).map(s => s.slice()) }
-                    : { name: '', strokes: [] } };
+                    : { name: '', strokes: [] },
+                initialsDraft: { name: '', strokes: [] } }; // per-day initials — loaded in resetRunnerDraft
             // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
             // instance was created → confirm the move and roll over (no write-back — DB is current).
-            if (checkStageMismatch(lotId, sheetId, inst)) return;
+            if (await checkStageMismatch(lotId, sheetId, inst)) return;
             resetRunnerDraft();
             renderRunner();
         }
@@ -2036,6 +2390,11 @@
                 draft[q.id] = (v === null || v === undefined) ? '' : String(v);
             }
             runnerCtx.draft = draft;
+            // Per-day initials draft: whoever filled this day drew their own initials.
+            const savedInit = inst.initials?.[day];
+            runnerCtx.initialsDraft = savedInit
+                ? { name: savedInit.name || '', strokes: (savedInit.strokes || []).map(s => s.slice()) }
+                : { name: '', strokes: [] };
         }
 
         // Sources for "⏪ Same as last time": row-scoped questions copy the previous day's
@@ -2082,7 +2441,8 @@
         function runnerGo(delta) {
             const sheet = DB.paperWizard.sheets[runnerCtx.sheetId];
             const wiz = wizardForSheet(runnerCtx.sheetId);
-            const totalSteps = wiz.questions.length + (sheet.signature ? 1 : 0);
+            const needsInit = needsDailyInitials(sheet) && !!runnerCtx.day;
+            const totalSteps = wiz.questions.length + (needsInit ? 1 : 0) + (sheet.signature ? 1 : 0);
             runnerCtx.idx = Math.max(0, Math.min(totalSteps - 1, runnerCtx.idx + delta));
             renderRunner();
         }
@@ -2096,15 +2456,14 @@
 
         function runnerEscHandler(e) { if (e.key === 'Escape') closeRunner(); }
 
-        // Signature pad (Step 8): pointer-captured strokes stored as normalized [x,y] arrays
-        // within the box. No image is generated — pure vector data, re-drawn on open.
-        function initSigPad(ctx) {
-            const sheet = DB.paperWizard.sheets[ctx.sheetId];
-            const sig = sheet.signature;
-            const canvas = $('sigPad');
-            const ar = (sig.w && sig.h) ? (sig.w / sig.h) : 4; // box aspect ratio
+        // Generic stylus draw-pad: pointer-captured strokes stored as normalized [x,y] arrays
+        // within the box. No image is generated — pure vector data, re-drawn on open. Shared by
+        // the manager signature pad, the per-day initials pad, and the strike-out capture dialog.
+        function initDrawPad(canvasId, aspectRatio, strokes) {
+            const canvas = $(canvasId);
+            if (!canvas) return;
             const W = 480;
-            const H = Math.max(60, Math.round(W / ar));
+            const H = Math.max(60, Math.round(W / (aspectRatio || 4)));
             canvas.width = W;
             canvas.height = H;
             const g = canvas.getContext('2d');
@@ -2121,7 +2480,7 @@
                 for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0] * W, pts[i][1] * H);
                 g.stroke();
             };
-            for (const s of ctx.sigDraft.strokes) drawStroke(s); // repaint existing (re-sign view)
+            for (const s of strokes) drawStroke(s); // repaint existing (re-sign / re-initial view)
 
             let drawing = false;
             const toNorm = (e) => {
@@ -2135,11 +2494,11 @@
                 e.preventDefault();
                 drawing = true;
                 try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-                ctx.sigDraft.strokes.push([toNorm(e)]);
+                strokes.push([toNorm(e)]);
             });
             canvas.addEventListener('pointermove', (e) => {
                 if (!drawing) return;
-                const stroke = ctx.sigDraft.strokes[ctx.sigDraft.strokes.length - 1];
+                const stroke = strokes[strokes.length - 1];
                 const p = toNorm(e);
                 const prev = stroke[stroke.length - 1] || p;
                 stroke.push(p);
@@ -2151,6 +2510,37 @@
             const endStroke = () => { drawing = false; };
             canvas.addEventListener('pointerup', endStroke);
             canvas.addEventListener('pointercancel', endStroke);
+            // Clear the pad's pixels + drawing state (the caller empties `strokes` itself).
+            return { clear: () => { g.clearRect(0, 0, W, H); drawing = false; } };
+        }
+
+        // Manager signature pad (Step 8) — the final review signature at the end of the wizard.
+        function initSigPad(ctx) {
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const sig = sheet.signature;
+            const ar = (sig.w && sig.h) ? (sig.w / sig.h) : 4; // box aspect ratio
+            initDrawPad('sigPad', ar, ctx.sigDraft.strokes);
+        }
+
+        // Per-day initials pad — the accountability initials drawn by whoever fills a day.
+        function initInitialsPad(ctx) {
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const box = dailyInitialsBox(sheet);
+            const ar = (box && box.w && box.h) ? (box.w / box.h) : 3; // initials boxes are wide/short
+            initDrawPad('initPad', ar, ctx.initialsDraft.strokes);
+        }
+
+        // The sheet's daily-initials field: a member of a daily-entry group carrying
+        // `initials: true`. It must be grouped so it clones to every day — an ungrouped box is
+        // a no-op until grouped. null when not configured.
+        function dailyInitialsBox(sheet) {
+            const f = (sheet?.fields || []).find(x => x.initials && x.dayGroup);
+            return f || null;
+        }
+
+        // Does this sheet require per-day drawn initials? (daily-weekly + an initials box set.)
+        function needsDailyInitials(sheet) {
+            return !!sheet && sheet.cadence === 'daily-weekly' && !!dailyInitialsBox(sheet);
         }
 
         function renderRunner() {
@@ -2159,12 +2549,17 @@
             const wiz = wizardForSheet(ctx.sheetId);
             const qs = wiz.questions;
             const hasSig = !!sheet.signature;
-            const totalSteps = qs.length + (hasSig ? 1 : 0);
-            const isSigStep = hasSig && ctx.idx === qs.length;
-            const q = isSigStep ? null : qs[ctx.idx];
+            const needsInit = needsDailyInitials(sheet) && !!ctx.day; // per-day initials (daily-weekly, a day is active)
+            const totalSteps = qs.length + (needsInit ? 1 : 0) + (hasSig ? 1 : 0);
+            const initIdx = qs.length;                       // the per-day initials step (if any)
+            const sigIdx = qs.length + (needsInit ? 1 : 0);  // the signature step (if any)
+            const isInitStep = needsInit && ctx.idx === initIdx;
+            const isSigStep = hasSig && ctx.idx === sigIdx;
+            const q = (isInitStep || isSigStep) ? null : qs[ctx.idx];
             const isLast = ctx.idx === totalSteps - 1;
 
-            // Day selector (daily-weekly only): the instance's 7-day window.
+            // Day selector (daily-weekly only): the instance's 7-day window. Shown on question
+            // and initials steps — both are per-day; the signature step is instance-level.
             let dayChipsHtml = '';
             if (sheet.cadence === 'daily-weekly' && !isSigStep) {
                 const chips = [];
@@ -2178,13 +2573,22 @@
                     <div class="wiz-hint">Answers are saved per day — pick a day, answer, then Save.</div>`;
             }
 
-            // Question step body vs signature step body.
+            // Question step body vs initials step body vs signature step body.
             let bodyInner;
-            if (isSigStep) {
+            if (isInitStep) {
+                const box = dailyInitialsBox(sheet);
+                bodyInner = `
+                <div class="wiz-q-label">✍️ ${escapeHtml(box?.label || 'Initials')} — ${fmtShort(ctx.day)}</div>
+                <div class="sig-pad-wrap"><canvas id="initPad" class="sig-pad"></canvas></div>
+                <input type="text" id="initName" class="sig-name" placeholder="Who filled this day (name / initials)" value="${escapeHtml(ctx.initialsDraft?.name ?? '')}">
+                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials to sign off on this day's entry — they print in the box at the end of ${fmtShort(ctx.day)}'s row.</div>
+                <div class="sig-actions"><button type="button" class="sig-clear" id="initClearBtn">🧹 Clear initials</button></div>`;
+            } else if (isSigStep) {
                 bodyInner = `
                 <div class="wiz-q-label">✍️ ${escapeHtml(sheet.signature.label || 'Signature')}</div>
                 <div class="sig-pad-wrap"><canvas id="sigPad" class="sig-pad"></canvas></div>
                 <input type="text" id="sigName" class="sig-name" placeholder="Signer name / initials" value="${escapeHtml(ctx.sigDraft?.name ?? '')}">
+                <div class="wiz-hint" style="margin-bottom:10px;">Master grower review — sign off on the whole log.</div>
                 <div class="sig-actions"><button type="button" class="sig-clear" id="sigClearBtn">🧹 Clear signature</button></div>`;
             } else {
                 const val = escapeHtml(ctx.draft[q.id] ?? '');
@@ -2208,7 +2612,7 @@
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
 
-            const progText = isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`;
+            const progText = isInitStep ? '✍️ Initials' : (isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`);
             const card = `
             <div class="wiz-head">
                 <span class="wiz-title">${escapeHtml(wiz.name || sheet.name)}</span>
@@ -2253,7 +2657,15 @@
                 renderRunner();
             }));
 
-            if (isSigStep) {
+            if (isInitStep) {
+                initInitialsPad(ctx);
+                const nameEl = $('initName');
+                nameEl.addEventListener('input', () => { ctx.initialsDraft.name = nameEl.value; });
+                $('initClearBtn').addEventListener('click', () => {
+                    ctx.initialsDraft.strokes = [];
+                    renderRunner();
+                });
+            } else if (isSigStep) {
                 initSigPad(ctx);
                 const nameEl = $('sigName');
                 nameEl.addEventListener('input', () => { ctx.sigDraft.name = nameEl.value; });
@@ -2272,7 +2684,7 @@
         // Persist the draft answers into the instance, refresh binding snapshots, and
         // re-evaluate completion (spec: snapshots captured at creation AND on every save;
         // completedAt set/cleared after every save — never a flag).
-        function saveRunnerEntry() {
+        async function saveRunnerEntry() {
             const ctx = runnerCtx;
             const sheet = DB.paperWizard.sheets[ctx.sheetId];
             const wiz = wizardForSheet(ctx.sheetId);
@@ -2284,10 +2696,11 @@
             let inst = sheetData.instances[ctx.key];
             if (!inst) {
                 inst = { phase: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.stage || null) : null,
-                         header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                         header: {}, days: {}, initials: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
                 sheetData.instances[ctx.key] = inst;
             }
+            if (!inst.initials) inst.initials = {}; // legacy instances predate per-day initials
             // Phase change (Step 9) — checked BEFORE writing answers: a new phase closes this
             // instance and starts a fresh one; the old log keeps its original phase snapshot.
             const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage' && !q.rowScoped);
@@ -2295,8 +2708,8 @@
             if (phaseQ) {
                 const nv = String(ctx.draft[phaseQ.id] ?? '').trim();
                 if (nv && sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && inst.phase !== nv) {
-                    rolled = phaseRollover(true); // prompts for strike initials; null = cancelled
-                    if (!rolled) return;          // nothing saved — runner stays open
+                    rolled = await phaseRollover(true); // drawn strike-initials capture; null = cancelled
+                    if (!rolled) return;                // nothing saved — runner stays open
                 }
             }
             for (const q of wiz.questions) {
@@ -2316,6 +2729,13 @@
             if (sheet.signature) {
                 inst.signature = ctx.sigDraft.strokes.length
                     ? { name: ctx.sigDraft.name.trim(), strokes: ctx.sigDraft.strokes }
+                    : null;
+            }
+            // Per-day initials: whoever filled this day drew their own — stored on that day only.
+            // An empty pad clears the day's initials (so a re-opened day can be re-signed).
+            if (needsDailyInitials(sheet) && ctx.day) {
+                inst.initials[ctx.day] = ctx.initialsDraft.strokes.length
+                    ? { name: ctx.initialsDraft.name.trim(), strokes: ctx.initialsDraft.strokes }
                     : null;
             }
             // Plant count write-back (Step 9): row-scoped question whose value differs from the
@@ -2344,19 +2764,37 @@
 
         // ---- Print popup (Step 10) ----
 
-        // Day-row grid for a daily-weekly sheet: explicit rowGrid (y0/pitch/count) when set,
-        // else inferred from the page-1 row fields (min positive Δy = pitch, min y = y0).
-        function rowGrid(sheet) {
-            if (sheet.rowGrid && sheet.rowGrid.pitch > 0) {
-                return { y0: sheet.rowGrid.y0 || 0, pitch: sheet.rowGrid.pitch, count: sheet.rowGrid.count || 7 };
+        // Day rows for a daily-weekly sheet — derived from the sheet's explicit daily-entry
+        // groups (no grid, no pitch inference). Each group contributes one row per day it has
+        // boxes for; a field prints on day n at its own placed position in that group's day-n
+        // member. Legacy sheets (pre-grouping: `row` flag + rowGrid) fall back to the old
+        // clone-down behavior so already-configured forms keep printing.
+        function dayRowsFromGroups(sheet) {
+            const groups = new Map();
+            for (const f of sheet.fields || []) {
+                if (!f.dayGroup) continue;
+                if (!groups.has(f.dayGroup)) groups.set(f.dayGroup, []);
+                groups.get(f.dayGroup).push(f);
             }
-            const rows = (sheet.fields || []).filter(f => f.row && f.page === 1);
-            if (!rows.length) return null;
-            // No configured grid: fall back to the row band height (tallest row field). The old
-            // "min positive Δy" inference was wrong — stacked fields within one row (the four
-            // monitoring checkboxes) are closer together than the rows themselves.
-            const ys = rows.map(f => f.y).sort((a, b) => a - b);
-            return { y0: ys[0], pitch: Math.max(...rows.map(f => f.h)), count: 7 };
+            const rows = [];
+            for (const [gid, members] of groups) {
+                const byDay = new Map();
+                for (const m of members) {
+                    const d = m.day || 1;
+                    if (!byDay.has(d)) byDay.set(d, []);
+                    byDay.get(d).push(m);
+                }
+                const days = [...byDay.keys()].sort((a, b) => a - b);
+                for (const d of days) rows.push({ day: d, fields: byDay.get(d) });
+            }
+            if (rows.length) return rows;
+
+            // Legacy fallback: `row`-flagged fields cloned down by the stored rowGrid pitch.
+            const legacy = (sheet.fields || []).filter(f => f.row && f.page === 1);
+            if (!legacy.length) return null;
+            const pitch = sheet.rowGrid?.pitch > 0 ? sheet.rowGrid.pitch : Math.max(...legacy.map(f => f.h));
+            const count = sheet.rowGrid?.count || 7;
+            return Array.from({ length: count }, (_, i) => ({ day: i + 1, fields: legacy.map(f => ({ ...f, y: f.y + i * pitch })) }));
         }
 
         // What is missing before an instance can be printed — drives the disabled tooltip.
@@ -2395,7 +2833,8 @@
                 // day.date is derived per row — never snapshotted.
                 if (f.source === 'day.date') v = resolveBinding(f.source, { lotId, key, inst, dayDate });
                 else v = (inst.snapshots && inst.snapshots[f.source] != null) ? inst.snapshots[f.source] : resolveBinding(f.source, { lotId, key, inst });
-            } else if (f.row) {
+            } else if (f.row || f.dayGroup) {
+                // Row field (legacy) or daily-entry group member: that day's answer.
                 v = inst.days?.[dayDate]?.[f.questionId];
             } else {
                 v = inst.header?.[f.questionId];
@@ -2407,13 +2846,18 @@
 
         // Signature as an inline SVG polyline set over the box (strokes are normalized 0–1).
         // `box` = sheet.signature geometry; `sig` = inst.signature strokes (normalized 0–1).
-        function sigSvgHtml(box, sig) {
+        // Drawn strokes (signature / per-day initials / strike-out) as an inline SVG polyline
+        // set over a normalized rect. `rect` = {x,y,w,h} in 0–1 page coords; `sig` = {strokes}.
+        function strokesSvgHtml(rect, sig) {
             const polys = ((sig && sig.strokes) || [])
                 .filter(st => st.length >= 2)
                 .map(st => `<polyline points="${st.map(p => `${(p[0] * 100).toFixed(2)},${(p[1] * 100).toFixed(2)}`).join(' ')}"/>`)
                 .join('');
-            return `<svg class="ov-sig" style="left:${box.x * 100}%;top:${box.y * 100}%;width:${box.w * 100}%;height:${box.h * 100}%;" viewBox="0 0 100 100" preserveAspectRatio="none">${polys}</svg>`;
+            return `<svg class="ov-sig" style="left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.w * 100}%;height:${rect.h * 100}%;" viewBox="0 0 100 100" preserveAspectRatio="none">${polys}</svg>`;
         }
+
+        // Signature as an inline SVG polyline set over the box (strokes are normalized 0–1).
+        function sigSvgHtml(box, sig) { return strokesSvgHtml(box, sig); }
 
         // Build + open the self-contained print popup. Light theme (paper preview), one section
         // per page at physical size, %-positioned overlays, signature + strike-out as SVG.
@@ -2424,8 +2868,8 @@
             if (!inst) { showToast('No entry to print yet'); return; }
 
             const W = sheet.pageWidthIn || 8.5, H = sheet.pageHeightIn || 11;
-            const grid = sheet.cadence === 'daily-weekly' ? rowGrid(sheet) : null;
-            const strike = (sheet.cadence === 'daily-weekly' && inst.phaseChangeDate) ? computeStrikeOut(sheet, inst) : null;
+            const dayRows = sheet.cadence === 'daily-weekly' ? dayRowsFromGroups(sheet) : null;
+            const strike = (sheet.cadence === 'daily-weekly' && inst.phaseChangeDate) ? computeStrikeOut(sheet, inst, key) : null;
 
             // One overlay span for a field at normalized y.
             const overlaySpan = (f, y, val) => {
@@ -2444,15 +2888,25 @@
                 let html = '';
                 for (const f of sheet.fields || []) {
                     if ((f.page ?? 1) !== pageNum) continue;
-                    if (f.row && grid) {
-                        for (let i = 0; i < grid.count; i++) {
-                            const dayDate = addDaysStr(key, i);
-                            // Clone this field straight down from its OWN placed position (row 1),
-                            // stepping by the row pitch — so each column lands in its own cell on
-                            // every day. (A single shared y0 was wrong: columns sit at different
-                            // heights within a row, e.g. the stacked monitoring checkboxes.)
-                            const y = f.y + i * grid.pitch;
-                            html += overlaySpan(f, y, printFieldValue(sheet, inst, lotId, key, f, dayDate));
+                    if (f.initials) {
+                        // Per-day initials box: the drawn initials of whoever filled that day,
+                        // printed in the box at its own placed position (group member → its day).
+                        const dayDate = f.dayGroup ? addDaysStr(key, (f.day || 1) - 1) : key;
+                        const init = inst.initials?.[dayDate];
+                        if (init && (init.strokes || []).length) html += strokesSvgHtml(f, init);
+                        continue;
+                    }
+                    if (f.dayGroup) {
+                        // Daily-entry group member: prints on its OWN day, at its OWN placed
+                        // position — no cloning, no pitch math. What you slid is what prints.
+                        const dayDate = addDaysStr(key, (f.day || 1) - 1);
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, inst, lotId, key, f, dayDate));
+                    } else if (f.row && dayRows) {
+                        // Legacy row field (pre-grouping sheet): clone down by the stored pitch.
+                        for (const r of dayRows) {
+                            const lf = r.fields.find(x => x.id === f.id);
+                            if (!lf) continue;
+                            html += overlaySpan(lf, lf.y, printFieldValue(sheet, inst, lotId, key, f, addDaysStr(key, r.day - 1)));
                         }
                     } else {
                         html += overlaySpan(f, f.y, printFieldValue(sheet, inst, lotId, key, f, null));
@@ -2463,7 +2917,14 @@
                     const L = strike.line;
                     const fsIn = 10 / 72;
                     html += `<svg class="ov-strike" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="${L.x1 * 100}" y1="${L.y1 * 100}" x2="${L.x2 * 100}" y2="${L.y2 * 100}"/></svg>`;
-                    html += `<span class="ov-strike-txt" style="left:${strike.initials.x * 100}%;top:${strike.initials.y * 100}%;font-size:${fsIn}in;">${escapeHtml(inst.strikeInitials || '')}</span>`;
+                    // Strike-out initials: drawn strokes (new) or a legacy typed string.
+                    const si = inst.strikeInitials;
+                    if (si && typeof si === 'object' && (si.strokes || []).length) {
+                        html += strokesSvgHtml(strike.initialsRect, si);
+                    } else if (typeof si === 'string' && si.trim()) {
+                        const r = strike.initialsRect;
+                        html += `<span class="ov-strike-txt" style="left:${(r.x + r.w / 2) * 100}%;top:${(r.y + r.h / 2) * 100}%;font-size:${fsIn}in;">${escapeHtml(si)}</span>`;
+                    }
                     html += `<span class="ov-strike-date" style="left:${strike.date.x * 100}%;top:${strike.date.y * 100}%;font-size:${fsIn}in;">${fmtMMDD(inst.phaseChangeDate)}</span>`;
                 }
                 return html;
@@ -2675,8 +3136,21 @@
             }
 
             const loaded = !!loadedDoc;
-            // Non-auto-filled fields not yet claimed by a wizard question.
-            const unboundCount = cfgFields.filter(f => !f.source && !findQuestionForField(f.id)).length;
+            // Non-auto-filled columns not yet claimed by a wizard question. A daily-entry
+            // group counts once (bindings are group-level), not once per day clone.
+            const unboundCount = (() => {
+                let n = 0;
+                const seenGroups = new Set();
+                for (const f of cfgFields) {
+                    if (f.source || f.initials) continue; // initials boxes are drawn, not question-filled
+                    if (f.dayGroup) {
+                        if (seenGroups.has(f.dayGroup)) continue;
+                        seenGroups.add(f.dayGroup);
+                    }
+                    if (!findQuestionForField(f.id)) n++;
+                }
+                return n;
+            })();
             panel.innerHTML = `
                 <div class="cfg-toolbar">
                     <button type="button" class="btn btn-primary" id="loadDocBtn">⬆️ Load document</button>
@@ -2725,15 +3199,11 @@
                                     <option value="event"${cfgCadence === 'event' ? ' selected' : ''}>event — one instance per event date</option>
                                 </select>
                             </div>
-                            <div id="rowGridWrap" style="display:${cfgCadence === 'daily-weekly' ? '' : 'none'}; margin-top:10px;">
-                                <label style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);">Day-row grid (page 1)</label>
-                                <div class="fp-grid" style="margin-top:6px;">
-                                    <div class="form-group"><label for="rowY0">Row top (y₀)</label><input type="number" id="rowY0" min="0" max="1" step="0.005" value="${cfgRowY0}"></div>
-                                    <div class="form-group"><label for="rowPitch">Pitch</label><input type="number" id="rowPitch" min="0.005" max="0.2" step="0.005" value="${cfgRowPitch}"></div>
-                                </div>
-                                <div class="form-group"><label for="rowCount">Rows</label><input type="number" id="rowCount" min="1" max="14" step="1" value="${cfgRowCount}"></div>
-                                <p class="cfg-hint">Place each day-row field on the form's <b>first</b> day row (dashed ghosts preview days 2–N). Set <b>Pitch</b> to the vertical spacing between the table rows — day <i>n</i> prints at the field's own position + (n−1)·pitch.</p>
-                            </div>
+                            ${cfgCadence === 'daily-weekly' ? `
+                            <div id="dayGroupHint" style="margin-top:10px;">
+                                <label style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);">Daily entry (7-day rows)</label>
+                                <p class="cfg-hint">Place the day-1 boxes over the form's first day row, then select them all (Ctrl/⌘-click or Shift-drag) and hit <b>🔗 Group as daily entry</b> in the Field properties panel — days 2–N become real boxes you slide into position. Drag any member to move the whole group; ✂️ Ungroup removes the day 2–N boxes.</p>
+                            </div>` : ''}
                             <button type="button" class="btn btn-secondary" id="addSigBtn" style="width:100%; margin-top:12px; min-height:42px;">✍️ Add signature box</button>
                         </div>
                         <div class="card">
@@ -2759,15 +3229,11 @@
 
             $('loadDocBtn').addEventListener('click', () => $('pageImportInput').click());
             $('sheetNameInput').addEventListener('change', () => { cfgName = $('sheetNameInput').value.trim(); });
+            // Cadence change re-renders the panel (the daily-entry hint is cadence-specific).
             $('cadenceSelect').addEventListener('change', () => {
                 cfgCadence = $('cadenceSelect').value;
-                const rgw = $('rowGridWrap'); if (rgw) rgw.style.display = cfgCadence === 'daily-weekly' ? '' : 'none';
+                renderConfigure();
             });
-            // Day-row grid (daily-weekly sheets): explicit y₀/pitch/rows for the 7-day table.
-            const rowNum = (id, apply) => { const el = $(id); if (!el) return; el.addEventListener('change', () => { const v = parseFloat(el.value); if (!isNaN(v)) apply(v); }); };
-            rowNum('#rowY0', v => { cfgRowY0 = Math.max(0, Math.min(1, v)); });
-            rowNum('#rowPitch', v => { cfgRowPitch = Math.max(0.005, Math.min(0.2, v)); });
-            rowNum('#rowCount', v => { cfgRowCount = Math.max(1, Math.min(14, Math.round(v))); });
             $('addSigBtn').addEventListener('click', addSignatureBox);
 
             // Wizard builder (Step 4)
@@ -2805,8 +3271,27 @@
 
         function questionCardHtml(q, i) {
             const n = cfgWizard.questions.length;
+            // One option per column: daily-entry groups offer their day-1 rep (binding the rep
+            // binds every day of the group); ungrouped fields offer themselves.
+            const seenGroups = new Set();
+            const targets = [];
+            for (const f of cfgFields) {
+                if (f.initials) continue; // initials boxes are drawn per day — not question-filled
+                if (f.dayGroup) {
+                    if (seenGroups.has(f.dayGroup)) continue;
+                    if (cfgGroupRep(f.dayGroup) !== f.id) continue; // list the group at its rep
+                    seenGroups.add(f.dayGroup);
+                    targets.push({ id: f.id, label: `${f.label || f.id} · all days`, groupId: f.dayGroup });
+                } else {
+                    targets.push({ id: f.id, label: f.label || f.id, groupId: null });
+                }
+            }
+            const targetGroup = cfgFields.find(f => f.id === q.targetFieldId)?.dayGroup || null;
             const fieldOpts = `<option value="">— none (notes only) —</option>` +
-                cfgFields.map(f => `<option value="${f.id}"${q.targetFieldId === f.id ? ' selected' : ''}>${escapeHtml(f.label || f.id)} (${f.id})</option>`).join('');
+                targets.map(t => {
+                    const sel = t.groupId ? targetGroup === t.groupId : q.targetFieldId === t.id;
+                    return `<option value="${t.id}"${sel ? ' selected' : ''}>${escapeHtml(t.label)}${t.groupId ? ' 🔗' : ''}</option>`;
+                }).join('');
             const prefillOpts = `<option value="">— none —</option>` +
                 BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
             const writesOpts = `<option value="">— none —</option>` +
@@ -2864,19 +3349,21 @@
                 });
                 card.querySelector('.q-target').addEventListener('change', () => {
                     const fid = card.querySelector('.q-target').value || null;
-                    // Release the field this question previously filled.
-                    if (q.targetFieldId && q.targetFieldId !== fid) {
-                        const prev = cfgFields.find(x => x.id === q.targetFieldId);
-                        if (prev && prev.questionId === q.id) prev.questionId = null;
-                    }
-                    // One question per field: release the field from any other question first.
+                    // Release this question from its previous target (whole group if it was one).
+                    if (q.targetFieldId) mutateFieldGroup(q.targetFieldId, t => { if (t.questionId === q.id) t.questionId = null; });
+                    // One question per column: release the whole column from any other question.
                     if (fid) {
-                        const other = cfgWizard.questions.find(x => x.id !== q.id && x.targetFieldId === fid);
-                        if (other) other.targetFieldId = null;
+                        const f = cfgFields.find(x => x.id === fid);
+                        cfgWizard.questions.forEach(x => {
+                            if (x.id === q.id || !x.targetFieldId) return;
+                            const tf = cfgFields.find(y => y.id === x.targetFieldId);
+                            if (!tf) return;
+                            if (f?.dayGroup ? tf.dayGroup === f.dayGroup : tf.id === fid) x.targetFieldId = null;
+                        });
                     }
                     q.targetFieldId = fid;
-                    const f = cfgFields.find(x => x.id === fid);
-                    if (f) f.questionId = q.id;
+                    // Bind the question to the field AND every member of its daily-entry group.
+                    if (fid) mutateFieldGroup(fid, t => { t.questionId = q.id; });
                     refreshCfgOverlays();
                     refreshWizardBuilder();
                 });
@@ -2924,7 +3411,7 @@
                 pageHeightIn: cfgHeightIn,
                 pageCount: cfgPageCount,
                 cadence: cfgCadence,
-                rowGrid: cfgCadence === 'daily-weekly' ? { y0: cfgRowY0, pitch: cfgRowPitch, count: cfgRowCount } : null,
+                // No rowGrid — daily-weekly rows are the explicit day-group boxes in fields[].
                 fields: cfgFields.map(f => ({ ...f })),
                 signature: cfgSignature ? { ...cfgSignature } : null
             };
@@ -2952,12 +3439,10 @@
             cfgCadence = 'one-shot';
             cfgWidthIn = 8.5;
             cfgHeightIn = 11;
-            cfgRowY0 = 0.27;
-            cfgRowPitch = 0.095;
-            cfgRowCount = 7;
             cfgFields = [];
             cfgSignature = null;
             cfgSelection = null;
+            cfgMultiSel = new Set();
             cfgWizard = { id: generateFieldId(), sheetId: configSheetId, name: cfgName + ' Wizard', questions: [] };
             cfgQuestionSel = null;
             notifySitkaTools();
