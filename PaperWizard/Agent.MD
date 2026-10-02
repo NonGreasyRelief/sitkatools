@@ -2,20 +2,20 @@
 
 ## What This Tool Does
 
-PaperWizard is a **controlled paperwork fill & print tool** for the SitkaGit suite. Licensed cultivation requires paper records — propagation worksheets, weekly grow-logs, room-clean logs, IPM logs, harvest logs — to be filled out and kept on file. PaperWizard replaces the handwriting: it provides quick click-through multi-question wizards that capture daily paperwork answers, then renders the facility's **controlled form page images (PNG/JPG)** with the captured text overlaid in pre-configured positions. The user prints the browser view of the filled form; the printed page is a properly completed controlled document.
+PaperWizard is a **controlled paperwork fill & print tool** for the SitkaGit suite. Licensed cultivation requires paper records — propagation worksheets, weekly grow-logs, room-clean logs, IPM logs, harvest logs — to be filled out and kept on file. PaperWizard replaces the handwriting: it provides quick click-through multi-question wizards that capture daily paperwork answers, then renders the facility's **controlled form page images (WebP)** with the captured text overlaid in pre-configured positions. The user prints the browser view of the filled form; the printed page is a properly completed controlled document.
 
 The tool has two top-level tabs:
 
 1. **Filing Cabinet** (default, first page) — the active lot's filing cabinet as a tree view of every document in its file: the propagation worksheet, pre-move-in room cleans (sourced from the previous occupant's file), one grow-log per week of the crop (typically 10–14), IPM log entries, and the harvest log. Each leaf is an instance with its status; a leaf opens its wizard or, once complete, its print popup.
 2. **Configure Sheets** — load a controlled form's page images, place text boxes over them, bind boxes to auto-fill values from the main DB, and build the multi-question wizard for that sheet.
 
-**Everything about every sheet is designed in the Configure Sheets tab at runtime.** The tool ships with zero pre-configured sheets and hard-codes none — sheet layouts, field positions, auto-fill bindings, and wizards are all data stored under `_PaperWizard`. Adding a new controlled form to the facility = export its pages as PNG/JPG images, load them once, place boxes, build its wizard. No code changes.
+**Everything about every sheet is designed in the Configure Sheets tab at runtime.** The tool ships with zero pre-configured sheets and hard-codes none — sheet layouts, field positions, auto-fill bindings, and wizards are all data stored under `_PaperWizard`. Adding a new controlled form to the facility = export its pages as WebP images, load them once, place boxes, build its wizard. No code changes.
 
 ### The Golden Rule — Never Store the Page Images
 
 PaperWizard **never stores controlled page image files** — not in the database, not in browser storage, nowhere. The database stores only:
 
-- the **expected page-image base name**, which doubles as the sheet's unique identifier (e.g. `grow-log-p1.png`, `grow-log-p2.png` → sheet id `grow-log`), and
+- the **expected page-image base name**, which doubles as the sheet's unique identifier (e.g. `grow-log-p1.webp`, `grow-log-p2.webp` → sheet id `grow-log`), and
 - the **normalized geometry** of every text box / signature box on each page.
 
 The actual page images are loaded **just-in-time** through a **"Load document"** multi-file picker, in exactly two situations:
@@ -25,13 +25,13 @@ The actual page images are loaded **just-in-time** through a **"Load document"**
 
 A naming or completeness mismatch means the wrong form revision is being used — the tool rejects it with a clear error (wrong base name, missing page number, duplicate page, non-image file). Controlled documents are versioned by file name; this check is what keeps a renamed/revised form from silently filling the wrong layout.
 
-**Page naming convention:** each page of a controlled form is exported as a PNG or JPG named `<base>-pN.png` (e.g. `grow-log-p1.png`, `grow-log-p2.png`). All pages of one sheet share the same base name and are numbered consecutively from 1 with no gaps. The base name becomes the sheet id.
+**Page naming convention:** each page of a controlled form is exported as a WebP named `<base>-pN.webp` (e.g. `grow-log-p1.webp`, `grow-log-p2.webp`). All pages of one sheet share the same base name and are numbered consecutively from 1 with no gaps. The base name becomes the sheet id.
 
 ### Intended Use
 
 - **Daily (floor staff, tablet or desktop):** open PaperWizard — the active lot's filing cabinet is already on screen. Tap the leaf that needs today's entry (e.g. "Grow-Log — Sep 21–27: 4/7 days"), answer a handful of questions (with **"⏪ Same as last time"** pre-filling most of them from yesterday), sign if required, done in under a minute.
 - **Weekly / on completion (manager):** the grow-log's **🖨️ Print** button is available at all times — as soon as an entry exists and the matching page set is loaded this session, clicking it opens a popup window showing each page image with all text overlaid in place plus a print button. An incomplete instance prints too (unanswered fields show N/A / empty boxes); the button's tooltip lists what's still missing so the user knows the copy isn't final. The user hits print and files the paper.
-- **Setup (manager, once per form):** in Configure Sheets, export the controlled form's pages as PNG/JPG (`<base>-pN.png`), load them, drag boxes over every fill-in spot, bind header boxes to lot keys (strain, lot #, dates…), drop a signature box, then build the wizard's question list. Save — the sheet is live for every lot.
+- **Setup (manager, once per form):** in Configure Sheets, export the controlled form's pages as WebP (`<base>-pN.webp`), load them, drag boxes over every fill-in spot, bind header boxes to lot keys (strain, lot #, dates…), drop a signature box, then build the wizard's question list. Save — the sheet is live for every lot.
 
 ### What This Tool Is NOT
 
@@ -44,13 +44,13 @@ A naming or completeness mismatch means the wrong form revision is being used �
 
 ### Sheet (layout)
 
-A **sheet** is one configured controlled form. Its id **is the expected page-image base name** (e.g. pages `grow-log-p1.png`… → sheet id `grow-log`). A sheet stores:
+A **sheet** is one configured controlled form. Its id **is the expected page-image base name** (e.g. pages `grow-log-p1.webp`… → sheet id `grow-log`). A sheet stores:
 
 | Field | Type | Notes |
 |---|---|---|
 | `name` | string | Human label shown in the Filing Cabinet ("Weekly Grow-Log"). |
-| `orientation` | `'portrait' \| 'landscape'` | How the page is displayed in Configure and in the print popup. Auto-derived from the first page image's aspect ratio (width > height → landscape) when the sheet is first configured. |
-| `pageWidthIn` / `pageHeightIn` | number | Page size in inches (default Letter 8.5 × 11). Needed to convert point-based font sizes to overlay pixels for print. Entered manually at configure time (the images supply the aspect ratio, not the physical size). |
+| `orientation` | `'portrait' \| 'landscape'` | How the page is displayed in Configure and in the print popup. Auto-derived from the first page image's pixel dimensions (width > height → landscape). |
+| `pageWidthIn` / `pageHeightIn` | number | Physical page size in inches, automatically set to North American Letter (8.5 × 11, rotated for landscape). Used for print sizing and point-based font scaling; no manual input. Retained in stored sheet data for compatibility. |
 | `pageCount` | number | Number of pages in the form (= number of page images loaded at configure time). |
 | `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` | How sheet *instances* are formed (see "Entry & Instance"). Grow-log = `daily-weekly`; propagation worksheet = `one-shot`; room-clean / IPM / harvest = `event`. |
 | `fields[]` | array | Text boxes (below). Daily-weekly sheets have **no grid** — their day rows are explicit daily-entry groups of fields (see "Day rows"). |
@@ -261,10 +261,10 @@ Completion is re-evaluated after every save; it is never stored as a flag, only 
 
 ## Page Image Handling — Just-In-Time Load
 
-- **"Load document" button** (hidden `<input type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple>`) appears in both tabs:
-  - **Configure Sheets:** required before the preview renders and before any box can be placed. The picker accepts a whole page set at once (`<base>-p1.png`, `-p2.png`, …). Loading a *new* base name starts a new sheet configuration; loading a set matching an existing sheet id opens that sheet for editing (with a confirm if it already has fields).
+- **"Load document" button** (hidden `<input type="file" accept=".webp,image/webp" multiple>`) appears in both tabs:
+  - **Configure Sheets:** required before the preview renders and before any box can be placed. The picker accepts a whole page set at once (`<base>-p1.webp`, `-p2.webp`, …). Loading a *new* base name starts a new sheet configuration; loading a set matching an existing sheet id opens that sheet for editing (with a confirm if it already has fields).
   - **Filing Cabinet → Print:** required at print time for the selected instance. The loaded page set is validated against the sheet id (base-name match + consecutive numbering from p1), then handed to the print popup.
-- **Validation** (`parsePageFiles`): PNG/JPG only; all files share one base name; page numbers are consecutive 1..N with no gaps or duplicates. Any violation is rejected with a clear error naming the offending file.
+- **Validation** (`parsePageFiles`): WebP only; all files share one base name; page numbers are consecutive 1..N with no gaps or duplicates. Any violation is rejected with a clear error naming the offending file.
 - The loaded `File`s are held in memory only (blob URLs on a JS variable) for the duration of the configure session / print action. Nothing is written to disk or browser storage.
 - **Blob lifecycle:** each page image gets a `URL.createObjectURL(file)`; all are revoked when the tool closes, a new document is loaded, or the popup closes.
 - Because the page images are never persisted, **a configured sheet with no page set loaded shows as "⚠️ needs document"** in the Filing Cabinet — its print button is disabled until the matching page set is loaded in that session.
@@ -288,7 +288,7 @@ When Print is clicked (entry exists + matching page set loaded — the instance 
 Each page is a plain `<img>` inside a `.form-page` container whose inline `aspect-ratio` comes from the image's actual pixel dimensions (`wPx / hPx`). Normalized 0–1 box coordinates → percentages of that container, so boxes track the image at any display size with pure CSS — no JS sizing, and window resizes need no handler. A zoom control (buttons + Ctrl/⌘+scroll) scales the pages via a CSS variable for precise box placement.
 
 - Zero dependencies; works fully offline on `file://` — consistent with the suite's no-network rule.
-- The images supply the aspect ratio automatically; physical size (`pageWidthIn`/`pageHeightIn`) is entered manually at configure time and used only for print scaling (pt → inches).
+- Image pixel dimensions determine portrait or landscape; the print size is automatically North American Letter (8.5 × 11 in, rotated for landscape). The stored `pageWidthIn`/`pageHeightIn` values are generated from that orientation and used for print scaling (pt → inches).
 - The `<img>` has `pointer-events: none`, so click-drag box creation works over empty page space.
 - The print popup pins each page section to the exact physical size (inches) with the same %-positioned overlays, so what you placed is what prints.
 
@@ -429,11 +429,11 @@ These are the controlled forms the facility will configure in the Configure Shee
 
 | Sheet (page-image base name) | Cadence | Notes |
 |---|---|---|
-| Propagation worksheet (`propagation-worksheet`, pages `propagation-worksheet-p1.png`…) | one-shot | Filled once at lot creation; header auto-filled from lot keys (strain, lot #, parent lot #, dates). Starting plant count is a wizard question pre-filled from `lot.plantCount` so re-prints show the value at creation. |
-| Weekly Grow-Log (`grow-log`, pages `grow-log-p1.png`…) | daily-weekly | 7 day rows + phase header (Clone / Veg / Bloom via `instance.phase`). Rolling 7-day window from first entry; rolls over on phase change with strike-through. Each day row ends in a **daily-initials box** (grouped, `initials: true`) so whoever fills the day draws their initials for accountability. Completes when the window fills (answers + per-day initials) → print. |
-| Room-clean sheet (`room-clean`, pages `room-clean-p1.png`… — one generic page set) | event | A single controlled form for all room cleans (clone room, veg room, grow room); the room name is an overlaid field bound to the lot's room for that phase. One instance per clean event, filed under the lot that performed the clean. The *next* lot to occupy that room references it read-only in its filing cabinet as proof of pre-move-in cleaning (see "Filing Cabinet"). |
-| IPM log (`ipm-log`, pages `ipm-log-p1.png`…) | event | Pesticide/IPM application entries; print on demand (e.g. end of week or at close-out). |
-| Harvest log (`harvest-log`, pages `harvest-log-p1.png`…) | event | Harvest-day entries; print on demand. |
+| Propagation worksheet (`propagation-worksheet`, pages `propagation-worksheet-p1.webp`…) | one-shot | Filled once at lot creation; header auto-filled from lot keys (strain, lot #, parent lot #, dates). Starting plant count is a wizard question pre-filled from `lot.plantCount` so re-prints show the value at creation. |
+| Weekly Grow-Log (`grow-log`, pages `grow-log-p1.webp`…) | daily-weekly | 7 day rows + phase header (Clone / Veg / Bloom via `instance.phase`). Rolling 7-day window from first entry; rolls over on phase change with strike-through. Each day row ends in a **daily-initials box** (grouped, `initials: true`) so whoever fills the day draws their initials for accountability. Completes when the window fills (answers + per-day initials) → print. |
+| Room-clean sheet (`room-clean`, pages `room-clean-p1.webp`… — one generic page set) | event | A single controlled form for all room cleans (clone room, veg room, grow room); the room name is an overlaid field bound to the lot's room for that phase. One instance per clean event, filed under the lot that performed the clean. The *next* lot to occupy that room references it read-only in its filing cabinet as proof of pre-move-in cleaning (see "Filing Cabinet"). |
+| IPM log (`ipm-log`, pages `ipm-log-p1.webp`…) | event | Pesticide/IPM application entries; print on demand (e.g. end of week or at close-out). |
+| Harvest log (`harvest-log`, pages `harvest-log-p1.webp`…) | event | Harvest-day entries; print on demand. |
 
 ## Relationship to SitkaTools
 
@@ -503,7 +503,7 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 
 Decisions made during design (2026-09-24, updated 2026-09-26) — already folded into the sections above; kept here as a record:
 
-1. **Page image rendering:** plain `<img>` per page, CSS aspect-ratio from each image's pixel dimensions (offline-first). No PDF library, no CDN — the suite's offline `file://` constraint and single-file simplicity win; the one-time cost is exporting each form's pages to PNG/JPG locally.
+1. **Page image rendering:** plain `<img>` per page, CSS aspect-ratio from each image's pixel dimensions (offline-first). No PDF library, no CDN — the suite's offline `file://` constraint and single-file simplicity win; the one-time cost is exporting each form's pages to WebP locally (best compression for black-and-white text documents).
 2. **Plant count & parent lot #:** both already exist on the SitkaTools lot record (`plantCount`, `parentLotId`) and are auto-fill bindings. The grow-log captures every subsequent plant-count change day by day, so only the *starting* count lives in the main DB. **Pending SitkaTools change (not PaperWizard):** make the parent-lot field accept manual free-text entry (in addition to picking an existing lot) so a lot can be created from a parent that isn't in the system.
 3. **Grow-log window:** rolling 7 days from the first daily entry — not fixed Mon–Sun weeks.
 4. **Phase change:** old grow-log gets a diagonal strike-out across its remaining rows — initials above the line, change date below (see "Strike-out policy", decision 12); a new instance starts with the move day as a double entry (one row in each phase's sheet); headers carry their own phase snapshot. See "Phase Change".

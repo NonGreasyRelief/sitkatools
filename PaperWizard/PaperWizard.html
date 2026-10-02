@@ -1,5 +1,5 @@
 <!-- PaperWizard.html — Controlled paperwork fill & print tool for SitkaGit suite -->
-<!-- Tool: PaperWizard | Purpose: Fill controlled paperwork from PNG/JPG page images via wizards, overlay text, print -->
+<!-- Tool: PaperWizard | Purpose: Fill controlled paperwork from WebP page images via wizards, overlay text, print -->
 <!-- Database Keys: "_PaperWizard" (top-level) -->
 <!DOCTYPE html>
 <html lang="en">
@@ -485,6 +485,31 @@
         .field-box .handle.sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
         .field-box .handle.se { bottom: -7px; right: -7px; cursor: nwse-resize; }
 
+        /* Edge-scale handles — resize along a single axis (shown when selected).
+           n/s change height only, e/w change width only. */
+        .field-box .handle.n { top: -7px; left: 50%; transform: translateX(-50%); width: 16px; height: 8px; border-radius: 4px; cursor: ns-resize; }
+        .field-box .handle.s { bottom: -7px; left: 50%; transform: translateX(-50%); width: 16px; height: 8px; border-radius: 4px; cursor: ns-resize; }
+        .field-box .handle.e { right: -7px; top: 50%; transform: translateY(-50%); width: 8px; height: 16px; border-radius: 4px; cursor: ew-resize; }
+        .field-box .handle.w { left: -7px; top: 50%; transform: translateY(-50%); width: 8px; height: 16px; border-radius: 4px; cursor: ew-resize; }
+
+        /* Axis-move arrow handles — float just above / beside every box (nudged clear of
+           the n/e edge-scale pills). ↕ slides the box vertically (X locked), ↔ slides it
+           horizontally (Y locked), so boxes can be lined up neatly one axis at a time. */
+        .field-box .handle.move-v {
+            top: -27px; left: 50%; transform: translateX(-50%);
+            width: 16px; height: 13px; cursor: ns-resize;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; line-height: 1; color: var(--accent);
+        }
+        .field-box .handle.move-h {
+            right: -27px; top: 50%; transform: translateY(-50%);
+            width: 13px; height: 16px; cursor: ew-resize;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; line-height: 1; color: var(--accent);
+        }
+        .field-box.sig .handle.move-v, .field-box.sig .handle.move-h { border-color: var(--warning); color: var(--warning); }
+        .field-box.initials .handle.move-v, .field-box.initials .handle.move-h { border-color: #b98cff; color: #b98cff; }
+
         /* ---- Field properties panel (Step 3) ---- */
         .fp-head {
             display: flex;
@@ -515,13 +540,20 @@
         .fp-grid .form-group, .field-properties .form-group { margin-bottom: 0; }
         .field-properties > .form-group { margin-bottom: 10px; }
 
-        /* Panels below the page image: cards flow into as many columns as fit
-           (side by side on wide windows, stacked on narrow ones). */
+        /* Panels below the page image: Sheet + Field properties sit side by side on wide
+           windows (stacked on narrow ones); the Wizard builder spans the full width below
+           them so its question inputs never bleed out of a squeezed column. minmax(0, 1fr)
+           lets tracks shrink below their content's min-width — that's what stops the blowout. */
         .cfg-side {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 16px;
             align-items: start;
+        }
+        /* Wizard builder spans both columns (full width) on its own row below the two panels. */
+        .cfg-side .wizard-card { grid-column: 1 / -1; }
+        @media (max-width: 720px) {
+            .cfg-side { grid-template-columns: minmax(0, 1fr); }
         }
 
         .card {
@@ -787,10 +819,10 @@
     <input type="file" id="dbImportInput" accept=".json" style="display:none;">
 
     <!-- Hidden file input for just-in-time controlled page-image load (never stored) -->
-    <input type="file" id="pageImportInput" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple style="display:none;">
+    <input type="file" id="pageImportInput" accept=".webp,image/webp" multiple style="display:none;">
 
     <!-- Hidden file input for the print path: loads a page set matching a sheet's id -->
-    <input type="file" id="printImportInput" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple style="display:none;">
+    <input type="file" id="printImportInput" accept=".webp,image/webp" multiple style="display:none;">
 
     <!-- Main Content -->
     <main class="main">
@@ -1015,8 +1047,6 @@
         let orientation = 'portrait';
         let cfgName = '';
         let cfgCadence = 'one-shot';
-        let cfgWidthIn = 8.5;
-        let cfgHeightIn = 11;
         let cfgPageCount = 1;   // number of loaded page images
         let cfgZoom = 1;        // page zoom (1 = fit-to-width)
         let cfgFields = [];     // working copy of the sheet's fields[]
@@ -1034,6 +1064,12 @@
         // which may differ from whatever is open in Configure. Same golden rule: blob URLs
         // only, revoked on close / new load.
         let printDoc = null;        // { sheetId, pages: [{ url, wPx, hPx }] } | null
+
+        function letterPageSize(isLandscape) {
+            return isLandscape
+                ? { widthIn: 11, heightIn: 8.5 }
+                : { widthIn: 8.5, heightIn: 11 };
+        }
 
         function revokeLoadedDoc() {
             loadedDoc?.pages.forEach(p => URL.revokeObjectURL(p.url));
@@ -1077,18 +1113,18 @@
         const PAGE_IMG_RE = /^(.+)-p(\d+)(?:\.[a-z0-9]+)?$/i;
 
         // Parse the selected files into a validated, ordered page set.
-        // Convention: <base>-p1.png, <base>-p2.png, … — all same base name, numbered
+        // Convention: <base>-p1.webp, <base>-p2.webp, … — all same base name, numbered
         // 1..N with no gaps. Returns { baseName, pages } or throws an Error with a
         // user-facing message (the file-name check is the wrong-revision guard).
         function parsePageFiles(fileList) {
             const files = Array.from(fileList || []);
             if (!files.length) throw new Error('No page images selected.');
-            const badType = files.find(f => !/\.png$/i.test(f.name) && !/\.jpe?g$/i.test(f.name));
-            if (badType) throw new Error(`"${badType.name}" is not a PNG or JPG — export each form page as PNG/JPG.`);
+            const badType = files.find(f => !/\.webp$/i.test(f.name));
+            if (badType) throw new Error(`"${badType.name}" is not a WebP image — export each form page as WebP.`);
 
             const parsed = files.map(f => {
                 const m = f.name.match(PAGE_IMG_RE);
-                if (!m) throw new Error(`"${f.name}" doesn't follow the naming convention <base>-pN.png (e.g. grow-log-p1.png).`);
+                if (!m) throw new Error(`"${f.name}" doesn't follow the naming convention <base>-pN.webp (e.g. grow-log-p1.webp).`);
                 return { file: f, baseName: m[1], n: parseInt(m[2], 10) };
             });
 
@@ -1168,8 +1204,6 @@
             orientation = pages[0].wPx > pages[0].hPx ? 'landscape' : 'portrait'; // derived from the page image
             cfgName = s?.name || parsed.baseName;
             cfgCadence = s?.cadence || 'one-shot';
-            cfgWidthIn = s?.pageWidthIn ?? 8.5;
-            cfgHeightIn = s?.pageHeightIn ?? 11;
             cfgPageCount = Math.max(1, Math.min(20, pages.length));
             // Working copies of the layout (saved to DB in Step 4).
             cfgFields = (s?.fields || []).map(f => ({ ...f, page: f.page ?? 1 }));
@@ -1257,7 +1291,11 @@
                 (item.initials ? '<span class="box-initials" title="Daily-initials box — drawn per day">✍️</span>' : '') +
                 `<span class="box-label">${escapeHtml(item.label || item.id)}</span>` +
                 (kind === 'field' && item.day > 1 ? `<span class="box-day" title="Daily-entry group — day ${item.day}">D${item.day}</span>` : '') +
-                (sel ? ['nw', 'ne', 'sw', 'se'].map(c => `<span class="handle ${c}" data-corner="${c}"></span>`).join('') : '') +
+                // Axis-move handles float on every box (selected or not): ↕ above, ↔ beside.
+                `<span class="handle move-v" data-axis="v" title="Drag to slide vertically (X locked)">↕</span>` +
+                `<span class="handle move-h" data-axis="h" title="Drag to slide horizontally (Y locked)">↔</span>` +
+                // Corner handles (diagonal scale) + edge handles (single-axis scale), shown when selected.
+                (sel ? [...['nw', 'ne', 'sw', 'se'], ...['n', 's', 'e', 'w']].map(c => `<span class="handle ${c}" data-corner="${c}"></span>`).join('') : '') +
                 `</div>`;
         }
 
@@ -1368,7 +1406,7 @@
                 }
             }
             refreshCfgOverlays();
-            showToast(`Grouped ${selFields.length} box(es) into daily entry "${gid}" — ${n} days. Drag any member to move the whole group.`);
+            showToast(`Grouped ${selFields.length} box(es) into daily entry "${gid}" — ${n} days. Drag a member to move the whole group; hold Alt/⌥ to move just that day row.`);
         }
 
         // Ungroup: delete every day 2..N member of each group in the selection; day-1 boxes stay.
@@ -1475,6 +1513,41 @@
             refreshWizardBuilder();
         }
 
+        // Duplicate the selected box(es): each copy is an exact clone — same size, same
+        // location, same bindings — with a fresh id and a " (copy)" label. The copies are
+        // left unbound to questions (the original keeps its question) and ungrouped, so a
+        // duplicated daily-entry member becomes a standalone box the user can re-group or
+        // bind as needed. The new boxes become the selection.
+        function duplicateSelection() {
+            const selIds = selectedFieldIds();
+            if (!selIds.length && cfgSelection?.kind !== 'signature') return;
+            const copies = [];
+            for (const id of selIds) {
+                const f = cfgFields.find(x => x.id === id);
+                if (!f) continue;
+                copies.push({
+                    ...f,
+                    id: generateFieldId(),
+                    label: `${f.label || f.id} (copy)`,
+                    dayGroup: null, // a copy is standalone — re-group it if wanted
+                    day: 1,
+                    questionId: null // the original keeps its wizard question
+                });
+            }
+            cfgFields.push(...copies);
+            if (cfgSelection?.kind === 'signature' && cfgSignature) {
+                const c = { ...cfgSignature, id: generateFieldId(), label: `${cfgSignature.label || 'Signature'} (copy)` };
+                cfgSignature = c;
+                cfgSelection = { kind: 'signature', id: c.id };
+            } else if (copies.length) {
+                cfgSelection = { kind: 'field', id: copies[copies.length - 1].id };
+                cfgMultiSel = new Set(copies.slice(0, -1).map(c => c.id));
+            }
+            refreshCfgOverlays();
+            refreshWizardBuilder();
+            showToast(`Duplicated ${copies.length || 1} box(es) — same size & position`);
+        }
+
         function addSignatureBox() {
             if (cfgSignature) { selectCfgItem('signature', cfgSignature.id); return; }
             cfgSignature = { id: generateFieldId(), label: 'Signature', x: 0.58, y: 0.86, w: 0.32, h: 0.07, page: 1 };
@@ -1490,7 +1563,7 @@
         function attachBoxEditor(stage) {
             stage.querySelectorAll('.form-page').forEach(pageEl => {
                 const pageNum = parseInt(pageEl.dataset.page, 10) || 1;
-                let drag = null; // { mode:'create'|'marquee'|'move'|'resize', ... }
+                let drag = null; // { mode:'create'|'marquee'|'move'|'axis'|'resize', ... }
 
                 pageEl.addEventListener('pointerdown', (e) => {
                     if (e.button !== 0) return;
@@ -1504,7 +1577,18 @@
                     if (boxEl && boxEl.dataset.id) {
                         const id = boxEl.dataset.id;
                         const kind = boxEl.dataset.kind || 'field';
-                        if (handle) {
+                        if (handle?.dataset.axis) {
+                            // Axis-move handle (↕ above / ↔ beside the box): slide along one
+                            // axis only, so boxes can be lined up neatly. A daily-entry group
+                            // still moves as one block — unless Alt/⌥ is held, which slides just
+                            // this box (one day row) independently for exact per-row placement.
+                            cfgSelection = { kind, id };
+                            cfgMultiSel = new Set();
+                            refreshCfgOverlays();
+                            const members = e.altKey ? [id] : [...new Set(cfgGroupMembers(id))];
+                            const item0 = findCfgItem(kind, id);
+                            drag = { mode: 'axis', id, kind, axis: handle.dataset.axis, offX: px - item0.x, offY: py - item0.y, members };
+                        } else if (handle) {
                             drag = { mode: 'resize', id, kind, corner: handle.dataset.corner };
                         } else if ((e.ctrlKey || e.metaKey || e.shiftKey) && kind === 'field') {
                             // Ctrl/⌘-click or Shift-click a box → toggle it in the multi-selection.
@@ -1516,9 +1600,15 @@
                             cfgMultiSel = new Set();
                             refreshCfgOverlays(); // selection visuals + properties panel
                             // Drag moves the primary box plus every member of each selected
-                            // box's daily-entry group — a grouped block moves as one.
+                            // box's daily-entry group — a grouped block moves as one. Holding
+                            // Alt/⌥ moves ONLY the grabbed box, so a single day row can be
+                            // nudged to its exact position without disturbing the rest.
                             const members = new Set();
-                            for (const sid of [id, ...cfgMultiSel]) for (const m of cfgGroupMembers(sid)) members.add(m);
+                            if (e.altKey) {
+                                members.add(id);
+                            } else {
+                                for (const sid of [id, ...cfgMultiSel]) for (const m of cfgGroupMembers(sid)) members.add(m);
+                            }
                             drag = { mode: 'move', id, kind, offX: px - item.x, offY: py - item.y, members: [...members] };
                         }
                     } else if (e.shiftKey) {
@@ -1585,6 +1675,22 @@
                         const item = findCfgItem(drag.kind, drag.id);
                         if (!item) return;
                         const nx = clamp01(px - drag.offX), ny = clamp01(py - drag.offY);
+                        const dx = nx - item.x, dy = ny - item.y;
+                        if (!dx && !dy) return;
+                        for (const mid of drag.members) {
+                            const m = cfgFields.find(f => f.id === mid);
+                            if (!m) continue;
+                            m.x = r4(clamp01(m.x + dx));
+                            m.y = r4(clamp01(m.y + dy));
+                            const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
+                            if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                        }
+                    } else if (drag.mode === 'axis') {
+                        // Axis-locked move: only the dragged axis changes — X for ↔, Y for ↕.
+                        const item = findCfgItem(drag.kind, drag.id);
+                        if (!item) return;
+                        const nx = drag.axis === 'h' ? clamp01(px - (drag.offX ?? 0)) : item.x;
+                        const ny = drag.axis === 'v' ? clamp01(py - (drag.offY ?? 0)) : item.y;
                         const dx = nx - item.x, dy = ny - item.y;
                         if (!dx && !dy) return;
                         for (const mid of drag.members) {
@@ -1671,16 +1777,17 @@
                     <div class="fp-body" id="fpBody">
                         <div class="field-properties">
                             <div class="fp-head"><span class="fp-id">${selIds.length} boxes selected</span></div>
-                            ${groups.size ? `<p class="cfg-hint" style="margin-bottom:10px;">Selection includes daily-entry group${groups.size > 1 ? 's' : ''}: <b>${[...groups].join(', ')}</b>. Dragging any member moves the whole group.</p>` : '<p class="cfg-hint" style="margin-bottom:10px;">Place the day-1 boxes over the form\'s first day row, select them all (Ctrl/⌘-click or Shift-drag), then group them — days 2–N are created as real boxes you can slide into position.</p>'}
+                            ${groups.size ? `<p class="cfg-hint" style="margin-bottom:10px;">Selection includes daily-entry group${groups.size > 1 ? 's' : ''}: <b>${[...groups].join(', ')}</b>. Dragging any member moves the whole group — hold <b>Alt/⌥</b> while dragging to move just that one day row.</p>` : '<p class="cfg-hint" style="margin-bottom:10px;">Place the day-1 boxes over the form\'s first day row, select them all (Ctrl/⌘-click or Shift-drag), then group them — days 2–N are created as real boxes you can slide into position.</p>'}
                             <div style="display:flex; flex-direction:column; gap:8px;">
                                 <button type="button" class="btn btn-primary" id="fpGroupBtn" style="min-height:42px;">🔗 Group as daily entry</button>
                                 ${groups.size ? '<button type="button" class="btn btn-secondary" id="fpUngroupBtn" style="min-height:42px;">✂️ Ungroup (remove day 2–N boxes)</button>' : ''}
+                                <button type="button" class="btn btn-secondary" id="fpDuplicateBtn" title="Copy every selected box — exact same size & position" style="min-height:42px;">⧉ Duplicate selection</button>
                             </div>
                         </div>
                     </div>`;
             }
 
-            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it (a daily-entry group moves as one block); corner handles resize. Ctrl/⌘-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
+            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it (a daily-entry group moves as one block — hold <b>Alt/⌥</b> while dragging to move just that one day row); the ↕ / ↔ arrow handles slide it along one axis only, for neat lining up; corner handles resize. ⧉ Duplicate (or Ctrl/⌘+D) copies a box at the exact same size & position. Ctrl/⌘-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
 
             const isSig = cfgSelection.kind === 'signature';
             const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
@@ -1752,7 +1859,10 @@
                     <div class="field-properties">
                         <div class="fp-head">
                             <span class="fp-id">${isSig ? '✍️' : ''} ${escapeHtml(item.id)}</span>
-                            <button type="button" class="btn btn-danger" id="fpDeleteBtn" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">🗑 Delete</button>
+                            <span style="display:flex; gap:6px;">
+                                <button type="button" class="btn btn-secondary" id="fpDuplicateBtn" title="Copy this box — exact same size & position" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">⧉ Duplicate</button>
+                                <button type="button" class="btn btn-danger" id="fpDeleteBtn" style="min-height:36px; padding:4px 12px; font-size:0.8rem;">🗑 Delete</button>
+                            </span>
                         </div>
                         ${body}
                     </div>
@@ -1760,10 +1870,11 @@
         }
 
         function wireFieldProperties() {
-            // Multi-selection panel: group / ungroup actions only.
+            // Multi-selection panel: group / ungroup / duplicate actions.
             if (selectedFieldIds().length > 1) {
                 $('fpGroupBtn')?.addEventListener('click', groupSelectionAsDailyEntry);
                 $('fpUngroupBtn')?.addEventListener('click', ungroupSelection);
+                $('fpDuplicateBtn')?.addEventListener('click', duplicateSelection);
                 return;
             }
             if (!cfgSelection) return;
@@ -1830,6 +1941,7 @@
                     refreshWizardBuilder();
                 });
             }
+            $('fpDuplicateBtn')?.addEventListener('click', duplicateSelection);
             $('fpDeleteBtn').addEventListener('click', deleteSelectedCfgItem);
         }
 
@@ -2871,7 +2983,8 @@
             const inst = DB.paperWizard.entries?.[lotId]?.[sheetId]?.instances?.[key];
             if (!inst) { showToast('No entry to print yet'); return; }
 
-            const W = sheet.pageWidthIn || 8.5, H = sheet.pageHeightIn || 11;
+            const isLandscape = printDoc.pages[0].wPx > printDoc.pages[0].hPx;
+            const { widthIn: W, heightIn: H } = letterPageSize(isLandscape);
             const dayRows = sheet.cadence === 'daily-weekly' ? dayRowsFromGroups(sheet) : null;
             const strike = (sheet.cadence === 'daily-weekly' && inst.phaseChangeDate) ? computeStrikeOut(sheet, inst, key) : null;
 
@@ -3158,15 +3271,7 @@
             panel.innerHTML = `
                 <div class="cfg-toolbar">
                     <button type="button" class="btn btn-primary" id="loadDocBtn">⬆️ Load document</button>
-                    <div class="form-group">
-                        <label for="pageWidthIn">Width (in)</label>
-                        <input type="number" id="pageWidthIn" min="1" max="40" step="0.25" value="${cfgWidthIn}">
-                    </div>
-                    <div class="form-group">
-                        <label for="pageHeightIn">Height (in)</label>
-                        <input type="number" id="pageHeightIn" min="1" max="40" step="0.25" value="${cfgHeightIn}">
-                    </div>
-                    ${loaded ? `<span class="file-chip" id="docChip">📄 ${escapeHtml(loadedDoc.name)} · ${cfgPageCount} page${cfgPageCount > 1 ? 's' : ''} · ${cfgWidthIn} × ${cfgHeightIn} in</span>` : ''}
+                    ${loaded ? `<span class="file-chip" id="docChip">📄 ${escapeHtml(loadedDoc.name)} · ${cfgPageCount} page${cfgPageCount > 1 ? 's' : ''} · US Letter ${orientation} · ${letterPageSize(orientation === 'landscape').widthIn} × ${letterPageSize(orientation === 'landscape').heightIn} in</span>` : ''}
                     ${loaded ? `<div class="zoom-ctl" title="Zoom the pages (or Ctrl/⌘ + scroll)">
                         <button type="button" id="zoomOutBtn" title="Zoom out">−</button>
                         <span id="zoomPct">100%</span>
@@ -3186,7 +3291,7 @@
                                 </div>`;
                             }).join('')}</div>`
                             : emptyStateHtml('📄', 'No document loaded',
-                                'Tap ⬆️ Load document to pick the controlled form pages (PNG/JPG, named <base>-p1.png, -p2.png…). Held in memory only — never stored (the Golden Rule). The base name becomes the sheet id.')}
+                                'Tap ⬆️ Load document to pick the controlled form pages (WebP, named <base>-p1.webp, -p2.webp…). Held in memory only — never stored (the Golden Rule). The base name becomes the sheet id.')}
                     </div>
                     <div class="cfg-side">
                         <div class="card">
@@ -3206,7 +3311,7 @@
                             ${cfgCadence === 'daily-weekly' ? `
                             <div id="dayGroupHint" style="margin-top:10px;">
                                 <label style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);">Daily entry (7-day rows)</label>
-                                <p class="cfg-hint">Place the day-1 boxes over the form's first day row, then select them all (Ctrl/⌘-click or Shift-drag) and hit <b>🔗 Group as daily entry</b> in the Field properties panel — days 2–N become real boxes you slide into position. Drag any member to move the whole group; ✂️ Ungroup removes the day 2–N boxes.</p>
+                                <p class="cfg-hint">Place the day-1 boxes over the form's first day row, then select them all (Ctrl/⌘-click or Shift-drag) and hit <b>🔗 Group as daily entry</b> in the Field properties panel — days 2–N become real boxes you slide into position. Drag any member to move the whole group; hold <b>Alt/⌥</b> while dragging to move just that one day row (for exact per-row placement); ✂️ Ungroup removes the day 2–N boxes.</p>
                             </div>` : ''}
                             <button type="button" class="btn btn-secondary" id="addSigBtn" style="width:100%; margin-top:12px; min-height:42px;">✍️ Add signature box</button>
                         </div>
@@ -3214,7 +3319,7 @@
                             <div class="card-title">Field properties</div>
                             ${fieldPropertiesPanelHtml()}
                         </div>
-                        <div class="card">
+                        <div class="card wizard-card">
                             <div class="card-title">Wizard builder</div>
                             <div class="form-group" style="margin-bottom:10px;">
                                 <label for="wizNameInput">Wizard name</label>
@@ -3408,11 +3513,12 @@
                 if (q.type === 'select' && !(q.options || []).length) { alert(`"${q.label}" is a select question but has no options.`); return; }
             }
             const pw = DB.paperWizard;
+            const { widthIn, heightIn } = letterPageSize(orientation === 'landscape');
             pw.sheets[configSheetId] = {
                 name: cfgName.trim(),
                 orientation,
-                pageWidthIn: cfgWidthIn,
-                pageHeightIn: cfgHeightIn,
+                pageWidthIn: widthIn,
+                pageHeightIn: heightIn,
                 pageCount: cfgPageCount,
                 cadence: cfgCadence,
                 // No rowGrid — daily-weekly rows are the explicit day-group boxes in fields[].
@@ -3441,8 +3547,6 @@
             // Reset the working copies to a fresh configuration for this base name.
             cfgName = configSheetId;
             cfgCadence = 'one-shot';
-            cfgWidthIn = 8.5;
-            cfgHeightIn = 11;
             cfgFields = [];
             cfgSignature = null;
             cfgSelection = null;
@@ -3457,13 +3561,16 @@
         // Keep fit-to-width current as the window resizes.
         window.addEventListener('resize', updateFitWidth);
 
-        // Delete/Backspace removes the selected box (unless typing in a control).
+        // Delete/Backspace removes the selected box; Ctrl/⌘+D duplicates it (unless typing in a control).
         document.addEventListener('keydown', (e) => {
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
             if ((e.key === 'Delete' || e.key === 'Backspace') && cfgSelection) {
-                const t = e.target;
-                if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
                 e.preventDefault();
                 deleteSelectedCfgItem();
+            } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D') && cfgSelection) {
+                e.preventDefault();
+                duplicateSelection();
             }
         });
 
