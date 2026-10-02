@@ -1372,7 +1372,7 @@
             if (cfgCadence !== 'daily-weekly') { showToast('Daily-entry groups are for daily-weekly sheets'); return; }
             const selIds = cfgSelection?.kind === 'field' ? [cfgSelection.id, ...cfgMultiSel] : [...cfgMultiSel];
             const selFields = cfgFields.filter(f => selIds.includes(f.id));
-            if (!selFields.length) { showToast('Select the day-1 boxes first (Ctrl/⌘-click or Shift-drag)'); return; }
+            if (!selFields.length) { showToast('Select the day-1 boxes first (Shift-click or Shift-drag)'); return; }
             // Refuse to group boxes that already belong to a different group.
             const foreign = selFields.find(f => f.dayGroup && !selFields.every(x => x.dayGroup === f.dayGroup));
             if (foreign) { showToast('Selection mixes boxes from different groups — ungroup first'); return; }
@@ -1458,7 +1458,7 @@
         }
 
         // Selection model: one primary box (cfgSelection) + a set of extra selected field ids
-        // (cfgMultiSel). Ctrl/⌘-click toggles membership; Shift-drag draws a marquee.
+        // (cfgMultiSel). Shift-click toggles membership; Shift-drag draws a marquee.
         function selectCfgItem(kind, id, { additive = false } = {}) {
             if (kind === 'signature') {
                 cfgSelection = { kind, id };
@@ -1556,10 +1556,10 @@
         }
 
         // Pointer-based editor on the page stack: click-drag empty space to create a box;
-        // Shift-drag empty space to marquee-select boxes; Ctrl/⌘-click or Shift-click a box
-        // to multi-select; drag a box body to move it (a whole daily-entry group moves
-        // together); drag a corner handle to resize. All geometry is normalized 0–1 within
-        // its page.
+        // Shift-drag empty space to marquee-select boxes; Shift-click a box to multi-select;
+        // drag a box body to move it — plain = whole daily-entry group, Ctrl/⌘ = that day's
+        // row (all boxes on the same day in the group), Alt/⌥ = just that one box; drag a
+        // corner/edge handle to resize. All geometry is normalized 0–1 within its page.
         function attachBoxEditor(stage) {
             stage.querySelectorAll('.form-page').forEach(pageEl => {
                 const pageNum = parseInt(pageEl.dataset.page, 10) || 1;
@@ -1580,18 +1580,27 @@
                         if (handle?.dataset.axis) {
                             // Axis-move handle (↕ above / ↔ beside the box): slide along one
                             // axis only, so boxes can be lined up neatly. A daily-entry group
-                            // still moves as one block — unless Alt/⌥ is held, which slides just
-                            // this box (one day row) independently for exact per-row placement.
+                            // still moves as one block — unless a modifier is held:
+                            //   Alt/⌥    → just this box (one field).
+                            //   Ctrl/⌘   → all boxes on that day within the group (one row).
                             cfgSelection = { kind, id };
                             cfgMultiSel = new Set();
                             refreshCfgOverlays();
-                            const members = e.altKey ? [id] : [...new Set(cfgGroupMembers(id))];
                             const item0 = findCfgItem(kind, id);
+                            let members;
+                            if (e.altKey) {
+                                members = [id];
+                            } else if ((e.ctrlKey || e.metaKey) && item0.dayGroup) {
+                                const day = item0.day || 1;
+                                members = cfgFields.filter(f => f.dayGroup === item0.dayGroup && (f.day || 1) === day).map(f => f.id);
+                            } else {
+                                members = [...new Set(cfgGroupMembers(id))];
+                            }
                             drag = { mode: 'axis', id, kind, axis: handle.dataset.axis, offX: px - item0.x, offY: py - item0.y, members };
                         } else if (handle) {
                             drag = { mode: 'resize', id, kind, corner: handle.dataset.corner };
-                        } else if ((e.ctrlKey || e.metaKey || e.shiftKey) && kind === 'field') {
-                            // Ctrl/⌘-click or Shift-click a box → toggle it in the multi-selection.
+                        } else if (e.shiftKey && kind === 'field') {
+                            // Shift-click a box → toggle it in the multi-selection.
                             selectCfgItem('field', id, { additive: true });
                         } else {
                             const item = findCfgItem(kind, id);
@@ -1599,13 +1608,19 @@
                             cfgSelection = { kind, id };
                             cfgMultiSel = new Set();
                             refreshCfgOverlays(); // selection visuals + properties panel
-                            // Drag moves the primary box plus every member of each selected
-                            // box's daily-entry group — a grouped block moves as one. Holding
-                            // Alt/⌥ moves ONLY the grabbed box, so a single day row can be
-                            // nudged to its exact position without disturbing the rest.
+                            // Drag modes:
+                            //   plain drag  → whole daily-entry group moves as one block.
+                            //   Alt/⌥-drag  → ONLY the grabbed box (one field, one day).
+                            //   Ctrl/⌘-drag → all boxes on that day within the group (one row).
                             const members = new Set();
                             if (e.altKey) {
                                 members.add(id);
+                            } else if ((e.ctrlKey || e.metaKey) && item.dayGroup) {
+                                // Move every box sharing this day + group (the whole row for that day).
+                                const day = item.day || 1;
+                                for (const f of cfgFields) {
+                                    if (f.dayGroup === item.dayGroup && (f.day || 1) === day) members.add(f.id);
+                                }
                             } else {
                                 for (const sid of [id, ...cfgMultiSel]) for (const m of cfgGroupMembers(sid)) members.add(m);
                             }
@@ -1777,7 +1792,7 @@
                     <div class="fp-body" id="fpBody">
                         <div class="field-properties">
                             <div class="fp-head"><span class="fp-id">${selIds.length} boxes selected</span></div>
-                            ${groups.size ? `<p class="cfg-hint" style="margin-bottom:10px;">Selection includes daily-entry group${groups.size > 1 ? 's' : ''}: <b>${[...groups].join(', ')}</b>. Dragging any member moves the whole group — hold <b>Alt/⌥</b> while dragging to move just that one day row.</p>` : '<p class="cfg-hint" style="margin-bottom:10px;">Place the day-1 boxes over the form\'s first day row, select them all (Ctrl/⌘-click or Shift-drag), then group them — days 2–N are created as real boxes you can slide into position.</p>'}
+                            ${groups.size ? `<p class="cfg-hint" style="margin-bottom:10px;">Selection includes daily-entry group${groups.size > 1 ? 's' : ''}: <b>${[...groups].join(', ')}</b>. Drag a member to move the whole group — hold <b>Ctrl/⌘</b> to move just that day's row, or <b>Alt/⌥</b> to move just that one box.</p>` : '<p class="cfg-hint" style="margin-bottom:10px;">Place the day-1 boxes over the form\'s first day row, select them all (Shift-click or Shift-drag), then group them — days 2–N are created as real boxes you can slide into position.</p>'}
                             <div style="display:flex; flex-direction:column; gap:8px;">
                                 <button type="button" class="btn btn-primary" id="fpGroupBtn" style="min-height:42px;">🔗 Group as daily entry</button>
                                 ${groups.size ? '<button type="button" class="btn btn-secondary" id="fpUngroupBtn" style="min-height:42px;">✂️ Ungroup (remove day 2–N boxes)</button>' : ''}
@@ -1787,7 +1802,7 @@
                     </div>`;
             }
 
-            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it (a daily-entry group moves as one block — hold <b>Alt/⌥</b> while dragging to move just that one day row); the ↕ / ↔ arrow handles slide it along one axis only, for neat lining up; corner handles resize. ⧉ Duplicate (or Ctrl/⌘+D) copies a box at the exact same size & position. Ctrl/⌘-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
+            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it — plain drag moves the whole daily-entry group, <b>Ctrl/⌘</b>-drag moves just that day\'s row (all boxes on the same day), and <b>Alt/⌥</b>-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize. ⧉ Duplicate (or Ctrl/⌘+D) copies a box at the exact same size & position. Shift-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
 
             const isSig = cfgSelection.kind === 'signature';
             const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
@@ -3311,7 +3326,7 @@
                             ${cfgCadence === 'daily-weekly' ? `
                             <div id="dayGroupHint" style="margin-top:10px;">
                                 <label style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);">Daily entry (7-day rows)</label>
-                                <p class="cfg-hint">Place the day-1 boxes over the form's first day row, then select them all (Ctrl/⌘-click or Shift-drag) and hit <b>🔗 Group as daily entry</b> in the Field properties panel — days 2–N become real boxes you slide into position. Drag any member to move the whole group; hold <b>Alt/⌥</b> while dragging to move just that one day row (for exact per-row placement); ✂️ Ungroup removes the day 2–N boxes.</p>
+                                <p class="cfg-hint">Place the day-1 boxes over the form's first day row, then select them all (Shift-click or Shift-drag) and hit <b>🔗 Group as daily entry</b> in the Field properties panel — days 2–N become real boxes you slide into position. Drag a member to move the whole group; hold <b>Ctrl/⌘</b> to move just that day's row, or <b>Alt/⌥</b> to move just that one box (for exact per-row placement); ✂️ Ungroup removes the day 2–N boxes.</p>
                             </div>` : ''}
                             <button type="button" class="btn btn-secondary" id="addSigBtn" style="width:100%; margin-top:12px; min-height:42px;">✍️ Add signature box</button>
                         </div>
