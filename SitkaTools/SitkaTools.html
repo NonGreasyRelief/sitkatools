@@ -1700,19 +1700,19 @@
             word-break: break-word;
         }
 
-        /* Multi-event tooltip (annual view) — one entry per event on the day */
+        /* Multi-event tooltip (annual view) — one entry per event on the day.
+           Shows the whole day, no inner scroll; only capped by the viewport
+           as a safety net for days with an unusual number of events. */
         .event-tooltip.multi {
             max-width: 380px;
+            max-height: calc(100vh - 16px);
+            overflow-y: auto;
+            pointer-events: auto; /* lets the user move onto it to scroll */
         }
 
         .event-tooltip .tt-day-header {
             font-weight: 600;
             margin-bottom: 6px;
-        }
-
-        .event-tooltip .tt-entries {
-            max-height: 260px;
-            overflow-y: auto;
         }
 
         .event-tooltip .tt-entry + .tt-entry {
@@ -5059,6 +5059,7 @@
             // ---- Hover tooltip: show the full text of a truncated calendar entry ----
             _tooltipEl: null,
             _tooltipTimer: null,
+            _tooltipHideTimer: null,
 
             _getTooltipEl() {
                 if (!this._tooltipEl || !document.body.contains(this._tooltipEl)) {
@@ -5176,6 +5177,13 @@
                 el.innerHTML = html;
                 el.classList.add('visible');
 
+                // Moving onto the tooltip (e.g. to scroll it) keeps it open
+                if (!el._tooltipHoverBound) {
+                    el._tooltipHoverBound = true;
+                    el.addEventListener('mouseenter', () => this._cancelHideTooltip());
+                    el.addEventListener('mouseleave', () => this._scheduleHideTooltip());
+                }
+
                 // Position near the cursor, clamped to the viewport
                 const pad = 12;
                 const rect = el.getBoundingClientRect();
@@ -5196,7 +5204,33 @@
                     clearTimeout(this._tooltipTimer);
                     this._tooltipTimer = null;
                 }
+                if (this._tooltipHideTimer) {
+                    clearTimeout(this._tooltipHideTimer);
+                    this._tooltipHideTimer = null;
+                }
                 if (this._tooltipEl) this._tooltipEl.classList.remove('visible');
+            },
+
+            // Grace period before hiding, so the mouse can travel from the
+            // calendar item onto the tooltip (e.g. to scroll a long day list)
+            // without the tooltip vanishing mid-move.
+            _scheduleHideTooltip() {
+                if (this._tooltipTimer) {
+                    clearTimeout(this._tooltipTimer);
+                    this._tooltipTimer = null;
+                }
+                if (this._tooltipHideTimer) clearTimeout(this._tooltipHideTimer);
+                this._tooltipHideTimer = setTimeout(() => {
+                    this._tooltipHideTimer = null;
+                    if (this._tooltipEl) this._tooltipEl.classList.remove('visible');
+                }, 250);
+            },
+
+            _cancelHideTooltip() {
+                if (this._tooltipHideTimer) {
+                    clearTimeout(this._tooltipHideTimer);
+                    this._tooltipHideTimer = null;
+                }
             },
 
             // Attach hover-tooltip listeners to a calendar event element.
@@ -5211,7 +5245,13 @@
                         this._showEventTooltip(ev, e.clientX, e.clientY);
                     }, 300);
                 });
-                eventEl.addEventListener('mouseleave', () => this._hideEventTooltip());
+                eventEl.addEventListener('mouseleave', () => {
+                    if (this._tooltipTimer) {
+                        clearTimeout(this._tooltipTimer);
+                        this._tooltipTimer = null;
+                    }
+                    this._scheduleHideTooltip();
+                });
             },
 
             // Attach the day-level tooltip to an annual-view day cell.
@@ -5224,7 +5264,13 @@
                         this._showDayTooltip(dateStr, e.clientX, e.clientY);
                     }, 300);
                 });
-                dayEl.addEventListener('mouseleave', () => this._hideEventTooltip());
+                dayEl.addEventListener('mouseleave', () => {
+                    if (this._tooltipTimer) {
+                        clearTimeout(this._tooltipTimer);
+                        this._tooltipTimer = null;
+                    }
+                    this._scheduleHideTooltip();
+                });
             },
 
             // Fallback emoji for events without a known taskType (GeneralEvent, etc.)
