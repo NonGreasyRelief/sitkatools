@@ -1700,6 +1700,27 @@
             word-break: break-word;
         }
 
+        /* Multi-event tooltip (annual view) — one entry per event on the day */
+        .event-tooltip.multi {
+            max-width: 380px;
+        }
+
+        .event-tooltip .tt-day-header {
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .event-tooltip .tt-entries {
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
+        .event-tooltip .tt-entry + .tt-entry {
+            border-top: 1px solid var(--border);
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+
         .calendar-day.has-holiday {
             background-color: rgba(243, 156, 18, 0.06);
         }
@@ -5049,11 +5070,10 @@
                 return this._tooltipEl;
             },
 
-            _showEventTooltip(event, x, y) {
-                const el = this._getTooltipEl();
-
-                // Title (full, untruncated)
-                let html = `<div class="tt-title">${escapeHtml(event.title || 'Event')}</div>`;
+            // Build the tooltip HTML for a single event (shared by the
+            // per-event and per-day tooltips).
+            _eventTooltipHtml(event) {
+                let html = `<div class="tt-title">${escapeHtml(this._eventEmoji(event))} ${escapeHtml(event.title || 'Event')}</div>`;
 
                 // Date range
                 const dateStr = event.endDate && event.endDate !== event.date
@@ -5096,6 +5116,63 @@
                     html += `<div class="tt-notes">${escapeHtml(String(event.notes))}</div>`;
                 }
 
+                return html;
+            },
+
+            _showEventTooltip(event, x, y) {
+                const el = this._getTooltipEl();
+                el.classList.remove('multi');
+                el.innerHTML = this._eventTooltipHtml(event);
+                el.classList.add('visible');
+
+                // Position near the cursor, clamped to the viewport
+                const pad = 12;
+                const rect = el.getBoundingClientRect();
+                let left = x + pad;
+                let top = y + pad;
+                if (left + rect.width > window.innerWidth - 8) {
+                    left = Math.max(8, x - rect.width - pad);
+                }
+                if (top + rect.height > window.innerHeight - 8) {
+                    top = Math.max(8, y - rect.height - pad);
+                }
+                el.style.left = `${left}px`;
+                el.style.top = `${top}px`;
+            },
+
+            // Tooltip for an annual-view day: lists every event on that day,
+            // each rendered the same way as the per-event tooltip.
+            _showDayTooltip(dateStr, x, y) {
+                const el = this._getTooltipEl();
+
+                const dayEvents = (this._visibleEvents || []).filter(e => {
+                    const start = e.date;
+                    const end = e.endDate || e.date;
+                    return dateStr >= start && dateStr <= end;
+                });
+
+                let html = `<div class="tt-day-header">📅 ${escapeHtml(dateStr)} — ${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}</div>`;
+
+                // Holiday + cluster context (previously shown in the native title)
+                const holiday = this.showHolidays ? Holidays.forDate(dateStr) : null;
+                if (holiday) html += `<div class="tt-row">🏛️ ${escapeHtml(holiday.name)} — BC civic holiday</div>`;
+                const cluster = (this._annualClusterMap || new Map()).get(dateStr);
+                if (cluster) {
+                    const name = this._taskTypeName(cluster.taskType) || 'Other';
+                    html += `<div class="tt-row">⚠️ Clustered: ${cluster.count}× ${escapeHtml(name)} on this day</div>`;
+                }
+
+                if (dayEvents.length === 0) {
+                    html += `<div class="tt-row">No events scheduled</div>`;
+                } else {
+                    html += '<div class="tt-entries">';
+                    dayEvents.forEach(ev => {
+                        html += `<div class="tt-entry">${this._eventTooltipHtml(ev)}</div>`;
+                    });
+                    html += '</div>';
+                }
+
+                el.classList.add('multi');
                 el.innerHTML = html;
                 el.classList.add('visible');
 
@@ -5135,6 +5212,19 @@
                     }, 300);
                 });
                 eventEl.addEventListener('mouseleave', () => this._hideEventTooltip());
+            },
+
+            // Attach the day-level tooltip to an annual-view day cell.
+            _attachDayTooltip(dayEl) {
+                dayEl.addEventListener('mouseenter', (e) => {
+                    const dateStr = dayEl.dataset.date;
+                    if (!dateStr) return;
+                    this._hideEventTooltip(); // cancel any pending show
+                    this._tooltipTimer = setTimeout(() => {
+                        this._showDayTooltip(dateStr, e.clientX, e.clientY);
+                    }, 300);
+                });
+                dayEl.addEventListener('mouseleave', () => this._hideEventTooltip());
             },
 
             // Fallback emoji for events without a known taskType (GeneralEvent, etc.)
@@ -5204,6 +5294,7 @@
                 const todayStr = localDate();
                 const taskTypes = this._annualTaskTypes();
                 const clusters = this._annualClusters();
+                this._annualClusterMap = clusters; // cached for the day tooltip
 
                 // ---- Legend: up to 8 task types, most frequent first ----
                 const MAX_LEGEND = 8;
@@ -5263,6 +5354,10 @@
                 grid.querySelectorAll('.annual-month').forEach((monthEl, m) => {
                     monthEl.querySelectorAll('.annual-day:not(.other-month)').forEach(cell => {
                         cell.dataset.month = m;
+
+                        // Hover tooltip listing every event on that day
+                        this._attachDayTooltip(cell);
+
                         cell.addEventListener('click', () => {
                             this.weekAnchorDate = cell.dataset.date || null;
                             if (!this.weekAnchorDate) {
@@ -5415,14 +5510,7 @@
                 if (holiday) classes.push('has-holiday');
                 if (cluster) classes.push('clustered');
 
-                const titleParts = [`${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}`];
-                if (holiday) titleParts.push(`🏛️ ${holiday.name}`);
-                if (cluster) {
-                    const name = this._taskTypeName(cluster.taskType) || 'Other';
-                    titleParts.push(`⚠️ Clustered: ${cluster.count}× ${name} on this day`);
-                }
-
-                return `<div class="${classes.join(' ')}" data-date="${dateStr}" title="${escapeHtml(titleParts.join(' · '))}">
+                return `<div class="${classes.join(' ')}" data-date="${dateStr}">
                     <span class="annual-day-num">${day}</span>
                     ${dotsHtml}
                     ${cluster ? `<span class="cluster-badge">${cluster.count}×</span>` : ''}
