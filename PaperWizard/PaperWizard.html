@@ -1432,6 +1432,11 @@
                 const survivor = cfgFields.find(f => f.dayGroup === gid && (f.day || 1) === 1);
                 q.targetFieldId = survivor ? survivor.id : null;
             });
+            // Dissolve the group: clear dayGroup/day on the surviving day-1 boxes so they stop
+            // moving together. (Previously they kept their group id and stayed "stuck".)
+            for (const f of cfgFields) {
+                if (f.dayGroup && groups.has(f.dayGroup)) { f.dayGroup = null; f.day = 1; }
+            }
             cfgMultiSel = new Set();
             refreshCfgOverlays();
             refreshWizardBuilder();
@@ -1865,7 +1870,7 @@
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
                             <input type="checkbox" id="fpInitials"${item.initials ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ✍️ Daily-initials box (drawn per day)
                         </label>
-                        <p class="cfg-hint" style="margin-top:4px;">Whoever fills a day draws their initials here — printed in the box at the end of that day's row. It must be part of a daily-entry group (🔗) so it clones to every day; ungrouped, it does nothing.</p>
+                        <p class="cfg-hint" style="margin-top:4px;">Toggles just this box. Whoever fills a day draws their initials here — printed in the box at its placed position. If the box is part of a daily-entry group (🔗), the flag applies to every day's clone so each day gets its own pad; ungrouped it marks one standalone box. You can mark several boxes as initials for forms that need multiple signatures per day.</p>
                     </div>`;
             }
 
@@ -1948,10 +1953,15 @@
                     $('fpCheckbox').addEventListener('change', () => { item.checkbox = $('fpCheckbox').checked; refreshCfgOverlays(); });
                     $('fpCheckValue').addEventListener('change', () => { item.checkValue = $('fpCheckValue').value.trim(); refreshCfgOverlays(); });
                 }
-                // Daily-initials box: group-level (applies to every day of the column).
+                // Daily-initials box: per-box (toggle just this one). A grouped box clones the
+                // flag to its day 2..N members so each day gets its own signature pad; ungrouped
+                // it marks a single standalone box. Multiple boxes can be initials at once.
                 $('fpInitials').addEventListener('change', () => {
                     const on = $('fpInitials').checked;
-                    mutateFieldGroup(item.id, t => { t.initials = on; });
+                    item.initials = on;
+                    if (item.dayGroup) {
+                        for (const t of cfgFields) if (t.dayGroup === item.dayGroup) t.initials = on;
+                    }
                     refreshCfgOverlays();
                     refreshWizardBuilder();
                 });
@@ -2020,8 +2030,11 @@
             } else if (!qids.every(qid => hasAnswer(day, qid))) return false;
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (needsDailyInitials(sheet)) {
-                const init = instance.initials?.[dateStr];
-                if (!init || !(init.strokes || []).length) return false;
+                // Every initials box must be drawn for the day (multiple signatures per day allowed).
+                for (const box of dailyInitialsBoxes(sheet)) {
+                    const init = initialsForDay(instance, dateStr, box);
+                    if (!init || !(init.strokes || []).length) return false;
+                }
             }
             return true;
         }
@@ -2499,7 +2512,7 @@
                 sigDraft: inst.signature
                     ? { name: inst.signature.name || '', strokes: (inst.signature.strokes || []).map(s => s.slice()) }
                     : { name: '', strokes: [] },
-                initialsDraft: { name: '', strokes: [] } }; // per-day initials — loaded in resetRunnerDraft
+                initialsDraft: {} }; // per-day, per-box initials drafts — loaded in resetRunnerDraft
             // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
             // instance was created → confirm the move and roll over (no write-back — DB is current).
             if (await checkStageMismatch(lotId, sheetId, inst)) return;
@@ -2521,11 +2534,17 @@
                 draft[q.id] = (v === null || v === undefined) ? '' : String(v);
             }
             runnerCtx.draft = draft;
-            // Per-day initials draft: whoever filled this day drew their own initials.
-            const savedInit = inst.initials?.[day];
-            runnerCtx.initialsDraft = savedInit
-                ? { name: savedInit.name || '', strokes: (savedInit.strokes || []).map(s => s.slice()) }
-                : { name: '', strokes: [] };
+            // Per-day, per-box initials drafts: whoever filled this day drew their own initials
+            // in each of the sheet's initials boxes (multiple signatures per day allowed).
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            const drafts = {};
+            for (const box of dailyInitialsBoxes(sheet)) {
+                const saved = initialsForDay(inst, day, box);
+                drafts[box.id] = saved
+                    ? { name: saved.name || '', strokes: (saved.strokes || []).map(s => s.slice()) }
+                    : { name: '', strokes: [] };
+            }
+            runnerCtx.initialsDraft = drafts;
         }
 
         // Sources for "⏪ Same as last time": row-scoped questions copy the previous day's
@@ -2572,8 +2591,9 @@
         function runnerGo(delta) {
             const sheet = DB.paperWizard.sheets[runnerCtx.sheetId];
             const wiz = wizardForSheet(runnerCtx.sheetId);
-            const needsInit = needsDailyInitials(sheet) && !!runnerCtx.day;
-            const totalSteps = wiz.questions.length + (needsInit ? 1 : 0) + (sheet.signature ? 1 : 0);
+            // One step per initials box (multiple signatures per day allowed) — must match renderRunner.
+            const initCount = (needsDailyInitials(sheet) && runnerCtx.day) ? dailyInitialsBoxes(sheet).length : 0;
+            const totalSteps = wiz.questions.length + initCount + (sheet.signature ? 1 : 0);
             runnerCtx.idx = Math.max(0, Math.min(totalSteps - 1, runnerCtx.idx + delta));
             renderRunner();
         }
@@ -2654,24 +2674,36 @@
         }
 
         // Per-day initials pad — the accountability initials drawn by whoever fills a day.
-        function initInitialsPad(ctx) {
-            const sheet = DB.paperWizard.sheets[ctx.sheetId];
-            const box = dailyInitialsBox(sheet);
+        function initInitialsPad(ctx, box) {
             const ar = (box && box.w && box.h) ? (box.w / box.h) : 3; // initials boxes are wide/short
-            initDrawPad('initPad', ar, ctx.initialsDraft.strokes);
+            initDrawPad('initPad', ar, ctx.initialsDraft[box.id]?.strokes || []);
         }
 
-        // The sheet's daily-initials field: a member of a daily-entry group carrying
-        // `initials: true`. It must be grouped so it clones to every day — an ungrouped box is
-        // a no-op until grouped. null when not configured.
+        // All of a sheet's daily-initials fields (any field with `initials: true`), in config
+        // order. A grouped box contributes one pad per day (its clones); several boxes can be
+        // initials at once for forms that need multiple signatures per day.
+        function dailyInitialsBoxes(sheet) {
+            return (sheet?.fields || []).filter(x => x.initials);
+        }
+
+        // The sheet's first daily-initials field (kept for legacy single-box reads). null when none.
         function dailyInitialsBox(sheet) {
-            const f = (sheet?.fields || []).find(x => x.initials && x.dayGroup);
-            return f || null;
+            return dailyInitialsBoxes(sheet)[0] || null;
         }
 
-        // Does this sheet require per-day drawn initials? (daily-weekly + an initials box set.)
+        // Does this sheet require per-day drawn initials? (daily-weekly + at least one box.)
         function needsDailyInitials(sheet) {
-            return !!sheet && sheet.cadence === 'daily-weekly' && !!dailyInitialsBox(sheet);
+            return !!sheet && sheet.cadence === 'daily-weekly' && dailyInitialsBoxes(sheet).length > 0;
+        }
+
+        // Per-day initials for one box, normalizing the two storage shapes: a single-box sheet
+        // stores `inst.initials[day] = {name, strokes}` (legacy), while multi-box sheets store
+        // `inst.initials[day] = { [fieldId]: {name, strokes} }`. Returns null when not drawn.
+        function initialsForDay(inst, dayDate, box) {
+            const rec = inst?.initials?.[dayDate];
+            if (!rec) return null;
+            if (Array.isArray(rec.strokes)) return rec; // legacy single-box shape
+            return rec[box.id] || null;                 // keyed multi-box shape
         }
 
         function renderRunner() {
@@ -2680,12 +2712,13 @@
             const wiz = wizardForSheet(ctx.sheetId);
             const qs = wiz.questions;
             const hasSig = !!sheet.signature;
-            const needsInit = needsDailyInitials(sheet) && !!ctx.day; // per-day initials (daily-weekly, a day is active)
-            const totalSteps = qs.length + (needsInit ? 1 : 0) + (hasSig ? 1 : 0);
-            const initIdx = qs.length;                       // the per-day initials step (if any)
-            const sigIdx = qs.length + (needsInit ? 1 : 0);  // the signature step (if any)
-            const isInitStep = needsInit && ctx.idx === initIdx;
+            // Per-day initials: one step per initials box (multiple signatures per day allowed).
+            const initBoxes = (needsDailyInitials(sheet) && ctx.day) ? dailyInitialsBoxes(sheet) : [];
+            const totalSteps = qs.length + initBoxes.length + (hasSig ? 1 : 0);
+            const sigIdx = qs.length + initBoxes.length;     // the signature step (if any)
+            const isInitStep = initBoxes.length > 0 && ctx.idx >= qs.length && ctx.idx < sigIdx;
             const isSigStep = hasSig && ctx.idx === sigIdx;
+            const initBox = isInitStep ? initBoxes[ctx.idx - qs.length] : null; // the box for this step
             const q = (isInitStep || isSigStep) ? null : qs[ctx.idx];
             const isLast = ctx.idx === totalSteps - 1;
 
@@ -2704,15 +2737,15 @@
                     <div class="wiz-hint">Answers are saved per day — pick a day, answer, then Save.</div>`;
             }
 
-            // Question step body vs initials step body vs signature step body.
+            // Question step body vs initials step body (one per box) vs signature step body.
             let bodyInner;
             if (isInitStep) {
-                const box = dailyInitialsBox(sheet);
+                const draft = ctx.initialsDraft[initBox.id] || { name: '', strokes: [] };
                 bodyInner = `
-                <div class="wiz-q-label">✍️ ${escapeHtml(box?.label || 'Initials')} — ${fmtShort(ctx.day)}</div>
+                <div class="wiz-q-label">✍️ ${escapeHtml(initBox.label || 'Initials')} — ${fmtShort(ctx.day)}</div>
                 <div class="sig-pad-wrap"><canvas id="initPad" class="sig-pad"></canvas></div>
-                <input type="text" id="initName" class="sig-name" placeholder="Who filled this day (name / initials)" value="${escapeHtml(ctx.initialsDraft?.name ?? '')}">
-                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials to sign off on this day's entry — they print in the box at the end of ${fmtShort(ctx.day)}'s row.</div>
+                <input type="text" id="initName" class="sig-name" placeholder="Who filled this day (name / initials)" value="${escapeHtml(draft.name ?? '')}">
+                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials to sign off on this day's entry — they print in the box at its placed position.</div>
                 <div class="sig-actions"><button type="button" class="sig-clear" id="initClearBtn">🧹 Clear initials</button></div>`;
             } else if (isSigStep) {
                 bodyInner = `
@@ -2743,7 +2776,9 @@
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
 
-            const progText = isInitStep ? '✍️ Initials' : (isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`);
+            const progText = isInitStep
+                ? `✍️ Initials (${initBox.label || 'box'} · ${fmtShort(ctx.day)})`
+                : (isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`);
             const card = `
             <div class="wiz-head">
                 <span class="wiz-title">${escapeHtml(wiz.name || sheet.name)}</span>
@@ -2789,11 +2824,11 @@
             }));
 
             if (isInitStep) {
-                initInitialsPad(ctx);
+                initInitialsPad(ctx, initBox);
                 const nameEl = $('initName');
-                nameEl.addEventListener('input', () => { ctx.initialsDraft.name = nameEl.value; });
+                nameEl.addEventListener('input', () => { ctx.initialsDraft[initBox.id].name = nameEl.value; });
                 $('initClearBtn').addEventListener('click', () => {
-                    ctx.initialsDraft.strokes = [];
+                    ctx.initialsDraft[initBox.id].strokes = [];
                     renderRunner();
                 });
             } else if (isSigStep) {
@@ -2863,11 +2898,25 @@
                     : null;
             }
             // Per-day initials: whoever filled this day drew their own — stored on that day only.
-            // An empty pad clears the day's initials (so a re-opened day can be re-signed).
+            // An empty pad clears the box's initials (so a re-opened day can be re-signed).
+            // Single-box sheets keep the legacy shape ({name, strokes}); multi-box sheets store a
+            // keyed map { [fieldId]: {name, strokes} } so several signatures per day coexist.
             if (needsDailyInitials(sheet) && ctx.day) {
-                inst.initials[ctx.day] = ctx.initialsDraft.strokes.length
-                    ? { name: ctx.initialsDraft.name.trim(), strokes: ctx.initialsDraft.strokes }
-                    : null;
+                const boxes = dailyInitialsBoxes(sheet);
+                if (boxes.length === 1) {
+                    const d = ctx.initialsDraft[boxes[0].id] || { name: '', strokes: [] };
+                    inst.initials[ctx.day] = d.strokes.length
+                        ? { name: d.name.trim(), strokes: d.strokes }
+                        : null;
+                } else {
+                    if (!inst.initials[ctx.day] || Array.isArray(inst.initials[ctx.day].strokes)) inst.initials[ctx.day] = {};
+                    for (const box of boxes) {
+                        const d = ctx.initialsDraft[box.id] || { name: '', strokes: [] };
+                        inst.initials[ctx.day][box.id] = d.strokes.length
+                            ? { name: d.name.trim(), strokes: d.strokes }
+                            : null;
+                    }
+                }
             }
             // Plant count write-back (Step 9): row-scoped question whose value differs from the
             // live lot record. Same value = no write; per-day entries keep the full history.
@@ -3023,8 +3072,10 @@
                     if (f.initials) {
                         // Per-day initials box: the drawn initials of whoever filled that day,
                         // printed in the box at its own placed position (group member → its day).
+                        // Multiple boxes each print their own strokes; legacy single-box data is
+                        // read via initialsForDay (which falls back to the un-keyed shape).
                         const dayDate = f.dayGroup ? addDaysStr(key, (f.day || 1) - 1) : key;
-                        const init = inst.initials?.[dayDate];
+                        const init = initialsForDay(inst, dayDate, f);
                         if (init && (init.strokes || []).length) html += strokesSvgHtml(f, init);
                         continue;
                     }

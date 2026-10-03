@@ -1659,6 +1659,47 @@
             opacity: 0.8;
         }
 
+        /* Hover tooltip — shows the full text of a truncated calendar entry */
+        .event-tooltip {
+            position: fixed;
+            z-index: 10000;
+            max-width: 340px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: var(--text-primary);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s ease;
+        }
+
+        .event-tooltip.visible {
+            opacity: 1;
+        }
+
+        .event-tooltip .tt-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+
+        .event-tooltip .tt-row {
+            color: var(--text-secondary);
+            word-break: break-word;
+        }
+
+        .event-tooltip .tt-notes {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .calendar-day.has-holiday {
             background-color: rgba(243, 156, 18, 0.06);
         }
@@ -4851,9 +4892,6 @@
             viewMode: 'month',
             // First day of the 7-day window in week view ('YYYY-MM-DD')
             weekAnchorDate: null,
-            // Days of the week in which a task-type cluster is "too close together"
-            // (e.g. two harvests 3 days apart). Session-only tuning, not persisted.
-            CLUSTER_WINDOW_DAYS: 7,
 
             // ---- Tag filters (session-only; not persisted to the DB) ----
             filters: [],          // [{ key: 'room'|'building'|'lot'|'strain'|'taskType', value }]
@@ -4997,6 +5035,108 @@
                 equipment_maintenance: '🔧'
             },
 
+            // ---- Hover tooltip: show the full text of a truncated calendar entry ----
+            _tooltipEl: null,
+            _tooltipTimer: null,
+
+            _getTooltipEl() {
+                if (!this._tooltipEl || !document.body.contains(this._tooltipEl)) {
+                    const el = document.createElement('div');
+                    el.className = 'event-tooltip';
+                    document.body.appendChild(el);
+                    this._tooltipEl = el;
+                }
+                return this._tooltipEl;
+            },
+
+            _showEventTooltip(event, x, y) {
+                const el = this._getTooltipEl();
+
+                // Title (full, untruncated)
+                let html = `<div class="tt-title">${escapeHtml(event.title || 'Event')}</div>`;
+
+                // Date range
+                const dateStr = event.endDate && event.endDate !== event.date
+                    ? `${event.date} → ${event.endDate}`
+                    : (event.date || '');
+                if (dateStr) html += `<div class="tt-row">📅 ${escapeHtml(dateStr)}</div>`;
+
+                // Time window
+                if (event.startTime || event.endTime) {
+                    const fmt = t => {
+                        if (!t) return '';
+                        const [h, m] = String(t).split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        return `${hour % 12 || 12}:${m}${ampm}`;
+                    };
+                    html += `<div class="tt-row">⏰ ${escapeHtml(fmt(event.startTime) + (event.endTime ? ` – ${fmt(event.endTime)}` : ''))}</div>`;
+                }
+
+                // Other useful fields, in a stable order
+                const extra = [
+                    ['lotId', '📦 Lot'],
+                    ['room', '🏠 Room'],
+                    ['building', '🏢 Building'],
+                    ['strain', '🌿 Strain'],
+                    ['taskType', '🛠️ Task'],
+                    ['status', 'Status'],
+                    ['assignedTo', '👤 Assigned To'],
+                    ['estimatedHours', '⏱ Est. Hours']
+                ];
+                for (const [key, label] of extra) {
+                    if (event[key]) {
+                        const val = key === 'taskType' ? (this._taskTypeName(event[key]) || event[key]) : event[key];
+                        html += `<div class="tt-row">${label}: ${escapeHtml(String(val))}</div>`;
+                    }
+                }
+
+                // Notes / description — the long text that usually gets cut off
+                if (event.notes) {
+                    html += `<div class="tt-notes">${escapeHtml(String(event.notes))}</div>`;
+                }
+
+                el.innerHTML = html;
+                el.classList.add('visible');
+
+                // Position near the cursor, clamped to the viewport
+                const pad = 12;
+                const rect = el.getBoundingClientRect();
+                let left = x + pad;
+                let top = y + pad;
+                if (left + rect.width > window.innerWidth - 8) {
+                    left = Math.max(8, x - rect.width - pad);
+                }
+                if (top + rect.height > window.innerHeight - 8) {
+                    top = Math.max(8, y - rect.height - pad);
+                }
+                el.style.left = `${left}px`;
+                el.style.top = `${top}px`;
+            },
+
+            _hideEventTooltip() {
+                if (this._tooltipTimer) {
+                    clearTimeout(this._tooltipTimer);
+                    this._tooltipTimer = null;
+                }
+                if (this._tooltipEl) this._tooltipEl.classList.remove('visible');
+            },
+
+            // Attach hover-tooltip listeners to a calendar event element.
+            // The tooltip appears after a short delay and hides when the mouse leaves.
+            _attachEventTooltip(eventEl, eventIndex) {
+                eventEl.addEventListener('mouseenter', (e) => {
+                    const idx = parseInt(eventEl.dataset.eventIndex, 10);
+                    const ev = DB.data.calendarEvents[idx];
+                    if (!ev) return;
+                    this._hideEventTooltip(); // cancel any pending show
+                    this._tooltipTimer = setTimeout(() => {
+                        this._showEventTooltip(ev, e.clientX, e.clientY);
+                    }, 300);
+                });
+                eventEl.addEventListener('mouseleave', () => this._hideEventTooltip());
+            },
+
             // Fallback emoji for events without a known taskType (GeneralEvent, etc.)
             _eventEmoji(ev) {
                 const reg = ev.taskType ? this._taskTypeEmoji(ev.taskType) : null;
@@ -5017,39 +5157,33 @@
                     .map(([tt, count]) => ({ taskType: tt, count }));
             },
 
-            // Cluster detection: group consecutive same-type events (sorted by start)
-            // into runs where each gap (previous event's end → next event's start) is
-            // ≤ CLUSTER_WINDOW_DAYS. Overlapping events have a negative gap and always
-            // cluster. Returns a Map of dateStr -> { taskType, count } — one entry per
-            // clustered day (every run member except the first), count = run length.
+            // Cluster detection: flag days on which two or more events of the same
+            // task type are scheduled (e.g. two trims on the same day). Multi-day
+            // events count on every day they span. Returns a Map of dateStr ->
+            // { taskType, count } — one entry per clustered day, count = number of
+            // same-type events that day.
             _annualClusters() {
-                const windowMs = this.CLUSTER_WINDOW_DAYS * 86400000;
-                const byType = new Map(); // taskType -> [{ startMs, endMs }]
+                // dateStr -> Map(taskType -> count of same-type events that day)
+                const counts = new Map();
                 for (const ev of this._visibleEvents || []) {
                     const tt = ev.taskType || null;
-                    if (!byType.has(tt)) byType.set(tt, []);
-                    byType.get(tt).push({
-                        startMs: parseLocalDate(ev.date).getTime(),
-                        endMs: parseLocalDate(ev.endDate || ev.date).getTime()
-                    });
+                    const startMs = parseLocalDate(ev.date).getTime();
+                    const endMs = parseLocalDate(ev.endDate || ev.date).getTime();
+                    for (let ms = startMs; ms <= endMs; ms += 86400000) {
+                        const dateStr = localDate(new Date(ms));
+                        if (!counts.has(dateStr)) counts.set(dateStr, new Map());
+                        const byType = counts.get(dateStr);
+                        byType.set(tt, (byType.get(tt) || 0) + 1);
+                    }
                 }
 
                 const clusters = new Map(); // dateStr -> { taskType, count }
-                for (const [tt, ranges] of byType.entries()) {
-                    ranges.sort((a, b) => a.startMs - b.startMs);
-                    let runStart = 0;
-                    for (let i = 1; i <= ranges.length; i++) {
-                        const gapOk = i < ranges.length && (ranges[i].startMs - ranges[i - 1].endMs) <= windowMs;
-                        if (!gapOk) {
-                            const runLen = i - runStart;
-                            if (runLen >= 2) {
-                                for (let k = runStart + 1; k < i; k++) {
-                                    const dateStr = localDate(new Date(ranges[k].startMs));
-                                    const prev = clusters.get(dateStr);
-                                    if (!prev || runLen > prev.count) clusters.set(dateStr, { taskType: tt, count: runLen });
-                                }
-                            }
-                            runStart = i;
+                for (const [dateStr, byType] of counts.entries()) {
+                    for (const [tt, count] of byType.entries()) {
+                        if (count < 2) continue;
+                        const prev = clusters.get(dateStr);
+                        if (!prev || count > prev.count) {
+                            clusters.set(dateStr, { taskType: tt, count });
                         }
                     }
                 }
@@ -5244,6 +5378,9 @@
                         const idx = parseInt(el.dataset.eventIndex, 10);
                         if (DB.data.calendarEvents[idx]) this.selectEvent(DB.data.calendarEvents[idx]);
                     });
+
+                    // Hover tooltip with the full entry text
+                    this._attachEventTooltip(el, el.dataset.eventIndex);
                 });
             },
 
@@ -5282,7 +5419,7 @@
                 if (holiday) titleParts.push(`🏛️ ${holiday.name}`);
                 if (cluster) {
                     const name = this._taskTypeName(cluster.taskType) || 'Other';
-                    titleParts.push(`⚠️ Clustered: ${cluster.count}× ${name} within ${this.CLUSTER_WINDOW_DAYS} days`);
+                    titleParts.push(`⚠️ Clustered: ${cluster.count}× ${name} on this day`);
                 }
 
                 return `<div class="${classes.join(' ')}" data-date="${dateStr}" title="${escapeHtml(titleParts.join(' · '))}">
@@ -5838,6 +5975,9 @@
                             e.stopPropagation();
                             this.selectEvent(event);
                         });
+
+                        // Hover tooltip with the full entry text
+                        this._attachEventTooltip(eventEl, this.events.indexOf(event));
 
                         eventsContainer.appendChild(eventEl);
                     });
