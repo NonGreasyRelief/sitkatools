@@ -2021,10 +2021,10 @@
         }
 
         const CAB_SECTIONS = [
+            { key: 'grow-log', icon: '📗', label: 'Grow Logs' },
             { key: 'propagation', icon: '📄', label: 'Propagation' },
             { key: 'room-clean', icon: '🧼', label: 'Room Cleans (pre-move-in)' },
             { key: 'room-clean-post', icon: '🧽', label: 'Room Cleans (post-usage)' },
-            { key: 'grow-log', icon: '📗', label: 'Grow Logs' },
             { key: 'ipm', icon: '🐛', label: 'IPM Log' },
             { key: 'harvest', icon: '🌾', label: 'Harvest' },
             { key: 'drying-log', icon: '🏺', label: 'Drying Logs' },
@@ -3559,7 +3559,7 @@
   .pp-page { position: relative; margin: 0 auto 14px; overflow: hidden; page-break-after: always; }
   .pp-page img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .ov { position: absolute; margin: 0; line-height: 1.15; color: #000; overflow: hidden; word-break: break-word; }
-  .ov-cb { position: absolute; display: flex; align-items: center; justify-content: center; border: 1px solid #000; font-weight: 700; line-height: 1; color: #000; }
+  .ov-cb { position: absolute; display: flex; align-items: center; justify-content: center; font-weight: 700; line-height: 1; color: #000; }
   .ov-cb.on { font-size: 0.9em; }
   .ov-sig { position: absolute; overflow: visible; }
   .ov-sig polyline { fill: none; stroke: #000; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
@@ -3763,7 +3763,8 @@
                 const body = leaves.length
                     ? leaves.map(l => l.html).join('')
                     : `<div class="cab-leaf" style="opacity:.5; justify-content:center;">— none yet</div>`;
-                return `<details class="cab-section"${leaves.length ? ' open' : ''}>
+                // Default: all sections collapsed except Grow Logs (which stays open).
+                return `<details class="cab-section"${sec.key === 'grow-log' ? ' open' : ''}>
                     <summary>${sec.icon} ${sec.label}<span class="cab-count">${countTxt}</span></summary>
                     <div class="cab-body">${body}</div>
                 </details>`;
