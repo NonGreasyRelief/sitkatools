@@ -646,6 +646,11 @@
         .cab-printdoc { font-size: 0.75rem; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 2px 9px; }
         .cab-printdoc.none { color: var(--warning); border-color: var(--warning); }
         .cab-hint { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 14px; line-height: 1.5; }
+        .cab-warn {
+            background: #fff8e6; border: 1px solid var(--warning); border-radius: var(--radius);
+            color: #4a2c00; font-size: 0.85rem; line-height: 1.5; padding: 10px 14px; margin-bottom: 12px;
+        }
+        .cab-leaf.coverage { border-style: dashed; }
         .cab-section {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -786,8 +791,9 @@
         .sig-clear:hover { color: var(--danger); border-color: var(--danger); }
 
         /* ---- Strike-out initials capture (drawn, like the signature pad) ---- */
+        /* Above the wizard runner (z-200) — it opens while the runner is still on screen. */
         .strike-overlay {
-            position: fixed; inset: 0; z-index: 60; background: rgba(4, 8, 16, 0.72);
+            position: fixed; inset: 0; z-index: 250; background: rgba(4, 8, 16, 0.72);
             display: flex; align-items: center; justify-content: center; padding: 16px;
         }
         .strike-card {
@@ -924,6 +930,8 @@
         // comparison and printing); stageFromForm() maps back for write-backs so a saved
         // entry never corrupts lot.stage. Unknown values pass through unchanged.
         const STAGE_TO_FORM = { cloning: 'Cloning', mother: 'Mother', veg: 'Vegetation', vegetation: 'Vegetation', flower: 'Bloom', bloom: 'Bloom', harvest: 'Harvesting', harvesting: 'Harvesting' };
+        // Fixed phase vocabulary for phase questions (the form's own words, from STAGE_TO_FORM).
+        const PHASE_OPTIONS = ['Cloning', 'Mother', 'Vegetation', 'Bloom', 'Harvesting'];
         function normalizeStage(v) {
             if (v === null || v === undefined) return null;
             const s = String(v).trim();
@@ -1063,6 +1071,7 @@
         // Wizard builder (Step 4) — working copy, saved to _PaperWizard.wizards on Save.
         let cfgWizard = null;       // { id, sheetId, name, questions[] }
         let cfgQuestionSel = null;  // id of the question currently being edited
+        let cfgDocument = null;     // explicit document assignment (cabinet section key) for this sheet
 
         // Print document (Step 10) — separate from loadedDoc (the Configure-tab doc).
         // The print path needs a page set whose base name matches the SHEET being printed,
@@ -1209,6 +1218,7 @@
             orientation = pages[0].wPx > pages[0].hPx ? 'landscape' : 'portrait'; // derived from the page image
             cfgName = s?.name || parsed.baseName;
             cfgCadence = s?.cadence || 'one-shot';
+            cfgDocument = s?.document || null;
             cfgPageCount = Math.max(1, Math.min(20, pages.length));
             // Working copies of the layout (saved to DB in Step 4).
             cfgFields = (s?.fields || []).map(f => ({ ...f, page: f.page ?? 1 }));
@@ -1947,6 +1957,8 @@
         function sheetSection(sheetId) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet) return null;
+            // Explicit assignment (Configure Sheets → Document dropdown) wins over heuristics.
+            if (sheet.document && CAB_SECTIONS.some(s => s.key === sheet.document)) return sheet.document;
             if (sheet.cadence === 'daily-weekly') return 'grow-log';
             if (sheet.cadence === 'one-shot') return 'propagation';
             // event sheets: classify by sheet id / name keywords
@@ -1964,6 +1976,17 @@
             { key: 'ipm', icon: '🐛', label: 'IPM Log' },
             { key: 'harvest', icon: '🌾', label: 'Harvest' },
             { key: 'other', icon: '📄', label: 'Other' }
+        ];
+
+        // Explicit document assignments offered in the Configure Sheets toolbar (shown when a
+        // saved sheet is selected). Values are cabinet section keys — an assigned sheet files
+        // under that section instead of the cadence/keyword heuristics.
+        const SHEET_DOCUMENTS = [
+            ['grow-log', '📗 Grow-Log'],
+            ['propagation', '📄 Propagation work sheet'],
+            ['harvest', '🌾 Harvest Log'],
+            ['ipm', '🐛 IPM Log'],
+            ['room-clean', '🧼 Cleaning form']
         ];
 
         function wizardForSheet(sheetId) {
@@ -2131,18 +2154,21 @@
         }
 
         // Phase-change rollover (spec "Phase Change") — data-only: closes the open daily-weekly
-        // instance (phaseChangeDate = today + confirmer's drawn strikeInitials) and creates a
-        // fresh instance for the new phase (periodStart = move date, header carries the new
-        // phase), optionally writing the new stage back to the main DB. Returns { inst, newKey,
-        // newPhase, reused } or null if cancelled — callers handle notify/close/render + double-entry offer.
-        async function phaseRollover(writeBack) {
+        // instance (phaseChangeDate = move day + confirmer's drawn strikeInitials) and creates a
+        // fresh instance for the new phase (periodStart = move day, header carries the new
+        // phase), optionally writing the new stage back to the main DB. `moveDay` is the date
+        // the change is recorded on — today for live changes, the entry's own day when a
+        // row-scoped Phase question records a change on a backfilled day (the strike-out and
+        // the fresh page both land on that day). Returns { inst, newKey, newPhase, reused } or
+        // null if cancelled — callers handle notify/close/render + double-entry offer.
+        async function phaseRollover(writeBack, moveDay) {
             const ctx = runnerCtx;
             if (!ctx) return null;
             const wiz = wizardForSheet(ctx.sheetId);
             const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
             const newPhase = String(phaseQ ? (ctx.draft[phaseQ.id] ?? '') : '').trim();
             if (!newPhase) return null;
-            const today = todayStr();
+            const today = moveDay || todayStr();
             const oldInst = ctx.inst;
             const pw = DB.paperWizard;
             if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
@@ -2160,6 +2186,11 @@
                 oldInst.strikeInitials = null;
                 for (const q of wiz.questions) {
                     if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') oldInst.header[q.id] = ctx.draft[q.id];
+                }
+                // Row-scoped double entry: the new phase also lands on this log's move-day row.
+                if (phaseQ?.rowScoped) {
+                    if (!oldInst.days[today]) oldInst.days[today] = {};
+                    oldInst.days[today][phaseQ.id] = newPhase;
                 }
                 if (writeBack && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = stageFromForm(newPhase);
                 captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
@@ -2182,6 +2213,12 @@
             for (const q of wiz.questions) {
                 if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') newInst.header[q.id] = ctx.draft[q.id];
             }
+            // Row-scoped double entry: the new phase also lands on the fresh log's move-day row,
+            // so both pages of the change day are filled in (old phase struck out, new phase open).
+            if (phaseQ?.rowScoped && newKey === today) {
+                if (!newInst.days[today]) newInst.days[today] = {};
+                newInst.days[today][phaseQ.id] = newPhase;
+            }
             sheetData.instances[newKey] = newInst;
             // 3) Write-back: the wizard-recorded change updates the main DB (the only field
             //    PaperWizard may write besides plantCount). Reverse-direction rollovers skip this.
@@ -2193,6 +2230,35 @@
             captureSnapshots(ctx.sheetId, ctx.lotId, newKey, newInst);
             evaluateCompletion(ctx.sheetId, newKey, newInst);
             return { inst: newInst, newKey, newPhase, reused: false };
+        }
+
+        // Last recorded phase answer on or before `day` for a row-scoped Phase question:
+        // walks back through this instance's days, then the previous instance's last days at a
+        // chain start, then falls back to the instance's own phase snapshot. Null when nothing
+        // has been recorded yet. This is the "previous day's phase" a new answer is compared
+        // against — a change from it triggers the strike-out rollover.
+        function lastRecordedPhase(lotId, sheetId, key, day) {
+            const wiz = wizardForSheet(sheetId);
+            const phaseQ = wiz?.questions.find(q => q.writesTo === 'lot.stage' && q.rowScoped);
+            if (!phaseQ) return null;
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key];
+            // Walk back from the entry's own day to the window start (inclusive).
+            for (let ds = day; ds >= key; ds = addDaysStr(ds, -1)) {
+                const v = inst?.days?.[ds]?.[phaseQ.id];
+                if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+            }
+            const pk = prevInstanceKey(lotId, sheetId, key);
+            if (pk) {
+                const pinst = DB.paperWizard.entries[lotId][sheetId].instances[pk];
+                const pkeys = Object.keys(pinst.days || {}).sort();
+                for (let i = pkeys.length - 1; i >= 0; i--) {
+                    const v = pinst.days[pkeys[i]]?.[phaseQ.id];
+                    if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+                }
+            }
+            // Instance snapshot may hold the raw DB vocabulary ('cloning') — normalize to the
+            // form's words so a stamped move-day row matches what the select stores.
+            return inst?.phase ? normalizeStage(inst.phase) : null;
         }
 
         // Reverse-direction detection (spec): the lot's live stage changed in SitkaTools and no
@@ -2214,7 +2280,7 @@
             if (!phaseQ) { showToast('No Phase question on this sheet — record the move in SitkaTools instead'); return false; }
             // Point the Phase question's draft at the new stage (form vocabulary) so the rollover records it.
             runnerCtx.draft[phaseQ.id] = normalizeStage(lot.stage);
-            const roll = await phaseRollover(false);
+            const roll = await phaseRollover(false, todayStr());
             if (!roll) return false; // cancelled at the initials prompt — open normally
             notifySitkaTools();
             closeRunner();
@@ -2453,8 +2519,10 @@
             let inst = DB.paperWizard.entries[lotId]?.[sheetId]?.instances?.[instKey] || null;
             const today = todayStr();
             if (!inst) {
-                // No instance yet — create a draft (persisted on Save).
-                if (sheet.cadence === 'daily-weekly') instKey = today;
+                // No instance yet — create a draft (persisted on Save). Daily-weekly drafts
+                // default to today unless an explicit date was requested (backfill from the
+                // cabinet's missing-day leaves starts a window on that past day).
+                if (sheet.cadence === 'daily-weekly') instKey = /^\d{4}-\d{2}-\d{2}$/.test(key || '') ? key : today;
                 else if (sheet.cadence === 'event') instKey = key || today;
                 else instKey = 'single';
                 inst = { phase: sheet.cadence === 'daily-weekly' ? normalizeStage(DB.lots[lotId]?.stage) : null,
@@ -2700,7 +2768,13 @@
                     const opts = ['<option value="">— select —</option>']
                         .concat((q.options || []).map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
-                } else if (q.type === 'number') {
+                } else if (q.type === 'phase') {
+                    // Fixed phase vocabulary — a change from the previous day's phase triggers
+                    // the strike-out rollover on save.
+                    const opts = ['<option value="">— select —</option>']
+                        .concat(PHASE_OPTIONS.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
+                    ctl = `<select id="wizCtl">${opts.join('')}</select>`;
+                } else if (q.type === 'number' || q.type === 'plant-count') {
                     ctl = `<input type="number" step="any" id="wizCtl" value="${val}">`;
                 } else {
                     ctl = `<input type="text" id="wizCtl" value="${val}">`;
@@ -2803,20 +2877,35 @@
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
                 sheetData.instances[ctx.key] = inst;
             }
-            // Phase change (Step 9) — checked BEFORE writing answers: a new phase closes this
-            // instance and starts a fresh one; the old log keeps its original phase snapshot.
-            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage' && !q.rowScoped);
+            ctx.inst = inst; // keep the runner's reference on the persisted object (phaseRollover reads ctx.inst)
+            // Phase change — checked BEFORE writing answers: a new phase closes this instance
+            // and starts a fresh one; the old log keeps its original phase snapshot. Works for
+            // both scopes: an instance-level Phase question compares against the instance's own
+            // phase; a row-scoped one compares against the last recorded phase on or before this
+            // entry's day (lastRecordedPhase), so a backfilled entry strikes out on its own day.
+            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
             let rolled = null;
+            // The comparison target for the Phase question — also used below to stamp the old
+            // log's move-day row (row-scoped double entry), so it must outlive the block.
+            const prevPhase = phaseQ
+                ? (phaseQ.rowScoped
+                    ? lastRecordedPhase(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)
+                    : inst.phase)
+                : null;
             if (phaseQ) {
                 const nv = String(ctx.draft[phaseQ.id] ?? '').trim();
-                if (nv && sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && inst.phase !== nv) {
-                    rolled = await phaseRollover(true); // drawn strike-initials capture; null = cancelled
+                if (nv && sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && prevPhase
+                        && normalizeStage(prevPhase) !== normalizeStage(nv)) {
+                    rolled = await phaseRollover(true, phaseQ.rowScoped ? ctx.day : todayStr()); // drawn strike-initials capture; null = cancelled
                     if (!rolled) return;                // nothing saved — runner stays open
                 }
             }
             for (const q of wiz.questions) {
                 let v = ctx.draft[q.id];
-                if (q === phaseQ && rolled) continue; // old log keeps its original phase
+                if (q === phaseQ && rolled) {
+                    if (!phaseQ.rowScoped || rolled.reused) continue; // instance-level or in-place reuse: keep original / draft value
+                    v = prevPhase || null;                            // row-scoped double entry: the old log's move-day row stamps the previous phase
+                }
                 if (q.type === 'initials') {
                     // Drawn initials: store the {name, strokes} object (or null when the pad is
                     // empty, so a re-opened day can be re-signed).
@@ -2840,10 +2929,11 @@
                     ? { name: ctx.sigDraft.name.trim(), strokes: ctx.sigDraft.strokes }
                     : null;
             }
-            // Plant count write-back (Step 9): row-scoped question whose value differs from the
-            // live lot record. Same value = no write; per-day entries keep the full history.
+            // Plant count write-back: any plant-count question (row-scoped or instance-level)
+            // whose value differs from the live lot record. Same value = no write; per-day
+            // entries keep the full history either way.
             for (const q of wiz.questions) {
-                if (q.writesTo === 'lot.plantCount' && q.rowScoped) {
+                if (q.writesTo === 'lot.plantCount') {
                     const v = String(ctx.draft[q.id] ?? '').trim();
                     if (v !== '' && DB.lots[ctx.lotId] && Number(DB.lots[ctx.lotId].plantCount) !== Number(v)) {
                         DB.lots[ctx.lotId].plantCount = Number(v);
@@ -3104,11 +3194,12 @@
             const sections = {};
             CAB_SECTIONS.forEach(s => { sections[s.key] = []; });
 
-            // Propagation — one expected instance per configured one-shot sheet.
+            // One expected instance per configured one-shot sheet. The section follows the
+            // sheet's Document assignment (Configure Sheets toolbar) — else the heuristics.
             for (const [sheetId, sheet] of Object.entries(pw.sheets || {})) {
                 if (sheet.cadence !== 'one-shot') continue;
                 const inst = entries[sheetId]?.instances?.['single'] || null;
-                sections.propagation.push(inst
+                sections[sheetSection(sheetId) || 'propagation'].push(inst
                     ? { html: cabLeafFill(escapeHtml(sheet.name || sheetId), instanceStatus(sheetId, 'single', inst), sheetId, 'single'), missing: false }
                     : { html: cabLeafFill(escapeHtml(sheet.name || sheetId), { text: '⚠️ missing', cls: 'miss' }, sheetId, 'single'), missing: true });
             }
@@ -3141,28 +3232,66 @@
                 });
             }
 
-            // Grow Logs — one node per daily-weekly instance, oldest first.
-            const grow = [];
+            // Grow Logs — one node per daily-weekly instance, oldest first. When the lot was
+            // configured in CropLabourWizard (plantingDate set), every day from planting to
+            // today must sit inside some instance's active window; uncovered days get a dashed
+            // backfill leaf that starts a fresh 7-day window on that past day. A daily-weekly
+            // sheet files under its Document assignment (else the grow-log section).
+            const growBySec = {}; // section key -> leaves
+            const pushGrow = (sec, leaf) => { (growBySec[sec] ||= []).push(leaf); };
+            const plantCfg = lot?._tool_CropLabourWizard || null;
+            const plantingDate = (plantCfg?.plantingDate && /^\d{4}-\d{2}-\d{2}$/.test(plantCfg.plantingDate)) ? plantCfg.plantingDate : null;
             for (const [sheetId, sheet] of Object.entries(pw.sheets).filter(([, s]) => s.cadence === 'daily-weekly')) {
+                const sec = sheetSection(sheetId) || 'grow-log';
                 const insts = entries[sheetId]?.instances || {};
                 const keys = Object.keys(insts).sort();
                 for (const key of keys) {
-                    grow.push({ key, html: cabLeafFill(
+                    pushGrow(sec, { key, sort: key, html: cabLeafFill(
                         `${fmtShort(key)}–${fmtShort(addDaysStr(key, 6))}${insts[key].phase ? ' · ' + escapeHtml(insts[key].phase) : ''}`,
                         instanceStatus(sheetId, key, insts[key]), sheetId, key) });
                 }
                 // Rollover: when today is outside every existing window (or no instances
                 // exist yet), offer a fresh 7-day window starting today — the first entry
-                // saved in it creates the new instance.
+                // saved in it creates the new instance. With a planting date on file the
+                // coverage leaves below already surface today when it's uncovered, so skip
+                // the generic leaf to avoid a duplicate.
                 const inWindow = keys.some(k => k <= todayStr() && todayStr() <= addDaysStr(k, 6));
-                if (!inWindow) {
-                    grow.push({ key: 'new', html: cabLeafFill(
+                if (!inWindow && !plantingDate) {
+                    pushGrow(sec, { key: 'new', sort: todayStr(), html: cabLeafFill(
                         `📅 Start new week · ${escapeHtml(sheet.name || sheetId)}`,
                         { text: '⏳ due', cls: 'due' }, sheetId, todayStr()) });
                 }
+                // Coverage from the planting date (spec): every day the plant has been around
+                // needs a grow-log. Days not inside any instance's active window are grouped
+                // into runs; each run becomes one backfill leaf that starts a fresh 7-day
+                // window on the run's first day (covering the whole run). The section header
+                // counts uncovered days as missing.
+                if (plantingDate) {
+                    const covered = new Set();
+                    for (const key of keys) {
+                        const { start, end } = activeWindow(insts[key], key);
+                        for (let d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) covered.add(dateToStr(d));
+                    }
+                    let runStart = null, runDays = 0;
+                    const flushRun = () => {
+                        if (!runStart) return;
+                        pushGrow(sec, { key: 'cov-' + runStart, sort: runStart, coverage: true, html: cabLeafFill(
+                            `🌱 Backfill ${fmtShort(runStart)}${runDays > 1 ? `–${fmtShort(addDaysStr(runStart, runDays - 1))}` : ''} · ${escapeHtml(sheet.name || sheetId)}`,
+                            { text: `⚠️ ${runDays} day${runDays === 1 ? '' : 's'} no log`, cls: 'miss' }, sheetId, runStart) });
+                        runStart = null; runDays = 0;
+                    };
+                    for (let ds = plantingDate; ds <= todayStr(); ds = addDaysStr(ds, 1)) {
+                        if (covered.has(ds)) { flushRun(); continue; }
+                        if (!runStart) runStart = ds;
+                        runDays++;
+                    }
+                    flushRun();
+                }
             }
-            grow.sort((a, b) => a.key.localeCompare(b.key));
-            sections['grow-log'] = grow.map(g => ({ html: g.html, missing: false }));
+            for (const [sec, leaves] of Object.entries(growBySec)) {
+                leaves.sort((a, b) => a.sort.localeCompare(b.sort));
+                sections[sec] = (sections[sec] || []).concat(leaves.map(g => ({ html: g.html, missing: !!g.coverage })));
+            }
 
             // IPM / Harvest / Other — event instances (room cleans handled above).
             for (const [sheetId, sd] of Object.entries(entries)) {
@@ -3207,6 +3336,7 @@
                     ${printDocChip}
                 </div>
                 ${Object.keys(pw.sheets || {}).length === 0 ? '<div class="cab-hint">No sheets configured yet — load a document and configure it in the <b>Configure Sheets</b> tab.</div>' : ''}
+                ${lot && !plantingDate ? `<div class="cab-warn">⚠️ This lot has no planting date on file — run it through the <b>CropLabourWizard</b> first. Grow-log coverage (one log per day since planting) can't be checked until a planting date is set.</div>` : ''}
                 ${sectionHtml}`;
 
             // Fill buttons open the wizard runner for that instance.
@@ -3225,7 +3355,10 @@
 
         let configureRenderKey = '';
         function configureKey() {
-            return [dbLoaded, configSheetId, cfgName, cfgCadence].join('|');
+            // The saved-sheet dropdown + document assignment are toolbar state: re-render
+            // when the sheet list or the current assignment changes.
+            return [dbLoaded, configSheetId, cfgName, cfgCadence, cfgDocument,
+                Object.keys(DB.paperWizard?.sheets || {}).sort().join(',')].join('|');
         }
 
         function renderConfigure() {
@@ -3260,9 +3393,27 @@
                 }
                 return n;
             })();
+            // A saved sheet is "selected" when the current configuration belongs to a sheet
+            // that's already in the DB — that's when the Document dropdown and 🗑 apply.
+            const savedSelected = !!(configSheetId && DB.paperWizard.sheets[configSheetId]);
             panel.innerHTML = `
                 <div class="cfg-toolbar">
                     <button type="button" class="btn btn-primary" id="loadDocBtn">⬆️ Load document</button>
+                    <div class="form-group">
+                        <label for="savedSheetSelect">Configured sheet</label>
+                        <select id="savedSheetSelect" title="Open a saved sheet's configuration for editing">
+                            <option value="">— Select saved sheet —</option>
+                            ${Object.entries(DB.paperWizard.sheets).map(([id, s]) => `<option value="${escapeHtml(id)}"${configSheetId === id ? ' selected' : ''}>${escapeHtml(s.name || id)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-danger db-btn" id="delSavedSheetBtn" title="Delete the selected configured sheet (and its wizard) from the database"${savedSelected ? '' : ' disabled'}>🗑</button>
+                    ${savedSelected ? `<div class="form-group">
+                        <label for="sheetDocSelect">Document</label>
+                        <select id="sheetDocSelect" title="Which filing-cabinet document this sheet is assigned to">
+                            <option value="">— unassigned —</option>
+                            ${SHEET_DOCUMENTS.map(([v, l]) => `<option value="${v}"${cfgDocument === v ? ' selected' : ''}>${l}</option>`).join('')}
+                        </select>
+                    </div>` : ''}
                     ${loaded ? `<span class="file-chip" id="docChip">📄 ${escapeHtml(loadedDoc.name)} · ${cfgPageCount} page${cfgPageCount > 1 ? 's' : ''} · US Letter ${orientation} · ${letterPageSize(orientation === 'landscape').widthIn} × ${letterPageSize(orientation === 'landscape').heightIn} in</span>` : ''}
                     ${loaded ? `<div class="zoom-ctl" title="Zoom the pages (or Ctrl/⌘ + scroll)">
                         <button type="button" id="zoomOutBtn" title="Zoom out">−</button>
@@ -3329,6 +3480,27 @@
                 </div>`;
 
             $('loadDocBtn').addEventListener('click', () => $('pageImportInput').click());
+            // Saved-sheet dropdown: open a configured sheet's working copies. Page images
+            // are never stored (Golden Rule) — if the loaded document doesn't match, it is
+            // revoked and the stage asks for a fresh just-in-time load. Re-selecting the
+            // current sheet is a no-op so an accidental touch never discards unsaved edits.
+            $('savedSheetSelect').addEventListener('change', () => {
+                const id = $('savedSheetSelect').value;
+                if (id && id !== configSheetId) openSavedSheet(id);
+            });
+            // 🗑 beside the dropdown deletes the selected saved sheet — same path as the
+            // Save-row delete (enabled only while a saved sheet is the current one).
+            $('delSavedSheetBtn').addEventListener('click', deleteSheet);
+            // Document assignment: persisted immediately (metadata, not layout) so the
+            // Filing Cabinet re-files the sheet without waiting for 💾 Save.
+            $('sheetDocSelect')?.addEventListener('change', () => {
+                cfgDocument = $('sheetDocSelect').value || null;
+                if (configSheetId && DB.paperWizard.sheets[configSheetId]) {
+                    DB.paperWizard.sheets[configSheetId].document = cfgDocument;
+                    notifySitkaTools();
+                }
+                renderAll();
+            });
             $('sheetNameInput').addEventListener('change', () => { cfgName = $('sheetNameInput').value.trim(); });
             // Cadence change re-renders the panel (the daily-entry hint is cadence-specific).
             $('cadenceSelect').addEventListener('change', () => {
@@ -3370,6 +3542,15 @@
             refreshWizardBuilder();
         }
 
+        // Write-back targets are tied to their question types (spec): a plant-count question
+        // writes lot.plantCount, a phase question writes lot.stage. Keeping the two in sync
+        // means the special behavior can never be configured on a plain text/number/select.
+        const TYPE_WRITEBACK = { 'plant-count': 'lot.plantCount', 'phase': 'lot.stage' };
+        function syncQuestionTypeWritesTo(q) {
+            if (TYPE_WRITEBACK[q.type]) q.writesTo = TYPE_WRITEBACK[q.type];
+            else if (q.writesTo && !['plant-count', 'phase'].includes(q.type)) q.writesTo = null;
+        }
+
         function questionCardHtml(q, i) {
             const n = cfgWizard.questions.length;
             // Read-only binding indicator — the assignment itself lives on the field side
@@ -3387,9 +3568,12 @@
             }
             const prefillOpts = `<option value="">— none —</option>` +
                 BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
+            // Write-back is fixed by the question type for plant-count / phase questions;
+            // plain types may still pick a target manually (legacy configs keep working).
             const writesOpts = `<option value="">— none —</option>` +
                 [['lot.plantCount', 'lot.plantCount — plant count'], ['lot.stage', 'lot.stage — phase']]
                     .map(([v, l]) => `<option value="${v}"${q.writesTo === v ? ' selected' : ''}>${l}</option>`).join('');
+            const typeLocked = !!TYPE_WRITEBACK[q.type];
             return `
                 <div class="q-card" data-qid="${q.id}">
                     <div class="q-head">
@@ -3407,11 +3591,14 @@
                             <option value="number"${q.type === 'number' ? ' selected' : ''}>number</option>
                             <option value="select"${q.type === 'select' ? ' selected' : ''}>select</option>
                             <option value="initials"${q.type === 'initials' ? ' selected' : ''}>✍️ initials</option>
+                            <option value="plant-count"${q.type === 'plant-count' ? ' selected' : ''}>🌱 plant count (writes lot.plantCount)</option>
+                            <option value="phase"${q.type === 'phase' ? ' selected' : ''}>🔄 phase (writes lot.stage)</option>
                         </select></div>
                         <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}</div></div>
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
+                        ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">Phase options are fixed (Cloning / Mother / Vegetation / Bloom / Harvesting) — no custom list. A change from the previous day's phase automatically strikes out this grow-log and starts a new one in the new phase.</p>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
-                        <div class="form-group"><label>Writes back to</label><select class="q-writes">${writesOpts}</select></div>
+                        <div class="form-group"><label>Writes back to${typeLocked ? ' (fixed by type)' : ''}</label><select class="q-writes"${typeLocked ? ' disabled' : ''}>${writesOpts}</select></div>
                     </div>
                     <div class="q-checks">
                         <label class="q-check"><input type="checkbox" class="q-row"${q.rowScoped ? ' checked' : ''}> Row-scoped (per day)</label>
@@ -3435,7 +3622,11 @@
                 const q = cfgWizard.questions.find(x => x.id === card.dataset.qid);
                 if (!q) return;
                 card.querySelector('.q-label').addEventListener('change', () => { q.label = card.querySelector('.q-label').value.trim(); refreshCfgOverlays(); });
-                card.querySelector('.q-type').addEventListener('change', () => { q.type = card.querySelector('.q-type').value; refreshWizardBuilder(); });
+                card.querySelector('.q-type').addEventListener('change', () => {
+                    q.type = card.querySelector('.q-type').value;
+                    syncQuestionTypeWritesTo(q); // plant-count / phase lock their write-back target
+                    refreshWizardBuilder();
+                });
                 const optsEl = card.querySelector('.q-options');
                 if (optsEl) optsEl.addEventListener('change', () => {
                     q.options = optsEl.value.split(/\n|,/).map(s => s.trim()).filter(Boolean);
@@ -3471,6 +3662,34 @@
             });
         }
 
+        // Open a saved sheet's configuration from the toolbar dropdown. Page images are
+        // never stored (Golden Rule), so if the loaded document doesn't match this sheet's
+        // id it is revoked and the stage asks for a fresh just-in-time load.
+        function openSavedSheet(sheetId) {
+            const s = DB.paperWizard.sheets[sheetId];
+            if (!s) return;
+            if (loadedDoc && loadedDoc.baseName !== sheetId) revokeLoadedDoc();
+            configSheetId = sheetId;
+            orientation = s.orientation || 'portrait';
+            cfgName = s.name || sheetId;
+            cfgCadence = s.cadence || 'one-shot';
+            cfgDocument = s.document || null;
+            cfgPageCount = Math.max(1, Math.min(20, s.pageCount || 1));
+            // Working copies of the layout (saved to DB on 💾 Save).
+            cfgFields = (s.fields || []).map(f => ({ ...f, page: f.page ?? 1 }));
+            cfgSignature = s.signature ? { ...s.signature } : null;
+            cfgSelection = null;
+            cfgMultiSel = new Set();
+            // Wizard working copy: reopen the saved wizard for this sheet, else start fresh.
+            const existingWizEntry = Object.entries(DB.paperWizard.wizards).find(([, w]) => w.sheetId === sheetId) || null;
+            cfgWizard = existingWizEntry
+                ? { id: existingWizEntry[0], sheetId, name: existingWizEntry[1].name || '', questions: (existingWizEntry[1].questions || []).map(q => ({ ...q })) }
+                : { id: generateFieldId(), sheetId, name: cfgName + ' Wizard', questions: [] };
+            cfgQuestionSel = null;
+            renderConfigure();
+            showToast(`Opened "${sheetId}" for editing`);
+        }
+
         // ---- Save / delete sheet (Step 4) ----
         function saveSheet() {
             if (!configSheetId || !loadedDoc) { showToast('Load the form pages first'); return; }
@@ -3489,6 +3708,7 @@
                 pageHeightIn: heightIn,
                 pageCount: cfgPageCount,
                 cadence: cfgCadence,
+                document: cfgDocument,
                 // No rowGrid — daily-weekly rows are the explicit day-group boxes in fields[].
                 fields: cfgFields.map(f => ({ ...f })),
                 signature: cfgSignature ? { ...cfgSignature } : null
@@ -3499,6 +3719,7 @@
                 questions: cfgWizard.questions.map(q => ({ ...q, options: [...(q.options || [])] }))
             };
             notifySitkaTools();
+            renderConfigure(); // the saved-sheet dropdown now lists this sheet
             showToast(`Saved sheet "${configSheetId}" (${cfgWizard.questions.length} question${cfgWizard.questions.length > 1 ? 's' : ''})`);
         }
 
@@ -3515,6 +3736,7 @@
             // Reset the working copies to a fresh configuration for this base name.
             cfgName = configSheetId;
             cfgCadence = 'one-shot';
+            cfgDocument = null;
             cfgFields = [];
             cfgSignature = null;
             cfgSelection = null;
@@ -3522,7 +3744,7 @@
             cfgWizard = { id: generateFieldId(), sheetId: configSheetId, name: cfgName + ' Wizard', questions: [] };
             cfgQuestionSel = null;
             notifySitkaTools();
-            renderConfigure();
+            renderAll(); // status bar + cabinet also reflect the deletion
             showToast(`Deleted ${what}`);
         }
 
