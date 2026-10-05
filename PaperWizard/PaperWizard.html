@@ -1785,7 +1785,8 @@
             ['instance.phase', 'instance.phase — phase snapshot'],
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
-            ['day.date', 'day.date — date of the current day (MM/DD, row fields only)']
+            ['day.date', 'day.date — date of the current day (MM/DD, row fields only)'],
+            ['year.current', 'year.current — last digit of the year (at save time)']
         ];
 
         function fieldPropertiesPanelHtml() {
@@ -2469,6 +2470,9 @@
                 return (v === null || v === undefined) ? null : String(v);
             }
             if (kind === 'instance' && field === 'phase') return ctx.inst?.phase || null;
+            // Last digit of the current year (2021 → 1, 2023 → 3). Resolved at save time and
+            // snapshotted like any other binding — a form saved in 2026 keeps printing "6".
+            if (kind === 'year' && field === 'current') return String(new Date().getFullYear() % 10);
             if (kind === 'day' && field === 'date') return ctx.dayDate ? fmtMMDD(ctx.dayDate) : null;
             if (kind === 'sheet') {
                 const start = ctx.key;
@@ -3356,8 +3360,12 @@
         let configureRenderKey = '';
         function configureKey() {
             // The saved-sheet dropdown + document assignment are toolbar state: re-render
-            // when the sheet list or the current assignment changes.
+            // when the sheet list or the current assignment changes. loadedDoc MUST be in
+            // the key — after a delete, reloading the same base name leaves every other
+            // value unchanged, and without this the idempotency guard would skip the
+            // rebuild and the stage would keep showing "No document loaded".
             return [dbLoaded, configSheetId, cfgName, cfgCadence, cfgDocument,
+                loadedDoc ? `${loadedDoc.baseName}:${loadedDoc.pageCount}` : '',
                 Object.keys(DB.paperWizard?.sheets || {}).sort().join(',')].join('|');
         }
 
@@ -3615,6 +3623,9 @@
                 ? cfgWizard.questions.map((q, i) => questionCardHtml(q, i)).join('')
                 : '<p class="cfg-hint">No questions yet — add the first one above.</p>';
             wireWizardBuilder();
+            // A selected field's "Filled by question" dropdown lists these questions —
+            // redraw it so new/renamed/deleted questions show up there too.
+            refreshCfgOverlays();
         }
 
         function wireWizardBuilder() {
