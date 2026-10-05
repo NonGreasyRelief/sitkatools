@@ -69,7 +69,7 @@ Each field is a rectangle placed over a page image in the Configure tab:
 | `fontSize` | number (pt) | Font size in points at 100% print scale; converted to px via `pageWidthIn`/`pageHeightIn`. |
 | `align` | `'left' \| 'center' \| 'right'` | Horizontal text alignment inside the box. |
 | `source` | string \| null | Auto-fill binding (below). `null` means the field is filled by a wizard question instead. **Group-level:** setting it on one member sets it on every day of that column. |
-| `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field. A daily-entry group member receives *that day's* answer to the question. **Group-level:** binding a question to one member binds it to every day of that column. |
+| `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field — **the sole binding point** (questions carry no target of their own). Assigned in the Field properties panel's "Filled by question" dropdown. A daily-entry group member receives *that day's* answer to the question. **Group-level:** the binding is anchored on the column's day-1 box and repeats to every day; editing it from *any* member of the column propagates to all days. |
 | `day` | number \| 1 | The day row this box belongs to (1 = the manually placed first row; 2..N = the other members of its daily-entry group). Only meaningful when `dayGroup` is set. |
 | `dayGroup` | string (4 chars) \| null | Daily-entry group id — boxes sharing an id form one column of the weekly table and **move together as a single block** in the editor. `null` for header/one-shot/event fields. |
 | *(initials box)* | derived | A field is an **initials box** when it is bound (via `questionId`) to a wizard question of type `'initials'` — there is no per-field flag. The editor shows a ✍️ badge on such boxes, derived from the binding. See "Initials Question Type". |
@@ -81,7 +81,7 @@ Each field is a rectangle placed over a page image in the Configure tab:
 3. Hit **🔗 Group as daily entry** in the Field properties panel — the tool copies the selection into real fields for days 2..N (asked how many days; default 7), offset by the measured pitch between day 1 and day 2 (or the tallest box's height if unmeasurable). Each clone carries a `D2`..`DN` badge.
 4. **Slide the group into position** — dragging *any* member moves the whole group as one block; hold **Ctrl/⌘** to move just that day's row (all boxes on the same day in the group), or **Alt/⌥** to move just that one box, for exact per-row placement. ✂️ Ungroup removes the day 2..N boxes and keeps day 1 — it also clears `dayGroup` from the surviving day-1 boxes so they stop moving together.
 
-At render time each group member prints on **its own day at its own placed position** — what you slid is what prints; there is no clone math left to get wrong. Bindings (auto-fill source, wizard question) are **group-level**: they apply to every day of the column, and the wizard's "Fills field" dropdown offers each group once (its day-1 rep, marked 🔗). The header section is made of ungrouped fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
+At render time each group member prints on **its own day at its own placed position** — what you slid is what prints; there is no clone math left to get wrong. Bindings (auto-fill source, wizard question) are **group-level**: they apply to every day of the column. The question binding is assigned from the field side — select any member of the column in the Field properties panel and pick its question in "Filled by question"; the choice propagates to all days (anchored on day 1). The wizard builder shows each question's binding as a read-only indicator only. The header section is made of ungrouped fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
 
 *Legacy sheets* configured before this system (fields with `row: true` + a stored `rowGrid`) still print via the old clone-down fallback so existing forms keep working; re-saving them in the editor migrates nothing automatically — group their day-1 boxes to move to the new system.
 
@@ -89,7 +89,7 @@ At render time each group member prints on **its own day at its own placed posit
 
 An **initials** question is a wizard question whose `type` is `'initials'`. Instead of a text/number/select control, the runner shows a **canvas draw pad** (the shared draw-pad machinery) sized to the bound field's aspect ratio, plus a name/initials input. Whoever fills it draws their initials with a stylus; the strokes are stored as normalized `[x, y]` point arrays (same vector format as the signature — no image). This is an accountability record: every person who touches a day leaves a mark that prints in the box on the controlled form.
 
-- **Configure:** place a box over the form's initials spot and bind it to a question of type **✍️ initials** in the wizard builder (the "Fills field" dropdown). The editor shows a ✍️ badge on the bound box, derived from the binding — there is no per-field flag. To make it a **per-day** sign-off on a weekly sheet, place the box as part of the day-1 row, group it (🔗) so it clones to all 7 days, and mark the question **row-scoped**; each day's clone then carries its own pad and prints that day's strokes.
+- **Configure:** place a box over the form's initials spot and bind it to a question of type **✍️ initials** via the Field properties panel ("Filled by question"). The editor shows a ✍️ badge on the bound box, derived from the binding — there is no per-field flag. To make it a **per-day** sign-off on a weekly sheet, place the box as part of the day-1 row, group it (🔗) so it clones to all 7 days, and mark the question **row-scoped**; each day's clone then carries its own pad and prints that day's strokes.
 - **Fill:** the initials question is a normal step in the wizard — place it last for an end-of-day sign-off. The person draws their initials; saving stores them on **that specific day** (row-scoped) or the instance (one-shot/event). Re-opening repaints what was drawn, so it can be corrected or re-signed. An empty pad on save clears the answer (`null`).
 - **Storage:** the answer lives in the normal answer slot — `days[YYYY-MM-DD][questionId]` for a row-scoped question, `header[questionId]` otherwise — as `{ name, strokes } | null`. There is no separate per-day initials structure.
 - **Print:** each box prints its bound question's strokes as an inline SVG polyline at the box's placed position (a group member prints its own day's strokes). A box with no strokes prints empty.
@@ -151,7 +151,7 @@ Each question:
 | `label` | string | The question shown to the user ("Temp high (°C)?"). |
 | `type` | `'text' \| 'number' \| 'select' \| 'initials'` | Input control — **string input**, **number input**, **simple multiple choice** (fixed options list), or **✍️ initials** (a draw pad that stores `{name, strokes}`; see "Initials Question Type"). New types can be added to the schema later without a migration. |
 | `options[]` | array of strings | For `select`. |
-| `targetFieldId` | string | The field this answer fills (null for questions that only store data, e.g. notes). |
+| *(binding)* | derived | A question fills whichever field(s) carry its id in `questionId` — the binding is assigned from the field side (Field properties → "Filled by question"), never from the question. A question no field references is notes-only (its answer stores but prints nowhere). |
 | `rowScoped` | boolean | `true` = the answer is captured **per day row** (daily wizard on a weekly sheet); `false` = one answer for the whole instance (header/one-shot). |
 | `sameAsLast` | boolean | Offer the **"⏪ Same as last time"** action for this question. For `rowScoped` questions it copies the *previous day's* answer; for instance-level questions it copies the previous instance's answer. Default on for most daily questions. |
 | `writesTo` | `'lot.plantCount' \| 'lot.stage' \| null` | Optional **write-back** binding — PaperWizard's special permission (see "Write-Back to the Main DB"). When the saved answer differs from the lot's current value, PaperWizard updates the main DB and notifies SitkaTools. Restricted to these two targets; anything else is rejected at configure time. |
@@ -338,13 +338,13 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
         "name": "Grow-Log Daily Entry",
         "questions": [
           { "id": "t1hi", "label": "Temp high (°C)", "type": "number", "options": [],
-            "targetFieldId": "d9q1", "rowScoped": true, "sameAsLast": true, "writesTo": null },
+            "rowScoped": true, "sameAsLast": true, "writesTo": null },
           { "id": "cnt1", "label": "Current plant count", "type": "number", "options": [],
-            "targetFieldId": "e5r3", "rowScoped": true, "sameAsLast": true, "writesTo": "lot.plantCount" },
+            "rowScoped": true, "sameAsLast": true, "writesTo": "lot.plantCount" },
           { "id": "obs1", "label": "Observations / notes", "type": "text", "options": [],
-            "targetFieldId": null, "rowScoped": true, "sameAsLast": false, "writesTo": null },
+            "rowScoped": true, "sameAsLast": false, "writesTo": null },
           { "id": "init1", "label": "Initials", "type": "initials", "options": [],
-            "targetFieldId": "i9z2", "rowScoped": true, "sameAsLast": false, "writesTo": null }
+            "rowScoped": true, "sameAsLast": false, "writesTo": null }
         ]
       }
     },
@@ -509,3 +509,4 @@ Decisions made during design (2026-09-24, updated 2026-09-26) — already folded
 11. **Empty prints as N/A (2026-09-26):** any unanswered field or null binding prints `N/A` — controlled documents are never blank.
 12. **Strike-out policy (2026-09-26):** an early-ended grow-log gets a diagonal across the remaining day rows with initials *above* the line and the date *below*; the overlay is computed from `phaseChangeDate` + `strikeInitials` + row geometry, never stored.
 13. **Question controls (2026-09-26):** v1 question types are exactly string input, number input, and simple multiple choice — enough for every sheet in the initial set; the fill engine is fully data-driven from wizard configuration.
+14. **Field-side-only question binding (2026-10-04):** a wizard question is bound to a field solely via `field.questionId`, assigned in the Field properties panel ("Filled by question"). The former question-side `targetFieldId` and the wizard builder's "Fills field" dropdown are retired — the builder shows each question's binding as a read-only indicator derived from the fields. For daily-entry columns the binding is **per-column**: anchored on day 1, repeated to every day of that column, editable from any member with whole-column propagation (same group + same x — sibling columns in the same group keep their own bindings). Deleting a question clears its id from *every* bound field; deleting/ungrouping boxes takes their bindings with them (day-1 survivors keep theirs).

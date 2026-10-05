@@ -611,6 +611,11 @@
         .q-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .q-controls > .form-group { margin-bottom: 0; }
         .q-controls .q-full { grid-column: 1 / -1; }
+        .q-bind-indicator {
+            font-size: 0.8rem; color: var(--text-secondary);
+            background: var(--bg-secondary); border: 1px dashed var(--border);
+            border-radius: 4px; padding: 6px 8px; min-height: 34px;
+        }
         .q-checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
         .q-check {
             display: flex; align-items: center; gap: 6px; cursor: pointer;
@@ -1211,9 +1216,10 @@
             cfgSelection = null;
             cfgMultiSel = new Set();
             // Wizard working copy: reopen the saved wizard for this sheet, else start fresh.
-            const existingWiz = Object.values(DB.paperWizard.wizards).find(w => w.sheetId === parsed.baseName) || null;
-            cfgWizard = existingWiz
-                ? { id: existingWiz.id, sheetId: parsed.baseName, name: existingWiz.name || '', questions: (existingWiz.questions || []).map(q => ({ ...q })) }
+            // The wizard's id is its map key (wizard objects don't store their own id).
+            const existingWizEntry = Object.entries(DB.paperWizard.wizards).find(([, w]) => w.sheetId === parsed.baseName) || null;
+            cfgWizard = existingWizEntry
+                ? { id: existingWizEntry[0], sheetId: parsed.baseName, name: existingWizEntry[1].name || '', questions: (existingWizEntry[1].questions || []).map(q => ({ ...q })) }
                 : { id: generateFieldId(), sheetId: parsed.baseName, name: cfgName + ' Wizard', questions: [] };
             cfgQuestionSel = null;
 
@@ -1277,9 +1283,11 @@
                 : cfgFields.find(f => f.id === id) || null;
         }
 
-        // The wizard question (if any) whose answer fills the given field.
+        // The wizard question (if any) whose answer fills the given field. The binding lives
+        // on the FIELD side (field.questionId) — questions carry no target of their own.
         function findQuestionForField(fieldId) {
-            return cfgWizard?.questions.find(q => q.targetFieldId === fieldId) || null;
+            const qid = cfgFields.find(f => f.id === fieldId)?.questionId;
+            return (qid && cfgWizard?.questions.find(q => q.id === qid)) || null;
         }
 
         // A field is an initials box when it's bound to a wizard question of type 'initials'.
@@ -1339,14 +1347,6 @@
             const f = cfgFields.find(x => x.id === id);
             if (!f?.dayGroup) return [id];
             return cfgFields.filter(x => x.dayGroup === f.dayGroup).map(x => x.id);
-        }
-
-        // The representative member of a daily-entry group (smallest day, then lowest y).
-        // Dropdowns offer the rep as the binding target; bindings apply to every member.
-        function cfgGroupRep(groupId) {
-            const members = cfgFields.filter(f => f.dayGroup === groupId);
-            if (!members.length) return null;
-            return members.slice().sort((a, b) => (a.day || 1) - (b.day || 1) || a.y - b.y)[0].id;
         }
 
         // Apply a mutation to a field AND every member of its daily-entry group — bindings
@@ -1422,24 +1422,15 @@
             const selIds = cfgSelection?.kind === 'field' ? [cfgSelection.id, ...cfgMultiSel] : [...cfgMultiSel];
             const groups = new Set(cfgFields.filter(f => selIds.includes(f.id) && f.dayGroup).map(f => f.dayGroup));
             if (!groups.size) { showToast('No daily-entry group in the selection'); return; }
-            // Record each doomed clone's group BEFORE filtering, so questions can be re-pointed.
-            const removedGroupOf = new Map();
             let removed = 0;
             cfgFields = cfgFields.filter(f => {
                 if (f.dayGroup && groups.has(f.dayGroup) && (f.day || 1) > 1) {
                     removed++;
-                    removedGroupOf.set(f.id, f.dayGroup);
                     return false;
                 }
                 return true;
             });
-            // Questions targeting a deleted clone: re-point to the group's surviving day-1 box.
-            cfgWizard?.questions.forEach(q => {
-                if (!q.targetFieldId || !removedGroupOf.has(q.targetFieldId)) return;
-                const gid = removedGroupOf.get(q.targetFieldId);
-                const survivor = cfgFields.find(f => f.dayGroup === gid && (f.day || 1) === 1);
-                q.targetFieldId = survivor ? survivor.id : null;
-            });
+            // Bindings live on the fields themselves — day-1 survivors keep their questionId.
             // Dissolve the group: clear dayGroup/day on the surviving day-1 boxes so they stop
             // moving together. (Previously they kept their group id and stayed "stuck".)
             for (const f of cfgFields) {
@@ -1512,14 +1503,7 @@
         function deleteSelectedCfgItem() {
             const selIds = new Set(selectedFieldIds());
             if (!selIds.size && cfgSelection?.kind !== 'signature') return;
-            // Questions targeting a deleted field: re-point to a surviving member of the same
-            // daily-entry group, else release.
-            cfgWizard?.questions.forEach(q => {
-                if (!q.targetFieldId || !selIds.has(q.targetFieldId)) return;
-                const gone = cfgFields.find(f => f.id === q.targetFieldId);
-                const survivor = gone?.dayGroup ? cfgFields.find(f => f.dayGroup === gone.dayGroup && !selIds.has(f.id)) : null;
-                q.targetFieldId = survivor ? survivor.id : null;
-            });
+            // Bindings live on the fields themselves — deleting a box takes its binding with it.
             cfgFields = cfgFields.filter(f => !selIds.has(f.id));
             if (cfgSelection?.kind === 'signature') cfgSignature = null;
             clearCfgSelection();
@@ -1929,17 +1913,14 @@
                     qWrap.style.display = item.source ? 'none' : '';
                     $('fpQuestionLink').addEventListener('change', () => {
                         const qid = $('fpQuestionLink').value || null;
-                        // One question per column: release the whole column from other questions.
-                        cfgWizard?.questions.forEach(x => {
-                            if (x.id === qid || !x.targetFieldId) return;
-                            const tf = cfgFields.find(y => y.id === x.targetFieldId);
-                            if (!tf) return;
-                            if (item.dayGroup ? tf.dayGroup === item.dayGroup : tf.id === item.id) x.targetFieldId = null;
-                        });
-                        // Bind the question to the field AND every member of its group.
-                        mutateFieldGroup(item.id, t => { t.questionId = qid; });
-                        const q = cfgWizard?.questions.find(x => x.id === qid);
-                        if (q) q.targetFieldId = item.id;
+                        // The field side is the sole binding point. Propagate to every day of
+                        // THIS box's column (same group + same x) — editing any day's box
+                        // updates the whole column, so the binding repeats across all days.
+                        // Sibling columns in the same group keep their own bindings.
+                        const col = item.dayGroup
+                            ? cfgFields.filter(x => x.dayGroup === item.dayGroup && Math.abs(x.x - item.x) < 0.005)
+                            : [item];
+                        for (const t of col) t.questionId = qid;
                         refreshCfgOverlays();
                         refreshWizardBuilder();
                     });
@@ -2661,7 +2642,9 @@
         // question's draft answer ({name, strokes}).
         function initQuestionInitialsPad(ctx, q) {
             const sheet = DB.paperWizard.sheets[ctx.sheetId];
-            const f = (sheet.fields || []).find(x => x.id === q.targetFieldId);
+            // The binding lives on the field side — any field carrying this question's id
+            // (group members share geometry, so the first match sizes the pad correctly).
+            const f = (sheet.fields || []).find(x => x.questionId === q.id);
             const ar = (f && f.w && f.h) ? (f.w / f.h) : 3; // initials boxes are wide/short
             initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
         }
@@ -3262,15 +3245,16 @@
 
             const loaded = !!loadedDoc;
             // Non-auto-filled columns not yet claimed by a wizard question. A daily-entry
-            // group counts once (bindings are group-level), not once per day clone.
+            // column counts once (bindings are per-column), not once per day clone.
             const unboundCount = (() => {
                 let n = 0;
-                const seenGroups = new Set();
+                const seenCols = new Set();
                 for (const f of cfgFields) {
                     if (f.source) continue; // auto-filled columns aren't question targets
                     if (f.dayGroup) {
-                        if (seenGroups.has(f.dayGroup)) continue;
-                        seenGroups.add(f.dayGroup);
+                        const colKey = `${f.dayGroup}:${f.x}`;
+                        if (seenCols.has(colKey)) continue;
+                        seenCols.add(colKey);
                     }
                     if (!findQuestionForField(f.id)) n++;
                 }
@@ -3380,7 +3364,7 @@
         // ---- Wizard builder (Step 4) ----
         function addCfgQuestion() {
             if (!cfgWizard) return;
-            const q = { id: generateFieldId(), label: `Question ${cfgWizard.questions.length + 1}`, type: 'text', options: [], targetFieldId: null, rowScoped: false, sameAsLast: false, writesTo: null, prefillFrom: null };
+            const q = { id: generateFieldId(), label: `Question ${cfgWizard.questions.length + 1}`, type: 'text', options: [], rowScoped: false, sameAsLast: false, writesTo: null, prefillFrom: null };
             cfgWizard.questions.push(q);
             cfgQuestionSel = q.id;
             refreshWizardBuilder();
@@ -3388,26 +3372,19 @@
 
         function questionCardHtml(q, i) {
             const n = cfgWizard.questions.length;
-            // One option per column: daily-entry groups offer their day-1 rep (binding the rep
-            // binds every day of the group); ungrouped fields offer themselves.
-            const seenGroups = new Set();
-            const targets = [];
+            // Read-only binding indicator — the assignment itself lives on the field side
+            // (Field properties → "Filled by question"). Fields carrying this question's id,
+            // one entry per column: a daily-entry column counts once ("· all days 🔗"); a
+            // group may hold several columns, each with its own binding.
+            const seenCols = new Set();
+            const bindLabels = [];
             for (const f of cfgFields) {
-                if (f.dayGroup) {
-                    if (seenGroups.has(f.dayGroup)) continue;
-                    if (cfgGroupRep(f.dayGroup) !== f.id) continue; // list the group at its rep
-                    seenGroups.add(f.dayGroup);
-                    targets.push({ id: f.id, label: `${f.label || f.id} · all days`, groupId: f.dayGroup });
-                } else {
-                    targets.push({ id: f.id, label: f.label || f.id, groupId: null });
-                }
+                if (f.questionId !== q.id) continue;
+                const colKey = f.dayGroup ? `${f.dayGroup}:${f.x}` : f.id;
+                if (seenCols.has(colKey)) continue;
+                seenCols.add(colKey);
+                bindLabels.push(f.dayGroup ? `${f.label || f.id} · all days 🔗` : (f.label || f.id));
             }
-            const targetGroup = cfgFields.find(f => f.id === q.targetFieldId)?.dayGroup || null;
-            const fieldOpts = `<option value="">— none (notes only) —</option>` +
-                targets.map(t => {
-                    const sel = t.groupId ? targetGroup === t.groupId : q.targetFieldId === t.id;
-                    return `<option value="${t.id}"${sel ? ' selected' : ''}>${escapeHtml(t.label)}${t.groupId ? ' 🔗' : ''}</option>`;
-                }).join('');
             const prefillOpts = `<option value="">— none —</option>` +
                 BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
             const writesOpts = `<option value="">— none —</option>` +
@@ -3431,7 +3408,7 @@
                             <option value="select"${q.type === 'select' ? ' selected' : ''}>select</option>
                             <option value="initials"${q.type === 'initials' ? ' selected' : ''}>✍️ initials</option>
                         </select></div>
-                        <div class="form-group"><label>Fills field</label><select class="q-target">${fieldOpts}</select></div>
+                        <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}</div></div>
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
                         <div class="form-group"><label>Writes back to</label><select class="q-writes">${writesOpts}</select></div>
@@ -3464,26 +3441,8 @@
                     q.options = optsEl.value.split(/\n|,/).map(s => s.trim()).filter(Boolean);
                     refreshCfgOverlays();
                 });
-                card.querySelector('.q-target').addEventListener('change', () => {
-                    const fid = card.querySelector('.q-target').value || null;
-                    // Release this question from its previous target (whole group if it was one).
-                    if (q.targetFieldId) mutateFieldGroup(q.targetFieldId, t => { if (t.questionId === q.id) t.questionId = null; });
-                    // One question per column: release the whole column from any other question.
-                    if (fid) {
-                        const f = cfgFields.find(x => x.id === fid);
-                        cfgWizard.questions.forEach(x => {
-                            if (x.id === q.id || !x.targetFieldId) return;
-                            const tf = cfgFields.find(y => y.id === x.targetFieldId);
-                            if (!tf) return;
-                            if (f?.dayGroup ? tf.dayGroup === f.dayGroup : tf.id === fid) x.targetFieldId = null;
-                        });
-                    }
-                    q.targetFieldId = fid;
-                    // Bind the question to the field AND every member of its daily-entry group.
-                    if (fid) mutateFieldGroup(fid, t => { t.questionId = q.id; });
-                    refreshCfgOverlays();
-                    refreshWizardBuilder();
-                });
+                // No "Fills field" control here — the binding is assigned from the field's
+                // properties panel (field.questionId is the single source of truth).
                 card.querySelector('.q-prefill').addEventListener('change', () => { q.prefillFrom = card.querySelector('.q-prefill').value || null; refreshCfgOverlays(); });
                 card.querySelector('.q-writes').addEventListener('change', () => { q.writesTo = card.querySelector('.q-writes').value || null; refreshCfgOverlays(); });
                 card.querySelector('.q-row').addEventListener('change', () => { q.rowScoped = card.querySelector('.q-row').checked; refreshCfgOverlays(); });
@@ -3501,8 +3460,9 @@
                     refreshWizardBuilder();
                 });
                 card.querySelector('.q-del').addEventListener('click', () => {
-                    const f = cfgFields.find(x => x.questionId === q.id);
-                    if (f) f.questionId = null;
+                    // Clear the binding from EVERY field carrying this question's id — a whole
+                    // daily-entry column, not just the first match.
+                    cfgFields.forEach(f => { if (f.questionId === q.id) f.questionId = null; });
                     cfgWizard.questions = cfgWizard.questions.filter(x => x.id !== q.id);
                     if (cfgQuestionSel === q.id) cfgQuestionSel = null;
                     refreshCfgOverlays();

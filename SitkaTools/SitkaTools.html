@@ -1088,6 +1088,10 @@
         .filter-menu-count { font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap; }
         .filter-menu-empty { padding: 12px 10px; font-size: 0.85rem; color: var(--text-secondary); }
 
+        /* Useful Combinations — one-click preset section at the top of the menu */
+        .filter-preset-group { padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+        .filter-preset .filter-menu-count { color: var(--accent); font-weight: 600; }
+
         .filter-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 
         .filter-tag {
@@ -5579,6 +5583,25 @@
                 { key: 'taskType', label: 'Task Type', icon: '🛠️' }
             ],
 
+            // One-click filter presets shown at the top of the "Add filter" menu.
+            // Each preset is a fixed set of taskType values applied together in a
+            // single click (see _applyPreset). Values are raw CropLabourWizard task
+            // type ids; their display names come from TASK_TYPE_NAMES / _taskTypeName.
+            FILTER_PRESETS: [
+                {
+                    id: 'all-phase-changes',
+                    label: 'All phase changes',
+                    icon: '✨',
+                    taskTypes: ['clone_cut_prep', 'planting', 'transplant', 'flip', 'harvest', 'trim', 'room_clean']
+                },
+                {
+                    id: 'clone-flip-harvest-clean',
+                    label: 'Clone, Flip, Harvest, Clean',
+                    icon: '🔁',
+                    taskTypes: ['clone_cut_prep', 'flip', 'harvest', 'room_clean']
+                }
+            ],
+
             // Friendly names for CropLabourWizard task types (raw id is the fallback).
             TASK_TYPE_NAMES: {
                 clone_cut_prep: 'Cutting Clones',
@@ -5817,6 +5840,21 @@
                 return value; // room/building/strain values are already display-ready
             },
 
+            // Apply a one-click preset: add all of its taskType filters at once.
+            // If every value is already active, clicking again clears just those
+            // values (toggle) — other taskType filters stay untouched.
+            _applyPreset(preset) {
+                const existing = new Set(this.filters.filter(f => f.key === 'taskType').map(f => f.value));
+                const allActive = preset.taskTypes.length > 0 && preset.taskTypes.every(t => existing.has(t));
+                if (allActive) {
+                    this.filters = this.filters.filter(f => !(f.key === 'taskType' && preset.taskTypes.includes(f.value)));
+                } else {
+                    for (const t of preset.taskTypes) {
+                        if (!existing.has(t)) this.filters.push({ key: 'taskType', value: t });
+                    }
+                }
+            },
+
             openFilterMenu() {
                 const menu = $('filterMenu');
                 if (this.events.length === 0) return;
@@ -5824,7 +5862,25 @@
                 const groups = this.availableFilterOptions();
                 const hasAny = groups.some(g => g.options.length > 0);
 
+                // ---- Useful Combinations — one-click presets at the top of the menu ----
                 let html = '';
+                if (this.FILTER_PRESETS.length > 0) {
+                    const activeTaskTypes = new Set(this.filters.filter(f => f.key === 'taskType').map(f => f.value));
+                    html += `<div class="filter-menu-group filter-preset-group">
+                        <div class="filter-menu-key">✨ Useful Combinations</div>`;
+                    for (const p of this.FILTER_PRESETS) {
+                        const activeCount = p.taskTypes.filter(t => activeTaskTypes.has(t)).length;
+                        const allActive = p.taskTypes.length > 0 && activeCount === p.taskTypes.length;
+                        const names = p.taskTypes.map(t => this._taskTypeName(t) || t).join(', ');
+                        html += `<div class="filter-menu-option filter-preset" data-preset="${p.id}" title="One click: ${escapeHtml(names)}">
+                            <span class="filter-menu-check">${allActive ? '✓' : ''}</span>
+                            <span>${escapeHtml(p.label)}</span>
+                            <span class="filter-menu-count">${activeCount}/${p.taskTypes.length}</span>
+                        </div>`;
+                    }
+                    html += `</div>`;
+                }
+
                 for (const g of groups) {
                     if (g.options.length === 0) continue;
                     html += `<div class="filter-menu-group">
@@ -5838,9 +5894,9 @@
                     }
                     html += `</div>`;
                 }
-                menu.innerHTML = hasAny ? html : '<div class="filter-menu-empty">No filterable events in the database.</div>';
+                menu.innerHTML = (html.length > 0) ? html : '<div class="filter-menu-empty">No filterable events in the database.</div>';
 
-                menu.querySelectorAll('.filter-menu-option').forEach(el => {
+                menu.querySelectorAll('.filter-menu-option:not(.filter-preset)').forEach(el => {
                     el.addEventListener('click', () => {
                         const key = el.dataset.key, value = el.dataset.value;
                         // Toggle: clicking again removes that value (multi-select per key).
@@ -5848,6 +5904,18 @@
                         if (i !== -1) this.filters.splice(i, 1);
                         else this.filters.push({ key, value });
                         // Keep the menu open so several values can be picked in a row.
+                        this.openFilterMenu();
+                        this.render();
+                    });
+                });
+
+                // One-click presets — apply (or clear, if fully active) all their taskType filters.
+                menu.querySelectorAll('.filter-preset').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const preset = this.FILTER_PRESETS.find(p => p.id === el.dataset.preset);
+                        if (!preset) return;
+                        this._applyPreset(preset);
+                        // Keep the menu open so another preset or tweak can follow.
                         this.openFilterMenu();
                         this.render();
                     });
