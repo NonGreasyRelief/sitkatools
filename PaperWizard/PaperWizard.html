@@ -1782,6 +1782,9 @@
             ['lot.destRoom', 'lot.destRoom — grow room'],
             ['lot.vegRoom', 'lot.vegRoom — veg room'],
             ['lot.cloningRoom', 'lot.cloningRoom — clone room'],
+            ['lot.dryRoom', 'lot.dryRoom — dry room'],
+            ['lot.trimRoom', 'lot.trimRoom — trim room'],
+            ['lot.currentRoom', 'lot.currentRoom — current room (live)'],
             ['instance.phase', 'instance.phase — phase snapshot'],
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
@@ -1955,10 +1958,15 @@
         // ---- Filing Cabinet (Step 5) — pure computed view, stores nothing ----
 
         // Map a configured sheet to one of the fixed cabinet sections.
+        // Document values that mark a sheet as a room-clean form — one per room role, plus the
+        // legacy single value from before the trees were split per room.
+        const ROOM_CLEAN_DOCS = ['room-clean', 'room-clean-clone', 'room-clean-veg', 'room-clean-grow', 'room-clean-dry', 'room-clean-trim'];
+
         function sheetSection(sheetId) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet) return null;
             // Explicit assignment (Configure Sheets → Document dropdown) wins over heuristics.
+            if (sheet.document && ROOM_CLEAN_DOCS.includes(sheet.document)) return 'room-clean';
             if (sheet.document && CAB_SECTIONS.some(s => s.key === sheet.document)) return sheet.document;
             if (sheet.cadence === 'daily-weekly') return 'grow-log';
             if (sheet.cadence === 'one-shot') return 'propagation';
@@ -1973,9 +1981,12 @@
         const CAB_SECTIONS = [
             { key: 'propagation', icon: '📄', label: 'Propagation' },
             { key: 'room-clean', icon: '🧼', label: 'Room Cleans (pre-move-in)' },
+            { key: 'room-clean-post', icon: '🧽', label: 'Room Cleans (post-usage)' },
             { key: 'grow-log', icon: '📗', label: 'Grow Logs' },
             { key: 'ipm', icon: '🐛', label: 'IPM Log' },
             { key: 'harvest', icon: '🌾', label: 'Harvest' },
+            { key: 'drying-log', icon: '🏺', label: 'Drying Logs' },
+            { key: 'trim-log', icon: '✂️', label: 'Trim Logs' },
             { key: 'other', icon: '📄', label: 'Other' }
         ];
 
@@ -1987,7 +1998,13 @@
             ['propagation', '📄 Propagation work sheet'],
             ['harvest', '🌾 Harvest Log'],
             ['ipm', '🐛 IPM Log'],
-            ['room-clean', '🧼 Cleaning form']
+            ['drying-log', '🏺 Drying Log'],
+            ['trim-log', '✂️ Trim Log'],
+            ['room-clean-clone', '🧼 Clone Room Clean'],
+            ['room-clean-veg', '🧼 Veg Room Clean'],
+            ['room-clean-grow', '🧼 Grow Room Clean'],
+            ['room-clean-dry', '🧼 Dry Room Clean'],
+            ['room-clean-trim', '🧼 Trim Room Clean']
         ];
 
         function wizardForSheet(sheetId) {
@@ -2119,23 +2136,23 @@
         }
 
         // Drawn strike-out initials capture: a modal pad (like the signature/initials pads) where
-        // the master grower draws their initials for the phase-change strike-out. Resolves to
-        // { name, strokes } on confirm, or null if cancelled / left empty.
-        function captureStrikeInitials(newPhase) {
+        // the master grower draws their initials for the phase-/room-change strike-out. Resolves
+        // to { name, strokes } on confirm, or null if cancelled / left empty.
+        function captureStrikeInitials(label, actionLabel) {
             return new Promise((resolve) => {
                 const ov = document.createElement('div');
                 ov.className = 'strike-overlay';
                 ov.innerHTML = `
                     <div class="strike-card">
-                        <div class="strike-title">✍️ Strike-out initials — ${escapeHtml(newPhase)}</div>
-                        <div class="strike-sub">This closes the current grow-log (rows after today are struck through) and starts a fresh one. Draw your initials for the strike-out:</div>
+                        <div class="strike-title">✍️ Strike-out initials — ${escapeHtml(label)}</div>
+                        <div class="strike-sub">This closes the current log (rows after today are struck through) and starts a fresh one. Draw your initials for the strike-out:</div>
                         <div class="sig-pad-wrap"><canvas id="strikePad" class="sig-pad"></canvas></div>
                         <input type="text" id="strikeName" class="sig-name" placeholder="Signer name / initials">
                         <div class="strike-foot">
                             <button type="button" class="btn btn-secondary" id="strikeClearBtn">🧹 Clear</button>
                             <span class="spacer"></span>
                             <button type="button" class="btn btn-secondary" id="strikeCancelBtn">Cancel</button>
-                            <button type="button" class="btn btn-primary" id="strikeOkBtn">Record phase change</button>
+                            <button type="button" class="btn btn-primary" id="strikeOkBtn">${escapeHtml(actionLabel || 'Record phase change')}</button>
                         </div>
                     </div>`;
                 document.body.appendChild(ov);
@@ -2154,21 +2171,22 @@
             });
         }
 
-        // Phase-change rollover (spec "Phase Change") — data-only: closes the open daily-weekly
-        // instance (phaseChangeDate = move day + confirmer's drawn strikeInitials) and creates a
-        // fresh instance for the new phase (periodStart = move day, header carries the new
-        // phase), optionally writing the new stage back to the main DB. `moveDay` is the date
-        // the change is recorded on — today for live changes, the entry's own day when a
-        // row-scoped Phase question records a change on a backfilled day (the strike-out and
-        // the fresh page both land on that day). Returns { inst, newKey, newPhase, reused } or
-        // null if cancelled — callers handle notify/close/render + double-entry offer.
-        async function phaseRollover(writeBack, moveDay) {
+        // Rollover core for phase AND room changes (spec "Phase Change" + room-change rule) —
+        // data-only: closes the open daily-weekly instance (phaseChangeDate = move day +
+        // confirmer's drawn strikeInitials) and creates a fresh instance carrying the new value
+        // (periodStart = move day, header carries it), optionally writing back to the main DB.
+        // `moveDay` is the date the change is recorded on — today for live changes, the entry's
+        // own day when a row-scoped question records a change on a backfilled day (the strike-out
+        // and the fresh page both land on that day). cfg = { questionId, instField, label,
+        // actionLabel, cancelMsg, writeBackFn }. Returns { inst, newKey, value, reused } or null
+        // if cancelled — callers handle notify/close/render + double-entry offer.
+        async function dailyRollover(writeBack, moveDay, cfg) {
             const ctx = runnerCtx;
             if (!ctx) return null;
             const wiz = wizardForSheet(ctx.sheetId);
-            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
-            const newPhase = String(phaseQ ? (ctx.draft[phaseQ.id] ?? '') : '').trim();
-            if (!newPhase) return null;
+            const q = wiz.questions.find(x => x.id === cfg.questionId);
+            const value = String(q ? (ctx.draft[q.id] ?? '') : '').trim();
+            if (!value) return null;
             const today = moveDay || todayStr();
             const oldInst = ctx.inst;
             const pw = DB.paperWizard;
@@ -2176,61 +2194,137 @@
             if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
             const sheetData = pw.entries[ctx.lotId][ctx.sheetId];
             if (!sheetData.instances) sheetData.instances = {};
-            // Collision at the move date with an empty old instance (phase change recorded on the
+            // Same-save double change: if the OTHER tracked question (room when rolling phase,
+            // phase when rolling room) is also changing in this draft, the fresh log carries
+            // that new value too — one strike-out records both changes instead of a second
+            // rollover creating a phantom zero-day log.
+            const otherQ = wiz.questions.find(x => x.writesTo === (cfg.instField === 'phase' ? 'lot.currentRoom' : 'lot.stage'));
+            const nvOther = otherQ ? String(ctx.draft[otherQ.id] ?? '').trim() : '';
+            const oldOther = cfg.instField === 'phase' ? oldInst.room : oldInst.phase;
+            const otherDiffers = !!(nvOther && oldOther && (cfg.instField === 'phase'
+                ? String(oldOther).trim().toLowerCase() !== nvOther.toLowerCase()
+                : normalizeStage(String(oldOther)) !== normalizeStage(nvOther)));
+            // Collision at the move date with an empty old instance (change recorded on the
             // window's very first entry): two instances can't share a key, and an empty log has
             // nothing to strike through — repurpose it in place instead.
             if (sheetData.instances[today] === oldInst && !oldInst.signature
                 && Object.keys(oldInst.days || {}).length === 0
                 && !Object.entries(oldInst.header || {}).some(([, v]) => String(v ?? '').trim() !== '')) {
-                oldInst.phase = newPhase;
+                oldInst[cfg.instField] = value;
                 oldInst.phaseChangeDate = null;
                 oldInst.strikeInitials = null;
-                for (const q of wiz.questions) {
-                    if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') oldInst.header[q.id] = ctx.draft[q.id];
+                for (const x of wiz.questions) {
+                    if (!x.rowScoped && String(ctx.draft[x.id] ?? '').trim() !== '') oldInst.header[x.id] = ctx.draft[x.id];
                 }
-                // Row-scoped double entry: the new phase also lands on this log's move-day row.
-                if (phaseQ?.rowScoped) {
+                // Row-scoped double entry: the new value also lands on this log's move-day row.
+                if (q?.rowScoped) {
                     if (!oldInst.days[today]) oldInst.days[today] = {};
-                    oldInst.days[today][phaseQ.id] = newPhase;
+                    oldInst.days[today][q.id] = value;
                 }
-                if (writeBack && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = stageFromForm(newPhase);
+                if (otherQ?.rowScoped && otherDiffers) {
+                    if (!oldInst.days[today]) oldInst.days[today] = {};
+                    oldInst.days[today][otherQ.id] = nvOther;
+                }
+                if (writeBack) cfg.writeBackFn(value);
                 captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
                 evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
-                return { inst: oldInst, newKey: ctx.key, newPhase, reused: true };
+                return { inst: oldInst, newKey: ctx.key, value, reused: true };
             }
-            const drawn = await captureStrikeInitials(newPhase);
-            if (!drawn) { showToast('Phase change cancelled — no changes made'); return null; }
+            const drawn = await captureStrikeInitials(cfg.label(), cfg.actionLabel);
+            if (!drawn) { showToast(`${cfg.cancelMsg} — no changes made`); return null; }
             // 1) Close the old instance: window ends at the move date, initials captured (drawn).
             oldInst.phaseChangeDate = today;
             oldInst.strikeInitials = { name: drawn.name, strokes: drawn.strokes };
-            // 2) Fresh instance for the new phase. periodStart = move date; if a non-empty log
-            //    already owns that key, shift forward so nothing is clobbered — the new log then
-            //    starts the day after the old one closed.
+            // 2) Fresh instance carrying the new value. periodStart = move date; if a non-empty
+            //    log already owns that key, shift forward so nothing is clobbered — the new log
+            //    then starts the day after the old one closed.
             let newKey = today;
             while (sheetData.instances[newKey]) newKey = addDaysStr(newKey, 1);
-            const newInst = { phase: newPhase, header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+            const newInst = { [cfg.instField]: value, header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                               snapshots: {}, signature: null, completedAt: null, printedAt: null };
-            // Header carries the new phase + any other instance-level answers from this save.
-            for (const q of wiz.questions) {
-                if (!q.rowScoped && String(ctx.draft[q.id] ?? '').trim() !== '') newInst.header[q.id] = ctx.draft[q.id];
+            // Stamp the OTHER snapshot too — a phase change doesn't move the lot (and vice
+            // versa), so the fresh log carries both its phase and its room. A same-save double
+            // change carries the other question's NEW value instead (otherDiffers).
+            if (cfg.instField === 'phase') newInst.room = otherDiffers ? nvOther : (oldInst.room || DB.lots[ctx.lotId]?.currentRoom || null);
+            else newInst.phase = otherDiffers ? nvOther : (oldInst.phase || null);
+            // Header carries the new value + any other instance-level answers from this save.
+            for (const x of wiz.questions) {
+                if (!x.rowScoped && String(ctx.draft[x.id] ?? '').trim() !== '') newInst.header[x.id] = ctx.draft[x.id];
             }
-            // Row-scoped double entry: the new phase also lands on the fresh log's move-day row,
-            // so both pages of the change day are filled in (old phase struck out, new phase open).
-            if (phaseQ?.rowScoped && newKey === today) {
+            // Row-scoped double entry: the new value also lands on the fresh log's move-day row,
+            // so both pages of the change day are filled in (old value struck out, new one open).
+            if (q?.rowScoped && newKey === today) {
                 if (!newInst.days[today]) newInst.days[today] = {};
-                newInst.days[today][phaseQ.id] = newPhase;
+                newInst.days[today][q.id] = value;
+            }
+            if (otherQ?.rowScoped && otherDiffers && newKey === today) {
+                if (!newInst.days[today]) newInst.days[today] = {};
+                newInst.days[today][otherQ.id] = nvOther;
             }
             sheetData.instances[newKey] = newInst;
-            // 3) Write-back: the wizard-recorded change updates the main DB (the only field
-            //    PaperWizard may write besides plantCount). Reverse-direction rollovers skip this.
-            if (writeBack && DB.lots[ctx.lotId]) {
-                DB.lots[ctx.lotId].stage = stageFromForm(newPhase); // 'Bloom' → 'flower'
-            }
+            // 3) Write-back: the wizard-recorded change updates the main DB (PaperWizard's
+            //    special permission). Reverse-direction rollovers skip this.
+            if (writeBack) cfg.writeBackFn(value);
             captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
             evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
             captureSnapshots(ctx.sheetId, ctx.lotId, newKey, newInst);
             evaluateCompletion(ctx.sheetId, newKey, newInst);
-            return { inst: newInst, newKey, newPhase, reused: false };
+            return { inst: newInst, newKey, value, reused: false };
+        }
+
+        // Phase-change rollover (spec "Phase Change") — closes the open log and starts a fresh
+        // one in the new phase, writing lot.stage back when the change came from the wizard.
+        async function phaseRollover(writeBack, moveDay) {
+            const wiz = wizardForSheet(runnerCtx?.sheetId);
+            const phaseQ = wiz?.questions.find(q => q.writesTo === 'lot.stage');
+            if (!phaseQ) return null;
+            return dailyRollover(writeBack, moveDay, {
+                questionId: phaseQ.id, instField: 'phase',
+                label: () => String(runnerCtx.draft[phaseQ.id] ?? '').trim(),
+                actionLabel: 'Record phase change',
+                cancelMsg: 'Phase change cancelled',
+                writeBackFn: v => { if (DB.lots[runnerCtx.lotId]) DB.lots[runnerCtx.lotId].stage = stageFromForm(v); } // 'Bloom' → 'flower'
+            });
+        }
+
+        // Room-change rollover — the same strike-out + fresh log as a phase change, but the new
+        // instance carries the new room (instance.room snapshot) and lot.currentRoom is written
+        // back when the change came from the wizard.
+        async function roomRollover(writeBack, moveDay) {
+            const wiz = wizardForSheet(runnerCtx?.sheetId);
+            const roomQ = wiz?.questions.find(q => q.writesTo === 'lot.currentRoom');
+            if (!roomQ) return null;
+            return dailyRollover(writeBack, moveDay, {
+                questionId: roomQ.id, instField: 'room',
+                label: () => String(runnerCtx.draft[roomQ.id] ?? '').trim(),
+                actionLabel: 'Record room change',
+                cancelMsg: 'Room change cancelled',
+                writeBackFn: v => { if (DB.lots[runnerCtx.lotId]) DB.lots[runnerCtx.lotId].currentRoom = v; }
+            });
+        }
+
+        // Last recorded room answer on or before `day` for a row-scoped Room question — the same
+        // walk-back as lastRecordedPhase, falling back to the instance's own room snapshot.
+        function lastRecordedRoom(lotId, sheetId, key, day) {
+            const wiz = wizardForSheet(sheetId);
+            const roomQ = wiz?.questions.find(q => q.writesTo === 'lot.currentRoom' && q.rowScoped);
+            if (!roomQ) return null;
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key];
+            // Walk back from the entry's own day to the window start (inclusive).
+            for (let ds = day; ds >= key; ds = addDaysStr(ds, -1)) {
+                const v = inst?.days?.[ds]?.[roomQ.id];
+                if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+            }
+            const pk = prevInstanceKey(lotId, sheetId, key);
+            if (pk) {
+                const pinst = DB.paperWizard.entries[lotId][sheetId].instances[pk];
+                const pkeys = Object.keys(pinst.days || {}).sort();
+                for (let i = pkeys.length - 1; i >= 0; i--) {
+                    const v = pinst.days[pkeys[i]]?.[roomQ.id];
+                    if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+                }
+            }
+            return inst?.room || null;
         }
 
         // Last recorded phase answer on or before `day` for a row-scoped Phase question:
@@ -2291,6 +2385,35 @@
             return true;
         }
 
+        // Reverse-direction room detection: the lot's live currentRoom (changed in SitkaTools)
+        // no longer matches this instance's stored room → prompt to confirm the move. Rolls over
+        // WITHOUT writing back — the main DB is already correct. Only fires when the sheet has a
+        // 🏠 Room question and the instance recorded a room.
+        async function checkRoomMismatch(lotId, sheetId, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || sheet.cadence !== 'daily-weekly') return false;
+            if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
+            const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.writesTo === 'lot.currentRoom');
+            if (!roomQ) return false;
+            const lot = DB.lots[lotId];
+            // No mismatch when either side has no room recorded, or the two agree.
+            if (!lot?.currentRoom || !inst.room) return false;
+            if (String(lot.currentRoom).trim().toLowerCase() === String(inst.room).trim().toLowerCase()) return false;
+            const ok = confirm(`Lot is now in ${lot.currentRoom} — close this log?\n\n` +
+                `The open log was started in ${inst.room}. Confirming records the room change (rows after today are struck through) and starts a fresh log for ${lot.currentRoom}.`);
+            if (!ok) return false; // proceed to open the runner normally
+            // Point the Room question's draft at the new room so the rollover records it.
+            runnerCtx.draft[roomQ.id] = String(lot.currentRoom).trim();
+            const roll = await roomRollover(false, todayStr());
+            if (!roll) return false; // cancelled at the initials prompt — open normally
+            notifySitkaTools();
+            closeRunner();
+            renderAll();
+            showToast(`Room change to ${lot.currentRoom} recorded — new log started ${fmtShort(roll.newKey)}`);
+            if (!roll.reused && confirm('Start filling the new log now?')) openRunner(lotId, sheetId, roll.newKey);
+            return true;
+        }
+
         // Status chip for an owned instance. Returns { text, cls }.
         function instanceStatus(sheetId, key, inst) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
@@ -2342,12 +2465,38 @@
             const names = new Set();
             Object.values(DB.rooms || {}).forEach(r => { if (r?.name) names.add(String(r.name)); });
             Object.values(DB.lots || {}).forEach(l => {
-                ['cloningRoom', 'vegRoom', 'destRoom'].forEach(k => { if (l?.[k]) names.add(String(l[k])); });
+                ['cloningRoom', 'vegRoom', 'destRoom', 'dryRoom', 'trimRoom', 'currentRoom'].forEach(k => { if (l?.[k]) names.add(String(l[k])); });
             });
             return [...names];
         }
 
-        // Move-in dates for a lot's three rooms (spec: Filing Cabinet sourcing rule).
+        // First date on which any of this lot's daily logs recorded the lot being in `roomName`
+        // (via a 🏠 Room question answer). Null when no log has recorded it yet. This is the
+        // authoritative move-in date — paperwork, not the schedule, is the source of truth.
+        function firstRoomEntryDate(lotId, roomName) {
+            if (!roomName) return null;
+            const entries = DB.paperWizard?.entries?.[lotId] || {};
+            let best = null;
+            for (const [sheetId, sd] of Object.entries(entries)) {
+                const sheet = DB.paperWizard?.sheets?.[sheetId];
+                if (!sheet || sheet.cadence !== 'daily-weekly') continue;
+                const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.writesTo === 'lot.currentRoom');
+                if (!roomQ) continue;
+                for (const inst of Object.values(sd.instances || {})) {
+                    for (const [ds, day] of Object.entries(inst.days || {})) {
+                        const v = day?.[roomQ.id];
+                        if (v !== null && v !== undefined && String(v).trim().toLowerCase() === roomName.toLowerCase()) {
+                            if (!best || ds < best) best = ds;
+                        }
+                    }
+                }
+            }
+            return best;
+        }
+
+        // Move-in dates for a lot's five rooms (spec: Filing Cabinet sourcing rule).
+        // Log-derived date wins (first day a daily log recorded the lot in that room);
+        // phase inference is the fallback for clone/veg/grow; dry/trim fall back to today.
         function moveInDates(lotId) {
             const today = todayStr();
             const entries = DB.paperWizard?.entries?.[lotId] || {};
@@ -2366,11 +2515,43 @@
                 return best;
             };
             const lot = DB.lots[lotId];
-            return {
+            const phaseFallback = {
                 clone: (lot?.createdDate && String(lot.createdDate).slice(0, 10)) || today,
                 veg: firstPhase('Veg') || today,
                 grow: firstPhase('Bloom') || today
             };
+            const out = {};
+            for (const [role, name] of Object.entries({
+                clone: lot?.cloningRoom, veg: lot?.vegRoom, grow: lot?.destRoom,
+                dry: lot?.dryRoom, trim: lot?.trimRoom
+            })) {
+                if (!name) { out[role] = null; continue; }
+                out[role] = firstRoomEntryDate(lotId, name) || phaseFallback[role] || today;
+            }
+            return out;
+        }
+
+        // Is a configured sheet a room-clean form (any room role)?
+        function isRoomCleanSheet(sheetId) {
+            const doc = DB.paperWizard?.sheets?.[sheetId]?.document;
+            if (doc) return ROOM_CLEAN_DOCS.includes(doc);
+            return sheetSection(sheetId) === 'room-clean'; // no explicit assignment — heuristics
+        }
+
+        // Which room role a cleaning sheet belongs to (clone/veg/grow/dry/trim). The explicit
+        // Document assignment wins; legacy 'room-clean' sheets fall back to name keywords.
+        function cleanRoomRole(sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || !isRoomCleanSheet(sheetId)) return null;
+            const doc = sheet.document;
+            if (doc && doc !== 'room-clean') return doc.replace('room-clean-', '');
+            const s = (sheetId + ' ' + (sheet.name || '')).toLowerCase();
+            if (/clone/.test(s)) return 'clone';
+            if (/veg|vegetat/.test(s)) return 'veg';
+            if (/dry/.test(s)) return 'dry';
+            if (/trim/.test(s)) return 'trim';
+            if (/grow|flower|bloom/.test(s)) return 'grow';
+            return null;
         }
 
         // Scan ALL lots' room-clean event instances. Returns [{ lotId, sheetId, key, date, roomName }].
@@ -2379,7 +2560,7 @@
             const roomNames = knownRoomNames();
             for (const [lotId, sheets] of Object.entries(DB.paperWizard?.entries || {})) {
                 for (const [sheetId, sd] of Object.entries(sheets || {})) {
-                    if (sheetSection(sheetId) !== 'room-clean') continue;
+                    if (!isRoomCleanSheet(sheetId)) continue;
                     for (const [key, inst] of Object.entries(sd.instances || {})) {
                         // The room name lives somewhere in the header values.
                         const roomName = Object.values(inst.header || {})
@@ -2530,6 +2711,7 @@
                 else if (sheet.cadence === 'event') instKey = key || today;
                 else instKey = 'single';
                 inst = { phase: sheet.cadence === 'daily-weekly' ? normalizeStage(DB.lots[lotId]?.stage) : null,
+                         room: sheet.cadence === 'daily-weekly' ? (DB.lots[lotId]?.currentRoom || null) : null,
                          header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
             }
@@ -2553,6 +2735,8 @@
             // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
             // instance was created → confirm the move and roll over (no write-back — DB is current).
             if (await checkStageMismatch(lotId, sheetId, inst)) return;
+            // Same for room changes (currentRoom edited in SitkaTools).
+            if (await checkRoomMismatch(lotId, sheetId, inst)) return;
             resetRunnerDraft();
             renderRunner();
         }
@@ -2778,6 +2962,13 @@
                     const opts = ['<option value="">— select —</option>']
                         .concat(PHASE_OPTIONS.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
+                } else if (q.type === 'room') {
+                    // Known room names from the DB — a change from the previous day's room
+                    // triggers the same strike-out rollover on save (writes lot.currentRoom).
+                    const rooms = knownRoomNames().sort((a, b) => a.localeCompare(b));
+                    const opts = ['<option value="">— select —</option>']
+                        .concat(rooms.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
+                    ctl = `<select id="wizCtl">${opts.join('')}</select>`;
                 } else if (q.type === 'number' || q.type === 'plant-count') {
                     ctl = `<input type="number" step="any" id="wizCtl" value="${val}">`;
                 } else {
@@ -2877,31 +3068,54 @@
             let inst = sheetData.instances[ctx.key];
             if (!inst) {
                 inst = { phase: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.stage || null) : null,
+                         room: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.currentRoom || null) : null,
                          header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
                 sheetData.instances[ctx.key] = inst;
             }
-            ctx.inst = inst; // keep the runner's reference on the persisted object (phaseRollover reads ctx.inst)
+            ctx.inst = inst; // keep the runner's reference on the persisted object (rollover reads ctx.inst)
             // Phase change — checked BEFORE writing answers: a new phase closes this instance
             // and starts a fresh one; the old log keeps its original phase snapshot. Works for
             // both scopes: an instance-level Phase question compares against the instance's own
             // phase; a row-scoped one compares against the last recorded phase on or before this
             // entry's day (lastRecordedPhase), so a backfilled entry strikes out on its own day.
             const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
+            const roomQ = wiz.questions.find(q => q.writesTo === 'lot.currentRoom');
             let rolled = null;
-            // The comparison target for the Phase question — also used below to stamp the old
-            // log's move-day row (row-scoped double entry), so it must outlive the block.
+            let roomRolled = null;
+            // Comparison targets — also used below to stamp the old log's move-day rows (row-
+            // scoped double entry), so they must outlive the blocks. Both are computed BEFORE
+            // any rollover closes this instance.
             const prevPhase = phaseQ
                 ? (phaseQ.rowScoped
                     ? lastRecordedPhase(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)
                     : inst.phase)
                 : null;
-            if (phaseQ) {
-                const nv = String(ctx.draft[phaseQ.id] ?? '').trim();
-                if (nv && sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && prevPhase
-                        && normalizeStage(prevPhase) !== normalizeStage(nv)) {
-                    rolled = await phaseRollover(true, phaseQ.rowScoped ? ctx.day : todayStr()); // drawn strike-initials capture; null = cancelled
-                    if (!rolled) return;                // nothing saved — runner stays open
+            const prevRoom = roomQ
+                ? (roomQ.rowScoped
+                    ? lastRecordedRoom(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)
+                    : inst.room)
+                : null;
+            const nvPhase = phaseQ ? String(ctx.draft[phaseQ.id] ?? '').trim() : '';
+            const nvRoom = roomQ ? String(ctx.draft[roomQ.id] ?? '').trim() : '';
+            const openLog = sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate;
+            const phaseChanged = !!(openLog && nvPhase && prevPhase && normalizeStage(prevPhase) !== normalizeStage(nvPhase));
+            const roomChanged = !!(openLog && nvRoom && prevRoom && String(prevRoom).trim().toLowerCase() !== nvRoom.toLowerCase());
+            if (phaseChanged) {
+                rolled = await phaseRollover(true, phaseQ.rowScoped ? ctx.day : todayStr()); // drawn strike-initials capture; null = cancelled
+                if (!rolled) return;                // nothing saved — runner stays open
+            }
+            // Room change — same rules as a phase change: a new room closes this instance and
+            // starts a fresh one carrying the new room snapshot; lot.currentRoom is written back.
+            // When a phase rollover JUST happened, the fresh log already carries the new room
+            // (dailyRollover absorbs same-save changes) — write it back without a second
+            // strike-out, which would create a phantom zero-day log.
+            if (roomChanged) {
+                if (rolled) {
+                    if (DB.lots[ctx.lotId]) DB.lots[ctx.lotId].currentRoom = nvRoom;
+                } else {
+                    roomRolled = await roomRollover(true, roomQ.rowScoped ? ctx.day : todayStr());
+                    if (!roomRolled) return;         // nothing saved — runner stays open
                 }
             }
             for (const q of wiz.questions) {
@@ -2909,6 +3123,11 @@
                 if (q === phaseQ && rolled) {
                     if (!phaseQ.rowScoped || rolled.reused) continue; // instance-level or in-place reuse: keep original / draft value
                     v = prevPhase || null;                            // row-scoped double entry: the old log's move-day row stamps the previous phase
+                }
+                if (q === roomQ && (roomRolled || (rolled && roomChanged))) {
+                    const rReused = roomRolled ? roomRolled.reused : rolled.reused;
+                    if (!roomQ.rowScoped || rReused) continue;        // instance-level or in-place reuse: keep original / draft value
+                    v = prevRoom || null;                             // row-scoped double entry: the old log's move-day row stamps the previous room
                 }
                 if (q.type === 'initials') {
                     // Drawn initials: store the {name, strokes} object (or null when the pad is
@@ -2949,10 +3168,16 @@
             notifySitkaTools();
             closeRunner();
             renderAll();
-            if (rolled) {
-                showToast(`Entry saved · phase change to ${rolled.newPhase} recorded`);
+            if (rolled && roomChanged) {
+                showToast(`Entry saved · phase change to ${rolled.value} + room change to ${nvRoom} recorded`);
+                if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
+            } else if (rolled) {
+                showToast(`Entry saved · phase change to ${rolled.value} recorded`);
                 // Double entry on the move day: offer to run today's entry on the new instance.
                 if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
+            } else if (roomRolled) {
+                showToast(`Entry saved · room change to ${roomRolled.value} recorded`);
+                if (!roomRolled.reused && confirm('Start filling the new log now?')) openRunner(ctx.lotId, ctx.sheetId, roomRolled.newKey);
             } else {
                 showToast('Entry saved');
             }
@@ -3208,32 +3433,65 @@
                     : { html: cabLeafFill(escapeHtml(sheet.name || sheetId), { text: '⚠️ missing', cls: 'miss' }, sheetId, 'single'), missing: true });
             }
 
-            // Room Cleans (pre-move-in) — reference nodes from other lots + cleans this lot logged.
+            // Room Cleans — two parallel trees over the same five rooms (spec): pre-move-in
+            // (read-only references to the previous occupant's clean) and post-usage (this lot's
+            // own fillable clean forms). Both always list all five roles so they match.
+            const ROOM_ROLES = [
+                ['clone', 'Clone Room'], ['veg', 'Veg Room'], ['grow', 'Grow Room'],
+                ['dry', 'Dry Room'], ['trim', 'Trim Room']
+            ];
             const moveIn = moveInDates(activeLotId);
-            const roomByDate = new Map(); // roomName -> earliest move-in date across roles
-            if (lot) {
-                [['clone', lot.cloningRoom], ['veg', lot.vegRoom], ['grow', lot.destRoom]].forEach(([role, name]) => {
-                    if (!name) return;
-                    const d = moveIn[role];
-                    const prev = roomByDate.get(name);
-                    if (!prev || d < prev) roomByDate.set(name, d);
-                });
-            }
-            // (Orphaned lots have no room assignments, so no pre-move-in reference
-            // nodes — only cleans they logged themselves appear below.)
-            for (const [roomName, byDate] of [...roomByDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-                const clean = cleanBefore(roomName, byDate, activeLotId);
+            const roomNameFor = { clone: lot?.cloningRoom, veg: lot?.vegRoom, grow: lot?.destRoom, dry: lot?.dryRoom, trim: lot?.trimRoom };
+            // Pre-move-in: one reference leaf per role — proof the room was cleaned before this
+            // lot moved in. A room with no qualifying clean on file renders as a ⚠️ warning
+            // leaf (informational, never blocks other sheets); an unassigned room is neutral.
+            for (const [role, label] of ROOM_ROLES) {
+                const name = roomNameFor[role];
+                if (!name) {
+                    sections['room-clean'].push({ html: cabLeaf(`🧼 ${label}`, { text: '— not assigned', cls: '' }), missing: false });
+                    continue;
+                }
+                const clean = cleanBefore(name, moveIn[role] || todayStr(), activeLotId);
                 sections['room-clean'].push(clean
-                    ? { html: cabLeaf(`🧼 ${escapeHtml(roomName)} · ${fmtShort(clean.date)}`, { text: '✓ on file', cls: 'ok' }, { ref: true, from: clean.lotId, print: { lotId: clean.lotId, sheetId: clean.sheetId, key: clean.key } }), missing: false }
-                    : { html: cabLeaf(`🧼 ${escapeHtml(roomName)}`, { text: '⚠️ missing', cls: 'miss' }), missing: true });
+                    ? { html: cabLeaf(`🧼 ${escapeHtml(name)} · ${fmtShort(clean.date)}`, { text: '✓ on file', cls: 'ok' }, { ref: true, from: clean.lotId, print: { lotId: clean.lotId, sheetId: clean.sheetId, key: clean.key } }), missing: false }
+                    : { html: cabLeaf(`🧼 ${escapeHtml(name)}`, { text: '⚠️ missing', cls: 'miss' }), missing: true });
             }
-            for (const c of allRoomCleans().filter(c => c.lotId === activeLotId)) {
-                const sheet = pw.sheets[c.sheetId];
-                sections['room-clean'].push({
-                    html: cabLeafFill(`🧼 ${escapeHtml(c.roomName || sheet?.name || c.sheetId)} · ${fmtShort(c.key)}`,
-                        instanceStatus(c.sheetId, c.key, entries[c.sheetId].instances[c.key]), c.sheetId, c.key),
-                    missing: false
-                });
+            // Post-usage: one fillable leaf per role — this lot's own clean forms, filled when it
+            // vacates the room. Each role uses the configured cleaning sheet assigned to it
+            // (Document dropdown); instances are event sheets keyed by clean date, plus a
+            // "New clean" leaf to start today's. These owned instances are exactly what the next
+            // occupant's pre-move-in tree references.
+            for (const [role, label] of ROOM_ROLES) {
+                const sheetId = Object.keys(pw.sheets || {}).find(id => cleanRoomRole(id) === role) || null;
+                if (!sheetId) {
+                    sections['room-clean-post'].push({ html: cabLeaf(`🧼 ${label}`, { text: '⚠️ no form configured', cls: 'miss' }), missing: false });
+                    continue;
+                }
+                const insts = entries[sheetId]?.instances || {};
+                for (const key of Object.keys(insts).sort()) {
+                    sections['room-clean-post'].push({
+                        html: cabLeafFill(`🧼 ${label} · ${fmtShort(key)}`, instanceStatus(sheetId, key, insts[key]), sheetId, key),
+                        missing: false
+                    });
+                }
+                if (!Object.keys(insts).includes(todayStr())) {
+                    sections['room-clean-post'].push({
+                        html: cabLeafFill(`📅 New clean · ${label}`, { text: '⏳ due', cls: 'due' }, sheetId, todayStr()),
+                        missing: false
+                    });
+                }
+            }
+            // Catch-all: cleaning sheets whose room role can't be inferred (legacy single
+            // 'room-clean' assignment with no name keywords) still file here by sheet name.
+            for (const [sheetId, sheet] of Object.entries(pw.sheets || {})) {
+                if (!isRoomCleanSheet(sheetId) || cleanRoomRole(sheetId)) continue;
+                const insts = entries[sheetId]?.instances || {};
+                for (const key of Object.keys(insts).sort()) {
+                    sections['room-clean-post'].push({
+                        html: cabLeafFill(`🧼 ${escapeHtml(sheet.name || sheetId)} · ${fmtShort(key)}`, instanceStatus(sheetId, key, insts[key]), sheetId, key),
+                        missing: false
+                    });
+                }
             }
 
             // Grow Logs — one node per daily-weekly instance, oldest first. When the lot was
@@ -3269,8 +3527,9 @@
                 // needs a grow-log. Days not inside any instance's active window are grouped
                 // into runs; each run becomes one backfill leaf that starts a fresh 7-day
                 // window on the run's first day (covering the whole run). The section header
-                // counts uncovered days as missing.
-                if (plantingDate) {
+                // counts uncovered days as missing. Grow-logs only — drying/trim logs cover
+                // their own end-of-crop windows and have no planting-date coverage rule.
+                if (plantingDate && sec === 'grow-log') {
                     const covered = new Set();
                     for (const key of keys) {
                         const { start, end } = activeWindow(insts[key], key);
@@ -3551,12 +3810,13 @@
         }
 
         // Write-back targets are tied to their question types (spec): a plant-count question
-        // writes lot.plantCount, a phase question writes lot.stage. Keeping the two in sync
-        // means the special behavior can never be configured on a plain text/number/select.
-        const TYPE_WRITEBACK = { 'plant-count': 'lot.plantCount', 'phase': 'lot.stage' };
+        // writes lot.plantCount, a phase question writes lot.stage, a room question writes
+        // lot.currentRoom. Keeping the three in sync means the special behavior can never be
+        // configured on a plain text/number/select.
+        const TYPE_WRITEBACK = { 'plant-count': 'lot.plantCount', 'phase': 'lot.stage', 'room': 'lot.currentRoom' };
         function syncQuestionTypeWritesTo(q) {
             if (TYPE_WRITEBACK[q.type]) q.writesTo = TYPE_WRITEBACK[q.type];
-            else if (q.writesTo && !['plant-count', 'phase'].includes(q.type)) q.writesTo = null;
+            else if (q.writesTo && !['plant-count', 'phase', 'room'].includes(q.type)) q.writesTo = null;
         }
 
         function questionCardHtml(q, i) {
@@ -3579,7 +3839,7 @@
             // Write-back is fixed by the question type for plant-count / phase questions;
             // plain types may still pick a target manually (legacy configs keep working).
             const writesOpts = `<option value="">— none —</option>` +
-                [['lot.plantCount', 'lot.plantCount — plant count'], ['lot.stage', 'lot.stage — phase']]
+                [['lot.plantCount', 'lot.plantCount — plant count'], ['lot.stage', 'lot.stage — phase'], ['lot.currentRoom', 'lot.currentRoom — current room']]
                     .map(([v, l]) => `<option value="${v}"${q.writesTo === v ? ' selected' : ''}>${l}</option>`).join('');
             const typeLocked = !!TYPE_WRITEBACK[q.type];
             return `
@@ -3601,10 +3861,12 @@
                             <option value="initials"${q.type === 'initials' ? ' selected' : ''}>✍️ initials</option>
                             <option value="plant-count"${q.type === 'plant-count' ? ' selected' : ''}>🌱 plant count (writes lot.plantCount)</option>
                             <option value="phase"${q.type === 'phase' ? ' selected' : ''}>🔄 phase (writes lot.stage)</option>
+                            <option value="room"${q.type === 'room' ? ' selected' : ''}>🏠 room (writes lot.currentRoom)</option>
                         </select></div>
                         <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}</div></div>
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
                         ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">Phase options are fixed (Cloning / Mother / Vegetation / Bloom / Harvesting) — no custom list. A change from the previous day's phase automatically strikes out this grow-log and starts a new one in the new phase.</p>` : ''}
+                        ${q.type === 'room' ? `<p class="cfg-hint" style="margin:6px 0 0;">Options are the rooms known to the DB (no custom list). A change from the previous day's room strikes out this log and starts a new one in the new room — and writes lot.currentRoom back to the main DB.</p>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
                         <div class="form-group"><label>Writes back to${typeLocked ? ' (fixed by type)' : ''}</label><select class="q-writes"${typeLocked ? ' disabled' : ''}>${writesOpts}</select></div>
                     </div>

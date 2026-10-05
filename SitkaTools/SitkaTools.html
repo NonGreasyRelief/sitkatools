@@ -2833,6 +2833,31 @@
                             <option value="">— No room assigned —</option>
                         </select>
                     </div>
+                    <div class="form-group" id="dryRoomGroup">
+                        <label for="dryRoom">Dry Room</label>
+                        <select id="dryRoom">
+                            <option value="">— No room assigned —</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="trimRoomGroup">
+                        <label for="trimRoom">Trim Room</label>
+                        <select id="trimRoom">
+                            <option value="">— No room assigned —</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width" id="startRoomGroup">
+                        <label>Starting Room (where the lot begins)</label>
+                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                <input type="radio" name="startRoom" id="startRoomClone" value="clone" checked style="accent-color: var(--accent);">
+                                Clone room
+                            </label>
+                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                <input type="radio" name="startRoom" id="startRoomVeg" value="veg" style="accent-color: var(--accent);">
+                                Veg room (purchased clones go straight to veg)
+                            </label>
+                        </div>
+                    </div>
                     <div class="form-group" id="parentLotGroup" style="display: none;">
                         <label for="parentLot">Parent Lot</label>
                         <select id="parentLot">
@@ -3083,6 +3108,8 @@
         const destRoomInput = $('destRoom');
         const vegRoomInput = $('vegRoom');
         const cloningRoomInput = $('cloningRoom');
+        const dryRoomInput = $('dryRoom');
+        const trimRoomInput = $('trimRoom');
         const vegRoomGroup = $('vegRoomGroup');
         const cloningRoomGroup = $('cloningRoomGroup');
         const parentLotGroup = $('parentLotGroup');
@@ -3918,6 +3945,15 @@
             // Veg/Cloning rooms are settable for new lots and sub-lots (split lots inherit from parent)
             const vegRoom = type === 'split-lot' ? '' : vegRoomInput.value;
             const cloningRoom = type === 'split-lot' ? '' : cloningRoomInput.value;
+            // Dry/Trim rooms are settable for every lot type — a dry room often doubles as the
+            // trim room (same name in both), or they can be two different rooms.
+            const dryRoom = dryRoomInput.value;
+            const trimRoom = trimRoomInput.value;
+            // Starting room: where the lot physically begins — clone room, or straight to veg
+            // when purchased clones skip cloning. PaperWizard's grow logs overwrite this as the
+            // lot actually moves (currentRoom write-back).
+            const startVeg = $('startRoomVeg') ? $('startRoomVeg').checked : false;
+            const currentRoom = (startVeg ? vegRoom : cloningRoom) || null;
 
             // Auto-generate Lot Name from LotID + first 6 letters of strain
             const strainPrefix = (strain || '').substring(0, 6).toUpperCase();
@@ -3951,6 +3987,9 @@
                 destRoom: destRoom || null,
                 vegRoom: vegRoom || null,
                 cloningRoom: cloningRoom || null,
+                dryRoom: dryRoom || null,
+                trimRoom: trimRoom || null,
+                currentRoom: currentRoom,
                 type: type,
                 parentLotId: parentLotId,
                 plantCount: plantCountValue,
@@ -3997,7 +4036,9 @@
             const roomLines = [
                 destRoom ? '\nFlower Room: ' + destRoom : '',
                 vegRoom ? '\nVeg Room: ' + vegRoom : '',
-                cloningRoom ? '\nCloning Room: ' + cloningRoom : ''
+                cloningRoom ? '\nCloning Room: ' + cloningRoom : '',
+                dryRoom ? '\nDry Room: ' + dryRoom : '',
+                trimRoom ? '\nTrim Room: ' + trimRoom : ''
             ].join('');
             alert(`Lot "${name}" created successfully!\n\nID: ${lotId}\nName: ${name}${roomLines}${projNote}\n\nRemember to export the database to save your changes.`);
 
@@ -4055,9 +4096,12 @@
                 const roomParts = [
                     lot.cloningRoom ? `Clone: ${lot.cloningRoom}` : '',
                     lot.vegRoom ? `Veg: ${lot.vegRoom}` : '',
-                    lot.destRoom ? `Flower: ${lot.destRoom}` : ''
+                    lot.destRoom ? `Flower: ${lot.destRoom}` : '',
+                    lot.dryRoom ? `Dry: ${lot.dryRoom}` : '',
+                    lot.trimRoom ? `Trim: ${lot.trimRoom}` : ''
                 ].filter(Boolean);
-                const roomInfo = roomParts.length ? ` → ${roomParts.join(' · ')}` : '';
+                // 📍 = currentRoom — where the lot actually is now (written by PaperWizard grow logs)
+                const roomInfo = (roomParts.length ? ` → ${roomParts.join(' · ')}` : '') + (lot.currentRoom ? ` 📍${lot.currentRoom}` : '');
 
                 // Build stage selector dropdown
                 const stageSelectId = `stage_${key}`;
@@ -4114,6 +4158,8 @@
                         ${roomEditorHtml('cloningRoom', '✂️', 'Cloning')}
                         ${roomEditorHtml('vegRoom', '🌿', 'Vegetating')}
                         ${roomEditorHtml('destRoom', '🌸', 'Destination flower')}
+                        ${roomEditorHtml('dryRoom', '❄️', 'Dry')}
+                        ${roomEditorHtml('trimRoom', '🪒', 'Trim')}
                     </div>
                 `;
 
@@ -4338,8 +4384,8 @@
             },
 
             updateRoomDatalist() {
-                // Populate every room selector in the lot form (destination, veg, cloning)
-                ['destRoom', 'vegRoom', 'cloningRoom'].forEach(id => {
+                // Populate every room selector in the lot form (destination, veg, cloning, dry, trim)
+                ['destRoom', 'vegRoom', 'cloningRoom', 'dryRoom', 'trimRoom'].forEach(id => {
                     const select = $(id);
                     if (!select) return;
                     const current = select.value;
@@ -4701,12 +4747,15 @@
 
             deleteRoom(roomId) {
                 const room = this.rooms[roomId];
-                // Clear any lot references to this room (assigned, veg, or cloning)
+                // Clear any lot references to this room (assigned, veg, cloning, dry, trim, current)
                 Object.values(DB.lots).forEach(lot => {
                     if (!lot) return;
                     if (lot.destRoom === room.name) lot.destRoom = null;
                     if (lot.vegRoom === room.name) lot.vegRoom = null;
                     if (lot.cloningRoom === room.name) lot.cloningRoom = null;
+                    if (lot.dryRoom === room.name) lot.dryRoom = null;
+                    if (lot.trimRoom === room.name) lot.trimRoom = null;
+                    if (lot.currentRoom === room.name) lot.currentRoom = null;
                 });
                 // Unassign the room from its building
                 Object.values(DB.buildings).forEach(b => {
@@ -5723,6 +5772,11 @@
                         room = roomForName(lotRec.cloningRoom);
                     } else if (tt === 'veg_room_clean') {
                         room = roomForName(lotRec.vegRoom);
+                    } else if (tt === 'dry_room_clean') {
+                        room = roomForName(lotRec.dryRoom);
+                    } else if (tt === 'trim_room_prep' || tt === 'trim' || tt === 'machine_trim') {
+                        // Trim often happens in the dry room — fall back to it when no trim room is assigned
+                        room = roomForName(lotRec.trimRoom) || roomForName(lotRec.dryRoom);
                     } else if (tt === 'undercanopy_lights' || tt === 'layout_coco_blocks' || tt === 'hydrate_coco_blocks') {
                         room = flowerRoom;
                     } else {

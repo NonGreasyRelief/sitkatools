@@ -56,6 +56,11 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "destRoom": "string | null",   // flower room name (also tracked in rooms.<roomId>.assignedLots)
       "vegRoom": "string | null",    // vegetating room name (set at lot creation, new lots only)
       "cloningRoom": "string | null",// cloning room name (set at lot creation, new lots only)
+      "dryRoom": "string | null",    // dry room name (set at lot creation; may equal trimRoom — dry rooms double as trim rooms)
+      "trimRoom": "string | null",   // trim room name (set at lot creation; separate clean form from the dry room even when same room)
+      "currentRoom": "string | null",// live current room — set at creation from the start-room choice, updated by PaperWizard when a log entry records a room change
+      "plantCount": "number | null", // live plant count — starting count at creation, maintained by PaperWizard grow-log entries
+      "parentLotId": "string | null",// parent lot # for sub-lots/split lots
       "_tool_<ToolName>": { ... }
     }
   },
@@ -91,7 +96,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 ```
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
-- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly two fields on lot records (`plantCount`, `stage`) when a grow-log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/Agent.MD`).
+- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/Agent.MD`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Multi-Day Events
@@ -318,7 +323,7 @@ Include these styles in SitkaTools.html:
 
 The central hub with two modes:
 
-1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database.
+1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database. The create-lot form assigns all five destination rooms — cloning, veg, flower (destination), **dry**, and **trim** (dry rooms double as trim rooms; the two fields may point at the same or different rooms) — plus a start-room choice (clone room by default, or veg room for purchased clones that skip cloning). The lot's live `currentRoom` starts from that choice and is maintained by PaperWizard when its logs record room moves. Only `destRoom` syncs to `rooms.<roomId>.assignedLots`; the other room fields are names stored on the lot (renaming/deleting a room nulls them out on affected lots).
 2. **Room Manager:** Create rooms (with an optional flowering flag) and buildings, then assign rooms to buildings. A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
 3. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
 
