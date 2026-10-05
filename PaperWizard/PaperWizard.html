@@ -717,6 +717,16 @@
         .cab-print:hover:not(:disabled) { background: var(--accent); color: #08301f; border-color: var(--accent); }
         .cab-print:disabled { opacity: .45; cursor: not-allowed; }
 
+        /* Sign button on leaves — enabled when an instance exists and the sheet has a
+           signature box. Amber to match the signature box styling in the editor. */
+        .cab-sign {
+            background: none; border: 1px solid var(--warning); border-radius: 4px;
+            color: var(--warning); cursor: pointer; font-size: 0.72rem; font-weight: 600;
+            padding: 2px 9px; white-space: nowrap; margin-left: 6px;
+        }
+        .cab-sign:hover:not(:disabled) { background: var(--warning); color: #4a2c00; border-color: var(--warning); }
+        .cab-sign:disabled { opacity: .45; cursor: not-allowed; }
+
         /* ---- Wizard runner modal (Step 6) ---- */
         .wiz-overlay {
             position: fixed; inset: 0; z-index: 200;
@@ -1084,6 +1094,20 @@
                 ? { widthIn: 11, heightIn: 8.5 }
                 : { widthIn: 8.5, heightIn: 11 };
         }
+
+        // On-paper pixel aspect ratio of a normalized box rect = (w·pageW)/(h·pageH).
+        // Draw pads MUST use this exact aspect ratio so that strokes — stored as 0–1
+        // normalized coords and printed with preserveAspectRatio="none" — scale uniformly
+        // into the box instead of being skewed by the page's width/height ratio.
+        function boxPrintAspect(sheet, rect) {
+            if (!rect || !rect.w || !rect.h) return 4;
+            const { widthIn, heightIn } = letterPageSize(sheet?.orientation === 'landscape');
+            return (rect.w / rect.h) * (widthIn / heightIn);
+        }
+
+        // Fixed size of the strike-out initials box (normalized page coords) — shared by the
+        // capture pad's aspect ratio and computeStrikeOut so they never drift apart.
+        const STRIKE_INITIALS_RECT = { w: 0.2, h: 0.07 };
 
         function revokeLoadedDoc() {
             loadedDoc?.pages.forEach(p => URL.revokeObjectURL(p.url));
@@ -1699,13 +1723,21 @@
                         const nx = clamp01(px - drag.offX), ny = clamp01(py - drag.offY);
                         const dx = nx - item.x, dy = ny - item.y;
                         if (!dx && !dy) return;
-                        for (const mid of drag.members) {
-                            const m = cfgFields.find(f => f.id === mid);
-                            if (!m) continue;
-                            m.x = r4(clamp01(m.x + dx));
-                            m.y = r4(clamp01(m.y + dy));
-                            const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
-                            if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                        if (drag.kind === 'signature') {
+                            // The signature box lives in cfgSignature, not cfgFields.
+                            item.x = r4(clamp01(item.x + dx));
+                            item.y = r4(clamp01(item.y + dy));
+                            const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
+                            if (el) { el.style.left = (item.x * 100) + '%'; el.style.top = (item.y * 100) + '%'; }
+                        } else {
+                            for (const mid of drag.members) {
+                                const m = cfgFields.find(f => f.id === mid);
+                                if (!m) continue;
+                                m.x = r4(clamp01(m.x + dx));
+                                m.y = r4(clamp01(m.y + dy));
+                                const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
+                                if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                            }
                         }
                     } else if (drag.mode === 'axis') {
                         // Axis-locked move: only the dragged axis changes — X for ↔, Y for ↕.
@@ -1715,13 +1747,21 @@
                         const ny = drag.axis === 'v' ? clamp01(py - (drag.offY ?? 0)) : item.y;
                         const dx = nx - item.x, dy = ny - item.y;
                         if (!dx && !dy) return;
-                        for (const mid of drag.members) {
-                            const m = cfgFields.find(f => f.id === mid);
-                            if (!m) continue;
-                            m.x = r4(clamp01(m.x + dx));
-                            m.y = r4(clamp01(m.y + dy));
-                            const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
-                            if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                        if (drag.kind === 'signature') {
+                            // The signature box lives in cfgSignature, not cfgFields.
+                            item.x = r4(nx);
+                            item.y = r4(ny);
+                            const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
+                            if (el) { el.style.left = (item.x * 100) + '%'; el.style.top = (item.y * 100) + '%'; }
+                        } else {
+                            for (const mid of drag.members) {
+                                const m = cfgFields.find(f => f.id === mid);
+                                if (!m) continue;
+                                m.x = r4(clamp01(m.x + dx));
+                                m.y = r4(clamp01(m.y + dy));
+                                const el = pageEl.querySelector(`.field-box[data-id="${mid}"]`);
+                                if (el) { el.style.left = (m.x * 100) + '%'; el.style.top = (m.y * 100) + '%'; }
+                            }
                         }
                     } else if (drag.mode === 'resize') {
                         const item = findCfgItem(drag.kind, drag.id);
@@ -1731,6 +1771,8 @@
                         if (drag.corner.includes('s')) h = clamp01(py - y);
                         if (drag.corner.includes('w')) { const right = x + w; x = Math.min(clamp01(px), right - 0.02); w = right - x; }
                         if (drag.corner.includes('n')) { const bottom = y + h; y = Math.min(clamp01(py), bottom - 0.02); h = bottom - y; }
+                        // item is the live cfgSignature object for signature boxes and the
+                        // live field object otherwise — mutating it updates the model either way.
                         item.x = r4(x); item.y = r4(y); item.w = r4(Math.max(w, 0.02)); item.h = r4(Math.max(h, 0.02));
                         const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
                         if (el) {
@@ -2126,7 +2168,7 @@
             const midX = (line.x1 + line.x2) / 2, midY = (line.y1 + line.y2) / 2;
             const gap = Math.max(0.015, (last.yBot - first.yTop) * 0.08);
             // Drawn strike-initials box: a wide/short rect centered just above the midpoint.
-            const iw = 0.2, ih = 0.07;
+            const iw = STRIKE_INITIALS_RECT.w, ih = STRIKE_INITIALS_RECT.h;
             return {
                 struckRows,
                 line,
@@ -2138,7 +2180,7 @@
         // Drawn strike-out initials capture: a modal pad (like the signature/initials pads) where
         // the master grower draws their initials for the phase-/room-change strike-out. Resolves
         // to { name, strokes } on confirm, or null if cancelled / left empty.
-        function captureStrikeInitials(label, actionLabel) {
+        function captureStrikeInitials(label, actionLabel, aspectRatio) {
             return new Promise((resolve) => {
                 const ov = document.createElement('div');
                 ov.className = 'strike-overlay';
@@ -2157,7 +2199,8 @@
                     </div>`;
                 document.body.appendChild(ov);
                 const strokes = [];
-                const pad = initDrawPad('strikePad', 3, strokes);
+                // aspectRatio matches the strike-out box's on-paper pixel ratio (no skew).
+                const pad = initDrawPad('strikePad', aspectRatio || 3, strokes);
                 const nameEl = $('strikeName');
                 const clearAll = () => { strokes.length = 0; if (pad) pad.clear(); };
                 $('strikeClearBtn').addEventListener('click', clearAll);
@@ -2230,7 +2273,8 @@
                 evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
                 return { inst: oldInst, newKey: ctx.key, value, reused: true };
             }
-            const drawn = await captureStrikeInitials(cfg.label(), cfg.actionLabel);
+            const strikeSheet = DB.paperWizard.sheets[ctx.sheetId];
+            const drawn = await captureStrikeInitials(cfg.label(), cfg.actionLabel, boxPrintAspect(strikeSheet, STRIKE_INITIALS_RECT));
             if (!drawn) { showToast(`${cfg.cancelMsg} — no changes made`); return null; }
             // 1) Close the old instance: window ends at the move date, initials captured (drawn).
             oldInst.phaseChangeDate = today;
@@ -2613,6 +2657,51 @@
             return `<button type="button" class="cab-print" data-print="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}"${disabled ? ' disabled' : ''} title="${escapeHtml(title)}">🖨️ Print</button>`;
         }
 
+        // What's still open on an instance, independent of the print document (the sign
+        // button works whether or not a page set is loaded this session). Mirrors the
+        // per-cadence checks in printBlockers minus the doc gate and the signature check
+        // itself (this IS the signature button).
+        function signatureMissing(sheetId, key, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || !inst) return [];
+            if (instanceComplete(sheetId, key, inst)) return [];
+            const out = [];
+            if (sheet.cadence === 'daily-weekly') {
+                const { start, end } = activeWindow(inst, key);
+                const total = daysBetween(start, end);
+                let filled = 0;
+                for (const d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) if (dayAnswered(inst, dateToStr(d), sheetId)) filled++;
+                if (filled < total) out.push(`${total - filled} day(s) left`);
+                if (inst.phaseChangeDate && !inst.strikeInitials) out.push('strike initials missing');
+            } else {
+                const qids = instanceQuestionIds(sheetId);
+                const answered = qids.filter(qid => hasAnswer(inst.header, qid)).length;
+                if (answered < qids.length) out.push(`${qids.length - answered} field(s) left`);
+            }
+            return out;
+        }
+
+        // ✍️ Sign button for a leaf — opens the signature-only modal. Enabled when an
+        // instance exists and the sheet defines a signature box. Completion status is
+        // surfaced in the tooltip but never blocks signing ("if he so decides").
+        function signatureButtonHtml({ lotId, sheetId, key }) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet?.signature) return '';
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
+            if (!inst) {
+                return `<button type="button" class="cab-sign" data-sign="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}" disabled title="No entry yet — fill it first">✍️ Sign</button>`;
+            }
+            const signed = !!inst.signature;
+            let title;
+            if (signed) {
+                title = `Signed by ${inst.signature.name || '—'} — click to re-sign`;
+            } else {
+                const missing = signatureMissing(sheetId, key, inst);
+                title = missing.length ? `Sign off (${missing.join(' · ')})` : 'Log is complete — sign off';
+            }
+            return `<button type="button" class="cab-sign" data-sign="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(title)}">✍️ Sign</button>`;
+        }
+
         // One cabinet leaf row. `label` must be pre-escaped HTML.
         function cabLeaf(label, status, opts = {}) {
             const refCls = opts.ref ? ' ref' : '';
@@ -2632,6 +2721,7 @@
             return `<div class="cab-leaf" data-fill="1" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}">
                 <span class="cab-label">${label}</span>
                 <button type="button" class="cab-fill">Fill</button>
+                ${signatureButtonHtml({ lotId: lotId || activeLotId, sheetId, key })}
                 ${printButtonHtml({ lotId: lotId || activeLotId, sheetId, key })}
                 <span class="cab-status ${status.cls}">${status.text}</span>
             </div>`;
@@ -2889,8 +2979,99 @@
         function initSigPad(ctx) {
             const sheet = DB.paperWizard.sheets[ctx.sheetId];
             const sig = sheet.signature;
-            const ar = (sig.w && sig.h) ? (sig.w / sig.h) : 4; // box aspect ratio
+            // Match the box's on-paper pixel aspect ratio so the signature prints undistorted.
+            const ar = boxPrintAspect(sheet, sig);
             initDrawPad('sigPad', ar, ctx.sigDraft.strokes);
+        }
+
+        // ---- Signature-only modal (tree-view ✍️ Sign button) ----
+        // A lightweight sign-off dialog: draw pad + name, pre-filled if already signed.
+        // No day chips, no question navigation, no phase/room rollover checks — signing
+        // can never accidentally trigger a log rollover. Empty pad on save clears the
+        // signature (same rule as the wizard's signature step).
+        let sigModalCtx = null; // { lotId, sheetId, key, inst, strokes } while open
+
+        function closeSignatureModal() {
+            sigModalCtx = null;
+            const ov = $('sigModalOverlay');
+            if (ov) ov.remove();
+            document.removeEventListener('keydown', sigModalEscHandler);
+        }
+
+        function sigModalEscHandler(e) { if (e.key === 'Escape') closeSignatureModal(); }
+
+        function openSignatureModal(lotId, sheetId, key) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet?.signature) { showToast('No signature box configured for this sheet'); return; }
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
+            if (!inst) { showToast('No entry yet — fill it first'); return; }
+
+            sigModalCtx = {
+                lotId, sheetId, key, inst,
+                strokes: inst.signature ? (inst.signature.strokes || []).map(s => s.slice()) : []
+            };
+
+            const sig = sheet.signature;
+            // Match the box's on-paper pixel aspect ratio so the signature prints undistorted.
+            const ar = boxPrintAspect(sheet, sig);
+            const nameVal = escapeHtml(inst.signature?.name ?? '');
+            const label = escapeHtml(sig.label || 'Signature');
+            const sheetName = escapeHtml(sheet.name || sheetId);
+
+            let ov = $('sigModalOverlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'sigModalOverlay';
+                ov.className = 'wiz-overlay';
+                ov.addEventListener('mousedown', e => { if (e.target === ov) closeSignatureModal(); });
+                document.body.appendChild(ov);
+            }
+            ov.innerHTML = `
+                <div class="wiz-card">
+                    <div class="wiz-head">
+                        <span class="wiz-title">✍️ ${label} — ${sheetName}</span>
+                        <span class="wiz-prog">${escapeHtml(key)}</span>
+                        <button type="button" class="wiz-close" id="sigModalCloseBtn" title="Close">✕</button>
+                    </div>
+                    <div class="wiz-body">
+                        <div class="sig-pad-wrap"><canvas id="sigPad2" class="sig-pad"></canvas></div>
+                        <input type="text" id="sigName2" class="sig-name" placeholder="Signer name / initials" value="${nameVal}">
+                        <div class="wiz-hint" style="margin-bottom:10px;">Master grower review — sign off on the whole log.</div>
+                        <div class="sig-actions"><button type="button" class="sig-clear" id="sigModalClearBtn">🧹 Clear signature</button></div>
+                    </div>
+                    <div class="wiz-foot">
+                        <span class="spacer"></span>
+                        <button type="button" class="btn btn-primary" id="sigModalSaveBtn">💾 Save signature</button>
+                    </div>
+                </div>`;
+
+            document.addEventListener('keydown', sigModalEscHandler);
+
+            // Initialize the draw pad with existing strokes (re-sign view).
+            initDrawPad('sigPad2', ar, sigModalCtx.strokes);
+
+            $('sigModalCloseBtn').addEventListener('click', closeSignatureModal);
+            $('sigModalClearBtn').addEventListener('click', () => {
+                // Mutate in place — the canvas event handlers captured this array reference.
+                sigModalCtx.strokes.length = 0;
+                const canvas = $('sigPad2');
+                if (canvas) {
+                    const g = canvas.getContext('2d');
+                    g.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            });
+            $('sigModalSaveBtn').addEventListener('click', () => {
+                const nameEl = $('sigName2');
+                const strokes = sigModalCtx.strokes;
+                inst.signature = (strokes && strokes.length)
+                    ? { name: String(nameEl?.value || '').trim(), strokes }
+                    : null;
+                evaluateCompletion(sheetId, key, inst);
+                notifySitkaTools();
+                closeSignatureModal();
+                renderAll();
+                showToast(inst.signature ? 'Signature saved' : 'Signature cleared');
+            });
         }
 
         // Initials-question pad — the draw surface for a wizard question of type 'initials'.
@@ -2901,7 +3082,8 @@
             // The binding lives on the field side — any field carrying this question's id
             // (group members share geometry, so the first match sizes the pad correctly).
             const f = (sheet.fields || []).find(x => x.questionId === q.id);
-            const ar = (f && f.w && f.h) ? (f.w / f.h) : 3; // initials boxes are wide/short
+            // Match the box's on-paper pixel aspect ratio so initials print undistorted.
+            const ar = f ? boxPrintAspect(sheet, f) : 3;
             initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
         }
 
@@ -3611,6 +3793,11 @@
             panel.querySelectorAll('[data-print]').forEach(btn => {
                 btn.addEventListener('click', () =>
                     openPrintPopup(btn.dataset.plot, btn.dataset.sheet, btn.dataset.key));
+            });
+            // Sign buttons open the signature-only modal for that instance.
+            panel.querySelectorAll('[data-sign]').forEach(btn => {
+                btn.addEventListener('click', () =>
+                    openSignatureModal(btn.dataset.plot, btn.dataset.sheet, btn.dataset.key));
             });
             // "Load document" picker — the file base name names the sheet (wrong-revision guard).
             $('cabLoadDocBtn').addEventListener('click', () => $('printImportInput').click());
