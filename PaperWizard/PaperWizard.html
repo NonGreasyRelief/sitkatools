@@ -1383,15 +1383,6 @@
             return cfgFields.filter(x => x.dayGroup === f.dayGroup).map(x => x.id);
         }
 
-        // Apply a mutation to a field AND every member of its daily-entry group — bindings
-        // are group-level: one question / source fills the whole column on every day.
-        function mutateFieldGroup(fieldId, mutate) {
-            const f = cfgFields.find(x => x.id === fieldId);
-            if (!f) return;
-            const targets = f.dayGroup ? cfgFields.filter(x => x.dayGroup === f.dayGroup) : [f];
-            for (const t of targets) mutate(t);
-        }
-
         // Pitch between consecutive day rows of a group: median Δy of the day-1→day-2 pair.
         function cfgGroupPitch(groupIds) {
             const members = cfgFields.filter(f => groupIds.includes(f.id));
@@ -1959,9 +1950,14 @@
                 $('fpAlign').addEventListener('change', () => { item.align = $('fpAlign').value; refreshCfgOverlays(); });
                 $('fpSource').addEventListener('change', () => {
                     // A field is either auto-filled or question-filled — never both. Bindings
-                    // are group-level: the source applies to every day of the column.
+                    // are column-level: the source applies to every day of THIS box's column
+                    // (same group + same x); sibling columns in the same group keep their own
+                    // bindings.
                     const src = $('fpSource').value || null;
-                    mutateFieldGroup(item.id, t => { if (src) t.questionId = null; t.source = src; });
+                    const col = item.dayGroup
+                        ? cfgFields.filter(x => x.dayGroup === item.dayGroup && Math.abs(x.x - item.x) < 0.005)
+                        : [item];
+                    for (const t of col) { if (src) t.questionId = null; t.source = src; }
                     refreshCfgOverlays();
                     refreshWizardBuilder();
                 });
