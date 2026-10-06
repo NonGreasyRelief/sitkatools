@@ -1829,6 +1829,17 @@
             ['year.current', 'year.current — last digit of the year (at save time)']
         ];
 
+        // Candidate values for a checkbox field's "checked when value equals" — derived from
+        // the field's auto-fill source so the user picks instead of typing (no typos). Phase
+        // sources offer the fixed phase vocabulary; room sources offer every room name known
+        // to the DB. Anything else stays free text.
+        function checkValueOptionsFor(source) {
+            if (source === 'instance.phase' || source === 'lot.stage') return PHASE_OPTIONS;
+            if (['lot.destRoom', 'lot.vegRoom', 'lot.cloningRoom', 'lot.dryRoom', 'lot.trimRoom', 'lot.currentRoom'].includes(source))
+                return knownRoomNames().sort((a, b) => a.localeCompare(b));
+            return null;
+        }
+
         function fieldPropertiesPanelHtml() {
             if (!loadedDoc) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Load the form pages first, then click-drag over any page to create a text box.</p></div>';
 
@@ -1876,6 +1887,8 @@
             } else {
                 const srcOpts = `<option value=""${!item.source ? ' selected' : ''}>— wizard question —</option>` +
                     BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${item.source === v ? ' selected' : ''}>${l}</option>`).join('');
+                // Dropdown whenever the source has a known value set (phases / room names).
+                const checkOpts = checkValueOptionsFor(item.source);
                 body = `
                     <div class="form-group" style="margin-bottom:10px;"><label for="fpLabel">Label</label><input type="text" id="fpLabel" value="${escapeHtml(item.label || '')}" placeholder="e.g., Strain Name"></div>
                     ${geo}${pageSel}
@@ -1908,7 +1921,10 @@
                             <input type="checkbox" id="fpCheckbox"${item.checkbox ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> ☑ Checkbox field (prints an X when its value matches)
                         </label>
                     </div>
-                    <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label><input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom"></div>`;
+                    <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label>${checkOpts
+                        ? (() => { const cv = item.checkValue ?? ''; const opts = checkOpts.includes(cv) ? checkOpts : [cv, ...checkOpts];
+                            return `<select id="fpCheckValue">${opts.map(v => `<option value="${escapeHtml(v)}"${v === cv ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('')}</select>`; })()
+                        : `<input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom">`}</div>`;
             }
 
             return `
@@ -1939,7 +1955,8 @@
             if (!item) return;
             const isSig = cfgSelection.kind === 'signature';
             // Light refresh — updates box + panel without reloading the page images.
-            const num = (id, apply) => { const el = $(id); if (!el) return; el.addEventListener('change', () => { apply(parseFloat(el.value)); refreshCfgOverlays(); }); };
+            // Call sites pass ids with a leading '#' — strip it, since $ is getElementById.
+            const num = (id, apply) => { const el = $(id.replace(/^#/, '')); if (!el) return; el.addEventListener('change', () => { apply(parseFloat(el.value)); refreshCfgOverlays(); }); };
 
             $('fpLabel').addEventListener('change', () => { item.label = $('fpLabel').value.trim(); refreshCfgOverlays(); });
             num('#fpX', v => { if (!isNaN(v)) item.x = r4(clamp01(v)); });
@@ -3310,7 +3327,10 @@
             if (!sheetData.instances) sheetData.instances = {};
             let inst = sheetData.instances[ctx.key];
             if (!inst) {
-                inst = { phase: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.stage || null) : null,
+                // Phase snapshot in the form's vocabulary (normalizeStage) — same as openRunner.
+                // Storing the raw DB stage ('cloning') here broke instance.phase bindings and
+                // checkbox checkValues that use the form words ('Cloning').
+                inst = { phase: sheet.cadence === 'daily-weekly' ? normalizeStage(DB.lots[ctx.lotId]?.stage) : null,
                          room: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.currentRoom || null) : null,
                          header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
@@ -3508,7 +3528,13 @@
                 v = inst.header?.[f.questionId];
             }
             const s = (v === null || v === undefined) ? '' : String(v).trim();
-            if (f.checkbox) return { checked: !!s && s === (f.checkValue || ''), text: '' };
+            if (f.checkbox) {
+                // Match through the stage bridge so a raw DB stage ('cloning') still checks a
+                // box whose checkValue is the form word ('Cloning'); fall back to a plain
+                // case-insensitive compare for non-phase sources.
+                const cv = f.checkValue || '';
+                return { checked: !!s && !!cv && (normalizeStage(s) === normalizeStage(cv) || s.toLowerCase() === cv.toLowerCase()), text: '' };
+            }
             return { checked: false, text: s || 'N/A' };
         }
 
