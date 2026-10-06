@@ -1831,6 +1831,7 @@
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
             ['day.date', 'day.date — date of the current day (MM/DD, row fields only)'],
+            ['day.plantsRemoved', 'day.plantsRemoved — plants removed that day (yesterday − today, row fields only)'],
             ['year.current', 'year.current — last digit of the year (at save time)']
         ];
 
@@ -2400,6 +2401,43 @@
             return inst?.phase ? normalizeStage(inst.phase) : null;
         }
 
+        // The plant count explicitly answered ON `day` (no walk-back): null when that day has
+        // no non-empty answer yet. Used for the "today" side of day.plantsRemoved — a fallback
+        // to an earlier day's count would understate removals, so an unanswered day prints N/A.
+        function explicitPlantCountOn(lotId, sheetId, key, day) {
+            const wiz = wizardForSheet(sheetId);
+            const pcQ = wiz?.questions.find(q => q.writesTo === 'lot.plantCount' && q.rowScoped);
+            if (!pcQ) return null;
+            const v = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key]?.days?.[day]?.[pcQ.id];
+            if (v === null || v === undefined || String(v).trim() === '') return null;
+            return Number(String(v).trim());
+        }
+
+        // Last recorded plant count on or before `day` for a row-scoped plant-count question:
+        // walks back through this instance's days, then earlier instances' last days (chain
+        // start), until a non-empty answer is found. Null when no plant-count question exists
+        // or nothing has been recorded yet — the caller prints N/A in that case.
+        function lastRecordedPlantCount(lotId, sheetId, key, day) {
+            const wiz = wizardForSheet(sheetId);
+            const pcQ = wiz?.questions.find(q => q.writesTo === 'lot.plantCount' && q.rowScoped);
+            if (!pcQ) return null;
+            const instances = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances || {};
+            let curKey = key, curDay = day;
+            while (curKey) {
+                const inst = instances[curKey];
+                for (let ds = curDay; ds >= curKey; ds = addDaysStr(ds, -1)) {
+                    const v = inst?.days?.[ds]?.[pcQ.id];
+                    if (v !== null && v !== undefined && String(v).trim() !== '') return Number(String(v).trim());
+                }
+                const pk = prevInstanceKey(lotId, sheetId, curKey);
+                if (!pk) break;
+                const pkeys = Object.keys(instances[pk].days || {}).sort();
+                curDay = pkeys.length ? pkeys[pkeys.length - 1] : pk; // last recorded day (or the window start)
+                curKey = pk;
+            }
+            return null;
+        }
+
         // Reverse-direction detection (spec): the lot's live stage changed in SitkaTools and no
         // longer matches this instance's stored phase → prompt to confirm the move. Rolls over
         // WITHOUT writing back — the main DB is already correct. Called from openRunner after
@@ -2745,6 +2783,18 @@
             // snapshotted like any other binding — a form saved in 2026 keeps printing "6".
             if (kind === 'year' && field === 'current') return String(new Date().getFullYear() % 10);
             if (kind === 'day' && field === 'date') return ctx.dayDate ? fmtMMDD(ctx.dayDate) : null;
+            // Plants removed on the current day row: yesterday's count − today's count, clamped
+            // at 0. Derived per row at print time from the saved plant-count answers (never
+            // snapshotted — like day.date). Today must have an EXPLICIT answer for that day —
+            // falling back to an earlier day's count would understate removals; null → N/A.
+            if (kind === 'day' && field === 'plantsRemoved') {
+                if (!ctx.dayDate) return null;
+                const today = explicitPlantCountOn(ctx.lotId, ctx.sheetId, ctx.key, ctx.dayDate);
+                if (today == null) return null;
+                const yest = lastRecordedPlantCount(ctx.lotId, ctx.sheetId, ctx.key, addDaysStr(ctx.dayDate, -1));
+                if (yest == null) return null;
+                return String(Math.max(0, yest - today));
+            }
             if (kind === 'sheet') {
                 const start = ctx.key;
                 // periodEnd only makes sense for a real date key (daily-weekly windows).
@@ -2771,8 +2821,8 @@
         function captureSnapshots(sheetId, lotId, key, inst) {
             if (!inst.snapshots) inst.snapshots = {};
             for (const b of sheetBindings(sheetId)) {
-                if (b === 'day.date') continue; // derived per row at print time — never snapshotted
-                inst.snapshots[b] = resolveBinding(b, { lotId, key, inst });
+                if (b === 'day.date' || b === 'day.plantsRemoved') continue; // derived per row at print time — never snapshotted
+                inst.snapshots[b] = resolveBinding(b, { lotId, sheetId, key, inst });
             }
         }
 
@@ -2849,7 +2899,7 @@
                 let v = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
                 if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom) {
                     // day.date prefills from the current day (row-scoped only).
-                    v = resolveBinding(q.prefillFrom, { lotId: runnerCtx.lotId, key: runnerCtx.key, inst, dayDate: q.rowScoped ? day : null });
+                    v = resolveBinding(q.prefillFrom, { lotId: runnerCtx.lotId, sheetId: runnerCtx.sheetId, key: runnerCtx.key, inst, dayDate: q.rowScoped ? day : null });
                 }
                 draft[q.id] = (v === null || v === undefined) ? '' : String(v);
             }
@@ -3430,11 +3480,12 @@
 
         // Resolve what a field prints. Snapshot-first (spec), live binding as fallback for
         // legacy instances without snapshots. Empty/missing → 'N/A' (checkboxes → empty box).
-        function printFieldValue(sheet, inst, lotId, key, f, dayDate) {
+        function printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate) {
             let v;
             if (f.source) {
-                // day.date is derived per row — never snapshotted.
-                if (f.source === 'day.date') v = resolveBinding(f.source, { lotId, key, inst, dayDate });
+                // day.date / day.plantsRemoved are derived per row — never snapshotted.
+                // sheetId is in the ctx: day.plantsRemoved needs it to find the plant-count question.
+                if (f.source === 'day.date' || f.source === 'day.plantsRemoved') v = resolveBinding(f.source, { lotId, sheetId, key, inst, dayDate });
                 else v = (inst.snapshots && inst.snapshots[f.source] != null) ? inst.snapshots[f.source] : resolveBinding(f.source, { lotId, key, inst });
             } else if (f.row || f.dayGroup) {
                 // Row field (legacy) or daily-entry group member: that day's answer.
@@ -3509,16 +3560,16 @@
                         // Daily-entry group member: prints on its OWN day, at its OWN placed
                         // position — no cloning, no pitch math. What you slid is what prints.
                         const dayDate = addDaysStr(key, (f.day || 1) - 1);
-                        html += overlaySpan(f, f.y, printFieldValue(sheet, inst, lotId, key, f, dayDate));
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate));
                     } else if (f.row && dayRows) {
                         // Legacy row field (pre-grouping sheet): clone down by the stored pitch.
                         for (const r of dayRows) {
                             const lf = r.fields.find(x => x.id === f.id);
                             if (!lf) continue;
-                            html += overlaySpan(lf, lf.y, printFieldValue(sheet, inst, lotId, key, f, addDaysStr(key, r.day - 1)));
+                            html += overlaySpan(lf, lf.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, addDaysStr(key, r.day - 1)));
                         }
                     } else {
-                        html += overlaySpan(f, f.y, printFieldValue(sheet, inst, lotId, key, f, null));
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, null));
                     }
                 }
                 if (sheet.signature && (sheet.signature.page ?? 1) === pageNum) html += sigSvgHtml(sheet.signature, inst.signature);
