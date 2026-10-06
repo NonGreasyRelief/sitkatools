@@ -2075,14 +2075,26 @@
         // Is a given day fully answered for the sheet's row-scoped questions? A row-scoped
         // initials question is one of them — hasAnswer treats its {strokes} object as answered
         // only once drawn, so per-day accountability falls out with no special-casing.
+        // Blank-but-confirmed fields count: saving a day's entry records EVERY row-scoped
+        // question in the day object (blank answers stored as ''), so the mere presence of a
+        // question's key means the user confirmed that day — an intentionally left-blank box
+        // (e.g. an empty comments field) still counts as filled out for that day. Initials are
+        // NEVER waived: their key is present even when the pad is empty (stored null), so they
+        // only ever count via drawn strokes, regardless of confirm.
         function dayAnswered(instance, dateStr, sheetId) {
             const day = instance.days?.[dateStr];
             if (!day) return false;
             const qids = rowScopedQuestionIds(sheetId);
             if (qids.length === 0) {
                 if (!Object.keys(day).some(k => hasAnswer(day, k))) return false;
-            } else if (!qids.every(qid => hasAnswer(day, qid))) return false;
+            } else if (!qids.every(qid => hasAnswer(day, qid) || (qid in day && !isInitialsQuestion(sheetId, qid)))) return false;
             return true;
+        }
+
+        // True when the sheet's wizard defines this question as type 'initials'.
+        function isInitialsQuestion(sheetId, qid) {
+            const wiz = wizardForSheet(sheetId);
+            return (wiz?.questions || []).find(q => q.id === qid)?.type === 'initials';
         }
 
         // Active window for a daily-weekly instance: [periodStart, min(periodEnd, phaseChangeDate)].
@@ -3367,6 +3379,9 @@
                 if (q.rowScoped) {
                     if (!inst.days) inst.days = {};
                     if (!inst.days[ctx.day]) inst.days[ctx.day] = {};
+                    // Blank answers are stored as '' (initials as null when the pad is empty) —
+                    // the key's presence marks the question as confirmed for that day, which is
+                    // what lets a blank-but-confirmed box count toward day completion.
                     inst.days[ctx.day][q.id] = v;
                 } else {
                     if (!inst.header) inst.header = {};
