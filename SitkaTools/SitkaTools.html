@@ -5194,8 +5194,16 @@
                 el.style.top = `${top}px`;
             },
 
-            // Tooltip for an annual-view day: lists every event on that day,
-            // each rendered the same way as the per-event tooltip.
+            // Cluster map (dateStr -> {taskType, count}) for the currently visible
+            // events. Computed lazily and cached per render so the annual grid and
+            // the day tooltips (month + annual views) share one computation.
+            _getClusterMap() {
+                if (!this._clusterMap) this._clusterMap = this._annualClusters();
+                return this._clusterMap;
+            },
+
+            // Tooltip for a calendar day (month + annual views): lists every event
+            // on that day, each rendered the same way as the per-event tooltip.
             _showDayTooltip(dateStr, x, y) {
                 const el = this._getTooltipEl();
 
@@ -5210,7 +5218,7 @@
                 // Holiday + cluster context (previously shown in the native title)
                 const holiday = this.showHolidays ? Holidays.forDate(dateStr) : null;
                 if (holiday) html += `<div class="tt-row">🏛️ ${escapeHtml(holiday.name)} — BC civic holiday</div>`;
-                const cluster = (this._annualClusterMap || new Map()).get(dateStr);
+                const cluster = this._getClusterMap().get(dateStr);
                 if (cluster) {
                     const name = this._taskTypeName(cluster.taskType) || 'Other';
                     html += `<div class="tt-row">⚠️ Clustered: ${cluster.count}× ${escapeHtml(name)} on this day</div>`;
@@ -5307,7 +5315,9 @@
                 });
             },
 
-            // Attach the day-level tooltip to an annual-view day cell.
+            // Attach the day-level tooltip to a day cell (month + annual views).
+            // Hovering anywhere in the cell — day number, event, holiday, etc. —
+            // shows every event on that day.
             _attachDayTooltip(dayEl) {
                 dayEl.addEventListener('mouseenter', (e) => {
                     const dateStr = dayEl.dataset.date;
@@ -5392,8 +5402,7 @@
 
                 const todayStr = localDate();
                 const taskTypes = this._annualTaskTypes();
-                const clusters = this._annualClusters();
-                this._annualClusterMap = clusters; // cached for the day tooltip
+                const clusters = this._getClusterMap(); // cached for the day tooltip
 
                 // ---- Legend: up to 8 task types, most frequent first ----
                 const MAX_LEGEND = 8;
@@ -6045,6 +6054,7 @@
                 // refer to the full DB.data.calendarEvents array.
                 this._rebuildFilterCache();
                 this._visibleEvents = this.filteredEvents();
+                this._clusterMap = null; // invalidate cached cluster map for the new visible set
 
                 console.log('[Calendar] Rendering - events count:', this.events.length, 'visible:', this._visibleEvents.length);
                 if (this.events.length > 0) {
@@ -6154,7 +6164,8 @@
                     const holidayEl = document.createElement('div');
                     holidayEl.className = 'day-event holiday';
                     holidayEl.textContent = `🏛️ ${holiday.name}`;
-                    holidayEl.title = `${holiday.name} — BC civic holiday (${holiday.rule})`;
+                    // No native title — the day-level hover tooltip (same as annual
+                    // view) already includes the holiday info for this date.
                     holidayEl.addEventListener('click', (e) => {
                         e.stopPropagation();
                         this.selectHoliday(holiday);
@@ -6232,9 +6243,6 @@
                             this.selectEvent(event);
                         });
 
-                        // Hover tooltip with the full entry text
-                        this._attachEventTooltip(eventEl, this.events.indexOf(event));
-
                         eventsContainer.appendChild(eventEl);
                     });
 
@@ -6260,6 +6268,9 @@
                         this.moveEvent(data.eventIndex, dateStr);
                     } catch {}
                 });
+
+                // Hover tooltip listing every event on that day (same as annual view)
+                this._attachDayTooltip(cell);
 
                 // Click day to select it
                 cell.addEventListener('click', () => {
