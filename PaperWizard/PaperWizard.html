@@ -845,6 +845,9 @@
     <!-- Hidden file input for the print path: loads a page set matching a sheet's id -->
     <input type="file" id="printImportInput" accept=".webp,image/webp" multiple style="display:none;">
 
+    <!-- Hidden file input for per-sheet configuration import (.json bundle) -->
+    <input type="file" id="sheetImportInput" accept=".json,application/json" style="display:none;">
+
     <!-- Main Content -->
     <main class="main">
         <!-- Status Bar -->
@@ -3923,6 +3926,8 @@
                             ${Object.entries(DB.paperWizard.sheets).map(([id, s]) => `<option value="${escapeHtml(id)}"${configSheetId === id ? ' selected' : ''}>${escapeHtml(s.name || id)}</option>`).join('')}
                         </select>
                     </div>
+                    <button type="button" class="btn btn-secondary db-btn" id="exportSheetBtn" title="Export the selected sheet's configuration (layout + wizard) as a .json file"${savedSelected ? '' : ' disabled'}>📤 Export</button>
+                    <button type="button" class="btn btn-secondary db-btn" id="importSheetBtn" title="Import a sheet configuration from a .json file">📥 Import</button>
                     <button type="button" class="btn btn-danger db-btn" id="delSavedSheetBtn" title="Delete the selected configured sheet (and its wizard) from the database"${savedSelected ? '' : ' disabled'}>🗑</button>
                     ${savedSelected ? `<div class="form-group">
                         <label for="sheetDocSelect">Document</label>
@@ -4008,6 +4013,10 @@
             // 🗑 beside the dropdown deletes the selected saved sheet — same path as the
             // Save-row delete (enabled only while a saved sheet is the current one).
             $('delSavedSheetBtn').addEventListener('click', deleteSheet);
+            // Per-sheet import/export: export bundles the selected sheet's layout + wizard(s)
+            // into a .json; import installs such a bundle (page images are never in the file).
+            $('exportSheetBtn').addEventListener('click', () => exportSheetConfig(configSheetId));
+            $('importSheetBtn').addEventListener('click', () => $('sheetImportInput').click());
             // Document assignment: persisted immediately (metadata, not layout) so the
             // Filing Cabinet re-files the sheet without waiting for 💾 Save.
             $('sheetDocSelect')?.addEventListener('change', () => {
@@ -4271,6 +4280,96 @@
             showToast(`Deleted ${what}`);
         }
 
+        // ---- Per-sheet configuration import/export (.json bundle) ----
+        // A sheet export is a self-contained bundle: the sheet layout plus every wizard
+        // bound to it. Page images are never included (Golden Rule) — the importing machine
+        // loads its own copy of the controlled form pages just in time.
+        function exportSheetConfig(sheetId) {
+            const s = DB.paperWizard?.sheets?.[sheetId];
+            if (!s) { showToast('Select a saved sheet to export'); return; }
+            const wizards = {};
+            Object.entries(DB.paperWizard.wizards).forEach(([id, w]) => {
+                if (w.sheetId === sheetId) wizards[id] = JSON.parse(JSON.stringify(w));
+            });
+            const payload = {
+                format: 'paperwizard-sheet',
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                sheetId,
+                sheet: JSON.parse(JSON.stringify(s)),
+                wizards
+            };
+            downloadJsonFile(`${sheetId}.json`, JSON.stringify(payload, null, 2), `Exported sheet "${s.name || sheetId}"`);
+        }
+
+        // Shared download helper — Web Share where available (fixes iOS Safari blob URL issue).
+        function downloadJsonFile(filename, json, toastMsg) {
+            const blob = new Blob([json], { type: 'application/json' });
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename }).catch(() => {});
+            } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+            showToast(toastMsg);
+        }
+
+        function handleSheetImport(e) {
+            const file = e.target.files?.[0];
+            e.target.value = ''; // allow re-picking the same file
+            if (!file) return;
+            if (!dbLoaded) { alert('Load a database first, then import the sheet.'); return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+                let data;
+                try {
+                    data = JSON.parse(reader.result);
+                } catch (err) {
+                    alert('Failed to parse sheet file: ' + err.message);
+                    return;
+                }
+                // Validate the bundle shape. The sheet id comes from the file, falling back
+                // to the file name (grow-log.json → grow-log).
+                const sheetId = (typeof data.sheetId === 'string' && data.sheetId.trim())
+                    ? data.sheetId.trim()
+                    : file.name.replace(/\.json$/i, '');
+                const sheet = data.sheet;
+                if (!sheet || typeof sheet !== 'object' || !Array.isArray(sheet.fields)) {
+                    alert(`"${file.name}" is not a valid PaperWizard sheet export (missing sheet layout).`);
+                    return;
+                }
+                const wizards = (data.wizards && typeof data.wizards === 'object') ? data.wizards : {};
+                for (const [id, w] of Object.entries(wizards)) {
+                    if (!w || w.sheetId !== sheetId) {
+                        alert(`Wizard "${id}" in "${file.name}" does not reference sheet "${sheetId}" — refusing to import.`);
+                        return;
+                    }
+                }
+                const pw = DB.ensureStructure()._PaperWizard;
+                if (pw.sheets[sheetId] && !confirm(`Sheet "${sheetId}" already exists. Replace it with the imported configuration?`)) return;
+                // Normalize the layout the same way the editor does.
+                sheet.name = (typeof sheet.name === 'string' && sheet.name.trim()) ? sheet.name.trim() : sheetId;
+                sheet.pageCount = Math.max(1, Math.min(20, Number(sheet.pageCount) || 1));
+                // Replace any existing wizards for this sheet, then install the bundle.
+                Object.keys(pw.wizards).forEach(id => { if (pw.wizards[id].sheetId === sheetId) delete pw.wizards[id]; });
+                pw.sheets[sheetId] = JSON.parse(JSON.stringify(sheet));
+                Object.entries(wizards).forEach(([id, w]) => { pw.wizards[id] = JSON.parse(JSON.stringify(w)); });
+                notifySitkaTools();
+                renderAll();
+                openSavedSheet(sheetId); // opens it in the editor (page images still need a just-in-time load)
+                showToast(`Imported sheet "${sheetId}"${Object.keys(wizards).length ? ' + wizard' : ''}`);
+            };
+            reader.onerror = () => alert('Failed to read file.');
+            reader.readAsText(file);
+        }
+
         // Keep fit-to-width current as the window resizes.
         window.addEventListener('resize', updateFitWidth);
 
@@ -4400,6 +4499,7 @@
 
             $('dbImportInput').addEventListener('change', handleDbImport);
             $('pageImportInput').addEventListener('change', handlePageImport);
+            $('sheetImportInput').addEventListener('change', handleSheetImport);
             // Print-document picker (Filing Cabinet): base name names the sheet.
             $('printImportInput').addEventListener('change', e => {
                 const files = Array.from(e.target.files || []); // copy — input.files is a live FileList, cleared by the reset below
