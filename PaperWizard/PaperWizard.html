@@ -1001,20 +1001,32 @@
         // ---- Active lot state ----
         let activeLotId = null;
 
-        function sortedLotIds() {
-            // Lots from the main DB plus orphaned lots that only exist in PaperWizard entries.
-            const ids = new Set(Object.keys(DB.lots));
-            Object.keys(DB.paperWizard?.entries || {}).forEach(id => ids.add(id));
-            return [...ids].sort((a, b) =>
-                String(DB.lots[b]?.createdDate || '').localeCompare(String(DB.lots[a]?.createdDate || '')));
+        // Resolve the room a lot currently lives in — live currentRoom (by name) wins, else
+        // any room that lists it in assignedLots. Null when unknown → grouped as Unassigned.
+        function lotRoomId(lotId) {
+            const rooms = DB.rooms || {};
+            const lot = DB.lots[lotId];
+            if (lot?.currentRoom) {
+                const target = String(lot.currentRoom).trim().toLowerCase();
+                for (const [roomId, r] of Object.entries(rooms)) {
+                    if (r?.name && String(r.name).trim().toLowerCase() === target) return roomId;
+                }
+            }
+            for (const [roomId, r] of Object.entries(rooms)) {
+                if ((r.assignedLots || []).includes(lotId)) return roomId;
+            }
+            return null;
         }
 
         function populateLotSelector() {
             const sel = $('lotSelect');
             const prev = activeLotId;
-            const ids = sortedLotIds();
-            sel.innerHTML = '';
-            if (!ids.length) {
+            // Lots from the main DB plus orphaned lots that only exist in PaperWizard entries.
+            const ids = new Set(Object.keys(DB.lots));
+            Object.keys(DB.paperWizard?.entries || {}).forEach(id => ids.add(id));
+
+            if (!ids.size) {
+                sel.innerHTML = '';
                 const opt = document.createElement('option');
                 opt.value = '';
                 opt.textContent = '— No lots —';
@@ -1022,19 +1034,65 @@
                 activeLotId = null;
                 return;
             }
+
+            // Group by room (same layout as CropLabourWizard's selector): unselectable
+            // "↓ Room" dividers in alphabetical order of room name, lots within a room
+            // oldest-first, and lots with no resolvable room under a trailing divider.
+            const rooms = DB.rooms || {};
+            const groups = new Map();   // roomId -> [lotId]
+            const unassigned = [];
             for (const id of ids) {
-                const lot = DB.lots[id];
-                const opt = document.createElement('option');
-                opt.value = id;
-                if (lot) {
-                    opt.textContent = lot.strain ? `${id} — ${lot.strain}` : id;
+                const roomId = lotRoomId(id);
+                if (roomId && rooms[roomId]) {
+                    if (!groups.has(roomId)) groups.set(roomId, []);
+                    groups.get(roomId).push(id);
                 } else {
-                    opt.textContent = `${id} — (closed)`; // orphaned: entries exist, lot record gone
+                    unassigned.push(id);
+                }
+            }
+
+            // Oldest lot first (by createdDate; lot ID breaks ties) — same as CropLabourWizard.
+            const byAge = (a, b) =>
+                String(DB.lots[a]?.createdDate || '').localeCompare(String(DB.lots[b]?.createdDate || '')) ||
+                a.localeCompare(b);
+
+            const addDivider = label => {
+                const opt = document.createElement('option');
+                opt.textContent = `↓ ${label}`;
+                opt.disabled = true;
+                sel.appendChild(opt);
+            };
+
+            const addLotOption = lotId => {
+                const lot = DB.lots[lotId];
+                const opt = document.createElement('option');
+                opt.value = lotId;
+                if (lot) {
+                    opt.textContent = lot.strain ? `${lotId} — ${lot.strain}` : lotId;
+                } else {
+                    opt.textContent = `${lotId} — (closed)`; // orphaned: entries exist, lot record gone
                 }
                 sel.appendChild(opt);
+            };
+
+            sel.innerHTML = '';
+            [...groups.keys()]
+                .sort((a, b) => (rooms[a].name || '').localeCompare(rooms[b].name || ''))
+                .forEach(roomId => {
+                    addDivider(rooms[roomId].name || roomId);
+                    groups.get(roomId).sort(byAge).forEach(addLotOption);
+                });
+
+            if (unassigned.length) {
+                addDivider('Unassigned');
+                unassigned.sort(byAge).forEach(addLotOption);
             }
-            // Keep current selection if still valid, else default to most recent lot.
-            activeLotId = (prev && ids.includes(prev)) ? prev : ids[0];
+
+            // Keep current selection if still valid, else default to the most recent lot
+            // (original behavior — the grouped order above is display-only).
+            const newest = [...ids].sort((a, b) =>
+                String(DB.lots[b]?.createdDate || '').localeCompare(String(DB.lots[a]?.createdDate || '')))[0];
+            activeLotId = (prev && ids.has(prev)) ? prev : newest;
             sel.value = activeLotId;
         }
 
