@@ -2864,17 +2864,12 @@
                         </select>
                     </div>
                     <div class="form-group full-width" id="startRoomGroup">
-                        <label>Starting Room (where the lot begins)</label>
-                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
-                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                                <input type="radio" name="startRoom" id="startRoomClone" value="clone" checked style="accent-color: var(--accent);">
-                                Clone room
-                            </label>
-                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                                <input type="radio" name="startRoom" id="startRoomVeg" value="veg" style="accent-color: var(--accent);">
-                                Veg room (purchased clones go straight to veg)
-                            </label>
-                        </div>
+                        <label for="startRoom">Starting Room (where the lot begins)</label>
+                        <select id="startRoom">
+                            <option value="clone" selected>Clone room</option>
+                            <option value="veg">Veg room (purchased clones go straight to veg)</option>
+                            <option value="flower">Flower room (final destination)</option>
+                        </select>
                     </div>
                     <div class="form-group" id="parentLotGroup" style="display: none;">
                         <label for="parentLot">Parent Lot</label>
@@ -3973,11 +3968,15 @@
             // trim room (same name in both), or they can be two different rooms.
             const dryRoom = dryRoomInput.value;
             const trimRoom = trimRoomInput.value;
-            // Starting room: where the lot physically begins — clone room, or straight to veg
-            // when purchased clones skip cloning. PaperWizard's grow logs overwrite this as the
-            // lot actually moves (currentRoom write-back).
-            const startVeg = $('startRoomVeg') ? $('startRoomVeg').checked : false;
-            const currentRoom = (startVeg ? vegRoom : cloningRoom) || null;
+            // Starting room: where the lot physically begins — clone room, straight to veg
+            // when purchased clones skip cloning, or the final destination flower room.
+            // PaperWizard's grow logs overwrite this as the lot actually moves (currentRoom write-back).
+            const startRoomValue = $('startRoom') ? $('startRoom').value : 'clone';
+            let currentRoom;
+            if (startRoomValue === 'veg') currentRoom = vegRoom;
+            else if (startRoomValue === 'flower') currentRoom = destRoom;
+            else currentRoom = cloningRoom; // default: clone room
+            currentRoom = currentRoom || null;
 
             // Auto-generate Lot Name from LotID + first 6 letters of strain
             const strainPrefix = (strain || '').substring(0, 6).toUpperCase();
