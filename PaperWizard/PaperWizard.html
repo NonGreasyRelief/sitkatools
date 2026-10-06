@@ -945,6 +945,11 @@
         const STAGE_TO_FORM = { cloning: 'Cloning', mother: 'Mother', veg: 'Vegetation', vegetation: 'Vegetation', flower: 'Bloom', bloom: 'Bloom', harvest: 'Harvesting', harvesting: 'Harvesting' };
         // Fixed phase vocabulary for phase questions (the form's own words, from STAGE_TO_FORM).
         const PHASE_OPTIONS = ['Cloning', 'Mother', 'Vegetation', 'Bloom', 'Harvesting'];
+        // Room designation vocabulary — set per room in SitkaTools' Room Manager
+        // (room.designation). The lot.roomDesignation binding resolves the lot's live
+        // currentRoom to its room record and returns this value, so paperwork can carry
+        // checkboxes that match a room's designation.
+        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
         function normalizeStage(v) {
             if (v === null || v === undefined) return null;
             const s = String(v).trim();
@@ -1821,6 +1826,7 @@
             ['lot.dryRoom', 'lot.dryRoom — dry room'],
             ['lot.trimRoom', 'lot.trimRoom — trim room'],
             ['lot.currentRoom', 'lot.currentRoom — current room (live)'],
+            ['lot.roomDesignation', 'lot.roomDesignation — designation of the current room (live)'],
             ['instance.phase', 'instance.phase — phase snapshot'],
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
@@ -1837,6 +1843,7 @@
             if (source === 'instance.phase' || source === 'lot.stage') return PHASE_OPTIONS;
             if (['lot.destRoom', 'lot.vegRoom', 'lot.cloningRoom', 'lot.dryRoom', 'lot.trimRoom', 'lot.currentRoom'].includes(source))
                 return knownRoomNames().sort((a, b) => a.localeCompare(b));
+            if (source === 'lot.roomDesignation') return ROOM_DESIGNATIONS;
             return null;
         }
 
@@ -2570,6 +2577,17 @@
             return n;
         }
 
+        // Designation of a room by name (case-insensitive) — null when the room is unknown
+        // or has no designation set. Feeds the lot.roomDesignation binding.
+        function roomDesignationFor(roomName) {
+            if (!roomName) return null;
+            const target = String(roomName).trim().toLowerCase();
+            for (const r of Object.values(DB.rooms || {})) {
+                if (r?.name && String(r.name).trim().toLowerCase() === target) return r.designation || null;
+            }
+            return null;
+        }
+
         // All room names known to the DB (rooms table + lot room fields). Names may duplicate.
         function knownRoomNames() {
             const names = new Set();
@@ -2804,6 +2822,7 @@
                 const lot = DB.lots[ctx.lotId];
                 const v = lot ? lot[field] : null;
                 if (field === 'stage') return normalizeStage(v); // form vocabulary for prefill/print
+                if (field === 'roomDesignation') return roomDesignationFor(lot?.currentRoom);
                 return (v === null || v === undefined) ? null : String(v);
             }
             if (kind === 'instance' && field === 'phase') return ctx.inst?.phase || null;

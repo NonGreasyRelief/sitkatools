@@ -2936,6 +2936,12 @@
                         </select>
                     </div>
                     <div class="form-group full-width">
+                        <label for="roomDesignation">Room designation</label>
+                        <select id="roomDesignation">
+                            <option value="">— None —</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                             <input type="checkbox" id="roomIsFlowering" style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
                             Flowering room (eligible for Crop Projection)
@@ -4337,6 +4343,11 @@
         // Database Keys: "rooms" (object of all rooms)
         // =====================================================
 
+        // Room designation vocabulary — a conceptual role for a room, separate from its
+        // name and ID. PaperWizard reads this to prefill paperwork (e.g. checkboxes that
+        // match the lot's current room's designation). Stored on room.designation.
+        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
+
         const RoomManager = {
             expandedRoomId: null,
 
@@ -4359,10 +4370,23 @@
                 this.updateRoomIdSuggestion();
                 this.updateRoomDatalist();
                 this.updateBuildingDatalist();
+                this.populateDesignationSelect();
             },
 
             updateRoomIdSuggestion() {
                 $('roomId').placeholder = 'B66DG1';
+            },
+
+            populateDesignationSelect() {
+                // Fill the create-form designation dropdown from the shared vocabulary.
+                const select = $('roomDesignation');
+                if (!select) return;
+                ROOM_DESIGNATIONS.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d;
+                    opt.textContent = d;
+                    select.appendChild(opt);
+                });
             },
 
             updateBuildingDatalist() {
@@ -4410,6 +4434,7 @@
                 const roomName = $('roomName').value.trim();
                 const description = $('roomDescription').value.trim();
                 const buildingId = $('roomBuildingId') ? $('roomBuildingId').value : '';
+                const designation = $('roomDesignation') ? $('roomDesignation').value : '';
                 const isFlowering = $('roomIsFlowering') ? $('roomIsFlowering').checked : false;
 
                 if (!roomId || !roomName) {
@@ -4430,7 +4455,8 @@
                     createdDate: today,
                     assignedLots: [],
                     isFlowering: isFlowering,
-                    buildingId: buildingId || null
+                    buildingId: buildingId || null,
+                    designation: designation || null
                 };
 
                 // Register the room with its building (day-1 assignment)
@@ -4441,7 +4467,7 @@
                 }
 
                 markUnsaved();
-                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${buildingId ? `\n🏢 Assigned to building: ${DB.data.buildings[buildingId].name} (${buildingId})` : ''}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}\nRemember to export the database to save.`);
+                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${buildingId ? `\n🏢 Assigned to building: ${DB.data.buildings[buildingId].name} (${buildingId})` : ''}${designation ? `\n🏷 Designation: ${designation}` : ''}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}\nRemember to export the database to save.`);
 
                 $('roomForm').reset();
                 this.updateRoomIdSuggestion();
@@ -4536,6 +4562,13 @@
                         <div class="room-detail-row">
                             <span class="detail-label">Building:</span>
                             <span>${room.buildingId && DB.data.buildings[room.buildingId] ? `🏢 ${escapeHtml(DB.data.buildings[room.buildingId].name)} (${escapeHtml(room.buildingId)})` : '—'}</span>
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Designation:</span>
+                            <select class="room-designation" data-room-id="${roomId}">
+                                <option value="">— None —</option>
+                                ${ROOM_DESIGNATIONS.map(d => `<option value="${d}"${room.designation === d ? ' selected' : ''}>${d}</option>`).join('')}
+                            </select>
                         </div>
                     </div>
                 `;
@@ -4725,6 +4758,19 @@
                         const room = this.rooms[roomId];
                         if (!room) return;
                         room.isFlowering = cb.checked;
+                        markUnsaved();
+                        this.renderRoomList();
+                        updateRoomStatusBar();
+                    });
+                });
+
+                // Room designation select (per-room detail panel)
+                document.querySelectorAll('.room-designation').forEach(sel => {
+                    sel.addEventListener('change', () => {
+                        const roomId = sel.dataset.roomId;
+                        const room = this.rooms[roomId];
+                        if (!room) return;
+                        room.designation = sel.value || null;
                         markUnsaved();
                         this.renderRoomList();
                         updateRoomStatusBar();
