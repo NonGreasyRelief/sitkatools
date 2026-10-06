@@ -454,6 +454,24 @@
             border-color: var(--accent);
         }
 
+        /* Current-room dropdown in lot list (top row, next to stage) — where the lot is now */
+        .lot-currentroom-select {
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            flex-shrink: 0;
+            max-width: 160px;
+        }
+
+        .lot-currentroom-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
         /* Room editor dropdowns in lot list (clone / veg / flower) — row 2 of the card */
         .lot-room-editors {
             display: flex;
@@ -4126,6 +4144,24 @@
                     </div>
                 `;
 
+                // Build current-room dropdown — where the lot physically is now. Only offers the
+                // rooms this lot is designated to (clone / veg / flower / dry / trim), so a room
+                // can't be set as "current" unless it's one of the lot's assigned rooms.
+                const currentRoomSelectId = `currentRoom_${key}`;
+                const designatedRooms = [lot.cloningRoom, lot.vegRoom, lot.destRoom, lot.dryRoom, lot.trimRoom]
+                    .filter(Boolean)
+                    .filter((v, i, a) => a.indexOf(v) === i); // de-dupe (dry room often == trim room)
+                const currentRoomOptions = ['<option value="">— None —</option>']
+                    .concat(designatedRooms.map(r => `<option value="${escapeHtml(r)}"${lot.currentRoom === r ? ' selected' : ''}>${escapeHtml(r)}</option>`))
+                    .join('');
+                const currentRoomHtml = `
+                    <div class="lot-stage-editor">
+                        <select class="lot-currentroom-select" id="${currentRoomSelectId}" data-lot-id="${key}" title="Current room (where the lot is now)">
+                            ${currentRoomOptions}
+                        </select>
+                    </div>
+                `;
+
                 // Build plant count spinbox — always visible
                 const currentCount = lot.plantCount !== null && lot.plantCount !== undefined ? lot.plantCount : 0;
                 const inputId = `plantCount_${key}`;
@@ -4177,6 +4213,7 @@
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                             ${stageHtml}
+                            ${currentRoomHtml}
                             ${plantCountHtml}
                             <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
                             <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
@@ -4210,6 +4247,18 @@
                     const lot = DB.lots[lotId];
                     if (!lot) return;
                     lot.stage = select.value;
+                    markUnsaved();
+                    renderLotList();
+                });
+            });
+
+            // Attach current-room change handler (top-row dropdown, next to stage)
+            lotListEl.querySelectorAll('.lot-currentroom-select').forEach(select => {
+                select.addEventListener('change', () => {
+                    const lotId = select.dataset.lotId;
+                    const lot = DB.lots[lotId];
+                    if (!lot) return;
+                    lot.currentRoom = select.value || null;
                     markUnsaved();
                     renderLotList();
                 });
