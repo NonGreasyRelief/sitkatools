@@ -1815,6 +1815,7 @@
         // ---- Field properties panel (Step 3) ----
         const BINDING_OPTIONS = [
             ['lot.name', 'lot.name — lot #'],
+            ['lot.lotNumber', 'lot.lotNumber — lot number only (strips the strain prefix)'],
             ['lot.strain', 'lot.strain — strain name'],
             ['lot.stage', 'lot.stage — phase'],
             ['lot.plantCount', 'lot.plantCount — plant count'],
@@ -1827,6 +1828,7 @@
             ['lot.trimRoom', 'lot.trimRoom — trim room'],
             ['lot.currentRoom', 'lot.currentRoom — current room (live)'],
             ['lot.roomDesignation', 'lot.roomDesignation — designation of the current room (live)'],
+            ['lot.roomBuilding', 'lot.roomBuilding — building ID of the current room (live)'],
             ['instance.phase', 'instance.phase — phase snapshot'],
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
@@ -1844,6 +1846,7 @@
             if (['lot.destRoom', 'lot.vegRoom', 'lot.cloningRoom', 'lot.dryRoom', 'lot.trimRoom', 'lot.currentRoom'].includes(source))
                 return knownRoomNames().sort((a, b) => a.localeCompare(b));
             if (source === 'lot.roomDesignation') return ROOM_DESIGNATIONS;
+            if (source === 'lot.roomBuilding') return Object.keys(DB.buildings || {}).sort((a, b) => a.localeCompare(b));
             return null;
         }
 
@@ -2588,6 +2591,17 @@
             return null;
         }
 
+        // Building ID of a room by name (case-insensitive) — null when the room is unknown
+        // or has no building assigned. Feeds the lot.roomBuilding binding.
+        function roomBuildingFor(roomName) {
+            if (!roomName) return null;
+            const target = String(roomName).trim().toLowerCase();
+            for (const r of Object.values(DB.rooms || {})) {
+                if (r?.name && String(r.name).trim().toLowerCase() === target) return r.buildingId || null;
+            }
+            return null;
+        }
+
         // All room names known to the DB (rooms table + lot room fields). Names may duplicate.
         function knownRoomNames() {
             const names = new Set();
@@ -2823,6 +2837,13 @@
                 const v = lot ? lot[field] : null;
                 if (field === 'stage') return normalizeStage(v); // form vocabulary for prefill/print
                 if (field === 'roomDesignation') return roomDesignationFor(lot?.currentRoom);
+                if (field === 'roomBuilding') return roomBuildingFor(lot?.currentRoom);
+                // Lot number only: names are "{lotId} {strainPrefix}", so the first token is
+                // the number. Falls back to the lot ID when the name has no space.
+                if (field === 'lotNumber') {
+                    const n = lot?.name ? String(lot.name).trim().split(/\s+/)[0] : '';
+                    return n || ctx.lotId || null;
+                }
                 return (v === null || v === undefined) ? null : String(v);
             }
             if (kind === 'instance' && field === 'phase') return ctx.inst?.phase || null;
