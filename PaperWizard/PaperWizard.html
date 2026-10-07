@@ -152,6 +152,51 @@
         /* Header buttons (Load / Export) — ≥48px touch target */
         .db-btn { padding: 8px 12px; min-height: 48px; font-size: 0.85rem; }
 
+        /* ---- Save popup (blob link — right-click → Save Link As…) ---- */
+        .export-wrapper { position: relative; display: flex; align-items: flex-end; }
+
+        .save-popup {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 300px;
+        }
+
+        .save-popup.hidden { display: none; }
+
+        .save-link {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .save-link:hover { text-decoration: underline; color: var(--accent-hover); }
+
+        .save-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+
+        .save-close:hover { color: var(--danger); background: rgba(231, 76, 60, 0.15); }
+
         /* ---- Main Content ---- */
         .main {
             flex: 1;
@@ -847,7 +892,13 @@
                 <select id="lotSelect"></select>
             </div>
             <button type="button" class="btn btn-secondary db-btn" id="loadDbBtn" style="display:none;">📂 Load</button>
-            <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
+            <div class="export-wrapper">
+                <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
+                <div class="save-popup hidden" id="savePopup">
+                    <a class="save-link" id="saveLink" href="#">📄 Click to generate file</a>
+                    <button type="button" class="save-close" id="saveCloseBtn" title="Close">✕</button>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -4391,7 +4442,8 @@
             $('delSavedSheetBtn').addEventListener('click', deleteSheet);
             // Per-sheet import/export: export bundles the selected sheet's layout + wizard(s)
             // into a .json; import installs such a bundle (page images are never in the file).
-            $('exportSheetBtn').addEventListener('click', () => exportSheetConfig(configSheetId));
+            // stopPropagation so the document click handler doesn't close the save popup we just opened.
+            $('exportSheetBtn').addEventListener('click', (e) => { e.stopPropagation(); exportSheetConfig(configSheetId); });
             $('importSheetBtn').addEventListener('click', () => $('sheetImportInput').click());
             // Document assignment: persisted immediately (metadata, not layout) so the
             // Filing Cabinet re-files the sheet without waiting for 💾 Save.
@@ -4681,9 +4733,53 @@
             downloadJsonFile(`${sheetId}.json`, JSON.stringify(payload, null, 2), `Exported sheet "${s.name || sheetId}"`);
         }
 
-        // Shared download helper — Web Share where available (fixes iOS Safari blob URL issue).
+        // Shared download helper — generates a blob link the user right-clicks → Save Link As…
+        // (works in Edge even when popups are blocked; consistent with the DB export).
         function downloadJsonFile(filename, json, toastMsg) {
             const blob = new Blob([json], { type: 'application/json' });
+            showSavePopup(filename, blob, toastMsg);
+        }
+
+        // ---- Save popup: persistent blob link (right-click → Save Link As…) ----
+        let currentBlobUrl = null;
+        let currentBlobRef = null;
+
+        function showSavePopup(filename, blob, toastMsg) {
+            if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+            currentBlobRef = blob;
+            currentBlobUrl = URL.createObjectURL(blob);
+
+            const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+            const saveLink = $('saveLink');
+            if (isTouchDevice) {
+                // On mobile, make the link a button that triggers navigator.share on tap
+                saveLink.href = '#';
+                saveLink.textContent = `📄 ${filename} — Tap to save`;
+                saveLink.onclick = (e) => {
+                    e.preventDefault();
+                    if (currentBlobRef) shareFile(currentBlobRef, filename);
+                };
+            } else {
+                saveLink.href = currentBlobUrl;
+                saveLink.download = filename;
+                saveLink.textContent = `📄 ${filename} — Right-click → Save Link As…`;
+                saveLink.onclick = null;
+            }
+
+            $('savePopup').classList.remove('hidden');
+            showToast(toastMsg);
+        }
+
+        function closeSavePopup() {
+            $('savePopup').classList.add('hidden');
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+                currentBlobUrl = null;
+            }
+        }
+
+        // Share or download a file directly (touch fallback — fixes iOS Safari blob URL issue).
+        function shareFile(blob, filename) {
             const file = new File([blob], filename, { type: 'application/json' });
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 navigator.share({ files: [file], title: filename }).catch(() => {});
@@ -4697,7 +4793,6 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }
-            showToast(toastMsg);
         }
 
         function handleSheetImport(e) {
@@ -4834,7 +4929,7 @@
             e.target.value = '';
         }
 
-        // ---- Standalone: Export DB as downloadable JSON file ----
+        // ---- Standalone: Export DB as downloadable JSON file (blob link popup) ----
         function handleDbExport() {
             if (!DB.data) {
                 showToast('No database to export');
@@ -4850,23 +4945,7 @@
             const dd = String(now.getDate()).padStart(2, '0');
             const filename = `DB-${yy}-${mm}-${dd}.json`;
 
-            // Use Web Share API where available (fixes iOS Safari blob URL issue)
-            const file = new File([blob], filename, { type: 'application/json' });
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({ files: [file], title: filename })
-                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
-                    .catch(() => {});
-            } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast('Database saved — import it in SitkaTools to sync');
-            }
+            showSavePopup(filename, blob, 'Database ready — right-click the link → Save Link As…');
         }
 
         // ---- Init ----
@@ -4887,7 +4966,11 @@
                 loadPrintDocument(files);
             });
             $('loadDbBtn').addEventListener('click', () => $('dbImportInput').click());
-            $('exportDbBtn').addEventListener('click', handleDbExport);
+            // stopPropagation so the document click handler below doesn't close the popup we just opened.
+            $('exportDbBtn').addEventListener('click', (e) => { e.stopPropagation(); handleDbExport(); });
+            $('saveCloseBtn').addEventListener('click', (e) => { e.stopPropagation(); closeSavePopup(); });
+            // Close the save popup when clicking elsewhere on the page.
+            document.addEventListener('click', () => closeSavePopup());
 
             $('tabCabinetBtn').addEventListener('click', () => switchTab('cabinet'));
             $('tabConfigureBtn').addEventListener('click', () => switchTab('configure'));
@@ -4904,6 +4987,7 @@
             window.addEventListener('beforeunload', () => {
                 revokeLoadedDoc();
                 revokePrintDoc();
+                if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
             });
 
             renderAll();
