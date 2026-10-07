@@ -73,6 +73,7 @@ Each field is a rectangle placed over a page image in the Configure tab:
 | `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field — **the sole binding point** (questions carry no target of their own). Assigned in the Field properties panel's "Filled by question" dropdown. A daily-entry group member receives *that day's* answer to the question. **Group-level:** the binding is anchored on the column's day-1 box and repeats to every day; editing it from *any* member of the column propagates to all days. |
 | `day` | number \| 1 | The day row this box belongs to (1 = the manually placed first row; 2..N = the other members of its daily-entry group). Only meaningful when `dayGroup` is set. |
 | `dayGroup` | string (4 chars) \| null | Daily-entry group id — boxes sharing an id form one column of the weekly table and **move together as a single block** in the editor. `null` for header/one-shot/event fields. |
+| `constant` | boolean, default false | **Constant (header) field** — set once per lot via the cabinet's "Initialize paperwork" quiz instead of by the daily runner. Only offered when the sheet's cadence is `daily-weekly`; mutually exclusive with `source` (picking either clears the other). Must be bound to a question (`questionId`) to do anything. See "Constant / Header Fields". |
 | *(initials box)* | derived | A field is an **initials box** when it is bound (via `questionId`) to a wizard question of type `'initials'` — there is no per-field flag. The editor shows a ✍️ badge on such boxes, derived from the binding. See "Initials Question Type". |
 
 **Day rows (daily-entry groups):** a weekly sheet's main section has one row per day (7 rows for the grow-log). There is **no grid, no pitch, no auto-positioning** — every day's boxes are real, individually placed fields. The workflow in Configure Sheets:
@@ -96,7 +97,18 @@ An **initials** question is a wizard question whose `type` is `'initials'`. Inst
 - **Print:** each box prints its bound question's strokes as an inline SVG polyline at the box's placed position (a group member prints its own day's strokes). A box with no strokes prints empty.
 - **Completion:** a row-scoped initials question counts like any other row-scoped question — a day is "answered" only once its strokes are present (`hasAnswer` treats the `{strokes}` object as answered when non-empty). The leaf's progress chip and the runner's day chips reflect this.
 - **"⏪ Same as last time"** never copies drawn initials — each person draws their own.
-- **Who signs what:** floor staff initial their own day via an initials question; the **master grower's signature** (the sheet's `signature` box) is a separate, whole-log sign-off captured on the final step. The two are independent systems.
+- **Who signs what:** floor staff initial their own day via an initials question; the **master grower's signature** (the sheet's `signature` box) is a separate, whole-log sign-off captured **only** via the filing-cabinet leaf's orange ✍️ Sign button — later, when he reviews the paperwork at the end of a crop. The daily wizard NEVER prompts for it and saving a day's entry never touches it. The two are independent systems.
+
+### Constant / Header Fields (set once per lot)
+
+A **constant field** is a box whose value is fixed for the whole life of a lot's paper chain — e.g. the substrate lot on a daily grow-log: different per crop, tracked as plain text, with no DB source to auto-fill from. Instead of answering it every day (or never), the user sets it **once, before the first day**, and it prints on every page of the chain.
+
+- **Configure:** in the Field properties panel (daily-weekly sheets only) check **📌 Constant field** on a box bound to a question. The editor shows a gold 📌 badge on such boxes; the wizard builder's binding indicator notes "constant — set via Initialize paperwork, skipped by the daily runner". The flag is **mutually exclusive with `source`** in both directions (picking a source clears the flag; checking the flag clears the source). A constant field must be question-bound — an unflagged/unbound box does nothing.
+- **Initialize paperwork quiz:** the Filing Cabinet toolbar has a **📋 Initialize paperwork** button (visible when the active lot has at least one daily-weekly sheet with constant fields). It runs a step-through quiz in the same runner card UI as the daily wizard — one step per constant question across all of the lot's daily-weekly sheets, grouped by sheet ("Constant N of M") — but with **no day chips and no instance**. Text/number/select questions render their normal controls; an initials-type constant question renders the draw pad. On save the values are written to `entries[lotId][sheetId].constants` (below) and a toast confirms. The button is **always re-runnable** — re-running pre-fills the current values so they can be edited. If no constant fields exist, clicking it shows a hint to flag a box in Configure Sheets.
+- **Storage:** lot+sheet level — `entries[lotId][sheetId].constants` (a map `questionId → value`, sibling to `instances`). This is deliberately **not** per-instance: the values persist across every weekly instance in the chain and survive phase/room rollovers (a fresh instance reads the same constants). Initials-type constants store `{ name, strokes } | null` like any other initials answer; text values are trimmed strings. The path is created lazily on first save — a sheet with no instances yet still gets one.
+- **Daily runner exclusion:** constant questions are **filtered out of the daily runner** (and from "⏪ Same as last time", progress, and completion math) — they are never asked day by day. If *every* question on a daily-weekly sheet is constant, opening its leaf shows a toast pointing at the Initialize button instead of an empty wizard.
+- **Print:** in `printFieldValue` the constant check is the **first** branch (before source and before the dayGroup/row branch) — so a constant box inside a daily-entry group prints the one lot-level value on **every day**, not that day's answer. Unset constants print `N/A` like any other empty field, and the Print tooltip lists "N constant value(s) unset" as an informational blocker (printing is still allowed).
+- **Scope:** daily-weekly sheets only — one-shot and event sheets have no chain to share a value across, so the flag is not offered for them.
 
 ### Write-Back Question Types (plant count, phase, room)
 
@@ -140,7 +152,7 @@ A field's `source` can bind it to a value derived from the main DB, so headers f
 
 A sheet may have signature boxes (`signature`: normalized `x/y/w/h` + optional label like "Initials"). Signing flow:
 
-1. The wizard's final step (or a dedicated "Sign" action on a completed instance) shows a **canvas pad** sized to the box's aspect ratio, plus a text input for the signer's name/initials.
+1. The filing-cabinet leaf's orange **✍️ Sign** button opens a signature-only modal: a **canvas pad** sized to the box's aspect ratio, plus a text input for the signer's name/initials. This is the ONLY capture path — the wizard runner has no signature step (the master grower signs at end-of-crop review, not during daily fill-out); saving a day's entry leaves any existing signature untouched.
 2. Capture uses pointer events; each stroke is stored as an array of `[x, y]` points **normalized 0–1 within the signature box**. No image is generated or stored — strokes are pure vector data (small: a few dozen points per stroke).
 3. At print time the popup renders the strokes as an inline **SVG polyline** positioned over the page image at the box location, scaled to the box's rendered size. The signer's typed name is *not* printed unless a field is bound to it — the stroke is the signature.
 
@@ -176,7 +188,7 @@ Each question:
 **"Same as last time" semantics:** it pre-fills the form — it never auto-saves. The user still reviews and confirms. If there is no previous day/instance, the button is disabled.  The button will pull from last week's 7-day sheet to get "Last time" when a
 a new sheet starts in a chain of sheets. **Phase / room change questions are never auto-copied** — they are deliberate change actions, and copying the old log's stamped move-day value onto the fresh log's first day could silently re-trigger a rollover. Everything else (including on the fresh page after a phase/room change) still copies normally.
 
-**Fill flow (the runner):** opening a daily-weekly leaf runs a step-through card, not one big form. For a given day the steps are: **each wizard question in order (an initials question renders its draw pad) → (if the sheet defines one) the final "✍️ Signature" step.** Day chips across the top let the user jump between days; each day's answers — including any drawn initials — and the signature are saved per day / per instance on **Save**.
+**Fill flow (the runner):** opening a daily-weekly leaf runs a step-through card, not one big form. For a given day the steps are: **each wizard question in order (an initials question renders its draw pad).** Constant questions (fields flagged 📌) are **excluded** — they are set once per lot via the Initialize paperwork quiz and never asked day by day (see "Constant / Header Fields"). There is **no signature step** — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button at end-of-crop review, never during daily fill-out. Day chips across the top let the user jump between days; each day's answers — including any drawn initials — are saved per day / per instance on **Save**.
 
 ### Entry & Instance (filled data)
 
@@ -200,6 +212,8 @@ An instance stores:
 | `signature` | `{ name, strokes: [[x,y,…], …] } \| null` | Captured signature (normalized points). |
 | `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
 | `printedAt` | ISO string \| null | Set after a successful print-popup render (informational; re-printing always allowed). |
+
+A daily-weekly sheet's entry object may also carry **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
 
 ### Filing Cabinet (lot paperwork tree)
 
@@ -248,6 +262,8 @@ The tree has seven sections in fixed order (plus a catch-all "Other" when unclas
 The match is derived at view time from (room name, date) — no link field is stored on either side. Reference nodes open the same print popup as owned instances but offer no fill action; the data lives in the other lot's file.
 
 **Leaf status:** every leaf shows one of — `✓ complete` (completion rule met), progress (`4/7 days`), `⏳ due`, `⚠️ missing` (expected document absent), or `— not started`. Section headers aggregate counts ("14 documents · 1 missing").
+
+**📋 Initialize paperwork button:** the cabinet toolbar (between Load document and the print chip) shows this button when the active lot has at least one daily-weekly sheet with constant fields (see "Constant / Header Fields"). It opens the initialize quiz for that lot. While any constant value is unset the button carries a ⚠️ marker and its tooltip says how many are missing; once all are set it reads "re-run to change them".
 
 ### Phase & Room Change (grow-log rollover)
 
@@ -346,6 +362,8 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
             "fontSize": 12, "align": "left", "source": "lot.name", "questionId": null, "day": 1, "dayGroup": null },
           { "id": "c4p8", "label": "Phase", "x": 0.12, "y": 0.11, "w": 0.3, "h": 0.035,
             "fontSize": 12, "align": "left", "source": "instance.phase", "questionId": null, "day": 1, "dayGroup": null },
+          { "id": "s7u3", "label": "Substrate lot", "x": 0.62, "y": 0.11, "w": 0.3, "h": 0.035,
+            "fontSize": 12, "align": "left", "source": null, "questionId": "subl", "day": 1, "dayGroup": null, "constant": true },
           { "id": "d9q1", "label": "Temp high (°C)", "x": 0.45, "y": 0.30, "w": 0.12, "h": 0.03,
             "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 1, "dayGroup": "g7xk" },
           { "id": "e2m4", "label": "Temp high (°C)", "x": 0.45, "y": 0.395, "w": 0.12, "h": 0.03,
@@ -369,6 +387,8 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
         "sheetId": "grow-log",
         "name": "Grow-Log Daily Entry",
         "questions": [
+          { "id": "subl", "label": "Substrate lot", "type": "text", "options": [],
+            "rowScoped": false, "sameAsLast": false, "writesTo": null },
           { "id": "t1hi", "label": "Temp high (°C)", "type": "number", "options": [],
             "rowScoped": true, "sameAsLast": true, "writesTo": null },
           { "id": "cnt1", "label": "Current plant count", "type": "number", "options": [],
@@ -419,7 +439,8 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
               "completedAt": null,
               "printedAt": null
             }
-          }
+          },
+          "constants": { "subl": "SL-2026-042" }
         }
       },
       "LOT-000": {
@@ -526,9 +547,9 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 ```
 
 - **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right (lot-focused tool). The lot selector is disabled/hidden in Configure Sheets (configuration is lot-independent).
-- **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — seven sections (Propagation, Room Cleans pre-move-in, Room Cleans post-usage, Grow Logs, IPM Log, Harvest, Drying Logs, Trim Logs), one leaf per instance with its status and the two actions inline. Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
+- **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — seven sections (Propagation, Room Cleans pre-move-in, Room Cleans post-usage, Grow Logs, IPM Log, Harvest, Drying Logs, Trim Logs), one leaf per instance with its status and the two actions inline. The toolbar above the tree holds **📋 Initialize paperwork** (shown when the lot has constant fields; ⚠️ while any value is unset — see "Constant / Header Fields"). Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials / unset constants); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
 - **Configure Sheets tab:** top = page image preview canvas (boxes are click-drag to create; drag a box body to move — plain drag moves a grouped box's whole day-column as one block, **Ctrl/⌘**-drag moves just that day's row, **Alt/⌥**-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize; Shift-click or Shift-drag marquee for multi-select; the signature box is a distinct style). Below the canvas: the **Sheet** and **Field properties** cards sit side by side, with the **Wizard builder** spanning the full width beneath them. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
-- **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`, and the signature pad as the final step when the sheet defines one.
+- **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`. There is no signature step — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button.
 
 ## Resolved Design Decisions
 
@@ -550,3 +571,4 @@ Decisions made during design (2026-09-24, updated 2026-09-26) — already folded
 12. **Strike-out policy (2026-09-26):** an early-ended grow-log gets a diagonal across the remaining day rows with initials *above* the line and the date *below*; the overlay is computed from `phaseChangeDate` + `strikeInitials` + row geometry, never stored.
 13. **Question controls (2026-09-26):** v1 question types are exactly string input, number input, and simple multiple choice — enough for every sheet in the initial set; the fill engine is fully data-driven from wizard configuration.
 14. **Field-side-only question binding (2026-10-04):** a wizard question is bound to a field solely via `field.questionId`, assigned in the Field properties panel ("Filled by question"). The former question-side `targetFieldId` and the wizard builder's "Fills field" dropdown are retired — the builder shows each question's binding as a read-only indicator derived from the fields. For daily-entry columns the binding is **per-column**: anchored on day 1, repeated to every day of that column, editable from any member with whole-column propagation (same group + same x — sibling columns in the same group keep their own bindings). Deleting a question clears its id from *every* bound field; deleting/ungrouping boxes takes their bindings with them (day-1 survivors keep theirs).
+17. **Constant / header fields (2026-10):** values that are fixed for a whole lot's paper chain (e.g. substrate lot on the grow-log) are set once via the cabinet's 📋 Initialize paperwork quiz and stored at **lot+sheet level** (`entries[lotId][sheetId].constants`), not per instance — so they persist across every weekly page and survive phase/room rollovers. Constant questions are excluded from the daily runner; print reads the lot-level value (constant is the first branch in `printFieldValue`, so a constant box inside a day group prints the same value on every day). **Daily-weekly sheets only** — one-shot/event sheets have no chain to share across, so the flag is not offered for them.

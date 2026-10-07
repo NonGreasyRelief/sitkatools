@@ -469,6 +469,17 @@
             pointer-events: none;
         }
 
+        /* Constant-field indicator — a header box whose value is set once per lot via the
+           cabinet's "Initialize paperwork" quiz (daily-weekly sheets only). */
+        .field-box.constant { border-color: #f3c14b; background: rgba(243, 193, 75, 0.14); }
+        .field-box.constant.selected, .field-box.constant.multi-sel { background: rgba(243, 193, 75, 0.26); }
+        .field-box.constant .handle { border-color: #f3c14b; }
+        .field-box .box-constant {
+            position: absolute; top: 1px; right: 2px;
+            font-size: 11px; line-height: 1;
+            color: #f3c14b; pointer-events: none;
+        }
+
         .field-box .handle {
             position: absolute;
             width: 12px;
@@ -638,6 +649,10 @@
         }
         .cab-head .cab-sub { color: var(--text-secondary); font-weight: 400; font-size: 0.8rem; }
         .cab-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .cab-initbtn { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; border-radius: 6px;
+            background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer; }
+        .cab-initbtn:hover { border-color: var(--accent); }
+        .cab-initbtn.pending::after { content: ' ⚠️'; font-size: 0.8rem; }
         .cab-loaddoc {
             background: none; border: 1px solid var(--accent); border-radius: 6px;
             color: var(--accent); cursor: pointer; font-size: 0.8rem; font-weight: 600; padding: 5px 12px;
@@ -946,9 +961,9 @@
         // Fixed phase vocabulary for phase questions (the form's own words, from STAGE_TO_FORM).
         const PHASE_OPTIONS = ['Cloning', 'Mother', 'Vegetation', 'Bloom', 'Harvesting'];
         // Room designation vocabulary — set per room in SitkaTools' Room Manager
-        // (room.designation). The lot.roomDesignation binding resolves the lot's live
-        // currentRoom to its room record and returns this value, so paperwork can carry
-        // checkboxes that match a room's designation.
+        // (room.designation). The lot.roomDesignation binding resolves the INSTANCE's stored
+        // room (inst.room, falling back to the live lot.currentRoom) to its room record and
+        // returns this value, so paperwork can carry checkboxes that match a room's designation.
         const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
         function normalizeStage(v) {
             if (v === null || v === undefined) return null;
@@ -1402,9 +1417,11 @@
             const sel = cfgSelection && cfgSelection.id === item.id;
             const multi = !sel && kind === 'field' && cfgMultiSel.has(item.id);
             const isInitBox = kind === 'field' && fieldIsInitialsBox(item.id);
-            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${isInitBox ? ' initials' : ''}${sel ? ' selected' : multi ? ' multi-sel' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
+            const isConst = kind === 'field' && !!item.constant;
+            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${isInitBox ? ' initials' : ''}${isConst ? ' constant' : ''}${sel ? ' selected' : multi ? ' multi-sel' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
                 (item.checkbox ? '<span class="box-check" title="Checkbox field">☑</span>' : '') +
                 (isInitBox ? '<span class="box-initials" title="Initials box — bound to an initials question">✍️</span>' : '') +
+                (isConst ? '<span class="box-constant" title="Constant field — set once per lot via Initialize paperwork">📌</span>' : '') +
                 `<span class="box-label">${escapeHtml(item.label || item.id)}</span>` +
                 (kind === 'field' && item.day > 1 ? `<span class="box-day" title="Daily-entry group — day ${item.day}">D${item.day}</span>` : '') +
                 // Axis-move handles float on every box (selected or not): ↕ above, ↔ beside.
@@ -1884,9 +1901,9 @@
             ['lot.cloningRoom', 'lot.cloningRoom — clone room'],
             ['lot.dryRoom', 'lot.dryRoom — dry room'],
             ['lot.trimRoom', 'lot.trimRoom — trim room'],
-            ['lot.currentRoom', 'lot.currentRoom — current room (live)'],
-            ['lot.roomDesignation', 'lot.roomDesignation — designation of the current room (live)'],
-            ['lot.roomBuilding', 'lot.roomBuilding — building ID of the current room (live)'],
+            ['lot.currentRoom', 'lot.currentRoom — room of this log (stored instance room, not the live lot)'],
+            ['lot.roomDesignation', 'lot.roomDesignation — designation of the room of this log (stored instance room)'],
+            ['lot.roomBuilding', 'lot.roomBuilding — building ID of the room of this log (stored instance room)'],
             ['instance.phase', 'instance.phase — phase snapshot'],
             ['sheet.periodStart', 'sheet.periodStart — window start'],
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
@@ -1992,7 +2009,14 @@
                     <div class="form-group" id="fpCheckValueWrap" style="display:${item.checkbox ? '' : 'none'};"><label for="fpCheckValue">Checked when value equals</label>${checkOpts
                         ? (() => { const cv = item.checkValue ?? ''; const opts = checkOpts.includes(cv) ? checkOpts : [cv, ...checkOpts];
                             return `<select id="fpCheckValue">${opts.map(v => `<option value="${escapeHtml(v)}"${v === cv ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('')}</select>`; })()
-                        : `<input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom">`}</div>`;
+                        : `<input type="text" id="fpCheckValue" value="${escapeHtml(item.checkValue ?? '')}" placeholder="e.g., Bloom">`}</div>
+                    ${cfgCadence === 'daily-weekly' ? `
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.85rem; color:var(--text-primary);">
+                            <input type="checkbox" id="fpConstantField"${item.constant ? ' checked' : ''} style="width:18px; height:18px; min-height:0;"> 📌 Constant field (set once per lot via Initialize paperwork)
+                        </label>
+                        ${item.constant && !item.questionId ? '<p class="cfg-hint" style="margin:6px 0 0;">Bind a question first — constant fields are filled by the Initialize quiz, never by auto-fill.</p>' : ''}
+                    </div>` : ''}`;
             }
 
             return `
@@ -2045,7 +2069,8 @@
                     const col = item.dayGroup
                         ? cfgFields.filter(x => x.dayGroup === item.dayGroup && Math.abs(x.x - item.x) < 0.005)
                         : [item];
-                    for (const t of col) { if (src) t.questionId = null; t.source = src; }
+                    // A constant field is quiz-filled, not binding-filled — same exclusivity as questionId.
+                    for (const t of col) { if (src) { t.questionId = null; t.constant = false; } t.source = src; }
                     refreshCfgOverlays();
                     refreshWizardBuilder();
                 });
@@ -2076,6 +2101,18 @@
                     cbWrap.style.display = item.checkbox ? '' : 'none';
                     $('fpCheckbox').addEventListener('change', () => { item.checkbox = $('fpCheckbox').checked; refreshCfgOverlays(); });
                     $('fpCheckValue').addEventListener('change', () => { item.checkValue = $('fpCheckValue').value.trim(); refreshCfgOverlays(); });
+                }
+                // Constant field (daily-weekly only): the value is set once per lot via the
+                // cabinet's Initialize quiz and stored at lot+sheet level — it prints on every
+                // page of the chain. A constant field is question-filled, never auto-filled.
+                const cField = $('fpConstantField');
+                if (cField) {
+                    cField.addEventListener('change', () => {
+                        item.constant = cField.checked;
+                        if (item.constant && item.source) item.source = null; // quiz-filled, not binding-filled
+                        refreshCfgOverlays();
+                        refreshWizardBuilder();
+                    });
                 }
             }
             $('fpDuplicateBtn')?.addEventListener('click', duplicateSelection);
@@ -2150,6 +2187,28 @@
             const wiz = wizardForSheet(sheetId);
             if (!wiz) return [];
             return (wiz.questions || []).filter(q => !q.rowScoped).map(q => q.id);
+        }
+
+        // Constant (header) questions: the ids of every question bound to at least one field
+        // flagged `constant` on a daily-weekly sheet. These are set ONCE per lot via the
+        // cabinet's "Initialize paperwork" quiz, stored at lot+sheet level (not per instance),
+        // and excluded from the daily runner — they print on every page of the chain.
+        function constantQuestionIds(sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || sheet.cadence !== 'daily-weekly') return [];
+            const ids = new Set();
+            for (const f of sheet.fields || []) {
+                if (f.constant && f.questionId) ids.add(f.questionId);
+            }
+            return [...ids];
+        }
+
+        // Lot-level constant values for a daily-weekly sheet: entries[lotId][sheetId].constants.
+        // Sibling to `instances` — created lazily on first save, survives rollovers (a fresh
+        // instance in the chain reads the same values). Pure getter (no mutation) so it is
+        // safe to call from render paths; saveInitConstants ensures the path exists.
+        function lotConstants(lotId, sheetId) {
+            return DB.paperWizard?.entries?.[lotId]?.[sheetId]?.constants || null;
         }
 
         function hasAnswer(map, qid) {
@@ -2800,7 +2859,7 @@
         // loaded" actually disable the button.
         function printButtonHtml({ lotId, sheetId, key }) {
             const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
-            const blockers = printBlockers(sheetId, key, inst);
+            const blockers = printBlockers(sheetId, key, inst, lotId);
             // Hard locks only: nothing to print yet, or no page set for this sheet this session.
             const disabled = !inst || (blockers.length > 0 && /not loaded/.test(blockers[0]));
             const title = blockers.length ? `Print — ${blockers.join(' · ')}` : 'Open print popup';
@@ -2888,6 +2947,11 @@
                 const lot = DB.lots[ctx.lotId];
                 const v = lot ? lot[field] : null;
                 if (field === 'stage') return normalizeStage(v); // form vocabulary for prefill/print
+                // NOTE: room bindings (roomDesignation / roomBuilding / currentRoom) resolve from
+                // the LIVE lot here because this path also serves PREFILL (the Room question's
+                // prefillFrom), where "where are the plants now" is the right answer. PRINTING a
+                // struck-out page must instead show the room THIS log was kept in — that is done
+                // directly in printFieldValue from inst.room, never through this live resolution.
                 if (field === 'roomDesignation') return roomDesignationFor(lot?.currentRoom);
                 if (field === 'roomBuilding') return roomBuildingFor(lot?.currentRoom);
                 // Lot number only: names are "{lotId} {strainPrefix}", so the first token is
@@ -2941,7 +3005,13 @@
         function captureSnapshots(sheetId, lotId, key, inst) {
             if (!inst.snapshots) inst.snapshots = {};
             for (const b of sheetBindings(sheetId)) {
-                if (b === 'day.date' || b === 'day.plantsRemoved') continue; // derived per row at print time — never snapshotted
+                // day.date / day.plantsRemoved are derived per row at print time — never snapshotted.
+                // Room bindings follow the instance's own stored room and are resolved at PRINT
+                // time too — snapshotting them would freeze the room as of the last save, which is
+                // wrong for a log that later moved rooms (the struck-out page must keep printing
+                // the room it was actually kept in).
+                if (b === 'day.date' || b === 'day.plantsRemoved'
+                    || b === 'lot.roomDesignation' || b === 'lot.roomBuilding' || b === 'lot.currentRoom') continue;
                 inst.snapshots[b] = resolveBinding(b, { lotId, sheetId, key, inst });
             }
         }
@@ -2959,6 +3029,15 @@
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const wiz = wizardForSheet(sheetId);
             if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
+            // A daily-weekly sheet whose questions are ALL constant fields has nothing to ask
+            // per day — its values live in the Initialize quiz (lot-level), not in instances.
+            if (sheet.cadence === 'daily-weekly') {
+                const cids = new Set(constantQuestionIds(sheetId));
+                if (!(wiz.questions || []).some(q => !cids.has(q.id))) {
+                    showToast('Every question on this sheet is a constant field — use 📋 Initialize paperwork');
+                    return;
+                }
+            }
 
             let instKey = key;
             let inst = DB.paperWizard.entries[lotId]?.[sheetId]?.instances?.[instKey] || null;
@@ -2988,10 +3067,7 @@
                     if (!day) day = instKey;
                 }
             }
-            runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst,
-                sigDraft: inst.signature
-                    ? { name: inst.signature.name || '', strokes: (inst.signature.strokes || []).map(s => s.slice()) }
-                    : { name: '', strokes: [] } };
+            runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst };
             // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
             // instance was created → confirm the move and roll over (no write-back — DB is current).
             if (await checkStageMismatch(lotId, sheetId, inst)) return;
@@ -3005,8 +3081,11 @@
         function resetRunnerDraft() {
             const { sheetId, inst, day } = runnerCtx;
             const wiz = wizardForSheet(sheetId);
+            // Constant questions are set once per lot via the Initialize quiz — never drafted
+            // here (they don't live in an instance at all).
+            const cids = new Set(constantQuestionIds(sheetId));
             const draft = {};
-            for (const q of wiz.questions) {
+            for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (q.type === 'initials') {
                     // Drawn initials: the answer is a {name, strokes} object stored in the same
                     // slot as any other answer (per-day for row-scoped, instance-level otherwise).
@@ -3053,8 +3132,9 @@
         function runnerSameAsLast() {
             const wiz = wizardForSheet(runnerCtx.sheetId);
             const { daySrc, instSrc } = runnerSameSources();
+            const cids = new Set(constantQuestionIds(runnerCtx.sheetId));
             let n = 0;
-            for (const q of wiz.questions) {
+            for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (!q.sameAsLast) continue;
                 if (q.type === 'initials') continue; // never copy drawn strokes
                 // Phase / room questions are deliberate change actions, not routine data —
@@ -3073,11 +3153,12 @@
         }
 
         function runnerGo(delta) {
-            const sheet = DB.paperWizard.sheets[runnerCtx.sheetId];
             const wiz = wizardForSheet(runnerCtx.sheetId);
-            // Steps = the wizard's questions (an initials question is one of them) + the
-            // signature step (if the sheet defines one). Must match renderRunner.
-            const totalSteps = wiz.questions.length + (sheet.signature ? 1 : 0);
+            // Steps = the wizard's questions minus the constant ones (set via Initialize). The
+            // master grower's signature is NOT a wizard step — it is captured only via the
+            // cabinet leaf's ✍️ Sign button. Must match renderRunner.
+            const cids = new Set(constantQuestionIds(runnerCtx.sheetId));
+            const totalSteps = (wiz.questions || []).filter(q => !cids.has(q.id)).length;
             runnerCtx.idx = Math.max(0, Math.min(totalSteps - 1, runnerCtx.idx + delta));
             renderRunner();
         }
@@ -3090,6 +3171,72 @@
         }
 
         function runnerEscHandler(e) { if (e.key === 'Escape') closeRunner(); }
+
+        // ---- Initialize paperwork (constant fields) ----
+        // A step-through quiz over this lot's constant questions — same card UI as the daily
+        // runner, but no day chips and no instance: answers are stored ONCE per lot+sheet
+        // (entries[lotId][sheetId].constants) and print on every page of the chain. Re-running
+        // pre-fills the current values so they can be edited.
+        function initQuizSteps(lotId) {
+            const steps = [];
+            for (const [sheetId, sheet] of Object.entries(DB.paperWizard?.sheets || {})) {
+                if (sheet.cadence !== 'daily-weekly') continue;
+                const wiz = wizardForSheet(sheetId);
+                if (!wiz) continue;
+                const cids = new Set(constantQuestionIds(sheetId));
+                for (const q of wiz.questions || []) {
+                    if (cids.has(q.id)) steps.push({ sheetId, sheetName: sheet.name || sheetId, q });
+                }
+            }
+            return steps;
+        }
+
+        function openInitQuiz(lotId) {
+            const steps = initQuizSteps(lotId);
+            if (!steps.length) { showToast('No constant fields configured — flag a header box 📌 in Configure Sheets'); return; }
+            const draft = {};
+            for (const s of steps) {
+                const saved = lotConstants(lotId, s.sheetId)?.[s.q.id];
+                if (s.q.type === 'initials') {
+                    draft[s.q.id] = (saved && Array.isArray(saved.strokes))
+                        ? { name: saved.name || '', strokes: saved.strokes.map(x => x.slice()) }
+                        : { name: '', strokes: [] };
+                } else {
+                    let v = (saved === null || saved === undefined) ? '' : String(saved);
+                    if (v.trim() === '' && s.q.prefillFrom) {
+                        v = String(resolveBinding(s.q.prefillFrom, { lotId, sheetId: s.sheetId, key: null, inst: null }) ?? '');
+                    }
+                    draft[s.q.id] = v;
+                }
+            }
+            runnerCtx = { mode: 'init', lotId, idx: 0, draft, steps };
+            renderRunner();
+        }
+
+        function saveInitConstants() {
+            const ctx = runnerCtx;
+            for (const s of ctx.steps) {
+                let v = ctx.draft[s.q.id];
+                if (s.q.type === 'initials') {
+                    // Same storage shape as the daily runner: {name, strokes} or null when empty.
+                    v = (v && Array.isArray(v.strokes) && v.strokes.length)
+                        ? { name: String(v.name || '').trim(), strokes: v.strokes }
+                        : null;
+                } else {
+                    v = String(v ?? '').trim();
+                }
+                // Ensure the lot+sheet entry path exists (a sheet may have no instances yet).
+                if (!DB.paperWizard.entries[ctx.lotId]) DB.paperWizard.entries[ctx.lotId] = {};
+                if (!DB.paperWizard.entries[ctx.lotId][s.sheetId]) DB.paperWizard.entries[ctx.lotId][s.sheetId] = { instances: {} };
+                const sd = DB.paperWizard.entries[ctx.lotId][s.sheetId];
+                if (!sd.constants) sd.constants = {};
+                sd.constants[s.q.id] = v;
+            }
+            notifySitkaTools();
+            closeRunner();
+            renderAll();
+            showToast('Constant values saved — they print on every page of this form');
+        }
 
         // Generic stylus draw-pad: pointer-captured strokes stored as normalized [x,y] arrays
         // within the box. No image is generated — pure vector data, re-drawn on open. Shared by
@@ -3147,15 +3294,6 @@
             canvas.addEventListener('pointercancel', endStroke);
             // Clear the pad's pixels + drawing state (the caller empties `strokes` itself).
             return { clear: () => { g.clearRect(0, 0, W, H); drawing = false; } };
-        }
-
-        // Manager signature pad (Step 8) — the final review signature at the end of the wizard.
-        function initSigPad(ctx) {
-            const sheet = DB.paperWizard.sheets[ctx.sheetId];
-            const sig = sheet.signature;
-            // Match the box's on-paper pixel aspect ratio so the signature prints undistorted.
-            const ar = boxPrintAspect(sheet, sig);
-            initDrawPad('sigPad', ar, ctx.sigDraft.strokes);
         }
 
         // ---- Signature-only modal (tree-view ✍️ Sign button) ----
@@ -3263,20 +3401,32 @@
 
         function renderRunner() {
             const ctx = runnerCtx;
-            const sheet = DB.paperWizard.sheets[ctx.sheetId];
-            const wiz = wizardForSheet(ctx.sheetId);
-            const qs = wiz.questions;
-            const hasSig = !!sheet.signature;
-            const totalSteps = qs.length + (hasSig ? 1 : 0);
-            const sigIdx = qs.length;                        // the signature step (if any)
-            const isSigStep = hasSig && ctx.idx === sigIdx;
-            const q = isSigStep ? null : qs[ctx.idx];
+            const isInit = ctx.mode === 'init';
+            // Init quiz mode: steps are the lot's constant questions (grouped by sheet), not a
+            // wizard's question list. The current step's sheet drives pad sizing / labels —
+            // keep ctx.sheetId in sync so shared helpers (initials pad) work unchanged.
+            let sheet, wiz, qs;
+            if (isInit) {
+                const step = ctx.steps[ctx.idx];
+                ctx.sheetId = step.sheetId;
+                sheet = DB.paperWizard.sheets[step.sheetId];
+                wiz = wizardForSheet(step.sheetId);
+                qs = ctx.steps.map(s => s.q);
+            } else {
+                sheet = DB.paperWizard.sheets[ctx.sheetId];
+                wiz = wizardForSheet(ctx.sheetId);
+                // Constant questions are set once per lot via the Initialize quiz — the daily
+                // runner never re-asks them.
+                const cids = new Set(constantQuestionIds(ctx.sheetId));
+                qs = (wiz.questions || []).filter(q => !cids.has(q.id));
+            }
+            const totalSteps = qs.length;                    // questions only — no signature step
+            const q = qs[ctx.idx];
             const isLast = ctx.idx === totalSteps - 1;
 
-            // Day selector (daily-weekly only): the instance's 7-day window. Shown on question
-            // and initials steps — both are per-day; the signature step is instance-level.
+            // Day selector (daily-weekly only, never in the init quiz): the instance's 7-day window.
             let dayChipsHtml = '';
-            if (sheet.cadence === 'daily-weekly' && !isSigStep) {
+            if (!isInit && sheet.cadence === 'daily-weekly') {
                 const chips = [];
                 for (let i = 0; i < 7; i++) {
                     const ds = addDaysStr(ctx.key, i);
@@ -3288,16 +3438,10 @@
                     <div class="wiz-hint">Answers are saved per day — pick a day, answer, then Save.</div>`;
             }
 
-            // Question step body vs signature step body. An initials question renders a draw pad.
+            // Question step body. An initials question renders a draw pad. The master grower's
+            // signature is never a wizard step — it is captured only via the cabinet ✍️ Sign button.
             let bodyInner;
-            if (isSigStep) {
-                bodyInner = `
-                <div class="wiz-q-label">✍️ ${escapeHtml(sheet.signature.label || 'Signature')}</div>
-                <div class="sig-pad-wrap"><canvas id="sigPad" class="sig-pad"></canvas></div>
-                <input type="text" id="sigName" class="sig-name" placeholder="Signer name / initials" value="${escapeHtml(ctx.sigDraft?.name ?? '')}">
-                <div class="wiz-hint" style="margin-bottom:10px;">Master grower review — sign off on the whole log.</div>
-                <div class="sig-actions"><button type="button" class="sig-clear" id="sigClearBtn">🧹 Clear signature</button></div>`;
-            } else if (q.type === 'initials') {
+            if (q.type === 'initials') {
                 const d = ctx.draft[q.id] || { name: '', strokes: [] };
                 bodyInner = `
                 <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}</div>
@@ -3334,14 +3478,15 @@
                 } else {
                     ctl = `<input type="text" id="wizCtl" value="${val}">`;
                 }
-                const anySame = qs.some(x => x.sameAsLast);
+                const anySame = !isInit && qs.some(x => x.sameAsLast);
                 const sameSrcs = anySame ? runnerSameSources() : { daySrc: null, instSrc: null };
                 const sameEnabled = (qs.some(x => x.sameAsLast && x.rowScoped) && sameSrcs.daySrc)
                     || (qs.some(x => x.sameAsLast && !x.rowScoped) && sameSrcs.instSrc);
                 // Strike-out warning for the change questions — shown only when a change is
                 // actually selected, so it never nags on an ordinary day.
                 let strikeHint = '';
-                if (q.type === 'phase' && ctx.draft[q.id] && ctx.draft[q.id] !== currentLotPhase(ctx.lotId)) {
+                // Strike-out warnings are daily-runner only — constant values never roll over a log.
+                if (!isInit && q.type === 'phase' && ctx.draft[q.id] && ctx.draft[q.id] !== currentLotPhase(ctx.lotId)) {
                     strikeHint = `<div class="wiz-hint">⚠️ Picking <b>${escapeHtml(ctx.draft[q.id])}</b> writes the new phase to the main DB and strikes out this log when you save — after the rest of today's entry is filled in. A fresh 7-day page starts on the same day.</div>`;
                 } else if (q.type === 'room' && ctx.draft[q.id] && ctx.draft[q.id] !== currentLotRoom(ctx.lotId)) {
                     strikeHint = `<div class="wiz-hint">⚠️ Picking <b>${escapeHtml(ctx.draft[q.id])}</b> writes the new room to the main DB and strikes out this log when you save — after the rest of today's entry is filled in. A fresh 7-day page starts on the same day.</div>`;
@@ -3355,14 +3500,18 @@
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
 
-            const progText = isSigStep ? '✍️ Signature' : `Question ${ctx.idx + 1} of ${qs.length}`;
+            const progText = isInit ? `Constant ${ctx.idx + 1} of ${qs.length}` : `Question ${ctx.idx + 1} of ${qs.length}`;
+            const cardTitle = isInit
+                ? `📋 Initialize paperwork — ${escapeHtml(sheet.name || ctx.sheetId)}`
+                : escapeHtml(wiz.name || sheet.name);
             const card = `
             <div class="wiz-head">
-                <span class="wiz-title">${escapeHtml(wiz.name || sheet.name)}</span>
+                <span class="wiz-title">${cardTitle}</span>
                 <span class="wiz-prog">${progText}</span>
                 <button type="button" class="wiz-close" id="wizCloseBtn" title="Close">✕</button>
             </div>
             <div class="wiz-body">
+                ${isInit ? '<div class="wiz-hint">These values are set once per lot and print on every page of this form — re-run any time to change them.</div>' : ''}
                 ${dayChipsHtml}
                 ${bodyInner}
             </div>
@@ -3370,7 +3519,7 @@
                 <button type="button" class="btn btn-secondary" id="wizBackBtn"${ctx.idx === 0 ? ' disabled' : ''}>← Back</button>
                 <span class="spacer"></span>
                 ${isLast
-                    ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">💾 Save entry</button>`
+                    ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : '💾 Save entry'}</button>`
                     : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`}
             </div>`;
 
@@ -3387,7 +3536,7 @@
 
             $('wizCloseBtn').addEventListener('click', closeRunner);
             $('wizBackBtn').addEventListener('click', () => runnerGo(-1));
-            if (isLast) $('wizSaveBtn').addEventListener('click', saveRunnerEntry);
+            if (isLast) $('wizSaveBtn').addEventListener('click', isInit ? saveInitConstants : saveRunnerEntry);
             else $('wizNextBtn').addEventListener('click', () => runnerGo(1));
             const sameBtn = $('wizSameBtn');
             if (sameBtn) sameBtn.addEventListener('click', runnerSameAsLast);
@@ -3400,15 +3549,7 @@
                 renderRunner();
             }));
 
-            if (isSigStep) {
-                initSigPad(ctx);
-                const nameEl = $('sigName');
-                nameEl.addEventListener('input', () => { ctx.sigDraft.name = nameEl.value; });
-                $('sigClearBtn').addEventListener('click', () => {
-                    ctx.sigDraft.strokes = [];
-                    renderRunner();
-                });
-            } else if (q.type === 'initials') {
+            if (q.type === 'initials') {
                 initQuestionInitialsPad(ctx, q);
                 const nameEl = $('qInitName');
                 nameEl.addEventListener('input', () => { ctx.draft[q.id].name = nameEl.value; });
@@ -3438,6 +3579,9 @@
             const ctx = runnerCtx;
             const sheet = DB.paperWizard.sheets[ctx.sheetId];
             const wiz = wizardForSheet(ctx.sheetId);
+            // Constant questions are never saved from the daily runner — their values live at
+            // lot+sheet level (Initialize quiz), not in the instance.
+            const cids = new Set(constantQuestionIds(ctx.sheetId));
             const pw = DB.paperWizard;
             if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
             if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
@@ -3502,7 +3646,7 @@
             // 1) Save the day's FULL entry — every question as answered, including the change
             //    question. The old log's move-day row is a complete entry under the old value;
             //    the rollover below stamps the previous value onto it (the double entry).
-            for (const q of wiz.questions) {
+            for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 let v = ctx.draft[q.id];
                 if (q.type === 'initials') {
                     // Drawn initials: store the {name, strokes} object (or null when the pad is
@@ -3523,13 +3667,10 @@
                     inst.header[q.id] = v;
                 }
             }
-            // Signature (Step 8): the pad is the source of truth for this save — re-signing
-            // replaces stored strokes; an empty pad clears the signature.
-            if (sheet.signature) {
-                inst.signature = ctx.sigDraft.strokes.length
-                    ? { name: ctx.sigDraft.name.trim(), strokes: ctx.sigDraft.strokes }
-                    : null;
-            }
+            // The master grower's signature is never captured by the daily wizard — it is set
+            // only via the cabinet leaf's ✍️ Sign button (openSignatureModal), later, when he
+            // reviews the paperwork at the end of a crop. Saving a day's entry leaves any
+            // existing signature untouched.
             // 2) Write-backs to the main DB (PaperWizard's special permission).
             if (phaseChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = stageFromForm(nvPhase); // 'Bloom' → 'flower'
             if (roomChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].currentRoom = nvRoom;
@@ -3638,12 +3779,22 @@
         }
 
         // What is missing before an instance can be printed — drives the disabled tooltip.
-        function printBlockers(sheetId, key, inst) {
+        function printBlockers(sheetId, key, inst, lotId) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet) return ['Sheet not configured'];
             if (!printDoc || printDoc.sheetId !== sheetId) return [`Document "${sheetId}" not loaded this session`];
             if (!inst) return ['No entry yet — fill it first'];
             const out = [];
+            // Informational (daily-weekly only): unset constant values print N/A — printing is
+            // still allowed, the note just tells the user the copy isn't final.
+            if (sheet.cadence === 'daily-weekly' && lotId) {
+                const cids = constantQuestionIds(sheetId);
+                if (cids.length) {
+                    const consts = DB.paperWizard.entries[lotId]?.[sheetId]?.constants || {};
+                    const unsetC = cids.filter(qid => !hasAnswer(consts, qid)).length;
+                    if (unsetC) out.push(`${unsetC} constant value(s) unset`);
+                }
+            }
             if (instanceComplete(sheetId, key, inst)) return out;
             if (sheet.cadence === 'daily-weekly') {
                 const { start, end } = activeWindow(inst, key);
@@ -3669,10 +3820,29 @@
         // legacy instances without snapshots. Empty/missing → 'N/A' (checkboxes → empty box).
         function printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate) {
             let v;
-            if (f.source) {
+            if (f.constant) {
+                // Constant field: set once per lot via the Initialize quiz — stored at
+                // lot+sheet level, shared by every instance in the chain. The explicit flag
+                // wins over any stale source binding, and is checked BEFORE the dayGroup branch
+                // so a constant box inside a daily-entry group prints the one lot-level value on
+                // every day (that is what "constant" means). Unset → N/A below.
+                v = DB.paperWizard.entries[lotId]?.[sheetId]?.constants?.[f.questionId];
+            } else if (f.source) {
                 // day.date / day.plantsRemoved are derived per row — never snapshotted.
                 // sheetId is in the ctx: day.plantsRemoved needs it to find the plant-count question.
                 if (f.source === 'day.date' || f.source === 'day.plantsRemoved') v = resolveBinding(f.source, { lotId, sheetId, key, inst, dayDate });
+                // Room bindings print the room THIS log was kept in — the instance's own stored
+                // room (inst.room), resolved at print time and never from a snapshot. A snapshot
+                // would freeze the room as of the last save: after a room change the write-back
+                // updates the live lot BEFORE snapshots refresh, so the struck-out page would
+                // print the NEW room's designation instead of the old one. inst.room is set at
+                // creation and never mutated; fall back to the live lot for legacy instances.
+                else if (f.source === 'lot.roomDesignation' || f.source === 'lot.roomBuilding' || f.source === 'lot.currentRoom') {
+                    const room = inst?.room || DB.lots[lotId]?.currentRoom;
+                    v = f.source === 'lot.roomDesignation' ? roomDesignationFor(room)
+                        : f.source === 'lot.roomBuilding' ? roomBuildingFor(room)
+                        : (room == null ? null : String(room));
+                }
                 else v = (inst.snapshots && inst.snapshots[f.source] != null) ? inst.snapshots[f.source] : resolveBinding(f.source, { lotId, key, inst });
             } else if (f.row || f.dayGroup) {
                 // Row field (legacy) or daily-entry group member: that day's answer.
@@ -4019,10 +4189,24 @@
             const printDocChip = printDoc
                 ? `<span class="cab-printdoc" title="Page set loaded for the print popup">📄 ${escapeHtml(printDoc.sheetId)} · ${printDoc.pages.length}p</span>`
                 : `<span class="cab-printdoc none" title="No page set loaded — print buttons stay locked">📄 no document</span>`;
+            // Initialize paperwork button — shown when any daily-weekly sheet for this lot has
+            // constant fields (set once per lot, printed on every page of the chain). A ⚠️ marks
+            // that some values are still unset.
+            const initSteps = activeLotId ? initQuizSteps(activeLotId) : [];
+            let initBtnHtml = '';
+            if (initSteps.length) {
+                let unset = 0;
+                for (const s of initSteps) {
+                    const v = lotConstants(activeLotId, s.sheetId)?.[s.q.id];
+                    if (!(v && (Array.isArray(v.strokes) ? v.strokes.length : String(v).trim()))) unset++;
+                }
+                initBtnHtml = `<button type="button" class="cab-initbtn${unset ? ' pending' : ''}" id="cabInitBtn" title="${unset ? `${unset} constant value(s) not yet set` : 'All constant values set — re-run to change them'}">📋 Initialize paperwork</button>`;
+            }
             panel.innerHTML = `
                 <div class="cab-head">🗄️ ${escapeHtml(activeLotId)}${strain} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}${totalMissing ? ` · <span style="color:var(--warning)">⚠️ ${totalMissing} missing</span>` : ''}${lot ? '' : '<div class="cab-sub">Lot no longer in database — history kept for reference.</div>'}</div>
                 <div class="cab-toolbar">
                     <button type="button" class="cab-loaddoc" id="cabLoadDocBtn">📂 Load document</button>
+                    ${initBtnHtml}
                     ${printDocChip}
                 </div>
                 ${Object.keys(pw.sheets || {}).length === 0 ? '<div class="cab-hint">No sheets configured yet — load a document and configure it in the <b>Configure Sheets</b> tab.</div>' : ''}
@@ -4046,6 +4230,8 @@
             });
             // "Load document" picker — the file base name names the sheet (wrong-revision guard).
             $('cabLoadDocBtn').addEventListener('click', () => $('printImportInput').click());
+            // Initialize paperwork quiz — sets this lot's constant values (lot-level storage).
+            $('cabInitBtn')?.addEventListener('click', () => openInitQuiz(activeLotId));
         }
 
         let configureRenderKey = '';
@@ -4272,6 +4458,9 @@
                 seenCols.add(colKey);
                 bindLabels.push(f.dayGroup ? `${f.label || f.id} · all days 🔗` : (f.label || f.id));
             }
+            // Read-only marker: this question fills a constant field, so it is asked in the
+            // cabinet's Initialize quiz (once per lot) and skipped by the daily runner.
+            const isConstQ = cfgFields.some(f => f.questionId === q.id && f.constant);
             const prefillOpts = `<option value="">— none —</option>` +
                 BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
             // Write-back is fixed by the question type for plant-count / phase questions;
@@ -4301,7 +4490,7 @@
                             <option value="phase"${q.type === 'phase' ? ' selected' : ''}>🔄 phase (writes lot.stage)</option>
                             <option value="room"${q.type === 'room' ? ' selected' : ''}>🏠 room (writes lot.currentRoom)</option>
                         </select></div>
-                        <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}</div></div>
+                        <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}${isConstQ ? ' <span style="color:#f3c14b;">📌 constant — set via Initialize paperwork, skipped by the daily runner</span>' : ''}</div></div>
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
                         ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">The runner shows a drop-down of the phases the lot can change TO (the fixed vocabulary minus its current phase). Picking a different phase writes it back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         ${q.type === 'room' ? `<p class="cfg-hint" style="margin:6px 0 0;">Options are the rooms known to the DB (no custom list). Picking a different room writes lot.currentRoom back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
