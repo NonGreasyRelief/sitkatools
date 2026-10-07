@@ -1909,6 +1909,7 @@
             ['sheet.periodEnd', 'sheet.periodEnd — window end'],
             ['day.date', 'day.date — date of the current day (MM/DD, row fields only)'],
             ['day.plantsRemoved', 'day.plantsRemoved — plants removed that day (yesterday − today, row fields only)'],
+            ['signature.date', 'signature.date — date signed (yyyy/mm/dd, stamped when the signature is saved)'],
             ['year.current', 'year.current — last digit of the year (at save time)']
         ];
 
@@ -2963,6 +2964,10 @@
                 return (v === null || v === undefined) ? null : String(v);
             }
             if (kind === 'instance' && field === 'phase') return ctx.inst?.phase || null;
+            // Date the instance was signed (yyyy/mm/dd) — stamped when the master grower saves
+            // his signature via the cabinet's ✍️ Sign button (re-signing updates it). Resolved
+            // live from inst.signature, never snapshotted; null until the log is signed.
+            if (kind === 'signature' && field === 'date') return ctx.inst?.signature?.date ? fmtYYYYMMDD(ctx.inst.signature.date) : null;
             // Last digit of the current year (2021 → 1, 2023 → 3). Resolved at save time and
             // snapshotted like any other binding — a form saved in 2026 keeps printing "6".
             if (kind === 'year' && field === 'current') return String(new Date().getFullYear() % 10);
@@ -3010,7 +3015,7 @@
                 // time too — snapshotting them would freeze the room as of the last save, which is
                 // wrong for a log that later moved rooms (the struck-out page must keep printing
                 // the room it was actually kept in).
-                if (b === 'day.date' || b === 'day.plantsRemoved'
+                if (b === 'day.date' || b === 'day.plantsRemoved' || b === 'signature.date'
                     || b === 'lot.roomDesignation' || b === 'lot.roomBuilding' || b === 'lot.currentRoom') continue;
                 inst.snapshots[b] = resolveBinding(b, { lotId, sheetId, key, inst });
             }
@@ -3348,7 +3353,7 @@
                     <div class="wiz-body">
                         <div class="sig-pad-wrap"><canvas id="sigPad2" class="sig-pad"></canvas></div>
                         <input type="text" id="sigName2" class="sig-name" placeholder="Signer name / initials" value="${nameVal}">
-                        <div class="wiz-hint" style="margin-bottom:10px;">Master grower review — sign off on the whole log.</div>
+                        <div class="wiz-hint" style="margin-bottom:10px;">Master grower review — sign off on the whole log. The signature date (yyyy/mm/dd) is stamped automatically when you save.</div>
                         <div class="sig-actions"><button type="button" class="sig-clear" id="sigModalClearBtn">🧹 Clear signature</button></div>
                     </div>
                     <div class="wiz-foot">
@@ -3375,8 +3380,10 @@
             $('sigModalSaveBtn').addEventListener('click', () => {
                 const nameEl = $('sigName2');
                 const strokes = sigModalCtx.strokes;
+                // Stamp the signature date (local YYYY-MM-DD) on every save — re-signing
+                // updates it; clearing removes it. Feeds the `signature.date` binding.
                 inst.signature = (strokes && strokes.length)
-                    ? { name: String(nameEl?.value || '').trim(), strokes }
+                    ? { name: String(nameEl?.value || '').trim(), strokes, date: todayStr() }
                     : null;
                 evaluateCompletion(sheetId, key, inst);
                 notifySitkaTools();
@@ -3815,6 +3822,7 @@
 
         // MM/DD for the form's Date column.
         function fmtMMDD(dateStr) { const p = String(dateStr).split('-'); return p.length === 3 ? `${p[1]}/${p[2]}` : dateStr; }
+        function fmtYYYYMMDD(dateStr) { const p = String(dateStr).split('-'); return p.length === 3 ? `${p[0]}/${p[1]}/${p[2]}` : dateStr; }
 
         // Resolve what a field prints. Snapshot-first (spec), live binding as fallback for
         // legacy instances without snapshots. Empty/missing → 'N/A' (checkboxes → empty box).
@@ -3843,6 +3851,9 @@
                         : f.source === 'lot.roomBuilding' ? roomBuildingFor(room)
                         : (room == null ? null : String(room));
                 }
+                // signature.date prints the date the log was signed (yyyy/mm/dd) — resolved
+                // live from inst.signature at print time, never snapshotted.
+                else if (f.source === 'signature.date') v = resolveBinding('signature.date', { lotId, key, inst });
                 else v = (inst.snapshots && inst.snapshots[f.source] != null) ? inst.snapshots[f.source] : resolveBinding(f.source, { lotId, key, inst });
             } else if (f.row || f.dayGroup) {
                 // Row field (legacy) or daily-entry group member: that day's answer.
