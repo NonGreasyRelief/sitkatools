@@ -848,6 +848,9 @@
             width: 100%; display: block; touch-action: none; cursor: crosshair;
             background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px;
         }
+        /* Initials pad — ~30% narrower than the full-width signature pad so a near-square
+           box doesn't push the card past the viewport on a 1080p screen. */
+        .sig-pad.init-pad { width: 70%; margin: 0 auto; }
         .sig-name {
             width: 100%; box-sizing: border-box; background: var(--input-bg); border: 1px solid var(--border);
             border-radius: 6px; color: var(--text-primary); font-size: 0.95rem; padding: 8px 12px;
@@ -3346,12 +3349,10 @@
         // the manager signature pad, the per-day initials pad, and the strike-out capture dialog.
         // `onStroke` fires when a stroke is committed (pointerup) — the wizard runner uses it
         // to re-evaluate mandatory gating as soon as something has been drawn.
-        // `width` overrides the default 480px backing width (the initials pad passes a smaller
-        // one so a near-square box doesn't force the modal card to scroll on a 1080p screen).
-        function initDrawPad(canvasId, aspectRatio, strokes, onStroke, width) {
+        function initDrawPad(canvasId, aspectRatio, strokes, onStroke) {
             const canvas = $(canvasId);
             if (!canvas) return;
-            const W = width || 480;
+            const W = 480;
             const H = Math.max(60, Math.round(W / (aspectRatio || 4)));
             canvas.width = W;
             canvas.height = H;
@@ -3505,9 +3506,7 @@
             const f = (sheet.fields || []).find(x => x.questionId === q.id);
             // Match the box's on-paper pixel aspect ratio so initials print undistorted.
             const ar = f ? boxPrintAspect(sheet, f) : 3;
-            // ~30% narrower than the default pad: a near-square initials box at full width
-            // made the card taller than the viewport (scrolling) on a 1080p screen.
-            initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes, null, 336);
+            initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
         }
 
         // Rebuild ONLY the Next/Save footer slot (and wire its buttons) based on the
@@ -3595,7 +3594,7 @@
                 const d = ctx.draft[q.id] || { name: '', strokes: [] };
                 bodyInner = `
                 <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
-                <div class="sig-pad-wrap"><canvas id="qInitPad" class="sig-pad"></canvas></div>
+                <div class="sig-pad-wrap"><canvas id="qInitPad" class="sig-pad init-pad"></canvas></div>
                 <input type="text" id="qInitName" class="sig-name" placeholder="Who filled this (name / initials)" value="${escapeHtml(d.name ?? '')}">
                 <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials — they print in the box at its placed position.${q.mandatory ? ' This question is mandatory — draw something before continuing.' : ''}</div>
                 <div class="sig-actions"><button type="button" class="sig-clear" id="qInitClearBtn">🧹 Clear initials</button></div>`;
