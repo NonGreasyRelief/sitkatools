@@ -3940,6 +3940,14 @@
                 const cv = f.checkValue || '';
                 return { checked: !!s && !!cv && (normalizeStage(s) === normalizeStage(cv) || s.toLowerCase() === cv.toLowerCase()), text: '' };
             }
+            if (!s) {
+                // Unfilled day rows print BLANK, not N/A — a struck-out log's remaining days
+                // stay clean under the strike line instead of filling the page with N/A. A day
+                // that was saved (even with intentionally blank fields — blank-but-confirmed)
+                // still prints N/A for its empty boxes; header / one-shot / event fields keep
+                // the N/A default too.
+                if ((f.dayGroup || f.row) && dayDate && !dayAnswered(inst, dayDate, sheetId)) return { checked: false, text: '' };
+            }
             return { checked: false, text: s || 'N/A' };
         }
 
