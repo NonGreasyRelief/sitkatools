@@ -3506,6 +3506,45 @@
             initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
         }
 
+        // Rebuild ONLY the Next/Save footer slot (and wire its buttons) based on the
+        // current mandatory-gating state. Called from renderRunner and, crucially, from the
+        // per-keystroke input handler — a full renderRunner() there would rebuild the focused
+        // <input> and reset its caret to position 0, reversing typed text ("will" -> "lliw").
+        function updateRunnerFooter() {
+            const ctx = runnerCtx;
+            if (!ctx) return;
+            const isInit = ctx.mode === 'init';
+            let qs;
+            if (isInit) {
+                qs = ctx.steps.map(s => s.q);
+            } else {
+                const wiz = wizardForSheet(ctx.sheetId);
+                const cids = new Set(constantQuestionIds(ctx.sheetId));
+                qs = (wiz.questions || []).filter(q => !cids.has(q.id));
+            }
+            const q = qs[ctx.idx];
+            if (!q) return;
+            const isLast = ctx.idx === qs.length - 1;
+            // Initials count as answered only once strokes are drawn — an empty pad is not an answer.
+            const dv = ctx.draft[q.id];
+            const stepAnswered = q.type === 'initials'
+                ? !!(dv && Array.isArray(dv.strokes) && dv.strokes.length)
+                : String(dv ?? '').trim() !== '';
+            const blockedByMandatory = !!q.mandatory && !stepAnswered;
+
+            const slot = $('wizFootSlot');
+            if (!slot) return;
+            slot.innerHTML = blockedByMandatory
+                ? `<span class="wiz-hint">⚠️ Answer this mandatory question to continue</span>`
+                : isLast
+                    ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : '💾 Save entry'}</button>`
+                    : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`;
+            const nextBtn = $('wizNextBtn');
+            if (nextBtn) nextBtn.addEventListener('click', () => runnerGo(1));
+            const saveBtn = $('wizSaveBtn');
+            if (saveBtn) saveBtn.addEventListener('click', isInit ? saveInitConstants : saveRunnerEntry);
+        }
+
         function renderRunner() {
             const ctx = runnerCtx;
             const isInit = ctx.mode === 'init';
@@ -3607,14 +3646,8 @@
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
 
-            // Mandatory gating: a mandatory question with no answer yet hides the Next / Save
-            // button entirely (Back stays available). Initials count as answered only once
-            // strokes are drawn — an empty pad is not an answer.
-            const dv = ctx.draft[q.id];
-            const stepAnswered = q.type === 'initials'
-                ? !!(dv && Array.isArray(dv.strokes) && dv.strokes.length)
-                : String(dv ?? '').trim() !== '';
-            const blockedByMandatory = !!q.mandatory && !stepAnswered;
+            // (Next/Save mandatory gating lives in updateRunnerFooter(), which rewrites only
+            // the footer slot so a focused input keeps its caret.)
 
             const progText = isInit ? `Constant ${ctx.idx + 1} of ${qs.length}` : `Question ${ctx.idx + 1} of ${qs.length}`;
             const cardTitle = isInit
@@ -3634,11 +3667,7 @@
             <div class="wiz-foot">
                 <button type="button" class="btn btn-secondary" id="wizBackBtn"${ctx.idx === 0 ? ' disabled' : ''}>← Back</button>
                 <span class="spacer"></span>
-                ${blockedByMandatory
-                    ? `<span class="wiz-hint">⚠️ Answer this mandatory question to continue</span>`
-                    : isLast
-                        ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : '💾 Save entry'}</button>`
-                        : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`}
+                <div id="wizFootSlot"></div>
             </div>`;
 
             let ov = $('wizOverlay');
@@ -3654,13 +3683,10 @@
 
             $('wizCloseBtn').addEventListener('click', closeRunner);
             $('wizBackBtn').addEventListener('click', () => runnerGo(-1));
-            // Next / Save are ABSENT from the DOM while a mandatory question is unanswered —
-            // guard the lookups (a null addEventListener here used to throw and kill the rest
-            // of renderRunner, leaving the initials pad / inputs unwired).
-            const nextBtn = $('wizNextBtn');
-            if (nextBtn) nextBtn.addEventListener('click', () => runnerGo(1));
-            const saveBtn = $('wizSaveBtn');
-            if (saveBtn) saveBtn.addEventListener('click', isInit ? saveInitConstants : saveRunnerEntry);
+            // Next / Save live in #wizFootSlot and are (re)built + wired by updateRunnerFooter().
+            // It rewrites ONLY the footer slot, so a focused text input keeps its caret — a full
+            // renderRunner() here used to rebuild the input on every keystroke and reverse text.
+            updateRunnerFooter();
             const sameBtn = $('wizSameBtn');
             if (sameBtn) sameBtn.addEventListener('click', runnerSameAsLast);
 
@@ -3675,11 +3701,12 @@
             if (q.type === 'initials') {
                 initQuestionInitialsPad(ctx, q);
                 // A mandatory initials question unlocks Next/Save as soon as the first stroke
-                // lands — re-render on each committed stroke.
+                // lands. Update only the footer — the canvas already shows the stroke live, and a
+                // full re-render would reset the name field's caret.
                 if (q.mandatory) {
                     const pad = $('qInitPad');
-                    pad.addEventListener('pointerup', () => renderRunner());
-                    pad.addEventListener('pointercancel', () => renderRunner());
+                    pad.addEventListener('pointerup', () => updateRunnerFooter());
+                    pad.addEventListener('pointercancel', () => updateRunnerFooter());
                 }
                 const nameEl = $('qInitName');
                 nameEl.addEventListener('input', () => { ctx.draft[q.id].name = nameEl.value; });
@@ -3699,9 +3726,9 @@
                 ctlEl.addEventListener('input', () => {
                     ctx.draft[q.id] = ctlEl.value;
                     // A mandatory question's Next/Save button appears/disappears as the answer
-                    // is typed — re-render live (the control keeps focus; its value comes from
-                    // the draft, so nothing is lost).
-                    if (q.mandatory) renderRunner();
+                    // is typed. Update ONLY the footer slot — a full renderRunner() would rebuild
+                    // this input and reset its caret to position 0, reversing typed text.
+                    if (q.mandatory) updateRunnerFooter();
                 });
                 ctlEl.addEventListener('change', () => { ctx.draft[q.id] = ctlEl.value; });
                 // Enter advances to the next question (or saves on the last one) — same rules
