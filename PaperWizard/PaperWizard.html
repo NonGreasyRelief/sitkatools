@@ -3346,10 +3346,12 @@
         // the manager signature pad, the per-day initials pad, and the strike-out capture dialog.
         // `onStroke` fires when a stroke is committed (pointerup) — the wizard runner uses it
         // to re-evaluate mandatory gating as soon as something has been drawn.
-        function initDrawPad(canvasId, aspectRatio, strokes, onStroke) {
+        // `width` overrides the default 480px backing width (the initials pad passes a smaller
+        // one so a near-square box doesn't force the modal card to scroll on a 1080p screen).
+        function initDrawPad(canvasId, aspectRatio, strokes, onStroke, width) {
             const canvas = $(canvasId);
             if (!canvas) return;
-            const W = 480;
+            const W = width || 480;
             const H = Math.max(60, Math.round(W / (aspectRatio || 4)));
             canvas.width = W;
             canvas.height = H;
@@ -3503,7 +3505,9 @@
             const f = (sheet.fields || []).find(x => x.questionId === q.id);
             // Match the box's on-paper pixel aspect ratio so initials print undistorted.
             const ar = f ? boxPrintAspect(sheet, f) : 3;
-            initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
+            // ~30% narrower than the default pad: a near-square initials box at full width
+            // made the card taller than the viewport (scrolling) on a 1080p screen.
+            initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes, null, 336);
         }
 
         // Rebuild ONLY the Next/Save footer slot (and wire its buttons) based on the
