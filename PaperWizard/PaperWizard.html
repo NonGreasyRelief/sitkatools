@@ -2344,12 +2344,33 @@
 
         // Strike-out computation (spec: derived, never stored). Takes the instance's
         // phaseChangeDate + the sheet's day-row geometry (its explicit daily-entry groups)
-        // and returns the struck rows, one diagonal across them, and label positions — all
-        // in normalized page coords. Feeds the print popup (SVG overlay) and any preview.
+        // and returns, PER PAGE, the struck rows, one diagonal across them, and label
+        // positions — all in normalized page coords. A multi-page daily form (e.g. a
+        // two-page grow-log) has its own repeating day section on each page, so every page
+        // with struck rows gets its own strike-out. Feeds the print popup (SVG overlay).
         function computeStrikeOut(sheet, inst, key) {
             if (!inst?.phaseChangeDate) return null;
             const rows = dayRowsFromGroups(sheet);
             if (!rows) return null; // no day-row geometry configured
+            // Group the sheet's day rows by page — each page's repeating section is struck
+            // independently (its own diagonal + initials + date in that page's coords).
+            const byPage = new Map();
+            for (const r of rows) {
+                const pg = r.fields[0]?.page ?? 1;
+                if (!byPage.has(pg)) byPage.set(pg, []);
+                byPage.get(pg).push(r);
+            }
+            const out = {};
+            for (const [pg, pageRows] of byPage) {
+                const s = strikeOutForRows(pageRows, key, inst.phaseChangeDate);
+                if (s) out[pg] = s;
+            }
+            return Object.keys(out).length ? out : null;
+        }
+
+        // Strike-out for one page's day rows: the struck rows (dates after the change date),
+        // one diagonal across them, and the initials/date label positions — normalized coords.
+        function strikeOutForRows(rows, key, phaseChangeDate) {
             const d1 = (rows.find(r => r.day === 1)?.fields) || [];
             if (!d1.length) return null;
             // Horizontal extent of the day section (from the day-1 row).
@@ -2360,7 +2381,7 @@
             for (const r of rows) {
                 const d = r.day || 1;
                 if (d <= 1) continue;
-                if (addDaysStr(key, d - 1) > inst.phaseChangeDate) {
+                if (addDaysStr(key, d - 1) > phaseChangeDate) {
                     struckRows.push({
                         day: d,
                         yTop: Math.min(...r.fields.map(f => f.y)),
@@ -3997,19 +4018,22 @@
                     }
                 }
                 if (sheet.signature && (sheet.signature.page ?? 1) === pageNum) html += sigSvgHtml(sheet.signature, inst.signature);
-                if (strike && strike.line && pageNum === 1) {
-                    const L = strike.line;
+                // Strike-out is computed per page — a multi-page daily form strikes each page's
+                // own remaining day rows (its diagonal + initials + date in that page's coords).
+                const pageStrike = strike && strike[pageNum];
+                if (pageStrike && pageStrike.line) {
+                    const L = pageStrike.line;
                     const fsIn = 10 / 72;
                     html += `<svg class="ov-strike" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="${L.x1 * 100}" y1="${L.y1 * 100}" x2="${L.x2 * 100}" y2="${L.y2 * 100}"/></svg>`;
                     // Strike-out initials: drawn strokes (new) or a legacy typed string.
                     const si = inst.strikeInitials;
                     if (si && typeof si === 'object' && (si.strokes || []).length) {
-                        html += strokesSvgHtml(strike.initialsRect, si);
+                        html += strokesSvgHtml(pageStrike.initialsRect, si);
                     } else if (typeof si === 'string' && si.trim()) {
-                        const r = strike.initialsRect;
+                        const r = pageStrike.initialsRect;
                         html += `<span class="ov-strike-txt" style="left:${(r.x + r.w / 2) * 100}%;top:${(r.y + r.h / 2) * 100}%;font-size:${fsIn}in;">${escapeHtml(si)}</span>`;
                     }
-                    html += `<span class="ov-strike-date" style="left:${strike.date.x * 100}%;top:${strike.date.y * 100}%;font-size:${fsIn}in;">${fmtMMDD(inst.phaseChangeDate)}</span>`;
+                    html += `<span class="ov-strike-date" style="left:${pageStrike.date.x * 100}%;top:${pageStrike.date.y * 100}%;font-size:${fsIn}in;">${fmtMMDD(inst.phaseChangeDate)}</span>`;
                 }
                 return html;
             };

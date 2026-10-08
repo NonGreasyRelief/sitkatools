@@ -279,12 +279,12 @@ When a lot moves Clone → Veg → Bloom — or when it **moves rooms** (e.g. in
    - **Same-save double change:** if both questions change in one save, a single strike-out records both — the fresh log carries the new phase *and* the new room, and both write-backs fire. No second rollover runs (it would create a phantom zero-day log).
 3. **Strike-through on the old sheet:** when a 7-day grow-log ends early, policy is a **diagonal strike-out across the remaining day rows, with the confirmer's initials above the line and the change date below it**. Those rows no longer require entries — the old instance completes when all days from `periodStart` through `phaseChangeDate` are filled (+ signature if defined).
 
-   **Strike-out computation:** the overlay is derived, never stored. A pure function takes the instance (`phaseChangeDate`, `strikeInitials`) plus the sheet's explicit day-row geometry (the daily-entry groups' placed boxes — no pitch math) and returns:
+   **Strike-out computation:** the overlay is derived, never stored. A pure function takes the instance (`phaseChangeDate`, `strikeInitials`) plus the sheet's explicit day-row geometry (the daily-entry groups' placed boxes — no pitch math) and returns, **per page**:
    - **struck rows** — every day row whose date (instance key + member's `day` − 1) is after `phaseChangeDate`;
    - **the diagonal** — one line from the top-right corner of the first struck row to the bottom-left corner of the last struck row, in normalized page coordinates;
    - **label positions** — an `initialsRect` (a wide/short box centered just above the line's midpoint) for the drawn strike initials, and a date position centered just below it.
 
-   The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data. The drawn `strikeInitials` render as an SVG polyline inside `initialsRect`; a legacy string renders as centered text in the same rect.
+   A multi-page daily form (e.g. a two-page grow-log whose second page is also daily repeating) gets the **same strike-out on every page that has struck rows** — each page's remaining day rows are crossed by their own diagonal with the initials above and the change date below, computed in that page's coordinates. The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data. The drawn `strikeInitials` render as an SVG polyline inside `initialsRect`; a legacy string renders as centered text in the same rect.
 
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
