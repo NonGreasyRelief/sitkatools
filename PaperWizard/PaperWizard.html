@@ -823,6 +823,7 @@
         .day-chip.filled::after { content: ' ✓'; }
         .wiz-hint { color: var(--text-secondary); font-size: 0.75rem; margin-top: 6px; }
         .wiz-q-label { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; }
+        .wiz-mandatory { color: var(--warning); font-size: 0.78rem; font-weight: 600; margin-left: 8px; white-space: nowrap; }
         .wiz-q-ctl input, .wiz-q-ctl select {
             width: 100%; background: var(--input-bg); border: 1px solid var(--border);
             border-radius: 6px; color: var(--text-primary); font-size: 1rem; padding: 10px 12px;
@@ -2526,7 +2527,7 @@
             // wizard a second time (the double entry), so its phase/room answers are NOT
             // pre-filled here.
             for (const x of wiz.questions) {
-                if (!x.rowScoped && x.writesTo !== 'lot.stage' && x.writesTo !== 'lot.currentRoom'
+                if (!x.rowScoped && x.type !== 'phase' && x.type !== 'room'
                     && String(ctx.draft[x.id] ?? '').trim() !== '') newInst.header[x.id] = ctx.draft[x.id];
             }
             // Row-scoped double entry: the old log's move-day row is stamped with the PREVIOUS
@@ -2554,7 +2555,8 @@
         // marks that the instance holds no pre-existing content (save-first flow).
         async function phaseRollover(writeBack, moveDay, prevValue, freshOnly) {
             const wiz = wizardForSheet(runnerCtx?.sheetId);
-            const phaseQ = wiz?.questions.find(q => q.writesTo === 'lot.stage');
+            // Write-back is a property of the question TYPE (implicit — no writesTo field).
+            const phaseQ = wiz?.questions.find(q => q.type === 'phase');
             if (!phaseQ) return null;
             return dailyRollover(writeBack, moveDay, {
                 questionId: phaseQ.id, instField: 'phase', freshOnly,
@@ -2570,7 +2572,8 @@
         // back when the change came from the wizard.
         async function roomRollover(writeBack, moveDay, prevValue, freshOnly) {
             const wiz = wizardForSheet(runnerCtx?.sheetId);
-            const roomQ = wiz?.questions.find(q => q.writesTo === 'lot.currentRoom');
+            // Write-back is a property of the question TYPE (implicit — no writesTo field).
+            const roomQ = wiz?.questions.find(q => q.type === 'room');
             if (!roomQ) return null;
             return dailyRollover(writeBack, moveDay, {
                 questionId: roomQ.id, instField: 'room', freshOnly,
@@ -2627,7 +2630,8 @@
         // to an earlier day's count would understate removals, so an unanswered day prints N/A.
         function explicitPlantCountOn(lotId, sheetId, key, day) {
             const wiz = wizardForSheet(sheetId);
-            const pcQ = wiz?.questions.find(q => q.writesTo === 'lot.plantCount' && q.rowScoped);
+            // Write-back is a property of the question TYPE (implicit — no writesTo field).
+            const pcQ = wiz?.questions.find(q => q.type === 'plant-count' && q.rowScoped);
             if (!pcQ) return null;
             const v = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key]?.days?.[day]?.[pcQ.id];
             if (v === null || v === undefined || String(v).trim() === '') return null;
@@ -2640,7 +2644,8 @@
         // or nothing has been recorded yet — the caller prints N/A in that case.
         function lastRecordedPlantCount(lotId, sheetId, key, day) {
             const wiz = wizardForSheet(sheetId);
-            const pcQ = wiz?.questions.find(q => q.writesTo === 'lot.plantCount' && q.rowScoped);
+            // Write-back is a property of the question TYPE (implicit — no writesTo field).
+            const pcQ = wiz?.questions.find(q => q.type === 'plant-count' && q.rowScoped);
             if (!pcQ) return null;
             const instances = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances || {};
             let curKey = key, curDay = day;
@@ -2674,7 +2679,7 @@
                 `The open log was started in ${inst.phase}. Confirming records the phase change (rows after today are struck through) and starts a fresh log for ${lot.stage}.`);
             if (!ok) return false; // proceed to open the runner normally
             const wiz = wizardForSheet(sheetId);
-            const phaseQ = wiz?.questions.find(q => q.writesTo === 'lot.stage');
+            const phaseQ = wiz?.questions.find(q => q.type === 'phase');
             if (!phaseQ) { showToast('No Phase question on this sheet — record the move in SitkaTools instead'); return false; }
             // Point the Phase question's draft at the new stage (form vocabulary) so the rollover records it.
             runnerCtx.draft[phaseQ.id] = normalizeStage(lot.stage);
@@ -2696,7 +2701,7 @@
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
-            const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.writesTo === 'lot.currentRoom');
+            const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.type === 'room');
             if (!roomQ) return false;
             const lot = DB.lots[lotId];
             // No mismatch when either side has no room recorded, or the two agree.
@@ -2805,7 +2810,7 @@
             for (const [sheetId, sd] of Object.entries(entries)) {
                 const sheet = DB.paperWizard?.sheets?.[sheetId];
                 if (!sheet || sheet.cadence !== 'daily-weekly') continue;
-                const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.writesTo === 'lot.currentRoom');
+                const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.type === 'room');
                 if (!roomQ) continue;
                 for (const inst of Object.values(sd.instances || {})) {
                     for (const [ds, day] of Object.entries(inst.days || {})) {
@@ -3168,7 +3173,7 @@
                     const saved = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
                     draft[q.id] = (saved && Array.isArray(saved.strokes))
                         ? { name: saved.name || '', strokes: saved.strokes.map(s => s.slice()) }
-                        : { name: '', strokes: [] };
+                        : { name: '', strokes: [], mandatory: false };
                     continue;
                 }
                 let v = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
@@ -3216,7 +3221,7 @@
                 // Phase / room questions are deliberate change actions, not routine data —
                 // auto-copying them (e.g. the old log's stamped move-day value onto the fresh
                 // log's first day) could silently re-trigger a rollover.
-                if (q.writesTo === 'lot.stage' || q.writesTo === 'lot.currentRoom') continue;
+                if (q.type === 'phase' || q.type === 'room') continue;
                 const src = q.rowScoped ? daySrc : instSrc;
                 const v = src ? src[q.id] : null;
                 if (v !== null && v !== undefined && String(v).trim() !== '' && String(runnerCtx.draft[q.id] ?? '').trim() === '') {
@@ -3234,8 +3239,20 @@
             // master grower's signature is NOT a wizard step — it is captured only via the
             // cabinet leaf's ✍️ Sign button. Must match renderRunner.
             const cids = new Set(constantQuestionIds(runnerCtx.sheetId));
-            const totalSteps = (wiz.questions || []).filter(q => !cids.has(q.id)).length;
-            runnerCtx.idx = Math.max(0, Math.min(totalSteps - 1, runnerCtx.idx + delta));
+            const steps = (wiz.questions || []).filter(q => !cids.has(q.id));
+            // Mandatory gate: you can't advance past a mandatory question that has no answer
+            // yet (the Next button is hidden in the UI; this guards Enter-to-advance too).
+            if (delta > 0) {
+                const cur = steps[runnerCtx.idx];
+                if (cur?.mandatory) {
+                    const v = runnerCtx.draft[cur.id];
+                    const answered = cur.type === 'initials'
+                        ? !!(v && Array.isArray(v.strokes) && v.strokes.length)
+                        : String(v ?? '').trim() !== '';
+                    if (!answered) { showToast(`"${cur.label}" is mandatory — answer it before continuing`); return; }
+                }
+            }
+            runnerCtx.idx = Math.max(0, Math.min(steps.length - 1, runnerCtx.idx + delta));
             renderRunner();
         }
 
@@ -3276,7 +3293,7 @@
                 if (s.q.type === 'initials') {
                     draft[s.q.id] = (saved && Array.isArray(saved.strokes))
                         ? { name: saved.name || '', strokes: saved.strokes.map(x => x.slice()) }
-                        : { name: '', strokes: [] };
+                        : { name: '', strokes: [], mandatory: false };
                 } else {
                     let v = (saved === null || saved === undefined) ? '' : String(saved);
                     if (v.trim() === '' && s.q.prefillFrom) {
@@ -3291,6 +3308,16 @@
 
         function saveInitConstants() {
             const ctx = runnerCtx;
+            // Mandatory questions must be answered before the quiz can save — same rule as
+            // the daily runner's Save button.
+            for (const s of ctx.steps) {
+                if (!s.q.mandatory) continue;
+                const v = ctx.draft[s.q.id];
+                const empty = s.q.type === 'initials'
+                    ? !(v && Array.isArray(v.strokes) && v.strokes.length)
+                    : String(v ?? '').trim() === '';
+                if (empty) { showToast(`"${s.q.label}" is mandatory — answer it before saving`); return; }
+            }
             for (const s of ctx.steps) {
                 let v = ctx.draft[s.q.id];
                 if (s.q.type === 'initials') {
@@ -3317,7 +3344,9 @@
         // Generic stylus draw-pad: pointer-captured strokes stored as normalized [x,y] arrays
         // within the box. No image is generated — pure vector data, re-drawn on open. Shared by
         // the manager signature pad, the per-day initials pad, and the strike-out capture dialog.
-        function initDrawPad(canvasId, aspectRatio, strokes) {
+        // `onStroke` fires when a stroke is committed (pointerup) — the wizard runner uses it
+        // to re-evaluate mandatory gating as soon as something has been drawn.
+        function initDrawPad(canvasId, aspectRatio, strokes, onStroke) {
             const canvas = $(canvasId);
             if (!canvas) return;
             const W = 480;
@@ -3365,7 +3394,7 @@
                 g.lineTo(p[0] * W, p[1] * H);
                 g.stroke();
             });
-            const endStroke = () => { drawing = false; };
+            const endStroke = () => { if (drawing) onStroke?.(); drawing = false; };
             canvas.addEventListener('pointerup', endStroke);
             canvas.addEventListener('pointercancel', endStroke);
             // Clear the pad's pixels + drawing state (the caller empties `strokes` itself).
@@ -3522,10 +3551,10 @@
             if (q.type === 'initials') {
                 const d = ctx.draft[q.id] || { name: '', strokes: [] };
                 bodyInner = `
-                <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}</div>
+                <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
                 <div class="sig-pad-wrap"><canvas id="qInitPad" class="sig-pad"></canvas></div>
                 <input type="text" id="qInitName" class="sig-name" placeholder="Who filled this (name / initials)" value="${escapeHtml(d.name ?? '')}">
-                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials — they print in the box at its placed position.</div>
+                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials — they print in the box at its placed position.${q.mandatory ? ' This question is mandatory — draw something before continuing.' : ''}</div>
                 <div class="sig-actions"><button type="button" class="sig-clear" id="qInitClearBtn">🧹 Clear initials</button></div>`;
             } else {
                 const val = escapeHtml(ctx.draft[q.id] ?? '');
@@ -3572,11 +3601,20 @@
                     strikeHint = `<div class="wiz-hint">⚠️ Plant count <b>0</b> means all plants are gone — this log will be struck out when you save, after the rest of today's entry is filled in.</div>`;
                 }
                 bodyInner = `
-                <div class="wiz-q-label">${escapeHtml(q.label)}</div>
+                <div class="wiz-q-label">${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
                 <div class="wiz-q-ctl">${ctl}</div>
                 ${strikeHint}
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
+
+            // Mandatory gating: a mandatory question with no answer yet hides the Next / Save
+            // button entirely (Back stays available). Initials count as answered only once
+            // strokes are drawn — an empty pad is not an answer.
+            const dv = ctx.draft[q.id];
+            const stepAnswered = q.type === 'initials'
+                ? !!(dv && Array.isArray(dv.strokes) && dv.strokes.length)
+                : String(dv ?? '').trim() !== '';
+            const blockedByMandatory = !!q.mandatory && !stepAnswered;
 
             const progText = isInit ? `Constant ${ctx.idx + 1} of ${qs.length}` : `Question ${ctx.idx + 1} of ${qs.length}`;
             const cardTitle = isInit
@@ -3596,9 +3634,11 @@
             <div class="wiz-foot">
                 <button type="button" class="btn btn-secondary" id="wizBackBtn"${ctx.idx === 0 ? ' disabled' : ''}>← Back</button>
                 <span class="spacer"></span>
-                ${isLast
-                    ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : '💾 Save entry'}</button>`
-                    : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`}
+                ${blockedByMandatory
+                    ? `<span class="wiz-hint">⚠️ Answer this mandatory question to continue</span>`
+                    : isLast
+                        ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : '💾 Save entry'}</button>`
+                        : `<button type="button" class="btn btn-primary" id="wizNextBtn">Next →</button>`}
             </div>`;
 
             let ov = $('wizOverlay');
@@ -3614,8 +3654,13 @@
 
             $('wizCloseBtn').addEventListener('click', closeRunner);
             $('wizBackBtn').addEventListener('click', () => runnerGo(-1));
-            if (isLast) $('wizSaveBtn').addEventListener('click', isInit ? saveInitConstants : saveRunnerEntry);
-            else $('wizNextBtn').addEventListener('click', () => runnerGo(1));
+            // Next / Save are ABSENT from the DOM while a mandatory question is unanswered —
+            // guard the lookups (a null addEventListener here used to throw and kill the rest
+            // of renderRunner, leaving the initials pad / inputs unwired).
+            const nextBtn = $('wizNextBtn');
+            if (nextBtn) nextBtn.addEventListener('click', () => runnerGo(1));
+            const saveBtn = $('wizSaveBtn');
+            if (saveBtn) saveBtn.addEventListener('click', isInit ? saveInitConstants : saveRunnerEntry);
             const sameBtn = $('wizSameBtn');
             if (sameBtn) sameBtn.addEventListener('click', runnerSameAsLast);
 
@@ -3629,16 +3674,44 @@
 
             if (q.type === 'initials') {
                 initQuestionInitialsPad(ctx, q);
+                // A mandatory initials question unlocks Next/Save as soon as the first stroke
+                // lands — re-render on each committed stroke.
+                if (q.mandatory) {
+                    const pad = $('qInitPad');
+                    pad.addEventListener('pointerup', () => renderRunner());
+                    pad.addEventListener('pointercancel', () => renderRunner());
+                }
                 const nameEl = $('qInitName');
                 nameEl.addEventListener('input', () => { ctx.draft[q.id].name = nameEl.value; });
+                // Enter on the name field advances / saves like Next (same mandatory rules).
+                nameEl.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (isLast) (isInit ? saveInitConstants : saveRunnerEntry)();
+                    else runnerGo(1);
+                });
                 $('qInitClearBtn').addEventListener('click', () => {
                     ctx.draft[q.id].strokes = [];
                     renderRunner();
                 });
             } else {
                 const ctlEl = $('wizCtl');
-                ctlEl.addEventListener('input', () => { ctx.draft[q.id] = ctlEl.value; });
+                ctlEl.addEventListener('input', () => {
+                    ctx.draft[q.id] = ctlEl.value;
+                    // A mandatory question's Next/Save button appears/disappears as the answer
+                    // is typed — re-render live (the control keeps focus; its value comes from
+                    // the draft, so nothing is lost).
+                    if (q.mandatory) renderRunner();
+                });
                 ctlEl.addEventListener('change', () => { ctx.draft[q.id] = ctlEl.value; });
+                // Enter advances to the next question (or saves on the last one) — same rules
+                // as clicking Next: blocked while a mandatory question is unanswered.
+                ctlEl.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (isLast) (isInit ? saveInitConstants : saveRunnerEntry)();
+                    else runnerGo(1);
+                });
                 ctlEl.focus();
             }
         }
@@ -3660,6 +3733,16 @@
             // Constant questions are never saved from the daily runner — their values live at
             // lot+sheet level (Initialize quiz), not in the instance.
             const cids = new Set(constantQuestionIds(ctx.sheetId));
+            // Mandatory questions must be answered before the entry can save — same rule that
+            // hides the Save button; this is the guard for direct calls / stale renders.
+            for (const q of (wiz.questions || []).filter(x => !cids.has(x.id))) {
+                if (!q.mandatory) continue;
+                const v = ctx.draft[q.id];
+                const empty = q.type === 'initials'
+                    ? !(v && Array.isArray(v.strokes) && v.strokes.length)
+                    : String(v ?? '').trim() === '';
+                if (empty) { showToast(`"${q.label}" is mandatory — answer it before saving`); return; }
+            }
             const pw = DB.paperWizard;
             if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
             if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
@@ -3698,9 +3781,10 @@
                 if (backup.lot && DB.lots[ctx.lotId]) Object.assign(DB.lots[ctx.lotId], backup.lot);
             };
 
-            const phaseQ = wiz.questions.find(q => q.writesTo === 'lot.stage');
-            const roomQ = wiz.questions.find(q => q.writesTo === 'lot.currentRoom');
-            const pcQs = wiz.questions.filter(q => q.writesTo === 'lot.plantCount');
+            // Write-back is a property of the question TYPE (implicit — no writesTo field).
+            const phaseQ = wiz.questions.find(q => q.type === 'phase');
+            const roomQ = wiz.questions.find(q => q.type === 'room');
+            const pcQs = wiz.questions.filter(q => q.type === 'plant-count');
             // Comparison targets — the lot's LIVE values, captured BEFORE any write-back below.
             // A change question whose answer differs from these means the lot changed phase /
             // room: write the new value back and flag the strike-out.
@@ -4521,21 +4605,15 @@
         // ---- Wizard builder (Step 4) ----
         function addCfgQuestion() {
             if (!cfgWizard) return;
-            const q = { id: generateFieldId(), label: `Question ${cfgWizard.questions.length + 1}`, type: 'text', options: [], rowScoped: false, sameAsLast: false, writesTo: null, prefillFrom: null };
+            const q = { id: generateFieldId(), label: `Question ${cfgWizard.questions.length + 1}`, type: 'text', options: [], rowScoped: false, sameAsLast: false, mandatory: false, prefillFrom: null };
             cfgWizard.questions.push(q);
             cfgQuestionSel = q.id;
             refreshWizardBuilder();
         }
 
-        // Write-back targets are tied to their question types (spec): a plant-count question
-        // writes lot.plantCount, a phase question writes lot.stage, a room question writes
-        // lot.currentRoom. Keeping the three in sync means the special behavior can never be
-        // configured on a plain text/number/select.
-        const TYPE_WRITEBACK = { 'plant-count': 'lot.plantCount', 'phase': 'lot.stage', 'room': 'lot.currentRoom' };
-        function syncQuestionTypeWritesTo(q) {
-            if (TYPE_WRITEBACK[q.type]) q.writesTo = TYPE_WRITEBACK[q.type];
-            else if (q.writesTo && !['plant-count', 'phase', 'room'].includes(q.type)) q.writesTo = null;
-        }
+        // Write-back is implicit by question type (spec): a plant-count question writes
+        // lot.plantCount, a phase question writes lot.stage, a room question writes
+        // lot.currentRoom. There is no per-question write-back setting to configure.
 
         function questionCardHtml(q, i) {
             const n = cfgWizard.questions.length;
@@ -4557,12 +4635,6 @@
             const isConstQ = cfgFields.some(f => f.questionId === q.id && f.constant);
             const prefillOpts = `<option value="">— none —</option>` +
                 BINDING_OPTIONS.map(([v, l]) => `<option value="${v}"${q.prefillFrom === v ? ' selected' : ''}>${l}</option>`).join('');
-            // Write-back is fixed by the question type for plant-count / phase questions;
-            // plain types may still pick a target manually (legacy configs keep working).
-            const writesOpts = `<option value="">— none —</option>` +
-                [['lot.plantCount', 'lot.plantCount — plant count'], ['lot.stage', 'lot.stage — phase'], ['lot.currentRoom', 'lot.currentRoom — current room']]
-                    .map(([v, l]) => `<option value="${v}"${q.writesTo === v ? ' selected' : ''}>${l}</option>`).join('');
-            const typeLocked = !!TYPE_WRITEBACK[q.type];
             return `
                 <div class="q-card" data-qid="${q.id}">
                     <div class="q-head">
@@ -4580,20 +4652,20 @@
                             <option value="number"${q.type === 'number' ? ' selected' : ''}>number</option>
                             <option value="select"${q.type === 'select' ? ' selected' : ''}>select</option>
                             <option value="initials"${q.type === 'initials' ? ' selected' : ''}>✍️ initials</option>
-                            <option value="plant-count"${q.type === 'plant-count' ? ' selected' : ''}>🌱 plant count (writes lot.plantCount)</option>
-                            <option value="phase"${q.type === 'phase' ? ' selected' : ''}>🔄 phase (writes lot.stage)</option>
-                            <option value="room"${q.type === 'room' ? ' selected' : ''}>🏠 room (writes lot.currentRoom)</option>
+                            <option value="plant-count"${q.type === 'plant-count' ? ' selected' : ''}>🌱 plant count</option>
+                            <option value="phase"${q.type === 'phase' ? ' selected' : ''}>🔄 phase</option>
+                            <option value="room"${q.type === 'room' ? ' selected' : ''}>🏠 room</option>
                         </select></div>
                         <div class="form-group q-full"><label>Fills field</label><div class="q-bind-indicator">${bindLabels.length ? bindLabels.map(escapeHtml).join(', ') : 'Not bound to any field (notes only) — assign it in the Field properties panel'}${isConstQ ? ' <span style="color:#f3c14b;">📌 constant — set via Initialize paperwork, skipped by the daily runner</span>' : ''}</div></div>
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
                         ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">The runner shows a drop-down of the phases the lot can change TO (the fixed vocabulary minus its current phase). Picking a different phase writes it back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         ${q.type === 'room' ? `<p class="cfg-hint" style="margin:6px 0 0;">Options are the rooms known to the DB (no custom list). Picking a different room writes lot.currentRoom back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
-                        <div class="form-group"><label>Writes back to${typeLocked ? ' (fixed by type)' : ''}</label><select class="q-writes"${typeLocked ? ' disabled' : ''}>${writesOpts}</select></div>
                     </div>
                     <div class="q-checks">
                         <label class="q-check"><input type="checkbox" class="q-row"${q.rowScoped ? ' checked' : ''}> Row-scoped (per day)</label>
                         <label class="q-check"><input type="checkbox" class="q-same"${q.sameAsLast ? ' checked' : ''}> ⏪ Same-as-last offered</label>
+                        <label class="q-check"><input type="checkbox" class="q-mand"${q.mandatory ? ' checked' : ''}> ⚠️ Mandatory response</label>
                     </div>
                 </div>`;
         }
@@ -4618,7 +4690,6 @@
                 card.querySelector('.q-label').addEventListener('change', () => { q.label = card.querySelector('.q-label').value.trim(); refreshCfgOverlays(); });
                 card.querySelector('.q-type').addEventListener('change', () => {
                     q.type = card.querySelector('.q-type').value;
-                    syncQuestionTypeWritesTo(q); // plant-count / phase lock their write-back target
                     refreshWizardBuilder();
                 });
                 const optsEl = card.querySelector('.q-options');
@@ -4629,9 +4700,10 @@
                 // No "Fills field" control here — the binding is assigned from the field's
                 // properties panel (field.questionId is the single source of truth).
                 card.querySelector('.q-prefill').addEventListener('change', () => { q.prefillFrom = card.querySelector('.q-prefill').value || null; refreshCfgOverlays(); });
-                card.querySelector('.q-writes').addEventListener('change', () => { q.writesTo = card.querySelector('.q-writes').value || null; refreshCfgOverlays(); });
+                // Write-back is implicit for plant-count / phase / room types — no control here.
                 card.querySelector('.q-row').addEventListener('change', () => { q.rowScoped = card.querySelector('.q-row').checked; refreshCfgOverlays(); });
                 card.querySelector('.q-same').addEventListener('change', () => { q.sameAsLast = card.querySelector('.q-same').checked; refreshCfgOverlays(); });
+                card.querySelector('.q-mand').addEventListener('change', () => { q.mandatory = card.querySelector('.q-mand').checked; refreshCfgOverlays(); });
                 const up = card.querySelector('.q-up');
                 if (up && !up.disabled) up.addEventListener('click', () => {
                     const i = cfgWizard.questions.indexOf(q);
@@ -4677,7 +4749,10 @@
             // Wizard working copy: reopen the saved wizard for this sheet, else start fresh.
             const existingWizEntry = Object.entries(DB.paperWizard.wizards).find(([, w]) => w.sheetId === sheetId) || null;
             cfgWizard = existingWizEntry
-                ? { id: existingWizEntry[0], sheetId, name: existingWizEntry[1].name || '', questions: (existingWizEntry[1].questions || []).map(q => ({ ...q })) }
+                ? { id: existingWizEntry[0], sheetId, name: existingWizEntry[1].name || '',
+                    // Normalize legacy questions (no mandatory flag yet) and drop the retired
+                    // writesTo field — write-back is implicit for plant-count / phase / room.
+                    questions: (existingWizEntry[1].questions || []).map(q => { const { writesTo, ...rest } = q; return { ...rest, mandatory: !!q.mandatory }; }) }
                 : { id: generateFieldId(), sheetId, name: cfgName + ' Wizard', questions: [] };
             cfgQuestionSel = null;
             renderConfigure();
@@ -4710,7 +4785,9 @@
             pw.wizards[cfgWizard.id] = {
                 sheetId: configSheetId,
                 name: cfgWizard.name.trim() || cfgName.trim(),
-                questions: cfgWizard.questions.map(q => ({ ...q, options: [...(q.options || [])] }))
+                // writesTo is retired — write-back is implicit for plant-count / phase / room
+                // types, so it is never persisted (legacy copies are dropped on load too).
+                questions: cfgWizard.questions.map(q => { const { writesTo, ...rest } = q; return { ...rest, options: [...(q.options || [])], mandatory: !!q.mandatory }; })
             };
             notifySitkaTools();
             renderConfigure(); // the saved-sheet dropdown now lists this sheet

@@ -112,7 +112,7 @@ A **constant field** is a box whose value is fixed for the whole life of a lot's
 
 ### Write-Back Question Types (plant count, phase, room)
 
-Three question types exist specifically to write back to the main DB (see "Write-Back to the Main DB"). Their `writesTo` binding is **locked by type** — the builder sets it automatically and disables the dropdown, so a plant-count question always writes `lot.plantCount`, a phase question always writes `lot.stage`, and a room question always writes `lot.currentRoom`. Switching a question's type re-syncs its `writesTo` (or clears it).
+Three question types exist specifically to write back to the main DB (see "Write-Back to the Main DB"). The write-back is **implicit by type** — there is no per-question setting (the old `writesTo` field was removed): a plant-count question always writes `lot.plantCount`, a phase question always writes `lot.stage`, and a room question always writes `lot.currentRoom`. Switching a question's type changes (or removes) its write-back automatically, so the special behavior can never be configured on a plain text/number/select.
 
 - **🌱 Plant count (`type: 'plant-count'`):** renders as a number input in the runner. Works at either scope — row-scoped (per-day count, the usual grow-log case) or instance-level. On save, if the recorded value differs from `DB.lots[lotId].plantCount`, PaperWizard updates the lot record and calls `notifySitkaTools()`. Same value = no write; per-day entries keep the full history either way. A count that **drops to 0** (all plants removed) additionally strikes out the open log on that day — same drawn-initials capture, but **no fresh page** is started (there is nothing left to grow). Only a *drop* to zero triggers it; re-saving an already-closed log at 0 does not roll over again.
 - **🔄 Phase (`type: 'phase'`):** renders as a drop-down of the **fixed phase vocabulary** — `Cloning / Mother / Vegetation / Bloom / Harvesting` (the form's words for the DB's lowercase stages, via the same bridge as `lot.stage` bindings). No custom options list. The answer is compared against the lot's **live `stage` in the main DB** (`currentLotPhase`) — not a walk-back through saved answers:
@@ -184,7 +184,8 @@ Each question:
 | *(binding)* | derived | A question fills whichever field(s) carry its id in `questionId` — the binding is assigned from the field side (Field properties → "Filled by question"), never from the question. A question no field references is notes-only (its answer stores but prints nowhere). |
 | `rowScoped` | boolean | `true` = the answer is captured **per day row** (daily wizard on a weekly sheet); `false` = one answer for the whole instance (header/one-shot). |
 | `sameAsLast` | boolean | Offer the **"⏪ Same as last time"** action for this question. For `rowScoped` questions it copies the *previous day's* answer; for instance-level questions it copies the previous instance's answer. Default on for most daily questions. |
-| `writesTo` | `'lot.plantCount' \| 'lot.stage' \| 'lot.currentRoom' \| null` | Optional **write-back** binding — PaperWizard's special permission (see "Write-Back to the Main DB"). When the saved answer differs from the lot's current value, PaperWizard updates the main DB and notifies SitkaTools. Restricted to these three targets; anything else is rejected at configure time. |
+| `mandatory` | boolean, default false | **Mandatory response** — while this question has no answer, the runner hides the Next / Save button (Back stays available) and Enter does not advance; a toast names the missing question. An initials question counts as answered only once strokes are drawn. Applies in both the daily runner and the Initialize paperwork quiz. |
+| *(write-back)* | derived | Plant-count / phase / room questions **implicitly** write back to `lot.plantCount` / `lot.stage` / `lot.currentRoom` — a property of the type, with no per-question setting (see "Write-Back to the Main DB"). The old `writesTo` field was removed. |
 | `prefillFrom` | binding string \| null | Optional — pre-fills the input with the resolved binding value when the wizard opens (e.g. "Starting plant count" pre-filled from `lot.plantCount`). The user can still edit; the stored answer is what prints. |
 
 **"Same as last time" semantics:** it pre-fills the form — it never auto-saves. The user still reviews and confirms. If there is no previous day/instance, the button is disabled.  The button will pull from last week's 7-day sheet to get "Last time" when a
@@ -389,17 +390,17 @@ All of this tool's data lives under one top-level key, owned exclusively by Pape
         "name": "Grow-Log Daily Entry",
         "questions": [
           { "id": "subl", "label": "Substrate lot", "type": "text", "options": [],
-            "rowScoped": false, "sameAsLast": false, "writesTo": null },
+            "rowScoped": false, "sameAsLast": false, "mandatory": false },
           { "id": "t1hi", "label": "Temp high (°C)", "type": "number", "options": [],
-            "rowScoped": true, "sameAsLast": true, "writesTo": null },
+            "rowScoped": true, "sameAsLast": true, "mandatory": true },
           { "id": "cnt1", "label": "Current plant count", "type": "number", "options": [],
-            "rowScoped": true, "sameAsLast": true, "writesTo": "lot.plantCount" },
+            "rowScoped": true, "sameAsLast": true, "mandatory": false },
           { "id": "rm1x", "label": "Room", "type": "room", "options": [],
-            "rowScoped": false, "sameAsLast": true, "writesTo": "lot.currentRoom" },
+            "rowScoped": false, "sameAsLast": true, "mandatory": false },
           { "id": "obs1", "label": "Observations / notes", "type": "text", "options": [],
-            "rowScoped": true, "sameAsLast": false, "writesTo": null },
+            "rowScoped": true, "sameAsLast": false, "mandatory": false },
           { "id": "init1", "label": "Initials", "type": "initials", "options": [],
-            "rowScoped": true, "sameAsLast": false, "writesTo": null }
+            "rowScoped": true, "sameAsLast": false, "mandatory": true }
         ]
       }
     },
@@ -539,7 +540,7 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 │ │                   ├──────────────────────────────┤     │
 │ │                   │ Wizard builder:               │     │
 │ │                   │  questions list, add/move/    │     │
-│ │                   │  delete, same-as-last toggles │     │
+│ │                   │  delete, same-as-last + mand. │     │
 │ └───────────────────┴──────────────────────────────┘     │
 │ [💾 Save sheet]  [🗑 Delete sheet]                        │
 ├──────────────────────────────────────────────────────────┤
@@ -550,7 +551,7 @@ Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky 
 - **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right (lot-focused tool). The lot selector is disabled/hidden in Configure Sheets (configuration is lot-independent).
 - **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — seven sections (Propagation, Room Cleans pre-move-in, Room Cleans post-usage, Grow Logs, IPM Log, Harvest, Drying Logs, Trim Logs), one leaf per instance with its status and the two actions inline. The toolbar above the tree holds **📋 Initialize paperwork** (shown when the lot has constant fields; ⚠️ while any value is unset — see "Constant / Header Fields"). Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials / unset constants); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
 - **Configure Sheets tab:** top = page image preview canvas (boxes are click-drag to create; drag a box body to move — plain drag moves a grouped box's whole day-column as one block, **Ctrl/⌘**-drag moves just that day's row, **Alt/⌥**-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize; Shift-click or Shift-drag marquee for multi-select; the signature box is a distinct style). Below the canvas: the **Sheet** and **Field properties** cards sit side by side, with the **Wizard builder** spanning the full width beneath them. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
-- **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`. There is no signature step — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button.
+- **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`. A **mandatory** question hides Next/Save (and blocks Enter) until it is answered — Back stays available. Pressing **Enter** in a text/number/select answer advances to the next question (or saves on the last one), subject to the same mandatory gate; on an initials step, Enter on the name field does the same once strokes are drawn. There is no signature step — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button.
 
 ## Resolved Design Decisions
 
