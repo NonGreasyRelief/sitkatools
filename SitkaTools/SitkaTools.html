@@ -3412,35 +3412,13 @@
             updateIOStatusBar();
         }
 
-        // Chrome/Edge: write through a native Save dialog so we know the save really happened.
-        async function saveWithPicker(save) {
-            try {
-                const handle = await window.showSaveFilePicker({
-                    id: 'sitkaDb', // browser remembers the last folder used for this id
-                    suggestedName: save.filename,
-                    types: [{ description: 'SitkaTools database', accept: { 'application/json': ['.json'] } }]
-                });
-                const writable = await handle.createWritable();
-                await writable.write(save.json);
-                await writable.close();
-                commitSave(save);
-                showSyncToast(`Saved ${handle.name}`);
-            } catch (err) {
-                if (err.name === 'AbortError') return; // user cancelled the dialog
-                alert('Save failed: ' + err.message);
-            }
-        }
-
+        // The save popup's right-click "Save Link As…" link is the save path on every browser: it lets
+        // Edge users pick custom names, and it still works on PCs that block normal downloads.
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
 
             const save = prepareSave();
             const filename = save.filename;
-
-            if (typeof window.showSaveFilePicker === 'function') {
-                saveWithPicker(save);
-                return;
-            }
 
             // Revoke previous blob URL to free memory
             if (currentBlobUrl) {

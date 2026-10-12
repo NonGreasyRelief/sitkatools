@@ -133,9 +133,9 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
   - The warning clears only when a save actually happens, not when the save popup opens.
   - Loading another database over unsaved changes asks first.
   - An amber dot on **💾 Save DB** shows when there are unsaved changes.
-  - In Chrome/Edge, **Save** opens a normal Save dialog (no more right-click → Save Link As). Firefox and tablets keep the save link.
+  - Save keeps the right-click **Save Link As…** popup on every browser. (A Chrome/Edge Save dialog briefly replaced it and was reverted: Edge users need the right-click flow for custom names, and some PCs block downloads.)
   - Every save stamps a `_meta` block (schema version, revision, save time, save lineage), and the status bar shows when the loaded file was last saved.
-  - *Moved to Phase 1:* refusing to overwrite a newer copy. Chrome is believed to empty the chosen file as soon as you pick it in the Save dialog (not verified here), so a check after picking could read an empty file and give a false all-clear. A reliable check needs folder access.
+  - *Moved to Phase 1:* refusing to overwrite a newer copy. That needs folder access, so the app can read the file on disk before writing.
 - [x] **0.2 Stable event IDs.**
   - Every calendar event carries an `id`.
   - Old files get IDs on load, worked out from the event's content, so every device assigns the same ID to the same event.
@@ -188,6 +188,6 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
 
 1. **How do building devices reach SharePoint?** Through the OneDrive sync client (a SharePoint folder that appears on disk) or by downloading and uploading in the browser? With a synced folder, Phase 1 can be one-click.
 2. **Which devices edit the plan?** Lot creation, schedules, recipes, roster. Is that one office PC, or several people?
-3. **Which browser runs on the building devices?** The one-click Save dialog needs Chrome or Edge. Firefox and iPad Safari keep the current save link.
+3. **Which browser runs on the building devices?** Answered: Chrome or Edge.
 4. **Who records labour hours,** the office or each building device? That decides which file labour data lives in.
 5. **Would IT consider an app registration** in the company's Microsoft tenant? This only matters for Phase 3.

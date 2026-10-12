@@ -106,7 +106,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 ```
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
-- **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (native Save dialog completed, or the save link used), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
+- **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (the save link clicked, right-clicked, or tapped), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
 - Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
@@ -1071,7 +1071,7 @@ function populateRoomSelector() {
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
 - **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used.
-- File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting. SitkaTools' **Save DB** uses the native Save dialog (`showSaveFilePicker`, Chrome/Edge) when available so it knows the save completed, and falls back to the save link elsewhere; the unsaved flag clears only once a save actually happens
+- File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting. SitkaTools' **Save DB** always shows the save popup with its right-click **Save Link As…** link — Edge users save under custom names that way, and it works on PCs that block normal downloads. Do not replace it with `showSaveFilePicker` or a direct download. The unsaved flag clears once the link is used (clicked, right-clicked, or tapped), not when the popup opens
 - No `async/await` on network calls — there are none
 
 ### CSS
