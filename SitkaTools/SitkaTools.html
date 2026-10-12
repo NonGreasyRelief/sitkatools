@@ -6770,6 +6770,20 @@
             },
 
             init() {
+                // Touch screens never send "mouse left", so a tapped tooltip would stay up forever.
+                // Close it on a tap/click outside it, on scroll (except scrolling inside the tooltip's own
+                // list), on resize/rotate, and when the page is hidden. Same behaviour on PC.
+                const tooltipOpen = () => this._tooltipEl && this._tooltipEl.classList.contains('visible');
+                const insideTooltip = (target) => target instanceof Node && this._tooltipEl.contains(target);
+                document.addEventListener('pointerdown', (e) => {
+                    if (tooltipOpen() && !insideTooltip(e.target)) this._hideEventTooltip();
+                }, true);
+                window.addEventListener('scroll', (e) => {
+                    if (tooltipOpen() && !insideTooltip(e.target)) this._hideEventTooltip();
+                }, true);
+                window.addEventListener('resize', () => this._hideEventTooltip());
+                document.addEventListener('visibilitychange', () => { if (document.hidden) this._hideEventTooltip(); });
+
                 // Calendar navigation
                 $('prevMonthBtn').addEventListener('click', () => this.navigateMonth(-1));
                 $('nextMonthBtn').addEventListener('click', () => this.navigateMonth(1));
