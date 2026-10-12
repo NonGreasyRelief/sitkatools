@@ -2200,6 +2200,24 @@
             text-decoration: underline;
         }
 
+        /* Save popup: folder button + one right-click link per file (split DB) */
+        .save-folder-action.hidden, .save-link.hidden { display: none; }
+        .save-folder-btn {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 6px;
+            width: 100%;
+        }
+        .save-file-links { display: flex; flex-direction: column; gap: 4px; }
+        .save-file-links .save-link.saved { opacity: 0.55; }
+        .split-status { font-size: 0.9rem; color: var(--text-secondary); margin: 8px 0 12px; line-height: 1.5; }
+        .split-status strong { color: var(--text-primary); }
+
         /* Text utilities */
         .text-secondary {
             color: var(--text-secondary);
@@ -2699,7 +2717,7 @@
     </style>
 </head>
 <body>
-    <input type="file" id="dbImportInput" accept=".json">
+    <input type="file" id="dbImportInput" accept=".json" multiple>
     <input type="file" id="icsImportInput" accept=".ics,text/calendar">
 
     <!-- DB Session Overlay -->
@@ -2783,7 +2801,9 @@
                 </button>
                 <div class="save-popup hidden" id="savePopup">
                     <div class="save-popup-inner">
+                        <div class="save-folder-action hidden" id="saveFolderAction"></div>
                         <a class="save-link" id="saveLink" href="#" download>📄 Click to generate DB</a>
+                        <div class="save-file-links" id="saveFileLinks"></div>
                     </div>
                     <button class="save-close" id="saveCloseBtn" title="Close">✕</button>
                 </div>
@@ -3100,6 +3120,20 @@
                     </div>
                     <div class="io-result hidden" id="importResult"></div>
                 </div>
+
+                <!-- Building Files Card (ROADMAP Phase 1 — split DB) -->
+                <div class="io-card" id="splitCard">
+                    <h2 class="io-card-title">🏢 Building Files</h2>
+                    <p class="io-card-desc" id="splitCardDesc">
+                        The database can live in separate files: <strong>Main.json</strong> (office), <strong>Wages.json</strong> (office only) and one <strong>Building-&lt;ID&gt;.json</strong> per building. Every device opens all of them and saves only its own.
+                    </p>
+                    <div class="split-status" id="splitStatus"></div>
+                    <div class="io-actions">
+                        <button class="btn btn-secondary" id="changeRoleBtn">🏷️ Set this device…</button>
+                        <button class="btn btn-primary" id="splitDbBtn">✂️ Split into building files</button>
+                    </div>
+                    <div class="io-result hidden" id="splitResult"></div>
+                </div>
             </div>
         </section>
 
@@ -3284,6 +3318,13 @@
             updateFolderUi();
             renderOverlayFolder();
 
+            // Building split: show this device's remembered role on the 🏢 Building Files card
+            updateSplitCard();
+            FolderStore.getSetting('role').then(role => {
+                if (role && !DbSplit.role) DbSplit.role = role;
+                updateSplitCard();
+            });
+
             // Auto-generate Lot ID based on count
             updateLotIdSuggestion();
         }
@@ -3359,18 +3400,9 @@
                 DB.data = parsed;
                 DB.ensureStructure();
                 DB.fileName = fileName.replace('.json', '');
+                DbSplit.reset(); // a single-file DB: legacy save flow
                 clearUnsaved();
-                updateStatusBar();
-                renderLotList();
-                updateLotIdSuggestion();
-                RoomManager.renderRoomList();
-                updateRoomStatusBar();
-                RoomManager.updateRoomDatalist();
-                BuildingManager.renderBuildingList();
-                Calendar.onDbChanged();
-                Calendar.render();
-                updateCalendarStatusBar();
-                updateIOStatusBar();
+                refreshAllViews();
                 hideOverlay();
                 hideMobileToolOverlay();
                 return true;
@@ -3380,8 +3412,37 @@
             }
         }
 
-        dbImportInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
+        // Sort picked files into a split set (Main.json + Wages.json + Building-*.json) or null
+        async function readSplitSet(fileList) {
+            const files = [...fileList];
+            const main = files.find(f => f.name === SPLIT_MAIN);
+            if (!main) return null;
+            const wages = files.find(f => f.name === SPLIT_WAGES);
+            const buildings = files.filter(f => SPLIT_BUILDING_RE.test(f.name) && !/-conflict-\d{4}\.json$/.test(f.name));
+            return {
+                main: { name: main.name, text: await main.text() },
+                wages: wages ? { name: wages.name, text: await wages.text() } : null,
+                buildings: await Promise.all(buildings.map(async f => ({ name: f.name, text: await f.text() })))
+            };
+        }
+
+        dbImportInput.addEventListener('change', async (e) => {
+            const picked = [...e.target.files];
+            const file = picked[0];
+            if (picked.length && (picked.length > 1 || picked.some(f => f.name === SPLIT_MAIN))) {
+                // Split files: Main.json plus any Wages / Building files picked with it
+                dbImportInput.value = '';
+                const source = fileDialogSource;
+                fileDialogSource = null;
+                const set = await readSplitSet(picked);
+                if (!set) {
+                    alert('To open building files, pick Main.json together with the Building-*.json files (and Wages.json on the office device).');
+                    if (source === 'overlay' && !DB.data) showOverlay();
+                    return;
+                }
+                if (await DbSplit.open(set)) DbFolder.deactivate();
+                return;
+            }
             if (!file) {
                 // User cancelled the file dialog
                 // On Edge, cancelling a file picker triggered from behind a full-screen overlay
@@ -3492,19 +3553,37 @@
             MAX: 5,
             _db() {
                 return new Promise((resolve, reject) => {
-                    const req = indexedDB.open('sitkatools', 1);
-                    req.onupgradeneeded = () => req.result.createObjectStore('folders', { keyPath: 'key' });
+                    const req = indexedDB.open('sitkatools', 2);
+                    req.onupgradeneeded = () => {
+                        // v1: remembered folders; v2: device settings (this device's role)
+                        for (const name of ['folders', 'settings']) {
+                            if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'key' });
+                        }
+                    };
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
                 });
             },
-            async _tx(mode, fn) {
+            async getSetting(key) {
+                try {
+                    const row = await this._tx('readonly', store => store.get(key), 'settings');
+                    return row ? row.value : null;
+                } catch (_) {
+                    return null;
+                }
+            },
+            async setSetting(key, value) {
+                try {
+                    await this._tx('readwrite', store => store.put({ key, value }), 'settings');
+                } catch (_) { /* not remembered — asked again next visit */ }
+            },
+            async _tx(mode, fn, storeName = 'folders') {
                 const db = await this._db();
                 try {
                     return await new Promise((resolve, reject) => {
-                        const tx = db.transaction('folders', mode);
-                        const result = fn(tx.objectStore('folders'));
-                        tx.oncomplete = () => resolve(result.result ?? result);
+                        const tx = db.transaction(storeName, mode);
+                        const result = fn(tx.objectStore(storeName));
+                        tx.oncomplete = () => resolve(result instanceof IDBRequest ? result.result : result);
                         tx.onerror = () => reject(tx.error);
                         tx.onabort = () => reject(tx.error);
                     });
@@ -3577,6 +3656,24 @@
                 return (await fileHandle.getFile()).text();
             },
 
+            // Main.json + Wages.json + Building-*.json in the folder, or null when there's no Main.json
+            async readSplitFolder(dir) {
+                let main = null, wages = null;
+                const buildings = [];
+                for await (const entry of dir.values()) {
+                    if (entry.kind !== 'file') continue;
+                    if (entry.name === SPLIT_MAIN) main = entry;
+                    else if (entry.name === SPLIT_WAGES) wages = entry;
+                    else if (SPLIT_BUILDING_RE.test(entry.name) && !/-conflict-\d{4}\.json$/.test(entry.name)) buildings.push(entry);
+                }
+                if (!main) return null;
+                return {
+                    main: { name: main.name, text: await this.readText(main) },
+                    wages: wages ? { name: wages.name, text: await this.readText(wages) } : null,
+                    buildings: await Promise.all(buildings.map(async b => ({ name: b.name, text: await this.readText(b) })))
+                };
+            },
+
             // Open a folder: load its newest DB file and remember the folder for next time
             async open(dir) {
                 if (hasUnsavedChanges && !confirm('You have unsaved changes. Loading another database will discard them.\n\nLoad anyway?')) return false;
@@ -3587,6 +3684,18 @@
                 const { files, copies } = await this.scan(dir);
                 this.handle = dir;
                 FolderStore.remember(dir);
+
+                // Building files (Main.json + Building-*.json, Wages.json for the office) take precedence
+                const split = await this.readSplitFolder(dir);
+                if (split) {
+                    if (!await DbSplit.open(split)) return false;
+                    this.active = true;
+                    this.base = null;
+                    updateIOStatusBar();
+                    updateFolderUi();
+                    showSyncToast(`Opened ${DbSplit.loaded.size} building-split files from "${dir.name}"`);
+                    return true;
+                }
 
                 if (files.length === 0) {
                     // Empty folder: start from whatever is loaded; the first save creates today's file
@@ -3804,16 +3913,732 @@
         folderMenu.addEventListener('click', (e) => e.stopPropagation());
         document.addEventListener('click', () => folderMenu.classList.add('hidden'));
 
+        // =====================================================
+        // SitkaTools — Building Split (ROADMAP Phase 1)
+        // The DB can live in fixed-name files in the SharePoint folder:
+        //   Main.json            office — lots & schedules, rooms/buildings, roster (no wages), recipes,
+        //                        equipment plans, general events, paperwork templates
+        //   Wages.json           office only — employee wages
+        //   Building-<ID>.json   that building — its daily task lists, the paperwork filled there, and its
+        //                        updates to office records (plant count / phase / room on lots,
+        //                        completion / labour hours on events) as timestamped overlays
+        // Every device opens all files — merged into the one DB shape every tool already uses — and saves
+        // only the files its role owns. A single legacy DB-YY-MM-DD.json keeps working exactly as before.
+        // =====================================================
+        const SPLIT_MAIN = 'Main.json';
+        const SPLIT_WAGES = 'Wages.json';
+        const SPLIT_BUILDING_RE = /^Building-(.+)\.json$/;
+        const LOT_FLOOR_FIELDS = ['plantCount', 'stage', 'currentRoom'];
+        const EVENT_FLOOR_FIELDS = ['completed', 'labour_map'];
+        const MAIN_KEY_LABELS = {
+            lots: 'lots', rooms: 'rooms', buildings: 'buildings', calendarEvents: 'calendar events',
+            _CropLabourWizard: 'crop schedules & recipes', _EquipmentWizard: 'equipment plans',
+            _EmployeeWizard: 'employee roster', _GeneralEvent: 'general events', _PaperWizard: 'paperwork templates',
+            _DailyWizard: 'daily task lists'
+        };
+
+        function buildingFileName(id) {
+            return `Building-${String(id).replace(/[^A-Za-z0-9_-]/g, '_')}.json`;
+        }
+
+        function sameValue(a, b) {
+            return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        }
+
+        function setOrDelete(obj, field, value) {
+            if (value === null || value === undefined) delete obj[field];
+            else obj[field] = value;
+        }
+
+        function buildingOfRoomName(db, name) {
+            if (!name) return null;
+            for (const room of Object.values(db.rooms || {})) {
+                if (room.name === name && room.buildingId && db.buildings?.[room.buildingId]) return room.buildingId;
+            }
+            return null;
+        }
+
+        // Re-render every view after DB.data is replaced
+        function refreshAllViews() {
+            updateStatusBar();
+            renderLotList();
+            updateLotIdSuggestion();
+            RoomManager.renderRoomList();
+            updateRoomStatusBar();
+            RoomManager.updateRoomDatalist();
+            BuildingManager.renderBuildingList();
+            Calendar.onDbChanged();
+            Calendar.render();
+            updateCalendarStatusBar();
+            updateIOStatusBar();
+            updateSplitCard();
+        }
+
+        // "Which device is this?" — asked once per device, remembered in this browser
+        function askDeviceRole(buildings, current) {
+            return new Promise(resolve => {
+                const wrap = document.createElement('div');
+                wrap.className = 'db-overlay';
+                wrap.id = 'roleOverlay';
+                const card = document.createElement('div');
+                card.className = 'db-overlay-card';
+                card.innerHTML = `
+                    <div class="db-overlay-icon">🏷️</div>
+                    <div class="db-overlay-title">Which device is this?</div>
+                    <div class="db-overlay-desc">Every device opens all the database files but saves only its own.
+                        The office saves Main, Wages and any building's file; a building device saves only its building's file.
+                        This is remembered on this device.</div>`;
+                const actions = document.createElement('div');
+                actions.className = 'db-overlay-folder';
+                const add = (label, role) => {
+                    const b = document.createElement('button');
+                    b.className = 'btn-load-db';
+                    b.textContent = label + (role === current ? ' ✓' : '');
+                    b.dataset.role = role;
+                    b.addEventListener('click', () => { wrap.remove(); resolve(role); });
+                    actions.appendChild(b);
+                };
+                add('🏢 Office', 'office');
+                for (const [id, b] of Object.entries(buildings || {})) add(`🏭 ${b.name || id}`, id);
+                card.appendChild(actions);
+                wrap.appendChild(card);
+                document.body.appendChild(wrap);
+            });
+        }
+
+        const DbSplit = {
+            active: false,        // the loaded DB came from split files
+            role: null,           // this device: 'office' or a building id
+            loaded: new Set(),    // file names opened this session (only these may be overwritten)
+            haveWages: false,     // Wages.json was opened (office) — wage changes may be saved
+            baseParts: {},        // file name → part JSON (without _meta) as opened / last saved
+            metas: {},            // file name → _meta as opened / last saved
+            hashes: {},           // file name → content hash of the file as opened / written (folder conflict check)
+            baseline: null,       // merged DB JSON as opened / last saved — base for detecting this device's changes
+            stamps: { lots: {}, events: {} },  // office edit times per lot/event field (stored in Main as _fieldStamps)
+            overlays: {},         // building id → { lots, events } floor updates as opened / last saved
+            paperHome: {},        // 'lot|sheet|instanceKey' → building whose file holds that paperwork instance
+            sheetHome: {},        // 'lot|sheet' → building whose file holds that sheet's lot-level data (constants)
+            pending: null,        // manual (link) save in progress
+
+            roleLabel(role = this.role, db = DB.data) {
+                if (role === 'office') return 'Office';
+                if (!role) return 'not set';
+                const b = db?.buildings?.[role];
+                return b ? (b.name || role) : role;
+            },
+
+            reset() {
+                this.active = false;
+                this.loaded = new Set();
+                this.haveWages = false;
+                this.baseParts = {};
+                this.metas = {};
+                this.hashes = {};
+                this.baseline = null;
+                this.stamps = { lots: {}, events: {} };
+                this.overlays = {};
+                this.paperHome = {};
+                this.sheetHome = {};
+                this.pending = null;
+            },
+
+            async ensureRole(buildings, force = false) {
+                if (!this.role) this.role = await FolderStore.getSetting('role');
+                const valid = this.role === 'office' || (this.role && buildings?.[this.role]);
+                if (force || !valid) {
+                    this.role = await askDeviceRole(buildings, this.role);
+                    await FolderStore.setSetting('role', this.role);
+                }
+                return this.role;
+            },
+
+            // ---- Merge: Main + Wages + building files → one DB ----
+            merge(main, wages, buildingFiles) {
+                const db = JSON.parse(JSON.stringify(main));
+                const stamps = db._fieldStamps || {};
+                delete db._fieldStamps;
+                this.stamps = { lots: stamps.lots || {}, events: stamps.events || {} };
+                this.paperHome = {};
+                this.sheetHome = {};
+                this.overlays = {};
+
+                if (wages && db._EmployeeWizard?.employees) {
+                    for (const [name, wage] of Object.entries(wages.wages || {})) {
+                        if (db._EmployeeWizard.employees[name]) db._EmployeeWizard.employees[name].wage = wage;
+                    }
+                }
+
+                for (const bf of buildingFiles) {
+                    const id = bf._building;
+                    if (!id) continue;
+                    const daily = bf._DailyWizard?.buildings;
+                    if (daily && Object.keys(daily).length) {
+                        if (!db._DailyWizard) db._DailyWizard = {};
+                        if (!db._DailyWizard.buildings) db._DailyWizard.buildings = {};
+                        Object.assign(db._DailyWizard.buildings, daily);
+                    }
+                    for (const [lotId, sheets] of Object.entries(bf._PaperWizard?.entries || {})) {
+                        for (const [sheetId, entry] of Object.entries(sheets)) {
+                            if (!db._PaperWizard) db._PaperWizard = {};
+                            if (!db._PaperWizard.entries) db._PaperWizard.entries = {};
+                            const lotEntries = db._PaperWizard.entries[lotId] || (db._PaperWizard.entries[lotId] = {});
+                            const target = lotEntries[sheetId] || (lotEntries[sheetId] = {});
+                            for (const [k, v] of Object.entries(entry)) {
+                                if (k === 'instances') {
+                                    target.instances = target.instances || {};
+                                    for (const [key, inst] of Object.entries(v || {})) {
+                                        target.instances[key] = inst;
+                                        this.paperHome[`${lotId}|${sheetId}|${key}`] = id;
+                                    }
+                                } else {
+                                    target[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? { ...(target[k] || {}), ...v } : v;
+                                    this.sheetHome[`${lotId}|${sheetId}`] = id;
+                                }
+                            }
+                        }
+                    }
+                    this.overlays[id] = { lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} };
+                }
+
+                // Floor updates: per field, the newest of the office's stamped edit and every building's overlay wins
+                const eventsById = new Map((db.calendarEvents || []).map(ev => [ev.id, ev]));
+                const newest = {};
+                const wins = (kind, id, field, at) => {
+                    const k = `${kind}|${id}|${field}`;
+                    const current = newest[k] ?? (this.stamps[kind][id]?.[field] || 0);
+                    if (at > current) { newest[k] = at; return true; }
+                    return false;
+                };
+                for (const ov of Object.values(this.overlays)) {
+                    for (const [lotId, fields] of Object.entries(ov.lots)) {
+                        const lot = db.lots?.[lotId];
+                        if (!lot) continue;
+                        for (const [f, u] of Object.entries(fields)) if (wins('lots', lotId, f, u.at)) setOrDelete(lot, f, u.value);
+                    }
+                    for (const [evId, fields] of Object.entries(ov.events)) {
+                        const ev = eventsById.get(evId);
+                        if (!ev) continue;
+                        for (const [f, u] of Object.entries(fields)) if (wins('events', evId, f, u.at)) setOrDelete(ev, f, u.value);
+                    }
+                }
+                return db;
+            },
+
+            // Which building's file a paperwork instance / sheet belongs in. Sticky once saved somewhere;
+            // new paperwork filled on a building device goes in that device's file; otherwise by room.
+            homeFor(sticky, db, roomName, lotId) {
+                if (sticky && db.buildings?.[sticky]) return sticky;
+                if (this.role && this.role !== 'office' && db.buildings?.[this.role]) return this.role;
+                const lot = db.lots?.[lotId] || {};
+                for (const name of [roomName, lot.currentRoom, lot.cloningRoom, lot.vegRoom, lot.destRoom, lot.dryRoom, lot.trimRoom]) {
+                    const b = buildingOfRoomName(db, name);
+                    if (b) return b;
+                }
+                return Object.keys(db.buildings || {})[0] || null;
+            },
+
+            // ---- Split: one DB → { file name: part } ----
+            split(db) {
+                const buildingIds = Object.keys(db.buildings || {});
+                const parts = {};
+
+                const main = JSON.parse(JSON.stringify(db));
+                delete main._meta;
+                for (const emp of Object.values(main._EmployeeWizard?.employees || {})) delete emp.wage;
+                const dailyAll = main._DailyWizard?.buildings || {};
+                if (main._DailyWizard) {
+                    const orphans = {};
+                    for (const [id, v] of Object.entries(dailyAll)) if (!buildingIds.includes(id)) orphans[id] = v;
+                    main._DailyWizard = { ...main._DailyWizard, buildings: orphans };
+                }
+                const entries = main._PaperWizard?.entries || {};
+                if (main._PaperWizard) delete main._PaperWizard.entries;
+                main._fieldStamps = JSON.parse(JSON.stringify(this.stamps));
+                parts[SPLIT_MAIN] = main;
+
+                const wages = {};
+                for (const [name, emp] of Object.entries(db._EmployeeWizard?.employees || {})) {
+                    if (emp && emp.wage !== undefined) wages[name] = emp.wage;
+                }
+                parts[SPLIT_WAGES] = { wages };
+
+                const bparts = {};
+                const partFor = (id) => bparts[id] || (bparts[id] = {
+                    _building: id, _DailyWizard: { buildings: {} }, _PaperWizard: { entries: {} }, _overlays: { lots: {}, events: {} }
+                });
+                for (const id of buildingIds) partFor(id);
+                for (const [id, v] of Object.entries(dailyAll)) if (buildingIds.includes(id)) partFor(id)._DailyWizard.buildings[id] = v;
+                const homes = { paper: {}, sheet: {} };
+                for (const [lotId, sheets] of Object.entries(entries)) {
+                    for (const [sheetId, entry] of Object.entries(sheets)) {
+                        const slot = (id) => {
+                            const e = partFor(id)._PaperWizard.entries;
+                            return (e[lotId] || (e[lotId] = {}))[sheetId] || (e[lotId][sheetId] = {});
+                        };
+                        let newestHome = null;
+                        for (const [key, inst] of Object.entries(entry.instances || {})) {
+                            const pk = `${lotId}|${sheetId}|${key}`;
+                            const home = this.homeFor(this.paperHome[pk], db, inst?.room, lotId);
+                            if (!home) continue;
+                            const s = slot(home);
+                            (s.instances || (s.instances = {}))[key] = inst;
+                            homes.paper[pk] = home;
+                            newestHome = home;
+                        }
+                        const otherKeys = Object.keys(entry).filter(k => k !== 'instances');
+                        if (otherKeys.length) {
+                            const sk = `${lotId}|${sheetId}`;
+                            const home = this.homeFor(this.sheetHome[sk] || newestHome, db, null, lotId);
+                            if (!home) continue;
+                            const s = slot(home);
+                            for (const k of otherKeys) s[k] = entry[k];
+                            homes.sheet[sk] = home;
+                        }
+                    }
+                }
+                for (const [id, ov] of Object.entries(this.overlays)) {
+                    if (bparts[id]) bparts[id]._overlays = JSON.parse(JSON.stringify(ov));
+                }
+                for (const [id, p] of Object.entries(bparts)) parts[buildingFileName(id)] = p;
+                Object.defineProperty(parts, '_homes', { value: homes, enumerable: false });
+                return parts;
+            },
+
+            partJson(part) {
+                return JSON.stringify(part);
+            },
+
+            // ---- This device's changes since opening / last save ----
+            // Office: stamp edited floor fields so they beat older building overlays.
+            stampOfficeChanges(db, now) {
+                const base = JSON.parse(this.baseline);
+                for (const [lotId, lot] of Object.entries(db.lots || {})) {
+                    for (const f of LOT_FLOOR_FIELDS) {
+                        if (!sameValue(lot[f], base.lots?.[lotId]?.[f])) (this.stamps.lots[lotId] || (this.stamps.lots[lotId] = {}))[f] = now;
+                    }
+                }
+                const baseEvents = new Map((base.calendarEvents || []).map(e => [e.id, e]));
+                for (const ev of db.calendarEvents || []) {
+                    for (const f of EVENT_FLOOR_FIELDS) {
+                        if (!sameValue(ev[f], baseEvents.get(ev.id)?.[f])) (this.stamps.events[ev.id] || (this.stamps.events[ev.id] = {}))[f] = now;
+                    }
+                }
+                const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
+                for (const id of Object.keys(this.stamps.lots)) if (!db.lots?.[id]) delete this.stamps.lots[id];
+                for (const id of Object.keys(this.stamps.events)) if (!liveEvents.has(id)) delete this.stamps.events[id];
+            },
+
+            // Building device: its floor-field edits become timestamped overlays in its own file.
+            buildingOverlays(db, id, now) {
+                const base = JSON.parse(this.baseline);
+                const ov = JSON.parse(JSON.stringify(this.overlays[id] || { lots: {}, events: {} }));
+                // An update keeps its original time while its value is unchanged, so re-saving never makes an
+                // old floor value look newer than a later office correction
+                const record = (kind, rid, f, value) => {
+                    const prev = ov[kind][rid]?.[f];
+                    if (prev && sameValue(prev.value, value)) return;
+                    (ov[kind][rid] || (ov[kind][rid] = {}))[f] = { value: value ?? null, at: now };
+                };
+                for (const [lotId, lot] of Object.entries(db.lots || {})) {
+                    for (const f of LOT_FLOOR_FIELDS) {
+                        if (!sameValue(lot[f], base.lots?.[lotId]?.[f])) record('lots', lotId, f, lot[f]);
+                    }
+                }
+                const baseEvents = new Map((base.calendarEvents || []).map(e => [e.id, e]));
+                for (const ev of db.calendarEvents || []) {
+                    for (const f of EVENT_FLOOR_FIELDS) {
+                        if (!sameValue(ev[f], baseEvents.get(ev.id)?.[f])) record('events', ev.id, f, ev[f]);
+                    }
+                }
+                // Drop overlays for records that are gone, or that a later office edit has superseded
+                const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
+                for (const kind of ['lots', 'events']) {
+                    for (const [rid, fields] of Object.entries(ov[kind])) {
+                        const exists = kind === 'lots' ? !!db.lots?.[rid] : liveEvents.has(rid);
+                        for (const [f, u] of Object.entries(fields)) {
+                            if (!exists || (this.stamps[kind][rid]?.[f] || 0) >= u.at) delete fields[f];
+                        }
+                        if (!Object.keys(fields).length) delete ov[kind][rid];
+                    }
+                }
+                return ov;
+            },
+
+            // Building device: office-owned changes it can't save (floor fields excluded — they become overlays)
+            blockedOfficeChanges(db) {
+                const base = JSON.parse(this.baseline);
+                const probe = JSON.parse(JSON.stringify(db));
+                for (const [lotId, lot] of Object.entries(probe.lots || {})) {
+                    for (const f of LOT_FLOOR_FIELDS) setOrDelete(lot, f, base.lots?.[lotId]?.[f]);
+                }
+                const baseEvents = new Map((base.calendarEvents || []).map(e => [e.id, e]));
+                for (const ev of probe.calendarEvents || []) {
+                    for (const f of EVENT_FLOOR_FIELDS) setOrDelete(ev, f, baseEvents.get(ev.id)?.[f]);
+                }
+                const a = this.split(probe)[SPLIT_MAIN];
+                const b = this.split(base)[SPLIT_MAIN];
+                const changed = [];
+                for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+                    if (key === '_fieldStamps') continue;
+                    if (!sameValue(a[key], b[key])) changed.push(MAIN_KEY_LABELS[key] || key);
+                }
+                return changed;
+            },
+
+            withMeta(name, part) {
+                const prev = this.metas[name] || {};
+                const meta = {
+                    schemaVersion: DB_SCHEMA_VERSION,
+                    revision: (prev.revision || 0) + 1,
+                    savedAt: new Date().toISOString(),
+                    saveId: randomCode(10),
+                    parentSaveId: prev.saveId || null,
+                    savedBy: this.roleLabel()
+                };
+                return { meta, text: JSON.stringify({ ...part, _meta: meta }, null, 2) };
+            },
+
+            // Record a file as saved (or opened): it becomes the base for change and conflict checks
+            commitFile(name, part, meta, text, homes) {
+                this.baseParts[name] = this.partJson(part);
+                this.metas[name] = meta;
+                this.hashes[name] = contentHash(text);
+                this.loaded.add(name);
+                if (name === SPLIT_MAIN) DB.data._meta = meta;
+                if (name === SPLIT_WAGES) this.haveWages = true;
+                const m = SPLIT_BUILDING_RE.exec(name);
+                if (m && part._building) {
+                    const id = part._building;
+                    this.overlays[id] = JSON.parse(JSON.stringify(part._overlays || { lots: {}, events: {} }));
+                    if (homes) {
+                        for (const [k, home] of Object.entries(homes.paper)) if (home === id) this.paperHome[k] = id;
+                        for (const [k, home] of Object.entries(homes.sheet)) if (home === id) this.sheetHome[k] = id;
+                    }
+                }
+            },
+
+            // ---- Opening ----
+            // files: { main: {name, text}, wages: {name, text}|null, buildings: [{name, text}], folder: dir|null }
+            async open(files) {
+                let main, wages = null;
+                const buildings = [];
+                try {
+                    main = JSON.parse(files.main.text);
+                    for (const f of files.buildings) buildings.push({ name: f.name, data: JSON.parse(f.text), text: f.text });
+                } catch (err) {
+                    alert('Could not read the database files: ' + err.message);
+                    return false;
+                }
+                await this.ensureRole(main.buildings);
+                if (this.role === 'office' && files.wages) {
+                    try { wages = JSON.parse(files.wages.text); } catch (_) { alert('Wages.json could not be read — wages are not loaded.'); }
+                }
+
+                const db = this.merge(main, wages, buildings.map(b => b.data));
+                this.active = true;
+                this.loaded = new Set();
+                this.haveWages = !!wages;
+                this.metas = {};
+                this.hashes = {};
+                this.pending = null;
+                DB.data = db;
+                DB.ensureStructure();
+                DB.data._meta = main._meta || null;
+                if (!DB.data._meta) delete DB.data._meta;
+                DB.fileName = `Main + ${buildings.length} building file${buildings.length === 1 ? '' : 's'}`;
+
+                const record = (name, text, data) => {
+                    this.loaded.add(name);
+                    this.metas[name] = data?._meta || {};
+                    this.hashes[name] = contentHash(text);
+                };
+                record(SPLIT_MAIN, files.main.text, main);
+                if (wages) record(SPLIT_WAGES, files.wages.text, wages);
+                for (const b of buildings) record(buildingFileName(b.data._building), b.text, b.data);
+
+                this.baseline = this.snapshot(DB.data);
+                const parts = this.split(DB.data);
+                this.baseParts = {};
+                for (const [name, part] of Object.entries(parts)) this.baseParts[name] = this.partJson(part);
+
+                clearUnsaved();
+                refreshAllViews();
+                hideOverlay();
+                hideMobileToolOverlay();
+                return true;
+            },
+
+            // ---- Saving ----
+            // Works out which files changed and which of those this device may save, then saves them to the
+            // open folder (Save to folder) or offers one right-click link per file.
+            plan() {
+                const now = Date.now();
+                const db = DB.data;
+                if (this.role === 'office') this.stampOfficeChanges(db, now);
+                else this.overlays[this.role] = this.buildingOverlays(db, this.role, now);
+                const parts = this.split(db);
+                const changed = Object.keys(parts).filter(n => this.partJson(parts[n]) !== this.baseParts[n]);
+
+                const toSave = [];
+                const cannot = [];
+                if (this.role === 'office') {
+                    for (const name of changed) {
+                        if (name === SPLIT_WAGES && !this.haveWages) cannot.push('wages (open Wages.json to save wage changes)');
+                        else if (!this.loaded.has(name) && !DbFolder.active) cannot.push(`${name} (not opened on this device)`);
+                        else toSave.push(name);
+                    }
+                } else {
+                    const own = buildingFileName(this.role);
+                    if (changed.includes(own)) {
+                        // Never overwrite the building's real file from a session that didn't open it
+                        if (!this.loaded.has(own) && !DbFolder.active) cannot.push(`${own} (open it together with Main.json to save)`);
+                        else toSave.push(own);
+                    }
+                    const blocked = this.blockedOfficeChanges(db);
+                    if (blocked.length) cannot.push(`office records: ${blocked.join(', ')}`);
+                    for (const name of changed) {
+                        if (name === own || name === SPLIT_MAIN) continue;
+                        cannot.push(name === SPLIT_WAGES ? 'wages' : `${name} (another building's paperwork or task list)`);
+                    }
+                }
+                return { parts, toSave, cannot, snapshot: this.snapshot(db) };
+            },
+
+            describeCannot(cannot) {
+                return `These changes can't be saved from this device (${this.roleLabel()}) and will be lost when the files are reopened:\n\n• ${cannot.join('\n• ')}`;
+            },
+
+            // The DB as JSON without the save stamp (which changes on every save)
+            snapshot(db) {
+                return JSON.stringify({ ...db, _meta: undefined });
+            },
+
+            finish(plan) {
+                this.pending = null;
+                // A building device keeps its old baseline while office-only edits are pending, so they keep
+                // being reported (its own overlays keep their original times — see buildingOverlays).
+                if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
+                if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
+                updateIOStatusBar();
+                updateSplitCard();
+            },
+
+            // Folder: write each file this device owns, refusing to overwrite one saved elsewhere since opening
+            async saveToFolder(plan) {
+                const dir = DbFolder.handle;
+                if (!await DbFolder.ensurePermission(dir)) {
+                    alert(`SitkaTools needs permission to save in "${dir.name}".`);
+                    return;
+                }
+                const written = [];
+                const copies = [];
+                for (const name of plan.toSave) {
+                    const part = plan.parts[name];
+                    const { meta, text } = this.withMeta(name, part);
+                    let onDisk = null;
+                    try { onDisk = await (await (await dir.getFileHandle(name)).getFile()).text(); } catch (_) { /* new file */ }
+                    const changedElsewhere = onDisk !== null && (!this.loaded.has(name) || contentHash(onDisk) !== this.hashes[name]);
+                    if (changedElsewhere) {
+                        const stamp = new Date();
+                        const hhmm = String(stamp.getHours()).padStart(2, '0') + String(stamp.getMinutes()).padStart(2, '0');
+                        const copyName = name.replace('.json', `-conflict-${hhmm}.json`);
+                        if (!confirm(`⚠️ ${name} in "${dir.name}" was saved from another device after you opened it.\n\n` +
+                            `Saving over it would erase those changes.\n\nOK — save your version as ${copyName} so nothing is lost.\nCancel — skip this file.`)) continue;
+                        await DbFolder.writeFile(dir, copyName, text);
+                        copies.push(copyName);
+                        continue;
+                    }
+                    await DbFolder.writeFile(dir, name, text);
+                    this.commitFile(name, part, meta, text, plan.parts._homes);
+                    written.push(name);
+                }
+                if (written.length === plan.toSave.length) this.finish(plan);
+                if (copies.length) {
+                    alert(`Saved your version as ${copies.join(', ')} — nothing was overwritten. Reopen the folder to see the other device's changes.`);
+                }
+                if (written.length) showSyncToast(`Saved ${written.join(', ')} to "${dir.name}"`);
+            },
+
+            // Save button → popup: "Save to folder" (when a folder is open) + one right-click link per file
+            showSavePopup(plan = this.plan()) {
+                saveLink.classList.add('hidden');
+                saveFileLinks.innerHTML = '';
+                saveFolderAction.innerHTML = '';
+                saveFolderAction.classList.add('hidden');
+                revokeSaveBlobs();
+
+                if (plan.cannot.length) alert(this.describeCannot(plan.cannot));
+                if (plan.toSave.length === 0) {
+                    const none = document.createElement('div');
+                    none.className = 'save-link';
+                    none.textContent = 'Nothing to save from this device.';
+                    saveFileLinks.appendChild(none);
+                    savePopup.classList.remove('hidden');
+                    return;
+                }
+
+                if (DbFolder.active && DbFolder.handle) {
+                    const btn = document.createElement('button');
+                    btn.className = 'save-folder-btn';
+                    btn.id = 'saveToFolderBtn';
+                    btn.textContent = `💾 Save ${plan.toSave.length} file${plan.toSave.length === 1 ? '' : 's'} to "${DbFolder.handle.name}"`;
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        closeSavePopup();
+                        await this.saveToFolder(plan);
+                    });
+                    saveFolderAction.appendChild(btn);
+                    saveFolderAction.classList.remove('hidden');
+                }
+
+                const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+                const remaining = new Set(plan.toSave);
+                this.pending = plan;
+                for (const name of plan.toSave) {
+                    const part = plan.parts[name];
+                    const { meta, text } = this.withMeta(name, part);
+                    const blob = new Blob([text], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    saveBlobUrls.push(url);
+                    const a = document.createElement('a');
+                    a.className = 'save-link';
+                    a.dataset.file = name;
+                    a.href = url;
+                    a.download = name;
+                    a.textContent = `📄 ${name} — ${isTouchDevice ? 'Tap to save' : 'Right-click → Save Link As…'}`;
+                    const used = () => {
+                        if (!remaining.has(name)) return;
+                        remaining.delete(name);
+                        a.classList.add('saved');
+                        this.commitFile(name, part, meta, text, plan.parts._homes);
+                        if (remaining.size === 0) this.finish(plan);
+                    };
+                    if (isTouchDevice) {
+                        a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name); used(); });
+                    } else {
+                        a.addEventListener('click', used);
+                        a.addEventListener('contextmenu', used);
+                    }
+                    saveFileLinks.appendChild(a);
+                }
+                savePopup.classList.remove('hidden');
+            },
+
+            // ---- One-time split of a legacy single DB into Main / Wages / Building files (office) ----
+            async splitLegacy() {
+                if (!DB.data) { alert('Load the current database first.'); return; }
+                if (this.active) { alert('This database is already split into building files.'); return; }
+                const buildingIds = Object.keys(DB.buildings);
+                if (buildingIds.length === 0) {
+                    alert('Create your buildings in the Room Manager first, and assign every room to one.');
+                    return;
+                }
+                const unassigned = Object.entries(DB.data.rooms || {}).filter(([, r]) => !r.buildingId || !DB.buildings[r.buildingId]);
+                if (unassigned.length) {
+                    alert(`Assign these rooms to a building in the Room Manager first:\n\n• ${unassigned.map(([id, r]) => `${r.name || id} (${id})`).join('\n• ')}`);
+                    return;
+                }
+                const role = await this.ensureRole(DB.buildings);
+                if (role !== 'office') { alert('Only the office device can split the database.'); return; }
+
+                if (DbFolder.active && DbFolder.handle) {
+                    const existing = [];
+                    for await (const entry of DbFolder.handle.values()) {
+                        if (entry.name === SPLIT_MAIN || entry.name === SPLIT_WAGES || SPLIT_BUILDING_RE.test(entry.name)) existing.push(entry.name);
+                    }
+                    if (existing.length) {
+                        alert(`"${DbFolder.handle.name}" already has building files (${existing.join(', ')}). Open them instead.`);
+                        return;
+                    }
+                }
+                if (!confirm(`Split this database into ${2 + buildingIds.length} files?\n\n• Main.json — office\n• Wages.json — office only\n` +
+                    buildingIds.map(id => `• ${buildingFileName(id)} — ${DB.buildings[id].name || id}`).join('\n') +
+                    `\n\nAny unsaved changes are included. Your single-file database stays as it is — keep it as a backup.`)) return;
+
+                // Start split mode from the current DB as an empty baseline: every file is new
+                this.reset();
+                this.active = true;
+                this.haveWages = true;
+                this.baseline = this.snapshot(DB.data);
+                DbFolder.base = null;
+                DB.fileName = `Main + ${buildingIds.length} building file${buildingIds.length === 1 ? '' : 's'}`;
+                const plan = this.plan();
+                plan.toSave = Object.keys(plan.parts);
+                plan.cannot = [];
+                for (const name of plan.toSave) this.loaded.add(name);
+                markUnsaved();
+                updateIOStatusBar();
+                updateSplitCard();
+                if (DbFolder.active && DbFolder.handle) {
+                    await this.saveToFolder(plan);
+                } else {
+                    this.showSavePopup(plan);
+                }
+            }
+        };
+
+        // Blob URLs behind the per-file save links
+        const saveFolderAction = $('saveFolderAction');
+        const saveFileLinks = $('saveFileLinks');
+        let saveBlobUrls = [];
+        function revokeSaveBlobs() {
+            saveBlobUrls.forEach(url => URL.revokeObjectURL(url));
+            saveBlobUrls = [];
+        }
+
+        // ---- 🏢 Building Files card ----
+        function updateSplitCard() {
+            const status = $('splitStatus');
+            const splitBtn = $('splitDbBtn');
+            const roleText = `This device: <strong>${escapeHtml(DbSplit.roleLabel())}</strong>`;
+            if (DbSplit.active) {
+                const files = [...DbSplit.loaded].sort().map(n => escapeHtml(n)).join(', ');
+                status.innerHTML = `${roleText}<br>Open files: ${files || '—'}`;
+                splitBtn.style.display = 'none';
+            } else {
+                status.innerHTML = `${roleText}<br>${DB.data ? 'A single-file database is open.' : 'No database open.'}`;
+                splitBtn.style.display = DB.data ? '' : 'none';
+            }
+        }
+
+        $('changeRoleBtn').addEventListener('click', async () => {
+            await DbSplit.ensureRole(DB.data?.buildings || {}, true);
+            updateIOStatusBar();
+            updateSplitCard();
+            if (DbSplit.active) alert('Device changed. Reopen the database files so this device saves the right ones.');
+        });
+        $('splitDbBtn').addEventListener('click', () => DbSplit.splitLegacy());
+
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
 
-            if (DbFolder.active && DbFolder.handle) {
-                DbFolder.save();
+            if (DbSplit.active) {
+                DbSplit.showSavePopup();
                 return;
             }
 
             const save = prepareSave();
             const filename = save.filename;
+
+            // Single-file DB: one right-click link, plus "Save to folder" when a folder is open
+            saveLink.classList.remove('hidden');
+            saveFileLinks.innerHTML = '';
+            saveFolderAction.innerHTML = '';
+            saveFolderAction.classList.add('hidden');
+            if (DbFolder.active && DbFolder.handle) {
+                const btn = document.createElement('button');
+                btn.className = 'save-folder-btn';
+                btn.id = 'saveToFolderBtn';
+                btn.textContent = `💾 Save to "${DbFolder.handle.name}"`;
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    closeSavePopup();
+                    DbFolder.save();
+                });
+                saveFolderAction.appendChild(btn);
+                saveFolderAction.classList.remove('hidden');
+            }
 
             // Revoke previous blob URL to free memory
             if (currentBlobUrl) {
@@ -3858,6 +4683,7 @@
 
         function closeSavePopup() {
             savePopup.classList.add('hidden');
+            revokeSaveBlobs();
             if (currentBlobUrl) {
                 URL.revokeObjectURL(currentBlobUrl);
                 currentBlobUrl = null;
@@ -7712,7 +8538,7 @@
                 : '';
             bar.className = 'status-bar loaded';
             bar.innerHTML = `
-                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName)}</strong>${DbFolder.active && DbFolder.handle ? ` from 📁 ${escapeHtml(DbFolder.handle.name)}` : ''}${savedText}</span>
+                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName)}</strong>${DbFolder.active && DbFolder.handle ? ` from 📁 ${escapeHtml(DbFolder.handle.name)}` : ''}${DbSplit.active ? ` · this device: <strong>${escapeHtml(DbSplit.roleLabel())}</strong>` : ''}${savedText}</span>
                 <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
             `;
         }
