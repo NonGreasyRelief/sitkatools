@@ -379,6 +379,37 @@ The central hub with two modes:
 
 All subtools (GeneralEvent, CropLabourWizard, EquipmentWizard) open as centered popup windows from SitkaTools.html. They launch at **half the main app's viewport width** and **83% of the viewport height**. Each subtool's UI should be designed to fit comfortably within this window size.
 
+## Split Database — Main, Wages and Building Files
+
+The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (SharePoint's version history replaces dated copies). A single legacy `DB-YY-MM-DD.json` still opens and saves exactly as before.
+
+| File | Saved by | Holds |
+|---|---|---|
+| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
+| `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h } }` |
+| `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]`, the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
+| `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
+
+**Every device opens all the files and saves only its own.** SitkaTools merges them into the usual single-DB shape (`DbSplit.merge`), so every tool works unchanged, and splits it back on save (`DbSplit.split`). The device's role — `office` or a building id — is asked once and remembered in IndexedDB (`sitkatools` → `settings`).
+
+- **Overlays (building → office records):** a building device can't save Main, so its edits to the floor fields `lots.plantCount / stage / currentRoom` and `calendarEvents[].completed / labour_map` are saved in its own file as `{ value, at }` overlays. On merge, for each field the newest of the office's stamped edit (`Main._fieldStamps`, written when the office changes that field) and every building's overlay wins. An overlay keeps its original `at` while its value is unchanged, and is dropped once the office has superseded it or the record is gone.
+- **Paperwork routing:** an instance stays in the building file it was opened from; a new one filled on a building device goes in that device's file; otherwise it is routed by the instance's room → building (then the lot's rooms). A lot's paper trail therefore spans building files and never moves.
+- **What a device may save:** the office saves Main, Wages (only if Wages.json was opened) and any building file; a building device saves only its own building file. A file is only overwritten if it was opened this session (or, in folder mode, doesn't exist yet). Changes a device can't save are listed in a warning and stay unsaved. Folder saves re-check each file on disk and write `<name>-conflict-HHMM.json` instead of overwriting one saved elsewhere since opening.
+- **Saving:** 💾 Save DB shows one right-click **Save Link As…** link per changed file, plus **Save to "<folder>"** when a folder is open.
+- **One-time split:** the 🏢 Building Files card (Calendar Import/Export tab) → **Split into building files** (office; every room must belong to a building).
+- **Lot move:** the lot's building (or the office) **Sends** it to another building — a pending `_LotTransfers` record in the sender's file. The receiving building **Accepts** it (picks one of its rooms, enters initials), which sets `lots.currentRoom` and moves the accepted record to its own file; the sender's pending copy drops on its next save.
+- **Lot close-out:** office only in split mode. The lot record, its events (with labour), CLW generation history, paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json` (written into the folder's `Archive/` subfolder, or offered as a right-click link). The lot is removed from the DB only after the archive is written or its link used; Save DB then drops it from every file.
+
+### Shared Working Copy (tablets)
+
+All tools are served from the same site, so they share browser storage. SitkaTools mirrors the open DB (plus split bookkeeping) into IndexedDB `sitkatools` → `work` (key `current`) and announces changes on `BroadcastChannel('sitkatools-db')`. Every subtool includes the `WorkCopy` snippet:
+
+- A tool opened **without an opener** (a tablet tab), or whose `sitkaGit_db` postMessage doesn't arrive within 1.5 s, loads the DB from the shared copy, shows a "save from the SitkaTools tab" banner, and hides its own Load/Export/Import buttons. It delivers the DB to itself by dispatching a synthetic (untrusted) `message` event, so its normal `sitkaGit_db` / `sitkaGit_db_update` handler runs — that is why the opener check reads `if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;`.
+- `notifySitkaTools()` also writes the shared copy when the tab uses it; SitkaTools takes the change in like a subtool update (marks unsaved). SitkaTools' own changes reach open tool tabs the same way.
+- On phones, module links open the tool in a tab (the old save-then-import overlay is no longer used).
+- **Forgetting:** the copy is deleted when SitkaTools closes with everything saved (open tool tabs finish the delete via a `sitka-closing` broadcast), saved copies are removed on the next start, nothing older than 12 hours is used, and unsaved work left behind is offered back once on the next SitkaTools start.
+- IndexedDB version is **3** everywhere (`folders`, `settings`, `work` stores); every copy of the open/upgrade code must match.
+
 ## Crop Projection (Projected Lots)
 
 Flowering rooms can hold **projected lots** — placeholder future crops that let you plan labour months ahead without creating real lots. Projected lots are generated by CropLabourWizard, stored in a dedicated map inside the shared database, and rendered as calendar events with their own `sourceTool`. They are **not** real lots: they never appear in `DB.lots`, never show up in SitkaTools' lot manager, and can be regenerated at any time.
@@ -1071,7 +1102,7 @@ function populateRoomSelector() {
 
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
-- **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used — with one exception: SitkaTools keeps its remembered DB folder **handles** (never DB data) in IndexedDB (`sitkatools` → `folders`), and works normally when that storage is unavailable.
+- **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used — with two exceptions in IndexedDB `sitkatools` (v3): SitkaTools' remembered DB folder **handles** and this device's role (`folders`, `settings`), and the shared working copy of the open DB used by tablet tabs (`work` — see "Shared Working Copy"). Everything works without it except the tablet tab hand-off.
 - File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting. SitkaTools' **Save DB** always shows the save popup with its right-click **Save Link As…** link — Edge users save under custom names that way, and it works on PCs that block normal downloads. Do not replace it with `showSaveFilePicker` or a direct download. The unsaved flag clears once the link is used (clicked, right-clicked, or tapped), not when the popup opens
 - No `async/await` on network calls — there are none
 

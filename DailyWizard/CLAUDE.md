@@ -183,6 +183,10 @@ DailyWizard is part of the SitkaGit suite: a standalone single-file HTML applica
 
    Without a loaded DB the tool shows an empty-state prompting to load one (or, in subtool mode, waiting for the postMessage delivery).
 
+### Shared Working Copy (tablets)
+
+Opened as a plain tab while SitkaTools has a DB open on the same device, DailyWizard loads it from the shared working copy instead of a file (root `CLAUDE.md` → "Shared Working Copy"): the 📂 Load / 💾 Export buttons are hidden, a banner says to save from the SitkaTools tab, and task-list edits flow back to SitkaTools, which saves them to this building's `Building-<ID>.json`.
+
 ### Standard postMessage Pattern
 
 DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor.

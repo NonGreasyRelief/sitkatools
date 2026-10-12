@@ -155,21 +155,32 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
   - GeneralEvent re-stamps its own log's `createdAt` every time it opens.
   - Standalone exports from DailyWizard and PaperWizard don't stamp `_meta` yet. That arrives with device identity in Phase 1.
 
-### Phase 1: One file per writer
+### Phase 1: Split by building (built on branch `building-split`, not merged yet)
 
-- **Device identity:** a one-time "This device is: Office / Building X" setting, stamped into everything it saves, including standalone tablet exports.
-- **File layout and loader:** load `plan.json` plus any number of `activity-*.json` files at once and combine them in memory.
-- [x] **Folder mode (Chrome/Edge), for today's single DB file:** pick the synced SharePoint folder once (remembered, plus recent folders), then get one-click open and save. Before writing, SitkaTools re-reads the folder. If someone else saved after you opened, it writes a separate conflict copy instead of overwriting. It also warns about OneDrive conflict copies on open. Once the split lands, folder mode will load every device's file at once.
-- **Move floor data out of planning records:** completions, labour hours, and plant count / stage / room changes become activity entries keyed by event and lot ID.
-- **Migration:** a one-time "split my current DB" button that writes `plan.json` and one activity file per building from today's single file.
-- **Read-only guardrails:** a building device can view the plan but can't save it, and the office can't save a building's activity.
+Agreed with the user on 2026-10-12. It differs from option B above in one way: there's no separate plan file. A **Main** database holds what the office edits, and floor work lives in **one file per building**. Every device opens all the files but saves only its own. Details are in `CLAUDE.md` → "Split Database".
+
+- [x] **Files:** `Main.json` (office), `Wages.json` (office only), `Building-<ID>.json` (that building), `Archive/Lot-<id>-<date>.json`. Names are fixed; SharePoint's version history replaces dated copies.
+- [x] **Device identity:** asked once ("Office / Building X") and remembered. Every saved file is stamped with who saved it.
+- [x] **Loader and saver:** SitkaTools combines the files into the usual one-DB shape, so tools are unchanged, and splits them back on save. Each device writes only the files it owns, and lists any change it can't save.
+- [x] **Floor updates to office records:** plant count, phase and room on lots, and completion and labour hours on events, are saved as timestamped updates in the building's file. The newest wins against the office's own edits.
+- [x] **Folder mode (Chrome/Edge laptops):** pick the synced folder once (recent folders are remembered); all files open together.
+  - Save to folder writes only this device's files.
+  - It never overwrites a file someone saved since you opened it; it writes a conflict copy instead.
+  - The right-click link per file is always there too.
+- [x] **Android tablets:** pick all the files together; Save gives a link per file to save or share.
+- [x] **Tools as tablet tabs:** tools load SitkaTools' open database from a shared browser copy, with no popups or postMessage. Changes flow both ways. The copy is forgotten after save and close, kept at most 12 hours, and unsaved work is offered back once.
+- [x] **Migration:** a one-time "Split into building files" on the office device. Every room must belong to a building first.
+- [x] **Lot move:** the sending building Sends; the receiving building Accepts, picks the room and initials. Paperwork never moves.
+- [x] **Lot close-out (from Brainstorm):** one archive file per lot, then the lot is removed from every file.
+- [ ] **Labour in DailyWizard:** staff log their own hours and minutes and initial each entry, on all task types (DailyWizard chores, equipment, crop tasks). Only the floor manager marks tasks done. Check-offs are saved but start blank each day.
+- [ ] **Drawn initials** for lot Accept (typed for now) and labour entries, reusing PaperWizard's draw pad.
 
 ### Phase 2: Features (from Brainstorm)
 
 - **Estimated hours in CropLabourWizard recipes** (Hours × Employees, as in DailyWizard), with room for an actual captured number when one is available. This feeds labour forecasting.
 - **Labour report sheet:** estimated vs. actual hours by building, room, lot and task.
-- **Close Out tool:** archive a finished lot's events, paperwork and records to `archive/lot-<id>.json` (or a combined `finished_lots_db.json`), then remove it from the active files. This keeps the daily files small.
-- **Wages in a separate, restricted file**, so the roster can be shared without pay data.
+- [x] **Close Out tool:** done in Phase 1, one archive file per lot.
+- [x] **Wages in a separate, restricted file:** done in Phase 1 (`Wages.json`, office only).
 - **Crop line-up tool:** start crops on a fixed cadence (the 1st, 5th, 9th, 13th, 17th, 21st, 25th).
 - **PaperWizard filing cabinet:**
   - A per-lot tree of propagation sheet, IPM log, weekly grow logs, room-cleaning sheets inherited from the previous lot in each room, and the harvest log.

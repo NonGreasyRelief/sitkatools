@@ -498,6 +498,10 @@ PaperWizard is part of the SitkaGit suite: a standalone single-file HTML applica
 1. **From SitkaTools (normal subtool mode):** opens as a popup per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every mutation to `_PaperWizard` (sheet/wizard saves, entry saves, signatures) **and after every lot write-back** (`plantCount` / `stage` / `currentRoom`).
 2. **Standalone (tablet/floor mode):** opened directly with no opener. The header shows 📂 Load / 💾 Export buttons (hidden when an opener exists) using the standard suite file-import/export pattern — so a floor tablet can load the current `DB-YY-MM-DD.json`, fill entries, and export the updated DB back to disk.
 
+### Shared Working Copy (tablets)
+
+Opened as a plain tab while SitkaTools has a DB open on the same device, PaperWizard loads it from the shared working copy instead of a file (root `CLAUDE.md` → "Shared Working Copy"): the 📂 Load / 💾 Export buttons are hidden, a banner says to save from the SitkaTools tab, and entries / write-backs flow back to SitkaTools. With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`; the lot's earlier paperwork from other buildings stays in their files and is still shown (every device opens all files).
+
 ### Standard postMessage Pattern
 
 The standard subtool pattern from the root `CLAUDE.md` applies verbatim (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), plus non-disruptive handling of live `sitkaGit_db_update` pushes (refresh lot selector and sheet statuses without disturbing an open wizard).
