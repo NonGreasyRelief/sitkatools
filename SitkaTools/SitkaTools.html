@@ -2657,14 +2657,18 @@
         }
 
         /* =====================================================
-           Calendar Import/Export Tab Styles
+           Data & Files Tab Styles (calendar import/export, building files)
            ===================================================== */
 
         .io-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
+            margin-bottom: 20px;
         }
+
+        /* The Building Files card spans the full width under the two calendar cards */
+        .io-card.io-card-wide { grid-column: 1 / -1; }
 
         .io-card {
             background: var(--bg-secondary);
@@ -2794,7 +2798,7 @@
                     <button class="tab active" data-tab="calendar-view">Calendar View</button>
                     <button class="tab" data-tab="lot-management">Lot Manager</button>
                     <button class="tab" data-tab="room-management">Room Manager</button>
-                    <button class="tab" data-tab="calendar-io">Calendar Import/Export</button>
+                    <button class="tab" data-tab="calendar-io">Data &amp; Files</button>
                 </nav>
                 <div class="tabs-fade" id="tabsFade"></div>
             </div>
@@ -3104,10 +3108,10 @@
             </div>
         </section>
 
-        <!-- Calendar Import/Export Tab -->
+        <!-- Data & Files Tab (calendar import/export, building files, lot move & close-out) -->
         <section class="tab-content" id="calendar-io">
             <div class="status-bar empty" id="ioStatusBar">
-                <span class="status-text">No database loaded. Import a DB file to use calendar import/export.</span>
+                <span class="status-text">No database loaded. Load a database to use calendar import/export, building files and lot close-out.</span>
             </div>
 
             <div class="io-grid">
@@ -3136,7 +3140,7 @@
                 </div>
 
                 <!-- Building Files Card (ROADMAP Phase 1 — split DB) -->
-                <div class="io-card" id="splitCard">
+                <div class="io-card io-card-wide" id="splitCard">
                     <h2 class="io-card-title">🏢 Building Files</h2>
                     <p class="io-card-desc" id="splitCardDesc">
                         The database can live in separate files: <strong>Main.json</strong> (office), <strong>Wages.json</strong> (office only) and one <strong>Building-&lt;ID&gt;.json</strong> per building. Every device opens all of them and saves only its own.
@@ -8962,7 +8966,7 @@
             const bar = $('ioStatusBar');
             if (!DB.data) {
                 bar.className = 'status-bar empty';
-                bar.innerHTML = '<span class="status-text">No database loaded. Import a DB file to use calendar import/export.</span>';
+                bar.innerHTML = '<span class="status-text">No database loaded. Load a database to use calendar import/export, building files and lot close-out.</span>';
                 return;
             }
 
