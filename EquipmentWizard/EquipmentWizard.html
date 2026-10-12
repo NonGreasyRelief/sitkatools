@@ -782,6 +782,79 @@
         // Database Keys: "_EquipmentWizard" (top-level), "calendarEvents"
         // =====================================================
 
+        // ---- Stable event IDs (ROADMAP 0.2) ----
+        // Every calendar event carries a unique `id`. New events get a random id; events from files
+        // saved before ids existed get one derived from their content, so every device that loads the
+        // same file assigns the same id to the same event. (Function declarations only — these run from
+        // ensureStructure() before later top-level consts are initialised.)
+        function newEventId() {
+            const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+            const bytes = crypto.getRandomValues(new Uint8Array(10));
+            return 'ev_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        // cyrb53 — fast non-cryptographic 53-bit string hash
+        function contentHash(str) {
+            let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+            for (let i = 0; i < str.length; i++) {
+                const ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+            return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+        }
+
+        // Keep existing ids; derive missing or duplicate ones from the event's content
+        function ensureEventIds(events) {
+            const used = new Set();
+            for (const ev of events) {
+                if (typeof ev.id === 'string' && ev.id && !used.has(ev.id)) {
+                    used.add(ev.id);
+                    continue;
+                }
+                const base = 'ev_' + contentHash([ev.sourceTool, ev.lotId, ev.roomId, ev.equipmentId,
+                    ev.taskType, ev.date, ev.endDate, ev.title].join('|'));
+                let id = base;
+                for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+                ev.id = id;
+                used.add(id);
+            }
+        }
+
+        // ---- Keep annotations across schedule regeneration (ROADMAP 0.3) ----
+        // Regenerating rebuilds this tool's events from scratch. Fields added on top of a generated
+        // event — its id, completion tick, EmployeeWizard labour hours, and the notes/time fields edited
+        // in SitkaTools' event panel — are copied onto the matching replacement event.
+        function eventAnnotationKeys() {
+            return ['id', 'completed', 'labour_map', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+        }
+
+        // True when an event holds work records that regenerating it would destroy
+        function hasWorkRecords(ev) {
+            return ev.completed === true || (ev.labour_map && Object.keys(ev.labour_map).length > 0);
+        }
+
+        // Copy annotations from `previous` events onto `fresh` ones with the same keyOf(ev).
+        // Returns the previous events that found no replacement.
+        function carryOverAnnotations(previous, fresh, keyOf) {
+            const byKey = new Map();
+            for (const ev of previous) {
+                const k = keyOf(ev);
+                if (!byKey.has(k)) byKey.set(k, []);
+                byKey.get(k).push(ev);
+            }
+            for (const ev of fresh) {
+                const old = byKey.get(keyOf(ev))?.shift();
+                if (!old) continue;
+                for (const key of eventAnnotationKeys()) {
+                    if (old[key] !== undefined) ev[key] = old[key];
+                }
+            }
+            return [...byKey.values()].flat();
+        }
+
         const DB = {
             data: null,
 
@@ -792,6 +865,7 @@
                 if (!this.data.lots) this.data.lots = {};
                 if (!this.data.rooms) this.data.rooms = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                ensureEventIds(this.data.calendarEvents);
                 if (!this.data._EquipmentWizard) {
                     this.data._EquipmentWizard = { rooms: {} };
                 }
@@ -968,17 +1042,33 @@
             return DB.data._EquipmentWizard.rooms[roomId].equipment || [];
         }
 
+        // Regenerated maintenance events are matched to the previous ones by equipment + title + date
+        function equipmentEventKey(ev) {
+            return `${ev.equipmentId}|${ev.title}|${ev.date}`;
+        }
+
+        // Previous events with no regenerated match are dropped — except completed / labour-tracked
+        // occurrences of equipment that still exists, which stay on the calendar as maintenance history.
+        function retainedHistory(unmatched) {
+            return unmatched.filter(ev => hasWorkRecords(ev) && DB.rooms[ev.roomId] &&
+                (DB.data._EquipmentWizard?.rooms?.[ev.roomId]?.equipment || []).some(eq => eq.id === ev.equipmentId));
+        }
+
         // ---- Sync ALL rooms: purge every EquipmentWizard event, regenerate from all rooms ----
         function syncAllRooms() {
             // Purge ALL existing EquipmentWizard events across every room
+            const previous = DB.data.calendarEvents.filter(ev => ev.sourceTool === 'EquipmentWizard');
             DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => ev.sourceTool !== 'EquipmentWizard');
 
             let totalEvents = 0;
+            const fresh = [];
             for (const roomId of Object.keys(DB.rooms)) {
                 const events = computeCalendarEvents(roomId);
-                DB.data.calendarEvents.push(...events);
+                fresh.push(...events);
                 totalEvents += events.length;
             }
+            const history = retainedHistory(carryOverAnnotations(previous, fresh, equipmentEventKey));
+            DB.data.calendarEvents.push(...fresh, ...history);
 
             // Update preview for active room
             const activeRoom = getActiveRoomId();
@@ -996,11 +1086,13 @@
             if (!roomId) return;
 
             // Purge all existing EquipmentWizard events for this room
+            const previous = DB.data.calendarEvents.filter(ev => ev.sourceTool === 'EquipmentWizard' && ev.roomId === roomId);
             reconcileRoomSchedule(roomId);
 
-            // Compute and append fresh events
+            // Compute and append fresh events, keeping ids / completion / labour from the previous ones
             const events = computeCalendarEvents(roomId);
-            DB.data.calendarEvents.push(...events);
+            const history = retainedHistory(carryOverAnnotations(previous, events, equipmentEventKey));
+            DB.data.calendarEvents.push(...events, ...history);
 
             // Update preview
             renderPreview(events);
@@ -1539,7 +1631,7 @@
 
                 while (current <= endDate) {
                     events.push({
-                        id: uid(),
+                        id: newEventId(),
                         date: current,
                         title: `${task.emoji || '🔧'} ${task.name} — ${eq.name} — ${roomName}`,
                         sourceTool: 'EquipmentWizard',

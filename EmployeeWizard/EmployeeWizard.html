@@ -1253,6 +1253,47 @@
         // Database Keys: "_EmployeeWizard" (top-level), "calendarEvents"
         // =====================================================
 
+        // ---- Stable event IDs (ROADMAP 0.2) ----
+        // Every calendar event carries a unique `id`. New events get a random id; events from files
+        // saved before ids existed get one derived from their content, so every device that loads the
+        // same file assigns the same id to the same event. (Function declarations only — these run from
+        // ensureStructure() before later top-level consts are initialised.)
+        function newEventId() {
+            const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+            const bytes = crypto.getRandomValues(new Uint8Array(10));
+            return 'ev_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        // cyrb53 — fast non-cryptographic 53-bit string hash
+        function contentHash(str) {
+            let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+            for (let i = 0; i < str.length; i++) {
+                const ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+            return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+        }
+
+        // Keep existing ids; derive missing or duplicate ones from the event's content
+        function ensureEventIds(events) {
+            const used = new Set();
+            for (const ev of events) {
+                if (typeof ev.id === 'string' && ev.id && !used.has(ev.id)) {
+                    used.add(ev.id);
+                    continue;
+                }
+                const base = 'ev_' + contentHash([ev.sourceTool, ev.lotId, ev.roomId, ev.equipmentId,
+                    ev.taskType, ev.date, ev.endDate, ev.title].join('|'));
+                let id = base;
+                for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+                ev.id = id;
+                used.add(id);
+            }
+        }
+
         const DB = {
             data: null,
             fileName: '',
@@ -1265,6 +1306,7 @@
                 if (!this.data.lots) this.data.lots = {};
                 if (!this.data.rooms) this.data.rooms = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                ensureEventIds(this.data.calendarEvents);
                 return this.data;
             },
 
@@ -1917,6 +1959,7 @@
 
             // Mirror to the shared calendar (suite convention: omit endDate when equal to date)
             DB.data.calendarEvents.push({
+                id: newEventId(),
                 title: `🏖️ Time Off — ${name}`,
                 date: startStr,
                 ...(endStr !== startStr ? { endDate: endStr } : {}),
@@ -2020,14 +2063,13 @@
         // Live reference to the selected event object (null when none / stale)
         function selectedTask() {
             if (!TASK.selectedKey) return null;
-            const [tool, lotId, date, title] = TASK.selectedKey.split('|');
-            return DB.data.calendarEvents.find(ev =>
-                ev.sourceTool === tool && ev.lotId === lotId &&
-                ev.date === date && ev.title === title) || null;
+            return DB.data.calendarEvents.find(ev => taskKey(ev) === TASK.selectedKey) || null;
         }
 
+        // Events are identified by their stable id (ROADMAP 0.2), so a task stays selected when its
+        // date or title changes elsewhere. The composite key only covers events that somehow lack one.
         function taskKey(ev) {
-            return `${ev.sourceTool}|${ev.lotId}|${ev.date}|${ev.title}`;
+            return ev.id || `${ev.sourceTool}|${ev.lotId}|${ev.date}|${ev.title}`;
         }
 
         // Drop the selection if the event no longer exists (e.g., after a DB refresh)

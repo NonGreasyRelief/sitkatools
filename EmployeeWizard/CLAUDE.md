@@ -177,7 +177,7 @@ This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key s
 1. **Work week layout:** Monday start (Mon–Sun columns), current week only — no week navigation in the work-week calendar.
 2. **Employee identity:** Employees are keyed by name in `_EmployeeWizard.employees`; duplicate names are prevented (the name is the identity).
 3. **Partial time off:** Hour-based entries — a book-off records specific hour ranges per day (`hoursOff`), so days can be partially booked off.
-4. **Labour map storage:** `labour_map` and `completed` are written directly onto the Labour-wizard calendar event objects (in-place annotation).
+4. **Labour map storage:** `labour_map` and `completed` are written directly onto the Labour-wizard calendar event objects (in-place annotation). Tasks are identified by the event's stable `id` (`taskKey`), so a selection survives date or title changes made elsewhere; CropLabourWizard carries `labour_map` and `completed` over when it regenerates a schedule (root `CLAUDE.md` → "Event Annotations Survive Regeneration").
 5. **Plant count source:** `plantCount` field on the lot in SitkaTools (`lots.<LotID>.plantCount`), shared by all tools; EmployeeWizard reads it for per-plant math.
 6. **Holiday awareness:** None — this tool is not BC-civic-holiday-aware.
 7. **Time-off event title:** `"🏖️ Time Off — <Name>"` confirmed as the calendar-event title format.

@@ -1065,6 +1065,79 @@
         // Database Keys: "_tool_CropLabourWizard" (per-lot), "_CropLabourWizard" (top-level), "calendarEvents"
         // =====================================================
 
+        // ---- Stable event IDs (ROADMAP 0.2) ----
+        // Every calendar event carries a unique `id`. New events get a random id; events from files
+        // saved before ids existed get one derived from their content, so every device that loads the
+        // same file assigns the same id to the same event. (Function declarations only — these run from
+        // ensureStructure() before later top-level consts are initialised.)
+        function newEventId() {
+            const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+            const bytes = crypto.getRandomValues(new Uint8Array(10));
+            return 'ev_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        // cyrb53 — fast non-cryptographic 53-bit string hash
+        function contentHash(str) {
+            let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+            for (let i = 0; i < str.length; i++) {
+                const ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+            return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+        }
+
+        // Keep existing ids; derive missing or duplicate ones from the event's content
+        function ensureEventIds(events) {
+            const used = new Set();
+            for (const ev of events) {
+                if (typeof ev.id === 'string' && ev.id && !used.has(ev.id)) {
+                    used.add(ev.id);
+                    continue;
+                }
+                const base = 'ev_' + contentHash([ev.sourceTool, ev.lotId, ev.roomId, ev.equipmentId,
+                    ev.taskType, ev.date, ev.endDate, ev.title].join('|'));
+                let id = base;
+                for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+                ev.id = id;
+                used.add(id);
+            }
+        }
+
+        // ---- Keep annotations across schedule regeneration (ROADMAP 0.3) ----
+        // Regenerating rebuilds this tool's events from scratch. Fields added on top of a generated
+        // event — its id, completion tick, EmployeeWizard labour hours, and the notes/time fields edited
+        // in SitkaTools' event panel — are copied onto the matching replacement event.
+        function eventAnnotationKeys() {
+            return ['id', 'completed', 'labour_map', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+        }
+
+        // True when an event holds work records that regenerating it would destroy
+        function hasWorkRecords(ev) {
+            return ev.completed === true || (ev.labour_map && Object.keys(ev.labour_map).length > 0);
+        }
+
+        // Copy annotations from `previous` events onto `fresh` ones with the same keyOf(ev).
+        // Returns the previous events that found no replacement.
+        function carryOverAnnotations(previous, fresh, keyOf) {
+            const byKey = new Map();
+            for (const ev of previous) {
+                const k = keyOf(ev);
+                if (!byKey.has(k)) byKey.set(k, []);
+                byKey.get(k).push(ev);
+            }
+            for (const ev of fresh) {
+                const old = byKey.get(keyOf(ev))?.shift();
+                if (!old) continue;
+                for (const key of eventAnnotationKeys()) {
+                    if (old[key] !== undefined) ev[key] = old[key];
+                }
+            }
+            return [...byKey.values()].flat();
+        }
+
         const DB = {
             data: null,
 
@@ -1075,6 +1148,7 @@
                 if (!this.data.lots) this.data.lots = {};
                 if (!this.data.rooms) this.data.rooms = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
+                ensureEventIds(this.data.calendarEvents);
                 // CropLabourWizard top-level state — additive backfill so old DB files load unchanged.
                 // (BUILTIN_RECIPE is defined below; the first ensureStructure() call happens after it.)
                 if (!this.data._CropLabourWizard) this.data._CropLabourWizard = { generations: [] };
@@ -2858,6 +2932,7 @@
                 }
 
                 const event = {
+                    id: newEventId(),
                     date: startDate,
                     title: buildEventTitle(def, lotId),
                     sourceTool: isProjected ? 'CropProjection' : 'CropLabourWizard',
@@ -3538,6 +3613,18 @@
                 }
             }
 
+            // Regenerating keeps each task's id, completion and labour hours (matched by taskType).
+            // Tasks dropped from the new schedule lose theirs — confirm first if any hold work records.
+            const previousEvents = eventsForLot(lotId);
+            const keptTaskTypes = new Set(taskOffsets.filter(e => e.enabled !== false).map(e => e.def.taskType));
+            const lostRecords = previousEvents.filter(ev => !keptTaskTypes.has(ev.taskType) && hasWorkRecords(ev));
+            if (lostRecords.length > 0) {
+                let msg = `⚠️ ${lostRecords.length} task${lostRecords.length === 1 ? '' : 's'} with recorded work will be removed from ${lotId}'s schedule:\n\n`;
+                msg += lostRecords.map(ev => `• ${ev.title}${ev.labour_map ? ' (labour hours)' : ''}${ev.completed ? ' (completed)' : ''}`).join('\n');
+                msg += `\n\nTheir labour hours and completion will be lost. Continue?`;
+                if (!confirm(msg)) return; // cancel → no changes at all
+            }
+
             // Reconcile: remove existing schedule for this lot
             reconcileLotSchedule(lotId);
 
@@ -3545,6 +3632,7 @@
             const { events: newEvents, config } = generateLotSchedule(lotId, plantingDate, taskOffsets, {
                 trimDays, harvestMultiDay, harvestDays
             });
+            carryOverAnnotations(previousEvents, newEvents, ev => ev.taskType);
 
             // Log generation for real lots (projected lots are tracked in the map instead)
             if (!isProjectedLot(lotId)) {
@@ -3729,6 +3817,9 @@
                 return;
             }
 
+            const recorded = eventsForLot(lotId).filter(hasWorkRecords).length;
+            if (recorded > 0 && !confirm(`Clear ${lotId}'s schedule?\n\n${recorded} task${recorded === 1 ? ' has' : 's have'} recorded labour hours or completion, which will be deleted with ${recorded === 1 ? 'it' : 'them'}.`)) return;
+
             // Remove all schedule events for this lot (sourceTool depends on lot type)
             reconcileLotSchedule(lotId);
 
@@ -3830,7 +3921,11 @@
         // ---- Delete Lot Schedule ----
         function deleteLotSchedule(lotId) {
             const taskCount = getLotTaskCount(lotId);
-            if (!confirm(`Delete the entire crop schedule for ${lotId}?\nThis will remove all ${taskCount} tasks from the calendar.`)) return;
+            const recorded = eventsForLot(lotId).filter(hasWorkRecords).length;
+            const recordedNote = recorded > 0
+                ? `\n\n${recorded} of them ${recorded === 1 ? 'has' : 'have'} recorded labour hours or completion, which will be deleted too.`
+                : '';
+            if (!confirm(`Delete the entire crop schedule for ${lotId}?\nThis will remove all ${taskCount} tasks from the calendar.${recordedNote}`)) return;
 
             DB.ensureStructure();
 

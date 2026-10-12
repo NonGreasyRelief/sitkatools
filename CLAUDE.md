@@ -84,6 +84,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
   },
   "calendarEvents": [
     {
+      "id": "ev_…",                 // stable unique id (see "Event IDs" below)
       "lotId": "string",
       "date": "YYYY-MM-DD",
       "endDate": "YYYY-MM-DD | null",
@@ -106,6 +107,23 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 - **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (native Save dialog completed, or the save link used), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
 - Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
+
+#### Event IDs
+
+Every calendar event carries a unique, stable `id`, so tools can refer to an event even after its date or title changes.
+
+- **New events** get `newEventId()` — `ev_` + 10 random characters from the suite alphabet.
+- **Events from older files** (no `id`) get one derived from their content (`sourceTool|lotId|roomId|equipmentId|taskType|date|endDate|title`, hashed) the first time a tool's `ensureStructure()` runs. The derivation is deterministic, so every device and every tool assigns the same id to the same event. A duplicate id (e.g. an exact copy) is re-keyed with a `-2`, `-3`… suffix.
+- **Tools that create or match events** (SitkaTools, GeneralEvent, CropLabourWizard, EquipmentWizard, EmployeeWizard) include the `newEventId` / `contentHash` / `ensureEventIds` helpers and call `ensureEventIds(this.data.calendarEvents)` from `DB.ensureStructure()`. The helpers are function declarations only, so they are usable before any top-level `const` is initialised.
+- **Duplicating** an event (SitkaTools' 📋 Duplicate) gives the copy a new id; imported ICS events get new ids.
+
+#### Event Annotations Survive Regeneration
+
+Tools that regenerate their events (CropLabourWizard on **Generate**, EquipmentWizard on every resync) rebuild them from scratch. Anything added on top of a generated event is copied onto its replacement with `carryOverAnnotations(previous, fresh, keyOf)`:
+
+- **Annotation fields:** `id`, `completed`, `labour_map` (EmployeeWizard), and the SitkaTools event-panel fields `startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`.
+- **Matching:** CropLabourWizard by `taskType` within the lot; EquipmentWizard by `equipmentId + title + date`.
+- **Unmatched work records** (`completed` or a non-empty `labour_map`) are never dropped silently: CropLabourWizard asks before a Generate, Clear Schedule or Delete Schedule would delete them (cancel = no changes); EquipmentWizard keeps them on the calendar as maintenance history while their equipment and room still exist.
 
 #### Multi-Day Events
 

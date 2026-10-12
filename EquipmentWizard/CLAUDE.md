@@ -48,11 +48,14 @@ EquipmentWizard appends events to the shared `calendarEvents` array using `"sour
 - **SourceTool:** `"EquipmentWizard"`
 - **RoomId:** Always set to the room ID — every event is scoped to a room
 - **EquipmentId:** The ID of the parent equipment item, used during reconciliation
+- **Id:** A stable event id (`newEventId()`), kept across resyncs — see "Schedule Reconciliation"
 - **TaskType:** `"equipment_maintenance"` — used during reconciliation to detect and replace stale schedules
 
 ### Schedule Reconciliation
 
 When a user generates (or regenerates) a schedule for a room, the tool first **removes all existing EquipmentWizard events** for that room from `calendarEvents` before inserting the new batch. This prevents duplicate or stale events when intervals change, equipment is removed, or the 12-month window rolls forward. The reconciliation logic matches on `sourceTool === 'EquipmentWizard'` AND `roomId === selectedRoom`.
+
+**Annotations carry over (ROADMAP 0.3):** both resync paths (`syncAllRooms` on open/import, `autoSyncCalendar` on room switch and equipment edits) keep the previous events and copy each one's `id`, `completed`, `labour_map` and SitkaTools event-panel fields onto the regenerated event with the same `equipmentId + title + date` (`carryOverAnnotations`). A previous event with no regenerated match is dropped — **except** a completed or labour-tracked occurrence whose equipment and room still exist, which stays on the calendar as maintenance history (e.g. after an interval change). Deleting the equipment removes its history too. A date moved on the SitkaTools calendar no longer matches and is regenerated at its computed date.
 
 **Incremental reconciliation (auto-purge):** Calendar events are also automatically purged in these scenarios:
 - **Delete equipment:** All calendar events with matching `equipmentId` are immediately removed from the calendar.

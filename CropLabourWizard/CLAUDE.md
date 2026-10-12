@@ -56,6 +56,8 @@ CropLabourWizard appends events to the shared `calendarEvents` array using `"sou
 
 When a user generates a schedule for a lot, the tool first **removes all existing CropLabourWizard events** for that lot from `calendarEvents` before inserting the new batch. This prevents duplicate or stale tasks when the planting date changes. The reconciliation logic matches on `sourceTool === 'CropLabourWizard'` AND `lotId === selectedLot`.
 
+**Annotations carry over (ROADMAP 0.3):** before reconciling, the Generate handler keeps the lot's previous events and, after generating, copies each one's `id`, `completed`, `labour_map` and SitkaTools event-panel fields (`startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`) onto the new event with the same `taskType` (`carryOverAnnotations`, see root `CLAUDE.md` → "Event Annotations Survive Regeneration"). A task with work records (`completed` or labour hours) that the new schedule no longer contains — disabled, or missing from a different recipe — triggers a blocking confirm listing those tasks; **cancel = no changes**. **Clear Schedule** asks first when any of the lot's events hold work records, and **Delete Schedule**'s confirm says how many do.
+
 ## Task Recipes (Recipe Manager)
 
 The cultivation task list is defined by **recipes** — self-contained JSON documents (schema + validation in the root `CLAUDE.md` → "Task Recipes"). This tool ships one built-in recipe, **`sitka-9week`** (32 tasks, chain 21), which lives in code and is always the fallback. User recipes are created, edited, duplicated, imported, exported, and deleted from this tool and stored under `_CropLabourWizard.recipes`.
@@ -383,7 +385,7 @@ _CropLabourWizard: {
 Tool-wide metadata. `generations[]` is a log of schedule generations for audit purposes (real lots only). `projectedLots` is the **source of truth** for projected lots (owned by this tool; SitkaTools never reads or modifies it, with the sole exception of deleting the `{roomId}-TBA-01` entry in its deletion hook — see "Crop Projection" section below). `recipes` and `taskTypes` are documented in "Task Recipes (Recipe Manager)" above.
 
 **Calendar events:**
-When the user generates a schedule, CropLabourWizard first purges all existing `CropLabourWizard` events for that lot from `calendarEvents`, then appends the new batch. Each event records `sourceTool: "CropLabourWizard"` and `lotId`. The main SitkaTools calendar view will render these alongside events from all other tools.
+When the user generates a schedule, CropLabourWizard first purges all existing `CropLabourWizard` events for that lot from `calendarEvents`, then appends the new batch — carrying each task's `id`, completion and labour hours over to its replacement (see "Schedule Reconciliation"). Each event records `id`, `sourceTool: "CropLabourWizard"` and `lotId`. The main SitkaTools calendar view will render these alongside events from all other tools.
 
 ### Full Database Context
 
