@@ -4,6 +4,8 @@
 
 A collection of standalone, single-file HTML tools for tracking licensed cannabis cultivation. Each tool lives in its own directory and operates entirely client-side (browser sandbox, no server required). All tools contribute data to a shared JSON database that feeds a unified calendar view.
 
+**Direction of travel:** `ROADMAP.md` holds the plan for multi-user use (concurrency options, the recommended one-file-per-writer layout, and phased work). Read it before changing how the DB is loaded, saved, or split.
+
 ### Core Principles
 
 - **Single-file tools:** Every tool is a single `.html` file with embedded CSS and JavaScript — no build step, no dependencies, no server.

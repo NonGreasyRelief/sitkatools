@@ -20,20 +20,21 @@ Saving always writes the *whole* database, so **the last person to save wins**. 
 
 These came out of an audit of how each tool reads and writes the database:
 
-| # | Problem | Where |
-|---|---|---|
-| 1 | Re-generating a lot's schedule in CropLabourWizard deletes and recreates its events. Any **labour hours** recorded in EmployeeWizard and any **completed** ticks on those events are lost. | `CropLabourWizard.html` `reconcileLotSchedule` |
-| 2 | EquipmentWizard deletes and rebuilds **every** maintenance event each time it opens, so **completed** ticks and date moves made on the calendar are lost. | `EquipmentWizard.html` `syncAllRooms` |
-| 3 | The "unsaved changes" warning is cleared as soon as the save popup opens, even if the file is never saved. Edits made in a subtool never mark the database unsaved at all. Someone can lose work by closing the tab. | `SitkaTools.html` export button, `sitkaGit_db_update` handler |
-| 4 | Calendar events have **no ID**. Tools find "their" event by list position or by matching title and date, so moving an event's date breaks the link between it and its labour hours. | All tools |
-| 5 | All deletes are permanent with no marker left behind, so no merge tool could tell "deleted" apart from "never existed". Deleting a lot leaves its events and paperwork behind as orphans. | All tools, `Bugs.MD` #4 |
-| 6 | Cross-window messages are sent to any origin and accepted from any sender. That was required under `file://`, but the app now runs on https. | `SitkaTools.html`, all subtools |
+| # | Problem | Where | Status |
+|---|---|---|---|
+| 1 | Re-generating a lot's schedule in CropLabourWizard deletes and recreates its events. Any **labour hours** recorded in EmployeeWizard and any **completed** ticks on those events are lost. | `CropLabourWizard.html` `reconcileLotSchedule` | **Fixed in 0.3** |
+| 2 | EquipmentWizard deletes and rebuilds **every** maintenance event each time it opens, so **completed** ticks and date moves made on the calendar are lost. | `EquipmentWizard.html` `syncAllRooms` | **Ticks fixed in 0.3.** Date moves still reset on resync |
+| 3 | The "unsaved changes" warning is cleared as soon as the save popup opens, even if the file is never saved. Edits made in a subtool never mark the database unsaved at all. Someone can lose work by closing the tab. | `SitkaTools.html` export button, `sitkaGit_db_update` handler | **Fixed in 0.1** |
+| 4 | Calendar events have **no ID**. Tools find "their" event by list position or by matching title and date, so moving an event's date breaks the link between it and its labour hours. | All tools | **Fixed in 0.2** |
+| 5 | All deletes are permanent with no marker left behind, so no merge tool could tell "deleted" apart from "never existed". Deleting a lot leaves its events and paperwork behind as orphans. | All tools, `Bugs.MD` #4 | Open (0.5) |
+| 6 | Cross-window messages are sent to any origin and accepted from any sender. That was required under `file://`, but the app now runs on https. | `SitkaTools.html`, all subtools | **Fixed in 0.4** |
 
 ### Facts that shape the options
 
 - **A lot can span buildings.** A lot's clone, veg and flower rooms can sit in different buildings, and nothing in the app prevents it. DailyWizard works out each event's building on the fly from the lot's rooms. The building isn't stored on the event.
 - **Planning tools write for every building at once.** CropLabourWizard schedules and projects any room. EquipmentWizard rebuilds every room's events. SitkaTools edits any lot or event.
 - **Floor work writes into planning records.** Labour hours and completions land on CropLabourWizard events. PaperWizard writes plant count, stage and current room onto the lot record that SitkaTools also edits.
+- **Floor tablets save the whole database too.** DailyWizard and PaperWizard run standalone on building tablets, load the DB file themselves and export a full copy back. A tablet saving grow-log entries while the office saves schedule changes is the most likely source of today's lost saves.
 - **Each building has exactly one device** that may access SharePoint.
 
 ---
@@ -77,7 +78,7 @@ SharePoint/SitkaTools/
 **Costs**
 - About a phase of work: device identity, a multi-file loader, moving annotations out of events, and a one-time migration.
 - Plan changes still reach the floor only when the building reloads, which is the same as today.
-- If more than one person edits the plan, `plan.json` can still collide. Phase 0's overwrite check catches that case.
+- If more than one person edits the plan, `plan.json` can still collide. Phase 1's folder mode catches that case: it reads the file on disk before writing and refuses to overwrite a newer save.
 
 ### C. One file, merge on save
 
@@ -123,30 +124,42 @@ Phase 0 is needed whichever option is chosen, so it can start now.
 
 ## 4. Phased plan
 
-### Phase 0: Foundations (in progress)
+### Phase 0: Foundations (mostly done)
 
-Needed under every option. It also fixes the data-loss bugs above.
+Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0.4 are on the `roadmap-phase0` branch, tested in headless Firefox against `DailyWizard/testbug.json`.
 
-- [ ] **0.1 Save safety.**
-  - Subtool edits mark the database unsaved.
-  - The warning clears only when a save actually happens.
-  - In Chrome/Edge, **Save** opens a normal Save dialog (no more right-click → Save Link As) and refuses to silently overwrite a file someone else saved after you loaded yours.
-  - Every save stamps a `_meta` block: schema version, revision, save time, and save lineage.
-- [ ] **0.2 Stable event IDs.**
+- [x] **0.1 Save safety.**
+  - Subtool edits mark the database unsaved, but only when they actually change something.
+  - The warning clears only when a save actually happens, not when the save popup opens.
+  - Loading another database over unsaved changes asks first.
+  - An amber dot on **💾 Save DB** shows when there are unsaved changes.
+  - In Chrome/Edge, **Save** opens a normal Save dialog (no more right-click → Save Link As). Firefox and tablets keep the save link.
+  - Every save stamps a `_meta` block (schema version, revision, save time, save lineage), and the status bar shows when the loaded file was last saved.
+  - *Moved to Phase 1:* refusing to overwrite a newer copy. Chrome is believed to empty the chosen file as soon as you pick it in the Save dialog (not verified here), so a check after picking could read an empty file and give a false all-clear. A reliable check needs folder access.
+- [x] **0.2 Stable event IDs.**
   - Every calendar event carries an `id`.
   - Old files get IDs on load, worked out from the event's content, so every device assigns the same ID to the same event.
-- [ ] **0.3 Keep annotations when schedules regenerate.**
-  - CropLabourWizard and EquipmentWizard carry each event's ID, `completed` tick and labour hours over to its regenerated replacement.
+  - Duplicated and ICS-imported events get new IDs.
+- [x] **0.3 Keep annotations when schedules regenerate.**
+  - CropLabourWizard and EquipmentWizard carry each event's ID, `completed` tick, labour hours and SitkaTools notes over to its regenerated replacement.
+  - CropLabourWizard asks before a Generate, Clear or Delete would destroy recorded work. Cancel changes nothing.
+  - EquipmentWizard keeps completed visits as history after an interval change.
   - EmployeeWizard finds its events by ID.
-- [ ] **0.4 Lock down cross-window messages** to the app's own origin when served over https.
+- [x] **0.4 Lock down cross-window messages** to the app's own origin when served over https. Each window also accepts messages only from the window it expects.
 - [ ] **0.5 Deletion markers and orphan cleanup** (`Bugs.MD` #4, #5).
   - Deleting a lot also removes or archives its events and paperwork.
   - Rooms are referenced by ID instead of name.
+- [ ] **0.6 Smaller gaps found along the way**
+  - EquipmentWizard resets dates moved on the calendar every time it resyncs.
+  - SitkaTools' **📋 Duplicate** copies the original's labour hours and completed tick, which double-counts labour.
+  - GeneralEvent re-stamps its own log's `createdAt` every time it opens.
+  - Standalone exports from DailyWizard and PaperWizard don't stamp `_meta` yet. That arrives with device identity in Phase 1.
 
 ### Phase 1: One file per writer
 
-- **Device identity:** a one-time "This device is: Office / Building X" setting, stamped into everything it saves.
-- **File layout and loader:** load `plan.json` plus any number of `activity-*.json` files at once and combine them in memory. On Chrome/Edge, optionally pick the synced SharePoint folder once and get one-click load/save.
+- **Device identity:** a one-time "This device is: Office / Building X" setting, stamped into everything it saves, including standalone tablet exports.
+- **File layout and loader:** load `plan.json` plus any number of `activity-*.json` files at once and combine them in memory.
+- **Folder mode (Chrome/Edge):** pick the synced SharePoint folder once, then get one-click load and save. Before writing, the app reads the file on disk and refuses to overwrite a save it didn't load. This is the overwrite check deferred from 0.1.
 - **Move floor data out of planning records:** completions, labour hours, and plant count / stage / room changes become activity entries keyed by event and lot ID.
 - **Migration:** a one-time "split my current DB" button that writes `plan.json` and one activity file per building from today's single file.
 - **Read-only guardrails:** a building device can view the plan but can't save it, and the office can't save a building's activity.
