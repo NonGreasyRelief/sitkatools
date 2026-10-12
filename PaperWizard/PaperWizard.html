@@ -5008,16 +5008,22 @@
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
 
+        // postMessage target origin: our own origin when served over http(s) (ROADMAP 0.4).
+        // file:// pages have opaque origins, so they can only be reached with '*'.
+        const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
+
         function notifySitkaTools() {
             if (window.opener && !window.opener.closed) {
                 window.opener.postMessage({
                     type: 'sitkaGit_db_update',
                     payload: DB.data
-                }, '*');
+                }, SITKA_MSG_ORIGIN);
             }
         }
 
         window.addEventListener('message', (e) => {
+            // Only trust the SitkaTools window that opened this tool (ROADMAP 0.4)
+            if (!window.opener || e.source !== window.opener) return;
             // Initial DB delivery from SitkaTools
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
@@ -5026,7 +5032,7 @@
 
                 // Acknowledge receipt so SitkaTools stops retrying
                 if (window.opener && !window.opener.closed) {
-                    window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+                    window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
                 }
 
                 renderAll();

@@ -170,16 +170,17 @@ function notifySitkaTools() {
         window.opener.postMessage({
             type: 'sitkaGit_db_update',
             payload: DB.data
-        }, '*');
+        }, SITKA_MSG_ORIGIN);
     }
 }
 
 window.addEventListener('message', (e) => {
+    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();
         if (window.opener && !window.opener.closed) {
-            window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+            window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
         }
         reconcileLog();
         renderEventList();

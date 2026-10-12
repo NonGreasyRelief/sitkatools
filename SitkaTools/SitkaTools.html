@@ -2067,6 +2067,20 @@
             background: rgba(231, 76, 60, 0.25);
         }
 
+        /* Unsaved-changes dot on the Save button */
+        .db-btn.export { position: relative; }
+        .db-btn.export.unsaved::after {
+            content: '';
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--warning);
+            box-shadow: 0 0 0 2px var(--bg-secondary);
+        }
+
         .btn-sm {
             padding: 6px 12px;
             font-size: 0.85rem;
@@ -2717,7 +2731,7 @@
                 📂 Load DB
             </button>
             <div class="export-wrapper">
-                <button class="db-btn export" id="exportBtn" title="Generate save link">
+                <button class="db-btn export" id="exportBtn" title="Save database">
                     💾 Save DB
                 </button>
                 <div class="save-popup hidden" id="savePopup">
@@ -3239,6 +3253,7 @@
         let fileDialogSource = null; // Tracks which UI triggered the file dialog ('overlay', 'mobileOverlay', 'toolbar', or null)
 
         importBtn.addEventListener('click', () => {
+            if (hasUnsavedChanges && !confirm('You have unsaved changes. Loading another database will discard them.\n\nLoad anyway?')) return;
             fileDialogSource = 'toolbar';
             dbImportInput.click();
         });
@@ -3266,6 +3281,7 @@
                     DB.data = parsed;
                     DB.ensureStructure();
                     DB.fileName = file.name.replace('.json', '');
+                    clearUnsaved();
                     updateStatusBar();
                     renderLotList();
                     updateLotIdSuggestion();
@@ -3313,27 +3329,85 @@
         let currentBlobUrl = null;
         let currentBlobRef = null;
 
+        // ---- Save Stamp — DB.data._meta (ROADMAP 0.1) ----
+        // Every save stamps { schemaVersion, revision, savedAt, saveId, parentSaveId } so any copy
+        // of the DB says when it was saved and which save it descends from (two files sharing a
+        // parentSaveId were edited concurrently). The stamp is built without touching DB.data and
+        // only committed once the save actually happens, so a cancelled save changes nothing.
+        const DB_SCHEMA_VERSION = 1;
+        const SAVE_ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+
+        function randomCode(len) {
+            const bytes = crypto.getRandomValues(new Uint8Array(len));
+            return Array.from(bytes, b => SAVE_ID_ALPHABET[b % SAVE_ID_ALPHABET.length]).join('');
+        }
+
+        function todayDbFileName() {
+            const now = new Date();
+            const yy = String(now.getFullYear()).slice(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            return `DB-${yy}-${mm}-${dd}.json`;
+        }
+
+        function prepareSave() {
+            DB.ensureStructure();
+            const prev = DB.data._meta || {};
+            const meta = {
+                schemaVersion: DB_SCHEMA_VERSION,
+                revision: (prev.revision || 0) + 1,
+                savedAt: new Date().toISOString(),
+                saveId: randomCode(10),
+                parentSaveId: prev.saveId || null
+            };
+            const json = JSON.stringify({ ...DB.data, _meta: meta }, null, 2);
+            return { meta, json, filename: todayDbFileName() };
+        }
+
+        function commitSave(save) {
+            DB.data._meta = save.meta;
+            clearUnsaved();
+            updateIOStatusBar();
+        }
+
+        // Chrome/Edge: write through a native Save dialog so we know the save really happened.
+        async function saveWithPicker(save) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    id: 'sitkaDb', // browser remembers the last folder used for this id
+                    suggestedName: save.filename,
+                    types: [{ description: 'SitkaTools database', accept: { 'application/json': ['.json'] } }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(save.json);
+                await writable.close();
+                commitSave(save);
+                showSyncToast(`Saved ${handle.name}`);
+            } catch (err) {
+                if (err.name === 'AbortError') return; // user cancelled the dialog
+                alert('Save failed: ' + err.message);
+            }
+        }
+
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
 
-            DB.ensureStructure();
+            const save = prepareSave();
+            const filename = save.filename;
+
+            if (typeof window.showSaveFilePicker === 'function') {
+                saveWithPicker(save);
+                return;
+            }
 
             // Revoke previous blob URL to free memory
             if (currentBlobUrl) {
                 URL.revokeObjectURL(currentBlobUrl);
             }
 
-            const json = JSON.stringify(DB.data, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
+            const blob = new Blob([save.json], { type: 'application/json' });
             currentBlobRef = blob;
             currentBlobUrl = URL.createObjectURL(blob);
-
-            // Generate filename from current date
-            const now = new Date();
-            const yy = String(now.getFullYear()).slice(-2);
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-            const filename = `DB-${yy}-${mm}-${dd}.json`;
 
             const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 
@@ -3345,17 +3419,18 @@
                     e.preventDefault();
                     if (currentBlobRef) {
                         shareFile(currentBlobRef, filename);
+                        commitSave(save);
                     }
                 };
+                saveLink.oncontextmenu = null;
             } else {
                 saveLink.href = currentBlobUrl;
                 saveLink.download = filename;
                 saveLink.textContent = `📄 ${filename} — Right-click → Save Link As…`;
-                saveLink.onclick = null;
+                // We can't see the browser's save dialog, so treat using the link as the save
+                saveLink.onclick = () => commitSave(save);
+                saveLink.oncontextmenu = () => commitSave(save);
             }
-
-            // Clear unsaved flag
-            clearUnsaved();
 
             // Show popup
             savePopup.classList.remove('hidden');
@@ -3697,17 +3772,9 @@
         }
 
         function handleMobileSaveDb() {
-            DB.ensureStructure();
-
-            const json = JSON.stringify(DB.data, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-
-            // Generate filename from current date
-            const now = new Date();
-            const yy = String(now.getFullYear()).slice(-2);
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-            const filename = `DB-${yy}-${mm}-${dd}.json`;
+            const save = prepareSave();
+            const blob = new Blob([save.json], { type: 'application/json' });
+            const filename = save.filename;
 
             // Use a button that triggers share/download on tap (fixes iOS Safari blob URL issue)
             mobileToolDesc.innerHTML = `
@@ -3721,11 +3788,9 @@
             if (saveFileBtn) {
                 saveFileBtn.addEventListener('click', () => {
                     shareFile(blob, filename);
+                    commitSave(save);
                 });
             }
-
-            // Clear unsaved flag
-            clearUnsaved();
         }
 
         function handleMobileLaunchTool(toolUrl) {
@@ -3782,6 +3847,10 @@
 
         // ---- Module Link Handlers — postMessage Convention ----
         let openSubtools = [];
+
+        // postMessage target origin: our own origin when served over http(s) (ROADMAP 0.4).
+        // file:// pages have opaque origins, so they can only be reached with '*'.
+        const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
 
         // Detect mobile devices — require both small viewport AND touch hardware
         // 'ontouchstart' in window alone is unreliable (exists in modern desktop browsers even without touch)
@@ -3853,7 +3922,7 @@
             function trySend() {
                 if (acknowledged || newWindow.closed || attempts >= 5) return;
                 attempts++;
-                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, '*');
+                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, SITKA_MSG_ORIGIN);
             }
 
             // Listen for acknowledgment from subtool
@@ -3876,6 +3945,11 @@
         // Listen for subtool updates via postMessage
         window.addEventListener('message', (e) => {
             if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
+            // Only accept DB updates from subtool windows this page opened (ROADMAP 0.4)
+            if (!openSubtools.some(entry => (entry.win || entry) === e.source)) {
+                console.warn('[SitkaTools] Ignored sitkaGit_db_update from a window SitkaTools did not open');
+                return;
+            }
 
             console.log('[SitkaTools] Received sitkaGit_db_update');
             console.log('[SitkaTools] Incoming calendarEvents count:', e.data.payload.calendarEvents?.length || 0);
@@ -3883,6 +3957,7 @@
 
             DB.data = e.data.payload;
             DB.ensureStructure();
+            markUnsaved();
 
             console.log('[SitkaTools] After assign - calendarEvents count:', DB.data.calendarEvents?.length || 0);
 
@@ -4323,10 +4398,14 @@
 
         function markUnsaved() {
             hasUnsavedChanges = true;
+            exportBtn.classList.add('unsaved');
+            exportBtn.title = 'Save database — you have unsaved changes';
         }
 
         function clearUnsaved() {
             hasUnsavedChanges = false;
+            exportBtn.classList.remove('unsaved');
+            exportBtn.title = 'Save database';
         }
 
         // Warn before closing if there are unsaved changes
@@ -4389,7 +4468,7 @@
                 if (!win || win.closed) return;
                 if (url && !/CropLabourWizard/i.test(url)) return;
                 try {
-                    win.postMessage({ type: 'sitkaGit_db_update', payload }, '*');
+                    win.postMessage({ type: 'sitkaGit_db_update', payload }, SITKA_MSG_ORIGIN);
                 } catch (_) { /* window gone */ }
             });
         }
@@ -7208,9 +7287,13 @@
             }
 
             const eventCount = DB.data.calendarEvents?.length || 0;
+            const meta = DB.data._meta;
+            const savedText = meta?.savedAt
+                ? ` · Last saved ${escapeHtml(new Date(meta.savedAt).toLocaleString())} (rev ${Number(meta.revision) || 0})`
+                : '';
             bar.className = 'status-bar loaded';
             bar.innerHTML = `
-                <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName)}</strong>${savedText}</span>
                 <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
             `;
         }

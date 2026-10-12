@@ -91,11 +91,19 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "sourceTool": "string"
     }
   ],
-  "_<ToolName>": { ... }
+  "_<ToolName>": { ... },
+  "_meta": {                         // save stamp — written by SitkaTools on every save
+    "schemaVersion": 1,
+    "revision": 7,                   // +1 on every save
+    "savedAt": "2026-10-12T17:18:38.965Z",
+    "saveId": "zcj3q57mtr",          // random per save
+    "parentSaveId": "5pnru2z5t5"     // saveId of the version this one was loaded from (null on first save)
+  }
 }
 ```
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
+- **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (native Save dialog completed, or the save link used), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
 - Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
@@ -137,6 +145,14 @@ Calendar events support an optional `endDate` field for events that span consecu
 4. **Subtools notify after every mutation.** After adding/deleting/editing data, call `notifySitkaTools()` which posts the updated DB back to the opener window.
 5. **Retry mechanism for initial DB delivery.** SitkaTools retries sending the DB up to 5 times at 200ms intervals until the subtool acknowledges with `sitkaGit_ready`.
 6. **No localStorage, sessionStorage, IndexedDB, or cookies in subtools.** All cross-window state flows through postMessage.
+7. **Same-origin messages only.** Every `postMessage` targets `SITKA_MSG_ORIGIN` — the page's own origin when served over http(s) (GitHub Pages), falling back to `'*'` only under `file://`, where origins are opaque and can't be targeted. Receivers check the sender: SitkaTools accepts `sitkaGit_db_update` only from windows in its `openSubtools` list, and subtools accept messages only from `window.opener`.
+8. **Subtool updates mark the DB unsaved.** SitkaTools calls `markUnsaved()` when a `sitkaGit_db_update` arrives, so closing the main window after a subtool edit triggers the unsaved-changes warning.
+
+```js
+// postMessage target origin: our own origin when served over http(s).
+// file:// pages have opaque origins, so they can only be reached with '*'.
+const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
+```
 
 #### SitkaTools Module Link Handler Pattern
 
@@ -174,7 +190,7 @@ function openModuleInTab(url) {
     function trySend() {
         if (acknowledged || newWindow.closed || attempts >= 5) return;
         attempts++;
-        newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, '*');
+        newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, SITKA_MSG_ORIGIN);
     }
 
     // Listen for acknowledgment from subtool
@@ -214,9 +230,12 @@ const syncToastText = $('syncToastText');
 // Listen for subtool updates via postMessage
 window.addEventListener('message', (e) => {
     if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
+    // Only accept DB updates from subtool windows this page opened
+    if (!openSubtools.some(entry => (entry.win || entry) === e.source)) return;
 
     DB.data = e.data.payload;
     DB.ensureStructure();
+    markUnsaved();
 
     // Re-render all views with fresh data
     updateStatusBar();
@@ -249,19 +268,20 @@ function notifySitkaTools() {
         window.opener.postMessage({
             type: 'sitkaGit_db_update',
             payload: DB.data
-        }, '*');
+        }, SITKA_MSG_ORIGIN);
     }
 }
 
 // Listen for DB from SitkaTools via postMessage
 window.addEventListener('message', (e) => {
+    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();
 
         // Acknowledge receipt so SitkaTools stops retrying
         if (window.opener && !window.opener.closed) {
-            window.opener.postMessage({ type: 'sitkaGit_ready' }, '*');
+            window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
         }
 
         // Reconcile and render with fresh data (tool-specific calls vary by subtool)
@@ -1031,7 +1051,7 @@ function populateRoomSelector() {
 ### JavaScript
 - `type="module"` scripts are acceptable for modern ES module features
 - **postMessage is used for cross-window data sharing**: Main app sends DB payload to subtool via postMessage after opening; subtools send updates back via postMessage after every mutation. No localStorage, sessionStorage, IndexedDB, or cookies are used.
-- File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting
+- File I/O via `<input type="file">` for reading and `URL.createObjectURL()` + `<a download>` for exporting. SitkaTools' **Save DB** uses the native Save dialog (`showSaveFilePicker`, Chrome/Edge) when available so it knows the save completed, and falls back to the save link elsewhere; the unsaved flag clears only once a save actually happens
 - No `async/await` on network calls — there are none
 
 ### CSS
