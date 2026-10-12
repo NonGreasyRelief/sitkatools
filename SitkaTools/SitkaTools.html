@@ -3347,12 +3347,10 @@
             // Shared working copy: offer back unsaved work left from a previous session (once)
             checkWorkCopyOnStart();
 
-            // Building split: show this device's remembered role on the 🏢 Building Files card
+            // Building split: this device's role comes from its link (?device=…), never from browser storage
+            DbSplit.linkRole = new URLSearchParams(location.search).get('device')?.trim() || null;
+            FolderStore.forgetStoredRole();
             updateSplitCard();
-            FolderStore.getSetting('role').then(role => {
-                if (role && !DbSplit.role) DbSplit.role = role;
-                updateSplitCard();
-            });
 
             // Auto-generate Lot ID based on count
             updateLotIdSuggestion();
@@ -3593,18 +3591,12 @@
                     req.onerror = () => reject(req.error);
                 });
             },
-            async getSetting(key) {
+            // An earlier build remembered the device role here. The role now lives in the page link
+            // (?device=…) and is never stored in the browser, so delete any stored copy.
+            async forgetStoredRole() {
                 try {
-                    const row = await this._tx('readonly', store => store.get(key), 'settings');
-                    return row ? row.value : null;
-                } catch (_) {
-                    return null;
-                }
-            },
-            async setSetting(key, value) {
-                try {
-                    await this._tx('readwrite', store => store.put({ key, value }), 'settings');
-                } catch (_) { /* not remembered — asked again next visit */ }
+                    await this._tx('readwrite', store => store.delete('role'), 'settings');
+                } catch (_) { /* nothing stored */ }
             },
             async _tx(mode, fn, storeName = 'folders') {
                 const db = await this._db();
@@ -4003,7 +3995,8 @@
             updateSplitCard();
         }
 
-        // "Which device is this?" — asked once per device, remembered in this browser
+        // "Which device is this?" — the answer lasts only until this page closes (nothing is stored);
+        // opening SitkaTools from the device's own link (?device=…) skips the question
         function askDeviceRole(buildings, current) {
             return new Promise(resolve => {
                 const wrap = document.createElement('div');
@@ -4016,7 +4009,8 @@
                     <div class="db-overlay-title">Which device is this?</div>
                     <div class="db-overlay-desc">Every device opens all the database files but saves only its own.
                         The office saves Main, Wages and any building's file; a building device saves only its building's file.
-                        This is remembered on this device.</div>`;
+                        Nothing is stored: to skip this question, open SitkaTools from this device's own link
+                        (🏢 Building Files → Set this device…).</div>`;
                 const actions = document.createElement('div');
                 actions.className = 'db-overlay-folder';
                 const add = (label, role) => {
@@ -4037,7 +4031,8 @@
 
         const DbSplit = {
             active: false,        // the loaded DB came from split files
-            role: null,           // this device: 'office' or a building id
+            role: null,           // this device: 'office' or a building id (from the link, or asked this session)
+            linkRole: null,       // ?device=… from the page link, as written
             loaded: new Set(),    // file names opened this session (only these may be overwritten)
             haveWages: false,     // Wages.json was opened (office) — wage changes may be saved
             baseParts: {},        // file name → part JSON (without _meta) as opened / last saved
@@ -4072,14 +4067,40 @@
                 this.pending = null;
             },
 
+            // The role comes from the page link (?device=office or ?device=<building id>); without one it is
+            // asked and kept only for this page session
             async ensureRole(buildings, force = false) {
-                if (!this.role) this.role = await FolderStore.getSetting('role');
-                const valid = this.role === 'office' || (this.role && buildings?.[this.role]);
-                if (force || !valid) {
-                    this.role = await askDeviceRole(buildings, this.role);
-                    await FolderStore.setSetting('role', this.role);
+                if (!force) {
+                    const fromLink = this.matchRole(this.linkRole, buildings);
+                    if (fromLink) return (this.role = fromLink);
+                    if (this.matchRole(this.role, buildings)) return this.role; // already answered this session
+                    if (this.linkRole) {
+                        alert(`This page's link says device=${this.linkRole}, which isn't "office" or a building in Main.json.\n\n` +
+                            `Pick the device below, then use 🏢 Building Files → Set this device… to get the right link.`);
+                    }
                 }
+                this.role = await askDeviceRole(buildings, this.role);
                 return this.role;
+            },
+
+            matchRole(value, buildings) {
+                if (!value) return null;
+                if (value.toLowerCase() === 'office') return 'office';
+                const ids = Object.keys(buildings || {});
+                return ids.find(id => id === value) || ids.find(id => id.toLowerCase() === value.toLowerCase()) || null;
+            },
+
+            // This page's address with ?device=<role> — what each device bookmarks / adds to its home screen
+            linkFor(role) {
+                const url = new URL(location.href);
+                url.search = '';
+                url.hash = '';
+                url.searchParams.set('device', role);
+                return url.toString();
+            },
+
+            roleFromLink() {
+                return !!this.role && this.matchRole(this.linkRole, DB.data?.buildings) === this.role;
             },
 
             // ---- Merge: Main + Wages + building files → one DB ----
@@ -4737,7 +4758,8 @@
         function updateSplitCard() {
             const status = $('splitStatus');
             const splitBtn = $('splitDbBtn');
-            const roleText = `This device: <strong>${escapeHtml(DbSplit.roleLabel())}</strong>`;
+            const roleText = `This device: <strong>${escapeHtml(DbSplit.roleLabel())}</strong>` +
+                (DbSplit.role ? (DbSplit.roleFromLink() ? ' (from this page\'s link)' : ' (this session only — open SitkaTools from the device\'s link to skip the question)') : '');
             if (DbSplit.active) {
                 const files = [...DbSplit.loaded].sort().map(n => escapeHtml(n)).join(', ');
                 status.innerHTML = `${roleText}<br>Open files: ${files || '—'}`;
@@ -4749,11 +4771,53 @@
             if (DB.data) LotActions.render();
         }
 
+        // Show the link this device should be opened from — the role lives in it, not in the browser
+        function showDeviceLink(role) {
+            const link = DbSplit.linkFor(role);
+            const wrap = document.createElement('div');
+            wrap.className = 'db-overlay';
+            wrap.id = 'deviceLinkOverlay';
+            const card = document.createElement('div');
+            card.className = 'db-overlay-card';
+            card.innerHTML = `
+                <div class="db-overlay-icon">🔗</div>
+                <div class="db-overlay-title">${escapeHtml(DbSplit.roleLabel(role))} — this device's link</div>
+                <div class="db-overlay-desc">Bookmark this link on this device (on a tablet: open it, then ⋮ → Add to Home screen)
+                    and always open SitkaTools from it. The device is set by the link — nothing is stored in the browser.</div>`;
+            const input = document.createElement('input');
+            input.id = 'deviceLinkText';
+            input.className = 'split-select';
+            input.readOnly = true;
+            input.value = link;
+            input.style.width = '100%';
+            input.style.marginBottom = '12px';
+            input.addEventListener('focus', () => input.select());
+            const actions = document.createElement('div');
+            actions.className = 'db-overlay-actions';
+            const copy = document.createElement('button');
+            copy.className = 'btn-load-db';
+            copy.textContent = '📋 Copy link';
+            copy.addEventListener('click', async () => {
+                try { await navigator.clipboard.writeText(link); copy.textContent = '✓ Copied'; }
+                catch (_) { input.focus(); input.select(); copy.textContent = 'Press Ctrl+C'; }
+            });
+            const close = document.createElement('button');
+            close.className = 'btn-cancel-db';
+            close.textContent = 'Close';
+            close.addEventListener('click', () => wrap.remove());
+            actions.append(copy, close);
+            card.append(input, actions);
+            wrap.appendChild(card);
+            document.body.appendChild(wrap);
+        }
+
         $('changeRoleBtn').addEventListener('click', async () => {
+            const before = DbSplit.role;
             await DbSplit.ensureRole(DB.data?.buildings || {}, true);
             updateIOStatusBar();
             updateSplitCard();
-            if (DbSplit.active) alert('Device changed. Reopen the database files so this device saves the right ones.');
+            showDeviceLink(DbSplit.role);
+            if (DbSplit.active && before && before !== DbSplit.role) alert('Device changed for this session. Reopen the database files so this device saves the right ones.');
         });
         $('splitDbBtn').addEventListener('click', () => DbSplit.splitLegacy());
 

@@ -160,7 +160,7 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
 Agreed with the user on 2026-10-12. It differs from option B above in one way: there's no separate plan file. A **Main** database holds what the office edits, and floor work lives in **one file per building**. Every device opens all the files but saves only its own. Details are in `CLAUDE.md` → "Split Database".
 
 - [x] **Files:** `Main.json` (office), `Wages.json` (office only), `Building-<ID>.json` (that building), `Archive/Lot-<id>-<date>.json`. Names are fixed; SharePoint's version history replaces dated copies.
-- [x] **Device identity:** asked once ("Office / Building X") and remembered. Every saved file is stamped with who saved it.
+- [x] **Device identity:** set by each device's own link (`SitkaTools.html?device=B6`, `?device=office`). Nothing is stored in the browser; without the link it's asked each session. Every saved file is stamped with who saved it.
 - [x] **Loader and saver:** SitkaTools combines the files into the usual one-DB shape, so tools are unchanged, and splits them back on save. Each device writes only the files it owns, and lists any change it can't save.
 - [x] **Floor updates to office records:** plant count, phase and room on lots, and completion and labour hours on events, are saved as timestamped updates in the building's file. The newest wins against the office's own edits.
 - [x] **Folder mode (Chrome/Edge laptops):** pick the synced folder once (recent folders are remembered); all files open together.
