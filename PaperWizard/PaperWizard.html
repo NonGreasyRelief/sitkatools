@@ -894,9 +894,7 @@
                 <label for="lotSelect">Active Lot</label>
                 <select id="lotSelect"></select>
             </div>
-            <button type="button" class="btn btn-secondary db-btn" id="loadDbBtn" style="display:none;">📂 Load</button>
             <div class="export-wrapper">
-                <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
                 <div class="save-popup hidden" id="savePopup">
                     <a class="save-link" id="saveLink" href="#">📄 Click to generate file</a>
                     <button type="button" class="save-close" id="saveCloseBtn" title="Close">✕</button>
@@ -905,8 +903,6 @@
         </div>
     </header>
 
-    <!-- Hidden file input for standalone DB import -->
-    <input type="file" id="dbImportInput" accept=".json" style="display:none;">
 
     <!-- Hidden file input for just-in-time controlled page-image load (never stored) -->
     <input type="file" id="pageImportInput" accept=".webp,image/webp" multiple style="display:none;">
@@ -981,9 +977,6 @@
         };
 
         const $ = id => document.getElementById(id);
-
-        // Standalone (tablet) mode: opened directly with no opener window.
-        const isStandalone = !window.opener;
 
         // True once a DB has arrived (postMessage delivery or file import).
         // Needed because ensureStructure() makes DB.data truthy from load time.
@@ -4209,9 +4202,7 @@
             const panel = $('cabinetPanel');
             if (!dbLoaded) {
                 panel.innerHTML = emptyStateHtml('🗄️', 'No database loaded',
-                    isStandalone
-                        ? 'Tap 📂 Load in the header to import a DB-YY-MM-DD.json file.'
-                        : 'Open PaperWizard from SitkaTools to receive the database.');
+                    'Open PaperWizard from SitkaTools to receive the database.');
                 return;
             }
             if (!activeLotId) {
@@ -4462,9 +4453,7 @@
 
             if (!dbLoaded) {
                 panel.innerHTML = emptyStateHtml('📄', 'No database loaded',
-                    isStandalone
-                        ? 'Tap 📂 Load in the header to import a DB-YY-MM-DD.json file.'
-                        : 'Open PaperWizard from SitkaTools to receive the database.');
+                    'Open PaperWizard from SitkaTools to receive the database.');
                 return;
             }
 
@@ -5012,7 +5001,8 @@
         // Every tool is served from the same site, so they share browser storage. SitkaTools keeps the open DB in
         // IndexedDB ('sitkatools' → 'work'). When this tool is opened as a plain tab (tablets, where the popup /
         // postMessage hand-off doesn't work) it loads the DB from there, writes its changes back, and every open
-        // tab refreshes through a BroadcastChannel. Saving to SharePoint always happens in SitkaTools.
+        // tab refreshes through a BroadcastChannel. Saving always happens in SitkaTools ("Go back to SitkaTools to
+        // save" in the banner), and tools only run through SitkaTools — opened by themselves they say so.
         // `var` (not const) so notifySitkaTools() can check it safely however early it runs.
         var WorkCopy = {
             TOOL: 'PaperWizard',
@@ -5081,6 +5071,32 @@
                     idb.close();
                 } catch (_) { /* ignore */ }
             },
+            // Hand the latest changes to SitkaTools, ask it to have the user save, and switch to its tab
+            async goBackToSave() {
+                await this.write(DB.data);
+                if (this.channel) this.channel.postMessage({ type: 'save-request', from: this.TOOL });
+                try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (_) { /* not allowed */ }
+                setTimeout(() => {
+                    if (document.visibilityState !== 'visible') return; // switched tabs
+                    const msg = 'Switch to the SitkaTools tab — it is waiting for you to save.';
+                    if (typeof showToast === 'function') showToast(msg);
+                    else alert(msg);
+                }, 600);
+            },
+            showOpenFromSitka() {
+                const wrap = document.createElement('div');
+                wrap.id = 'openFromSitka';
+                wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10000; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                wrap.innerHTML = `
+                    <div style="max-width: 440px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 32px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🌿</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Open this tool from SitkaTools</div>
+                        <div style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">
+                            Tools get their database from SitkaTools. Open SitkaTools, load your database, then open this tool from there.</div>
+                        <a href="../SitkaTools/SitkaTools.html" style="display: inline-block; background: var(--accent); color: var(--bg-primary); padding: 12px 24px; border-radius: 8px; font-weight: 700; text-decoration: none;">Open SitkaTools</a>
+                    </div>`;
+                document.body.appendChild(wrap);
+            },
             // Hand the DB to this tool's own "DB arrived from SitkaTools" message handler
             apply(db, initial) {
                 if (!initial && JSON.stringify(db) === JSON.stringify(DB.data)) return;
@@ -5089,28 +5105,24 @@
             },
             async start() {
                 const copy = await this.read();
-                if (!copy) return;
+                if (!copy) {
+                    // Opened by itself with no SitkaTools open on this device: tools only run through SitkaTools
+                    if (!window.opener) this.showOpenFromSitka();
+                    return;
+                }
                 this.inUse = true;
                 this.apply(copy.db, true);
-                const fileButtons = ['loadDbBtn', 'exportDbBtn', 'importDbBtn'].map(id => document.getElementById(id)).filter(Boolean);
-                fileButtons.forEach(el => { el.style.display = 'none'; });
                 const banner = document.createElement('div');
                 banner.id = 'workCopyBanner';
-                banner.textContent = '📋 Using the database open in SitkaTools — switch to the SitkaTools tab to save it. ';
+                banner.textContent = '📋 Using the database open in SitkaTools. ';
                 banner.style.cssText = 'background: var(--bg-card); color: var(--text-primary); border-bottom: 1px solid var(--accent); padding: 8px 16px; font-size: 0.85rem; text-align: center;';
-                // Opt out: stop following SitkaTools' copy and show this tool's own Load / Export / Import — even when
-                // it was opened from SitkaTools (a tablet whose postMessage hand-off failed needs them)
-                const useFile = document.createElement('button');
-                useFile.type = 'button';
-                useFile.id = 'workCopyUseFile';
-                useFile.textContent = 'Use a file instead';
-                useFile.style.cssText = 'background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit;';
-                useFile.addEventListener('click', () => {
-                    this.inUse = false;
-                    fileButtons.forEach(el => { el.style.display = ''; });
-                    banner.remove();
-                });
-                banner.appendChild(useFile);
+                const back = document.createElement('button');
+                back.type = 'button';
+                back.id = 'workCopyGoBack';
+                back.textContent = 'Go back to SitkaTools to save';
+                back.style.cssText = 'background: var(--accent); color: var(--bg-primary); border: none; border-radius: 6px; padding: 6px 12px; margin-left: 6px; font-weight: 700; cursor: pointer; font-size: inherit;';
+                back.addEventListener('click', () => this.goBackToSave());
+                banner.appendChild(back);
                 document.body.insertBefore(banner, document.body.firstChild);
             }
         };
@@ -5176,57 +5188,8 @@
             }
         });
 
-        // ---- Standalone: Load DB from file ----
-        function handleDbImport(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                try {
-                    const parsed = JSON.parse(ev.target.result);
-                    DB.data = parsed;
-                    DB.fileName = file.name;
-                    DB.ensureStructure();
-                    dbLoaded = true;
-                    renderAll();
-                    showToast('Database imported successfully');
-                } catch (err) {
-                    alert('Failed to parse JSON file: ' + err.message);
-                }
-            };
-            reader.readAsText(file);
-            // Reset so the same file can be imported again
-            e.target.value = '';
-        }
-
-        // ---- Standalone: Export DB as downloadable JSON file (blob link popup) ----
-        function handleDbExport() {
-            if (!DB.data) {
-                showToast('No database to export');
-                return;
-            }
-            DB.sync();
-            const json = JSON.stringify(DB.data, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-
-            const now = new Date();
-            const yy = String(now.getFullYear()).slice(-2);
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-            const filename = `DB-${yy}-${mm}-${dd}.json`;
-
-            showSavePopup(filename, blob, 'Database ready — right-click the link → Save Link As…');
-        }
-
         // ---- Init ----
         function init() {
-            if (isStandalone) {
-                $('loadDbBtn').style.display = '';
-                $('exportDbBtn').style.display = '';
-            }
-
-            $('dbImportInput').addEventListener('change', handleDbImport);
             $('pageImportInput').addEventListener('change', handlePageImport);
             $('sheetImportInput').addEventListener('change', handleSheetImport);
             // Print-document picker (Filing Cabinet): base name names the sheet.
@@ -5236,9 +5199,6 @@
                 if (!files.length) return;
                 loadPrintDocument(files);
             });
-            $('loadDbBtn').addEventListener('click', () => $('dbImportInput').click());
-            // stopPropagation so the document click handler below doesn't close the popup we just opened.
-            $('exportDbBtn').addEventListener('click', (e) => { e.stopPropagation(); handleDbExport(); });
             $('saveCloseBtn').addEventListener('click', (e) => { e.stopPropagation(); closeSavePopup(); });
             // Close the save popup when clicking elsewhere on the page.
             document.addEventListener('click', () => closeSavePopup());

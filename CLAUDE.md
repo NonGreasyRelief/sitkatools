@@ -9,7 +9,8 @@ A collection of standalone, single-file HTML tools for tracking licensed cannabi
 ### Core Principles
 
 - **Single-file tools:** Every tool is a single `.html` file with embedded CSS and JavaScript — no build step, no dependencies, no server.
-- **Browser sandbox only:** Tools run by opening the HTML file directly in a browser (`file://` protocol). No `fetch()` to external origins, no WebSocket, no server communication.
+- **Everything launches through SitkaTools:** subtools are opened from SitkaTools (a popup on laptops, a tab on tablets) and get their DB from it; saving happens in SitkaTools. A subtool opened by itself only shows "Open this tool from SitkaTools" — there is no standalone DB import/export in any tool.
+- **Browser sandbox only:** The suite runs by opening the HTML files directly in a browser (`file://` protocol) or from GitHub Pages — never a server of our own. No `fetch()` to external origins, no WebSocket, no server communication.
 - **Modular & decoupled:** Tools do NOT communicate with each other. Shared state is mediated exclusively through the JSON database file on disk.
 - **No frameworks:** Vanilla HTML/CSS/JavaScript only. No bundlers, no npm packages, no transpilers.
 
@@ -404,9 +405,11 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 All tools are served from the same site, so they share browser storage. SitkaTools mirrors the open DB (plus split bookkeeping) into IndexedDB `sitkatools` → `work` (key `current`) and announces changes on `BroadcastChannel('sitkatools-db')`. Every subtool includes the `WorkCopy` snippet:
 
-- A tool opened **without an opener** (a tablet tab), or whose `sitkaGit_db` postMessage doesn't arrive within 1.5 s, loads the DB from the shared copy, shows a "save from the SitkaTools tab" banner, and hides its own Load/Export/Import buttons. It delivers the DB to itself by dispatching a synthetic (untrusted) `message` event, so its normal `sitkaGit_db` / `sitkaGit_db_update` handler runs — that is why the opener check reads `if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;`.
+- A tool opened **without an opener** (a tablet tab), or whose `sitkaGit_db` postMessage doesn't arrive within 1.5 s, loads the DB from the shared copy and shows a banner with **Go back to SitkaTools to save**. With no opener and no shared copy, it shows "Open this tool from SitkaTools" instead. It delivers the DB to itself by dispatching a synthetic (untrusted) `message` event, so its normal `sitkaGit_db` / `sitkaGit_db_update` handler runs — that is why the opener check reads `if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;`.
 - `notifySitkaTools()` also writes the shared copy when the tab uses it; SitkaTools takes the change in like a subtool update (marks unsaved). SitkaTools' own changes reach open tool tabs the same way.
-- On phones, module links open the tool in a tab (the old save-then-import overlay is no longer used).
+- On phones, module links open the tool in a tab (`openToolInTab`).
+- **Go back to SitkaTools to save:** the tool writes its latest DB to the shared copy, broadcasts `save-request`, and tries `window.opener.focus()` (a toast says to switch tabs if that isn't allowed). SitkaTools takes the copy in and, if anything is unsaved, covers the page below the header with "Save before you continue" (💾 Save DB stays reachable) until the save happens; an "I can't save right now" link closes it after a confirmation.
+- **Save stamp:** `_meta` belongs to SitkaTools; when it takes in a tool's DB (shared copy or postMessage) it keeps its own `_meta`, so a tool still holding the stamp from before the last save never undoes it.
 - **Forgetting:** the copy is deleted when SitkaTools closes with everything saved (open tool tabs finish the delete via a `sitka-closing` broadcast), saved copies are removed on the next start, nothing older than 12 hours is used, and unsaved work left behind is offered back once on the next SitkaTools start.
 - IndexedDB version is **3** everywhere (`folders`, `settings`, `work` stores); every copy of the open/upgrade code must match.
 

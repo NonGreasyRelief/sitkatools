@@ -493,14 +493,14 @@ These are the controlled forms the facility will configure in the Configure Shee
 
 PaperWizard is part of the SitkaGit suite: a standalone single-file HTML application, vanilla HTML/CSS/JS, no build step, no network calls, running in the browser sandbox (`file://`).
 
-### Two Launch Modes
+### Launched from SitkaTools only
 
-1. **From SitkaTools (normal subtool mode):** opens as a popup per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every mutation to `_PaperWizard` (sheet/wizard saves, entry saves, signatures) **and after every lot write-back** (`plantCount` / `stage` / `currentRoom`).
-2. **Standalone (tablet/floor mode):** opened directly with no opener. The header shows 📂 Load / 💾 Export buttons (hidden when an opener exists) using the standard suite file-import/export pattern — so a floor tablet can load the current `DB-YY-MM-DD.json`, fill entries, and export the updated DB back to disk.
+PaperWizard always runs through SitkaTools — there is no standalone mode or DB import/export of its own (sheet configuration import/export and the page-image "Load document" stay).
 
-### Shared Working Copy (tablets)
+1. **Laptops:** opens as a popup per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every mutation to `_PaperWizard` (sheet/wizard saves, entry saves, signatures) **and after every lot write-back** (`plantCount` / `stage` / `currentRoom`).
+2. **Tablets:** opens as a tab and loads SitkaTools' open DB from the shared working copy (root `CLAUDE.md` → "Shared Working Copy"). A banner offers **Go back to SitkaTools to save**; entries and write-backs flow back to SitkaTools.
 
-Opened as a plain tab while SitkaTools has a DB open on the same device, PaperWizard loads it from the shared working copy instead of a file (root `CLAUDE.md` → "Shared Working Copy"): the 📂 Load / 💾 Export buttons are hidden, a banner says to save from the SitkaTools tab, and entries / write-backs flow back to SitkaTools. With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`; the lot's earlier paperwork from other buildings stays in their files and is still shown (every device opens all files).
+Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`; the lot's earlier paperwork from other buildings stays in their files and is still shown (every device opens all files).
 
 ### Standard postMessage Pattern
 
@@ -513,7 +513,6 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ 📄 Paper Wizard [Filing Cabinet | Configure Sheets] [Lot ▾] │ ← sticky header (tabs + active lot)
-│                        (📂 Load 💾 Export — standalone only)
 ├──────────────────────────────────────────────────────────┤
 │ Status bar: 📋 5 sheets configured · 🌱 LOT-001 Purple Haze · ⏳ 2 entries due today
 ├──────────────────────────────────────────────────────────┤

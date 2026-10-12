@@ -11,7 +11,7 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 ### Intended Use
 
 - **Planning (manager, desktop or tablet):** Pick a building, build/edit/reorder its daily task list, write step-by-step instructions for any task. Changes save to `_DailyWizard` and sync back to SitkaTools via postMessage when launched from the main app.
-- **Floor view (staff, tablet in the building):** Open the tool standalone on a tablet, load the current database file, pick the building (or "All Buildings"), and work down the list with big checkboxes. A "Reset Day" button clears all check-offs for a fresh start.
+- **Floor view (staff, tablet in the building):** Open SitkaTools on the tablet, launch DailyWizard from it (it opens as a tab), pick the building (or "All Buildings"), and work down the list with big checkboxes. A "Reset Day" button clears all check-offs for a fresh start.
 - **Combined overview:** The "All Buildings" view shows every building's list for the day, grouped by building, so one tablet can coordinate multiple buildings.
 
 ### What This Tool Is NOT
@@ -174,18 +174,14 @@ When attributing CropLabourWizard events to a building (`buildingForEvent`), Dai
 
 DailyWizard is part of the SitkaGit suite: a standalone single-file HTML application, vanilla HTML/CSS/JS, no build step, no network calls, running in the browser sandbox (`file://`).
 
-### Two Launch Modes
+### Launched from SitkaTools only
 
-1. **From SitkaTools (normal subtool mode):** Opens as a popup window per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every **task definition** mutation (add/edit/delete/move task, edit steps). Check-offs never trigger a sync.
-2. **Standalone (tablet mode):** Opened directly on a tablet with no opener window. The header shows two extra buttons (hidden when an opener exists):
-   - **📂 Load** — file input to load the current `DB-YY-MM-DD.json` database file (standard suite import pattern).
-   - **💾 Export** — downloads the full database (`URL.createObjectURL` + `<a download>`) with any task definition edits included, so the tablet can save its work back to the shared file. Check-off state is never exported.
+DailyWizard always runs through SitkaTools — there is no standalone mode or DB import/export of its own.
 
-   Without a loaded DB the tool shows an empty-state prompting to load one (or, in subtool mode, waiting for the postMessage delivery).
+1. **Laptops:** opens as a popup; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every **task definition** mutation (add/edit/delete/move task, edit steps). Check-offs never trigger a sync.
+2. **Tablets:** opens as a tab and loads SitkaTools' open DB from the shared working copy (root `CLAUDE.md` → "Shared Working Copy"). A banner offers **Go back to SitkaTools to save**; task-list edits flow back to SitkaTools, which saves them to this building's `Building-<ID>.json`.
 
-### Shared Working Copy (tablets)
-
-Opened as a plain tab while SitkaTools has a DB open on the same device, DailyWizard loads it from the shared working copy instead of a file (root `CLAUDE.md` → "Shared Working Copy"): the 📂 Load / 💾 Export buttons are hidden, a banner says to save from the SitkaTools tab, and task-list edits flow back to SitkaTools, which saves them to this building's `Building-<ID>.json`.
+Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". Until the DB arrives, the empty state reads "Waiting for SitkaTools to deliver the database…".
 
 ### Standard postMessage Pattern
 
@@ -198,7 +194,6 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 ```
 ┌──────────────────────────────────────────────┐
 │ 📋 DailyWizard   [Building ▾] [📅 date]      │  ← sticky header
-│                    (📂 Load 💾 Export — standalone only)
 ├──────────────────────────────────────────────┤
 │ Status bar: 🏢 3 buildings · 📝 12 today · ✅ 4/12 done
 ├──────────────────────────────────────────────┤
@@ -220,7 +215,6 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 - **Logo:** `📋 DailyWizard` on the left.
 - **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view.
 - **Date input** (`<input type="date">`): defaults to today. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
-- **Load / Export buttons** (`db-btn` style): visible only in standalone mode (no `window.opener`).
 
 ### Status Bar
 
@@ -302,17 +296,17 @@ Sticky footer per suite convention with one addition for this tool:
 ```
 
 - **Reset Day** — clears check-offs for the selected date (confirm first). Disabled when nothing is checked.
-- **Close Tool** — `window.close()`; in standalone mode this simply closes the tab.
+- **Close Tool** — `window.close()`; on a tablet this closes the tool's tab.
 
 ### Empty States
 
-- No DB loaded (standalone): centered prompt with the 📂 Load button.
+- No DB yet: "Waiting for SitkaTools to deliver the database…" (opened without SitkaTools: "Open this tool from SitkaTools").
 - Building with no tasks: "No daily tasks defined for {building} yet." + prominent **+ Add Task** button.
 - Tasks defined but none recur on the selected date: "No daily tasks scheduled for this date." (events section still renders if non-empty).
 
-## Tablet / Standalone Considerations
+## Tablet Considerations
 
-- Designed to be launched standalone on tablets in the buildings: everything must work with **touch only** — no hover-dependent UI, all interactive targets ≥ 48 px, large checkboxes as the primary control.
+- Designed for tablets in the buildings (launched from SitkaTools as a tab): everything must work with **touch only** — no hover-dependent UI, all interactive targets ≥ 48 px, large checkboxes as the primary control.
 - Works fully offline over `file://` — no network calls, no external fonts/CDNs; emoji picker data is embedded.
 - The layout should remain usable in portrait orientation at typical tablet widths (~768–1024 px); rows stack chips gracefully on narrow screens.
 - Check-off state is intentionally ephemeral (see Completion State) — the tool must never prompt to save check-offs or attempt to sync them.
@@ -323,7 +317,7 @@ Sticky footer per suite convention with one addition for this tool:
 - Runs in browser sandbox (`file://` protocol)
 - Vanilla HTML/CSS/JavaScript only
 - No network calls of any kind
-- No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage; standalone persistence is via DB file import/export only
+- No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage or SitkaTools' shared working copy; saving happens in SitkaTools
 - Reads `calendarEvents`, `rooms`, `buildings`, and `lots` (for attribution) but writes **only** to `_DailyWizard`
 
 ## Deferred Features

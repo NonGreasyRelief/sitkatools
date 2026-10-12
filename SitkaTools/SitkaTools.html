@@ -1990,24 +1990,6 @@
             transform: translateY(-1px);
         }
 
-        /* Mobile Tool Launch Overlay — secondary button style */
-        .btn-launch-tool {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 12px 32px;
-            border-radius: var(--radius);
-            font-size: 1rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-launch-tool:hover {
-            background: #2980b9;
-            transform: translateY(-1px);
-        }
-
         /* Sync Toast — appears when a subtool sends a postMessage update */
         .sync-toast {
             position: fixed;
@@ -2231,6 +2213,19 @@
         }
         .split-transfer input { width: 90px; }
         .split-transfer.pending { border-style: dashed; border-color: var(--border); color: var(--text-secondary); }
+
+        /* "Go back to SitkaTools to save": covers the page below the header (💾 Save DB stays reachable) */
+        .save-required {
+            position: fixed; left: 0; right: 0; bottom: 0; top: 64px; z-index: 90;
+            background: rgba(10, 10, 30, 0.94);
+            display: flex; align-items: center; justify-content: center; padding: 24px;
+        }
+        .save-required.hidden { display: none; }
+        .save-required-card {
+            max-width: 460px; text-align: center; background: var(--bg-secondary);
+            border: 2px solid var(--warning); border-radius: 12px; padding: 32px;
+        }
+        .save-required-card .db-overlay-actions { flex-direction: column; align-items: center; gap: 12px; }
 
         /* Text utilities */
         .text-secondary {
@@ -2750,20 +2745,6 @@
             <div class="db-overlay-actions">
                 <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
                 <button class="btn-cancel-db" id="overlayCancelBtn">Skip</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Mobile Tool Launch Overlay — appears when launching a subtool on mobile -->
-    <div class="db-overlay hidden" id="mobileToolOverlay">
-        <div class="db-overlay-card">
-            <div class="db-overlay-icon">📱</div>
-            <div class="db-overlay-title" id="mobileToolTitle">Save Before Launch?</div>
-            <div class="db-overlay-desc" id="mobileToolDesc">
-                On mobile, subtools can't sync data automatically. Save your database first, then launch the tool.
-            </div>
-            <div class="db-overlay-actions" id="mobileToolActions">
-                <!-- Phase 1 buttons (injected by JS) -->
             </div>
         </div>
     </div>
@@ -3415,7 +3396,7 @@
         }
 
         // ---- Database Import/Export ----
-        let fileDialogSource = null; // Tracks which UI triggered the file dialog ('overlay', 'mobileOverlay', 'toolbar', or null)
+        let fileDialogSource = null; // Tracks which UI triggered the file dialog ('overlay', 'toolbar', or null)
 
         importBtn.addEventListener('click', () => {
             if (hasUnsavedChanges && !confirm('You have unsaved changes. Loading another database will discard them.\n\nLoad anyway?')) return;
@@ -3435,7 +3416,6 @@
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
-                hideMobileToolOverlay();
                 return true;
             } catch (err) {
                 alert('Failed to parse JSON file: ' + err.message);
@@ -3481,8 +3461,6 @@
                 // triggering the dialog (see below), so we restore them here on cancel.
                 if (fileDialogSource === 'overlay') {
                     showOverlay();
-                } else if (fileDialogSource === 'mobileOverlay') {
-                    showMobileToolOverlay();
                 }
                 fileDialogSource = null;
                 return;
@@ -4435,7 +4413,6 @@
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
-                hideMobileToolOverlay();
                 return true;
             },
 
@@ -4490,6 +4467,7 @@
                 // being reported (its own overlays keep their original times — see buildingOverlays).
                 if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
                 if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
+                else if (plan.cannot.length) SaveRequired.hide(); // saved all this device may save; the rest was reported
                 updateIOStatusBar();
                 updateSplitCard();
             },
@@ -4703,17 +4681,72 @@
             }
         };
 
+        // The save stamp (_meta) belongs to SitkaTools: a tool's copy may still carry the stamp from before
+        // the last save, which must not undo it (or count as a change)
+        function keepOwnSaveStamp(incoming) {
+            if (!incoming || typeof incoming !== 'object') return;
+            if (DB.data?._meta) incoming._meta = DB.data._meta;
+            else delete incoming._meta;
+        }
+
         // A tool tab changed the shared copy → take it in, like a subtool update
+        async function takeToolCopy(from) {
+            const copy = await WorkCopy.read();
+            if (!copy?.db) return;
+            keepOwnSaveStamp(copy.db);
+            if (JSON.stringify(copy.db) === JSON.stringify(DB.data)) return;
+            DB.data = copy.db;
+            DB.ensureStructure();
+            markUnsaved();
+            refreshAllViews();
+            showSyncToast(`${from} updated the database — views refreshed`);
+        }
+
+        // "Go back to SitkaTools to save" (tool tabs): cover the page until the changes are saved
+        var SaveRequired = {
+            el: null,
+            show(from) {
+                if (!this.el) {
+                    this.el = document.createElement('div');
+                    this.el.className = 'save-required hidden';
+                    this.el.id = 'saveRequired';
+                    this.el.innerHTML = `
+                        <div class="save-required-card">
+                            <div class="db-overlay-icon">💾</div>
+                            <div class="db-overlay-title">Save before you continue</div>
+                            <div class="db-overlay-desc" id="saveRequiredText"></div>
+                            <div class="db-overlay-actions">
+                                <button class="btn-load-db" id="saveRequiredSaveBtn">💾 Save DB</button>
+                                <button class="btn-link" id="saveRequiredSkip">I can't save right now</button>
+                            </div>
+                        </div>`;
+                    document.body.appendChild(this.el);
+                    this.el.querySelector('#saveRequiredSaveBtn').addEventListener('click', (e) => {
+                        e.stopPropagation(); // the save popup opens in the header; a document click would close it
+                        exportBtn.click();
+                    });
+                    this.el.querySelector('#saveRequiredSkip').addEventListener('click', () => {
+                        if (confirm('Your changes are NOT saved yet. Continue without saving?')) this.hide();
+                    });
+                }
+                this.el.querySelector('#saveRequiredText').textContent =
+                    `${from} sent you back to save. Save your changes with 💾 Save DB — this screen closes once they're saved.`;
+                this.el.style.top = `${Math.round(document.querySelector('.header').getBoundingClientRect().bottom)}px`;
+                this.el.classList.remove('hidden');
+            },
+            hide() {
+                if (this.el) this.el.classList.add('hidden');
+            }
+        };
+
         if (WorkCopy.channel) {
             WorkCopy.channel.addEventListener('message', async (e) => {
-                if (e.data?.type !== 'db-updated' || e.data.from === 'SitkaTools') return;
-                const copy = await WorkCopy.read();
-                if (!copy?.db || JSON.stringify(copy.db) === JSON.stringify(DB.data)) return;
-                DB.data = copy.db;
-                DB.ensureStructure();
-                markUnsaved();
-                refreshAllViews();
-                showSyncToast(`${e.data.from} updated the database — views refreshed`);
+                const type = e.data?.type;
+                if ((type !== 'db-updated' && type !== 'save-request') || e.data.from === 'SitkaTools') return;
+                await takeToolCopy(e.data.from);
+                if (type !== 'save-request') return;
+                if (hasUnsavedChanges) SaveRequired.show(e.data.from);
+                else showSyncToast('Nothing to save — everything is already saved');
             });
         }
 
@@ -5168,52 +5201,6 @@
             dbOverlay.classList.add('hidden');
         }
 
-        // ---- Mobile Tool Launch Overlay ----
-        const mobileToolOverlay = $('mobileToolOverlay');
-        const mobileToolTitle = $('mobileToolTitle');
-        const mobileToolDesc = $('mobileToolDesc');
-        const mobileToolActions = $('mobileToolActions');
-
-        function showMobileToolOverlay(toolUrl) {
-            pendingToolUrl = toolUrl;
-
-            // Phase 1: Save prompt + Launch button
-            mobileToolTitle.textContent = 'Save Before Launch?';
-            mobileToolDesc.innerHTML = `
-                On mobile, subtools can't sync data automatically.<br><br>
-                <strong>Step 1:</strong> Save your database below.<br>
-                <strong>Step 2:</strong> Launch the tool — it will load your saved DB.
-            `;
-
-            mobileToolActions.innerHTML = '';
-
-            // Left button: Save DB (generates save link inline)
-            const saveBtn = document.createElement('button');
-            saveBtn.className = 'btn-load-db';
-            saveBtn.textContent = '💾 Save DB';
-            saveBtn.addEventListener('click', () => {
-                handleMobileSaveDb();
-            });
-
-            // Right button: Launch Tool
-            const launchBtn = document.createElement('button');
-            launchBtn.className = 'btn-launch-tool';
-            launchBtn.textContent = '🚀 Launch Tool';
-            launchBtn.addEventListener('click', () => {
-                handleMobileLaunchTool(toolUrl);
-            });
-
-            mobileToolActions.appendChild(saveBtn);
-            mobileToolActions.appendChild(launchBtn);
-
-            mobileToolOverlay.classList.remove('hidden');
-        }
-
-        function hideMobileToolOverlay() {
-            mobileToolOverlay.classList.add('hidden');
-            pendingToolUrl = null;
-        }
-
         // ---- Print Todo List ----
         const printTodoOverlay = $('printTodoOverlay');
         const printTodoBtn = $('printTodoBtn');
@@ -5448,30 +5435,8 @@
             printTodoOverlay.classList.add('hidden');
         }
 
-        function handleMobileSaveDb() {
-            const save = prepareSave();
-            const blob = new Blob([save.json], { type: 'application/json' });
-            const filename = save.filename;
-
-            // Use a button that triggers share/download on tap (fixes iOS Safari blob URL issue)
-            mobileToolDesc.innerHTML = `
-                <span style="color: var(--accent);">✓ Database ready!</span><br><br>
-                <button id="mobileSaveFileBtn" class="btn-load-db" style="display: inline-block; margin-bottom: 8px;">📄 ${filename} — Tap to save</button><br><br>
-                <strong>Then tap Launch Tool → and import this file in the subtool.</strong>
-            `;
-
-            // Attach share handler to the newly created button
-            const saveFileBtn = document.getElementById('mobileSaveFileBtn');
-            if (saveFileBtn) {
-                saveFileBtn.addEventListener('click', () => {
-                    shareFile(blob, filename);
-                    commitSave(save);
-                });
-            }
-        }
-
-        function handleMobileLaunchTool(toolUrl) {
-            // Open tool in a new tab (full window on mobile)
+        // Phones: open the tool in a tab; it loads the DB from the shared working copy
+        function openToolInTab(toolUrl) {
             const newWindow = window.open(toolUrl, '_blank');
             if (!newWindow) return;
 
@@ -5485,39 +5450,6 @@
                 }
             }, 1000);
 
-            // Short delay then switch overlay to "Load DB" phase
-            setTimeout(() => {
-                mobileToolTitle.textContent = 'Load Updated Data';
-                mobileToolDesc.innerHTML = `
-                    The tool is now open in a new tab.<br><br>
-                    After you make changes, <strong>reload your database here</strong> to see the updates.
-                `;
-
-                mobileToolActions.innerHTML = '';
-
-                // Load DB button
-                const loadBtn = document.createElement('button');
-                loadBtn.className = 'btn-load-db';
-                loadBtn.textContent = '📂 Load DB';
-                loadBtn.addEventListener('click', () => {
-                    // Same Edge fix: hide overlay before triggering file dialog,
-                    // restore on cancel (see change handler).
-                    hideMobileToolOverlay();
-                    fileDialogSource = 'mobileOverlay';
-                    dbImportInput.click();
-                });
-
-                // Done button to close overlay
-                const doneBtn = document.createElement('button');
-                doneBtn.className = 'btn-cancel-db';
-                doneBtn.textContent = 'Done';
-                doneBtn.addEventListener('click', () => {
-                    hideMobileToolOverlay();
-                });
-
-                mobileToolActions.appendChild(loadBtn);
-                mobileToolActions.appendChild(doneBtn);
-            }, 800);
         }
 
 
@@ -5533,9 +5465,6 @@
         // 'ontouchstart' in window alone is unreliable (exists in modern desktop browsers even without touch)
         const isMobileDevice = window.innerWidth < 768 && navigator.maxTouchPoints > 0;
 
-        // Mobile tool launch overlay state
-        let pendingToolUrl = null;
-
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -5545,7 +5474,7 @@
                 if (isMobileDevice) {
                     // On phones: open the tool in a tab; it loads the DB from the shared copy
                     // (replaces the old save-then-import overlay)
-                    handleMobileLaunchTool(href);
+                    openToolInTab(href);
                 } else {
                     // On desktop: existing behavior — open popup with postMessage
                     openModuleInTab(href);
@@ -5634,6 +5563,7 @@
             console.log('[SitkaTools] First 3 events:', e.data.payload.calendarEvents?.slice(0, 3));
 
             // Some subtools resync on open (EquipmentWizard); only a real change counts as unsaved
+            keepOwnSaveStamp(e.data.payload);
             const changed = JSON.stringify(e.data.payload) !== JSON.stringify(DB.data);
             DB.data = e.data.payload;
             DB.ensureStructure();
@@ -6088,6 +6018,7 @@
             exportBtn.classList.remove('unsaved');
             updateFolderUi();
             WorkCopy.schedule();
+            if (typeof SaveRequired !== 'undefined' && SaveRequired) SaveRequired.hide();
         }
 
         // Warn before closing if there are unsaved changes

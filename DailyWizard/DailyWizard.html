@@ -640,13 +640,9 @@
                 <label for="dateInput">📅 Date</label>
                 <input type="date" id="dateInput">
             </div>
-            <button type="button" class="btn btn-secondary db-btn" id="loadDbBtn" style="display:none;">📂 Load</button>
-            <button type="button" class="btn btn-secondary db-btn" id="exportDbBtn" style="display:none;">💾 Export</button>
         </div>
     </header>
 
-    <!-- Hidden file input for standalone DB import -->
-    <input type="file" id="dbImportInput" accept=".json" style="display:none;">
 
     <!-- Main Content -->
     <main class="main">
@@ -790,9 +786,6 @@
 
         const $ = id => document.getElementById(id);
 
-        // Standalone (tablet) mode: opened directly with no opener window.
-        const isStandalone = !window.opener;
-
         // ---- Date helpers (local time, YYYY-MM-DD) ----
         function dateToStr(d) {
             const y = d.getFullYear();
@@ -845,7 +838,8 @@
         // Every tool is served from the same site, so they share browser storage. SitkaTools keeps the open DB in
         // IndexedDB ('sitkatools' → 'work'). When this tool is opened as a plain tab (tablets, where the popup /
         // postMessage hand-off doesn't work) it loads the DB from there, writes its changes back, and every open
-        // tab refreshes through a BroadcastChannel. Saving to SharePoint always happens in SitkaTools.
+        // tab refreshes through a BroadcastChannel. Saving always happens in SitkaTools ("Go back to SitkaTools to
+        // save" in the banner), and tools only run through SitkaTools — opened by themselves they say so.
         // `var` (not const) so notifySitkaTools() can check it safely however early it runs.
         var WorkCopy = {
             TOOL: 'DailyWizard',
@@ -914,6 +908,32 @@
                     idb.close();
                 } catch (_) { /* ignore */ }
             },
+            // Hand the latest changes to SitkaTools, ask it to have the user save, and switch to its tab
+            async goBackToSave() {
+                await this.write(DB.data);
+                if (this.channel) this.channel.postMessage({ type: 'save-request', from: this.TOOL });
+                try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (_) { /* not allowed */ }
+                setTimeout(() => {
+                    if (document.visibilityState !== 'visible') return; // switched tabs
+                    const msg = 'Switch to the SitkaTools tab — it is waiting for you to save.';
+                    if (typeof showToast === 'function') showToast(msg);
+                    else alert(msg);
+                }, 600);
+            },
+            showOpenFromSitka() {
+                const wrap = document.createElement('div');
+                wrap.id = 'openFromSitka';
+                wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10000; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                wrap.innerHTML = `
+                    <div style="max-width: 440px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 32px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🌿</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Open this tool from SitkaTools</div>
+                        <div style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">
+                            Tools get their database from SitkaTools. Open SitkaTools, load your database, then open this tool from there.</div>
+                        <a href="../SitkaTools/SitkaTools.html" style="display: inline-block; background: var(--accent); color: var(--bg-primary); padding: 12px 24px; border-radius: 8px; font-weight: 700; text-decoration: none;">Open SitkaTools</a>
+                    </div>`;
+                document.body.appendChild(wrap);
+            },
             // Hand the DB to this tool's own "DB arrived from SitkaTools" message handler
             apply(db, initial) {
                 if (!initial && JSON.stringify(db) === JSON.stringify(DB.data)) return;
@@ -922,28 +942,24 @@
             },
             async start() {
                 const copy = await this.read();
-                if (!copy) return;
+                if (!copy) {
+                    // Opened by itself with no SitkaTools open on this device: tools only run through SitkaTools
+                    if (!window.opener) this.showOpenFromSitka();
+                    return;
+                }
                 this.inUse = true;
                 this.apply(copy.db, true);
-                const fileButtons = ['loadDbBtn', 'exportDbBtn', 'importDbBtn'].map(id => document.getElementById(id)).filter(Boolean);
-                fileButtons.forEach(el => { el.style.display = 'none'; });
                 const banner = document.createElement('div');
                 banner.id = 'workCopyBanner';
-                banner.textContent = '📋 Using the database open in SitkaTools — switch to the SitkaTools tab to save it. ';
+                banner.textContent = '📋 Using the database open in SitkaTools. ';
                 banner.style.cssText = 'background: var(--bg-card); color: var(--text-primary); border-bottom: 1px solid var(--accent); padding: 8px 16px; font-size: 0.85rem; text-align: center;';
-                // Opt out: stop following SitkaTools' copy and show this tool's own Load / Export / Import — even when
-                // it was opened from SitkaTools (a tablet whose postMessage hand-off failed needs them)
-                const useFile = document.createElement('button');
-                useFile.type = 'button';
-                useFile.id = 'workCopyUseFile';
-                useFile.textContent = 'Use a file instead';
-                useFile.style.cssText = 'background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit;';
-                useFile.addEventListener('click', () => {
-                    this.inUse = false;
-                    fileButtons.forEach(el => { el.style.display = ''; });
-                    banner.remove();
-                });
-                banner.appendChild(useFile);
+                const back = document.createElement('button');
+                back.type = 'button';
+                back.id = 'workCopyGoBack';
+                back.textContent = 'Go back to SitkaTools to save';
+                back.style.cssText = 'background: var(--accent); color: var(--bg-primary); border: none; border-radius: 6px; padding: 6px 12px; margin-left: 6px; font-weight: 700; cursor: pointer; font-size: inherit;';
+                back.addEventListener('click', () => this.goBackToSave());
+                banner.appendChild(back);
                 document.body.insertBefore(banner, document.body.firstChild);
             }
         };
@@ -1011,65 +1027,6 @@
             }
         });
 
-        // ---- Standalone: Load DB from file ----
-        function handleDbImport(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                try {
-                    const parsed = JSON.parse(ev.target.result);
-                    DB.data = parsed;
-                    DB.fileName = file.name;
-                    DB.ensureStructure();
-                    dbLoaded = true;
-                    renderAll();
-                    showToast('Database imported successfully');
-                } catch (err) {
-                    alert('Failed to parse JSON file: ' + err.message);
-                }
-            };
-            reader.readAsText(file);
-            // Reset so the same file can be imported again
-            e.target.value = '';
-        }
-
-        // ---- Standalone: Export DB as downloadable JSON file ----
-        function handleDbExport() {
-            if (!DB.data) {
-                showToast('No database to export');
-                return;
-            }
-            DB.sync();
-            const json = JSON.stringify(DB.data, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-
-            const now = new Date();
-            const yy = String(now.getFullYear()).slice(-2);
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-            const filename = `DB-${yy}-${mm}-${dd}.json`;
-
-            // Use Web Share API where available (fixes iOS Safari blob URL issue)
-            const file = new File([blob], filename, { type: 'application/json' });
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({ files: [file], title: filename })
-                    .then(() => showToast('Database shared — import it in SitkaTools to sync'))
-                    .catch(() => {});
-            } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast('Database saved — import it in SitkaTools to sync');
-            }
-        }
-
         // ---- Reset Day — clear check-offs for the selected date (session-only) ----
         function resetDay() {
             const date = selectedDateStr();
@@ -1128,9 +1085,7 @@
 
             if (!dbLoaded) {
                 bar.classList.remove('loaded');
-                text.textContent = isStandalone
-                    ? 'No database loaded — tap 📂 Load to import a DB file.'
-                    : 'No database loaded. Waiting for SitkaTools…';
+                text.textContent = 'No database loaded. Waiting for SitkaTools…';
             } else {
                 bar.classList.add('loaded');
                 const n = Object.keys(DB.buildings).length;
@@ -2110,17 +2065,8 @@
                 div.innerHTML = `
                     <div class="empty-icon">📂</div>
                     <div class="empty-title">No database loaded</div>
-                    <div class="empty-sub">${isStandalone
-                        ? 'Load the current DB-YY-MM-DD.json file to see daily tasks and scheduled events.'
-                        : 'Waiting for SitkaTools to deliver the database…'}</div>
+                    <div class="empty-sub">Waiting for SitkaTools to deliver the database…</div>
                 `;
-                if (isStandalone) {
-                    const btn = document.createElement('button');
-                    btn.className = 'btn btn-primary';
-                    btn.textContent = '📂 Load Database File';
-                    btn.addEventListener('click', () => $('dbImportInput').click());
-                    div.appendChild(btn);
-                }
                 container.appendChild(div);
                 return;
             }
@@ -2141,14 +2087,6 @@
         function init() {
             $('dateInput').value = todayStr();
 
-            if (isStandalone) {
-                $('loadDbBtn').style.display = '';
-                $('exportDbBtn').style.display = '';
-            }
-
-            $('dbImportInput').addEventListener('change', handleDbImport);
-            $('loadDbBtn').addEventListener('click', () => $('dbImportInput').click());
-            $('exportDbBtn').addEventListener('click', handleDbExport);
             $('buildingSelect').addEventListener('change', renderAll);
             $('dateInput').addEventListener('change', renderAll);
             $('resetDayBtn').addEventListener('click', resetDay);
