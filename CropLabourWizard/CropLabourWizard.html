@@ -1815,11 +1815,125 @@
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
 
+        // ---- Shared working copy (ROADMAP Phase 1 — tablets) ----
+        // Every tool is served from the same site, so they share browser storage. SitkaTools keeps the open DB in
+        // IndexedDB ('sitkatools' → 'work'). When this tool is opened as a plain tab (tablets, where the popup /
+        // postMessage hand-off doesn't work) it loads the DB from there, writes its changes back, and every open
+        // tab refreshes through a BroadcastChannel. Saving to SharePoint always happens in SitkaTools.
+        // `var` (not const) so notifySitkaTools() can check it safely however early it runs.
+        var WorkCopy = {
+            TOOL: 'CropLabourWizard',
+            LIVE: true,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
+            MAX_AGE: 12 * 60 * 60 * 1000,
+            inUse: false,            // the DB in this tab came from the shared copy
+            gotDb: false,            // SitkaTools delivered the DB by postMessage
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
+            _open() {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open('sitkatools', 3);
+                    req.onupgradeneeded = () => {
+                        for (const name of ['folders', 'settings', 'work']) {
+                            if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'key' });
+                        }
+                    };
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+            async read() {
+                try {
+                    const idb = await this._open();
+                    const row = await new Promise((resolve, reject) => {
+                        const r = idb.transaction('work', 'readonly').objectStore('work').get('current');
+                        r.onsuccess = () => resolve(r.result);
+                        r.onerror = () => reject(r.error);
+                    });
+                    idb.close();
+                    const copy = row && row.value;
+                    return copy && copy.db && (Date.now() - copy.at) < this.MAX_AGE ? copy : null;
+                } catch (_) {
+                    return null;
+                }
+            },
+            async write(db) {
+                try {
+                    const idb = await this._open();
+                    await new Promise((resolve, reject) => {
+                        const tx = idb.transaction('work', 'readwrite');
+                        const store = tx.objectStore('work');
+                        const r = store.get('current');
+                        r.onsuccess = () => {
+                            const prev = (r.result && r.result.value) || {};
+                            store.put({ key: 'current', value: { ...prev, db, at: Date.now(), unsaved: true, from: this.TOOL } });
+                        };
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error);
+                    });
+                    idb.close();
+                    if (this.channel) this.channel.postMessage({ type: 'db-updated', from: this.TOOL });
+                } catch (_) { /* storage unavailable — changes stay in this tab */ }
+            },
+            // Delete the copy unless it holds changes nobody has saved yet
+            async forgetIfSaved() {
+                try {
+                    const idb = await this._open();
+                    await new Promise((resolve, reject) => {
+                        const tx = idb.transaction('work', 'readwrite');
+                        const store = tx.objectStore('work');
+                        const r = store.get('current');
+                        r.onsuccess = () => { if (r.result && r.result.value && r.result.value.unsaved === false) store.delete('current'); };
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error);
+                    });
+                    idb.close();
+                } catch (_) { /* ignore */ }
+            },
+            // Hand the DB to this tool's own "DB arrived from SitkaTools" message handler
+            apply(db, initial) {
+                if (!initial && JSON.stringify(db) === JSON.stringify(DB.data)) return;
+                const type = (initial || !this.LIVE) ? 'sitkaGit_db' : 'sitkaGit_db_update';
+                window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db } }));
+            },
+            async start() {
+                const copy = await this.read();
+                if (!copy) return;
+                this.inUse = true;
+                this.apply(copy.db, true);
+                for (const id of ['loadDbBtn', 'exportDbBtn', 'importDbBtn']) {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                }
+                const banner = document.createElement('div');
+                banner.id = 'workCopyBanner';
+                banner.textContent = '📋 Using the database open in SitkaTools — switch to the SitkaTools tab to save it.';
+                banner.style.cssText = 'background: var(--bg-card); color: var(--text-primary); border-bottom: 1px solid var(--accent); padding: 8px 16px; font-size: 0.85rem; text-align: center;';
+                document.body.insertBefore(banner, document.body.firstChild);
+            }
+        };
+        window.addEventListener('message', (e) => {
+            if (e.isTrusted && e.data?.type === 'sitkaGit_db' && window.opener && e.source === window.opener) WorkCopy.gotDb = true;
+        });
+        if (!window.opener) WorkCopy.start();
+        else setTimeout(() => { if (!WorkCopy.gotDb) WorkCopy.start(); }, 1500);
+        if (WorkCopy.channel) {
+            WorkCopy.channel.addEventListener('message', async (e) => {
+                // SitkaTools closed with everything saved: finish forgetting the copy (it may not get to)
+                if (e.data?.type === 'sitka-closing') {
+                    if (!e.data.unsaved) WorkCopy.forgetIfSaved();
+                    return;
+                }
+                if (!WorkCopy.inUse || e.data?.type !== 'db-updated' || e.data.from === WorkCopy.TOOL) return;
+                const copy = await WorkCopy.read();
+                if (copy) WorkCopy.apply(copy.db, false);
+            });
+        }
+
         // postMessage target origin: our own origin when served over http(s) (ROADMAP 0.4).
         // file:// pages have opaque origins, so they can only be reached with '*'.
         const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
 
         function notifySitkaTools() {
+            if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);
             if (window.opener && !window.opener.closed) {
                 window.opener.postMessage({
                     type: 'sitkaGit_db_update',
@@ -1830,7 +1944,9 @@
 
         window.addEventListener('message', (e) => {
             // Only trust the SitkaTools window that opened this tool (ROADMAP 0.4)
-            if (!window.opener || e.source !== window.opener) return;
+            // Real messages must come from the SitkaTools window that opened us; untrusted events are this
+            // page's own shared-copy loader (WorkCopy.apply)
+            if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();

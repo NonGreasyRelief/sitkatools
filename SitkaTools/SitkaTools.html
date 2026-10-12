@@ -3318,6 +3318,9 @@
             updateFolderUi();
             renderOverlayFolder();
 
+            // Shared working copy: offer back unsaved work left from a previous session (once)
+            checkWorkCopyOnStart();
+
             // Building split: show this device's remembered role on the 🏢 Building Files card
             updateSplitCard();
             FolderStore.getSetting('role').then(role => {
@@ -3553,10 +3556,10 @@
             MAX: 5,
             _db() {
                 return new Promise((resolve, reject) => {
-                    const req = indexedDB.open('sitkatools', 2);
+                    const req = indexedDB.open('sitkatools', 3);
                     req.onupgradeneeded = () => {
-                        // v1: remembered folders; v2: device settings (this device's role)
-                        for (const name of ['folders', 'settings']) {
+                        // v1: remembered folders; v2: device settings (this device's role); v3: shared working copy
+                        for (const name of ['folders', 'settings', 'work']) {
                             if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'key' });
                         }
                     };
@@ -4525,6 +4528,20 @@
                 savePopup.classList.remove('hidden');
             },
 
+            // Split bookkeeping kept in the shared working copy, so recovered unsaved work saves correctly
+            exportState() {
+                return {
+                    role: this.role, loaded: [...this.loaded], haveWages: this.haveWages, baseParts: this.baseParts,
+                    metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
+                    overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome
+                };
+            },
+            importState(state) {
+                this.reset();
+                Object.assign(this, state, { loaded: new Set(state.loaded || []) });
+                this.active = true;
+            },
+
             // ---- One-time split of a legacy single DB into Main / Wages / Building files (office) ----
             async splitLegacy() {
                 if (!DB.data) { alert('Load the current database first.'); return; }
@@ -4577,6 +4594,93 @@
                 }
             }
         };
+
+        // =====================================================
+        // SitkaTools — Shared working copy (ROADMAP Phase 1, tablets)
+        // The open DB is mirrored into IndexedDB ('sitkatools' → 'work') so tools opened as plain tabs (tablets,
+        // where the popup / postMessage hand-off doesn't work) load it and write their changes back; a
+        // BroadcastChannel keeps every open tab in step. Saving to SharePoint still happens here. The copy is
+        // deleted when you leave with everything saved and never kept longer than 12 hours; if a session ends
+        // with unsaved work, the next visit offers it back once.
+        // =====================================================
+        var WorkCopy = {
+            MAX_AGE: 12 * 60 * 60 * 1000,
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
+            _timer: null,
+            async read() {
+                try {
+                    return (await FolderStore._tx('readonly', store => store.get('current'), 'work'))?.value || null;
+                } catch (_) {
+                    return null;
+                }
+            },
+            schedule() {
+                clearTimeout(this._timer);
+                this._timer = setTimeout(() => this.flush(), 250);
+            },
+            async flush() {
+                clearTimeout(this._timer);
+                if (!DB.data) return;
+                const value = {
+                    db: DB.data, at: Date.now(), unsaved: hasUnsavedChanges, from: 'SitkaTools',
+                    fileName: DB.fileName, split: DbSplit.active ? DbSplit.exportState() : null
+                };
+                try {
+                    await FolderStore._tx('readwrite', store => store.put({ key: 'current', value }), 'work');
+                    if (this.channel) this.channel.postMessage({ type: 'db-updated', from: 'SitkaTools' });
+                } catch (_) { /* storage unavailable — popups still get the DB by postMessage */ }
+            },
+            async clear() {
+                clearTimeout(this._timer);
+                try { await FolderStore._tx('readwrite', store => store.delete('current'), 'work'); } catch (_) { /* ignore */ }
+            }
+        };
+
+        // A tool tab changed the shared copy → take it in, like a subtool update
+        if (WorkCopy.channel) {
+            WorkCopy.channel.addEventListener('message', async (e) => {
+                if (e.data?.type !== 'db-updated' || e.data.from === 'SitkaTools') return;
+                const copy = await WorkCopy.read();
+                if (!copy?.db || JSON.stringify(copy.db) === JSON.stringify(DB.data)) return;
+                DB.data = copy.db;
+                DB.ensureStructure();
+                markUnsaved();
+                refreshAllViews();
+                showSyncToast(`${e.data.from} updated the database — views refreshed`);
+            });
+        }
+
+        // Leaving with everything saved forgets the copy; unsaved work stays for the one-time recovery offer
+        window.addEventListener('pagehide', () => {
+            if (hasUnsavedChanges) WorkCopy.flush();
+            else WorkCopy.clear();
+            // The delete above may not finish while the page unloads; open tool tabs finish it for us
+            if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-closing', unsaved: hasUnsavedChanges });
+        });
+
+        async function checkWorkCopyOnStart() {
+            const copy = await WorkCopy.read();
+            if (!copy) return;
+            if (!copy.unsaved || !copy.db || Date.now() - (copy.at || 0) > WorkCopy.MAX_AGE || DB.data) {
+                if (!DB.data) await WorkCopy.clear();
+                return;
+            }
+            const when = new Date(copy.at).toLocaleString();
+            if (confirm(`Unsaved work from ${when} (${copy.fileName || 'database'}) was left open on this device.\n\n` +
+                `OK — recover it, then save it.\nCancel — discard it.`)) {
+                DB.data = copy.db;
+                DB.ensureStructure();
+                DB.fileName = copy.fileName || 'Recovered';
+                if (copy.split) DbSplit.importState(copy.split);
+                else DbSplit.reset();
+                hideOverlay();
+                markUnsaved();
+                refreshAllViews();
+                showSyncToast('Recovered unsaved work — save it when ready');
+            } else {
+                await WorkCopy.clear();
+            }
+        }
 
         // Blob URLs behind the per-file save links
         const saveFolderAction = $('saveFolderAction');
@@ -5104,11 +5208,12 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const href = link.href;
+                WorkCopy.flush(); // a tool that can't get the DB by postMessage loads it from the shared copy
 
                 if (isMobileDevice) {
-                    // On mobile: show save-then-launch overlay
-                    pendingToolUrl = href;
-                    showMobileToolOverlay(href);
+                    // On phones: open the tool in a tab; it loads the DB from the shared copy
+                    // (replaces the old save-then-import overlay)
+                    handleMobileLaunchTool(href);
                 } else {
                     // On desktop: existing behavior — open popup with postMessage
                     openModuleInTab(href);
@@ -5643,12 +5748,14 @@
             hasUnsavedChanges = true;
             exportBtn.classList.add('unsaved');
             updateFolderUi();
+            WorkCopy.schedule();
         }
 
         function clearUnsaved() {
             hasUnsavedChanges = false;
             exportBtn.classList.remove('unsaved');
             updateFolderUi();
+            WorkCopy.schedule();
         }
 
         // Warn before closing if there are unsaved changes
