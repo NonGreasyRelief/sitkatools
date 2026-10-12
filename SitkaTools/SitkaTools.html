@@ -2217,6 +2217,20 @@
         .save-file-links .save-link.saved { opacity: 0.55; }
         .split-status { font-size: 0.9rem; color: var(--text-secondary); margin: 8px 0 12px; line-height: 1.5; }
         .split-status strong { color: var(--text-primary); }
+        .split-subtitle { font-size: 0.95rem; margin: 18px 0 8px; color: var(--text-primary); }
+        .split-lot-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+        .split-select {
+            padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+            background: var(--input-bg); color: var(--text-primary); font-size: 0.9rem; max-width: 100%;
+        }
+        .split-lot-where { font-size: 0.85rem; color: var(--text-secondary); }
+        .split-transfers { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .split-transfer {
+            border: 1px solid var(--accent); border-radius: var(--radius); padding: 10px 12px;
+            display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem;
+        }
+        .split-transfer input { width: 90px; }
+        .split-transfer.pending { border-style: dashed; border-color: var(--border); color: var(--text-secondary); }
 
         /* Text utilities */
         .text-secondary {
@@ -3133,6 +3147,18 @@
                         <button class="btn btn-primary" id="splitDbBtn">✂️ Split into building files</button>
                     </div>
                     <div class="io-result hidden" id="splitResult"></div>
+
+                    <h3 class="split-subtitle">🌱 Lots — move or close out</h3>
+                    <div class="split-lot-row">
+                        <select id="lotActionSelect" class="split-select"></select>
+                        <span class="split-lot-where" id="lotActionWhere"></span>
+                    </div>
+                    <div class="io-actions">
+                        <select id="sendLotTo" class="split-select"></select>
+                        <button class="btn btn-secondary" id="sendLotBtn">🚚 Send</button>
+                        <button class="btn btn-secondary" id="closeOutLotBtn">📦 Close out lot</button>
+                    </div>
+                    <div class="split-transfers" id="incomingTransfers"></div>
                 </div>
             </div>
         </section>
@@ -4102,6 +4128,11 @@
                         }
                     }
                     this.overlays[id] = { lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} };
+                    for (const [tid, rec] of Object.entries(bf._LotTransfers || {})) {
+                        if (!db._LotTransfers) db._LotTransfers = {};
+                        const existing = db._LotTransfers[tid];
+                        if (!existing || (rec.acceptedAt && !existing.acceptedAt)) db._LotTransfers[tid] = rec;
+                    }
                 }
 
                 // Floor updates: per field, the newest of the office's stamped edit and every building's overlay wins
@@ -4157,6 +4188,7 @@
                 }
                 const entries = main._PaperWizard?.entries || {};
                 if (main._PaperWizard) delete main._PaperWizard.entries;
+                delete main._LotTransfers;
                 main._fieldStamps = JSON.parse(JSON.stringify(this.stamps));
                 parts[SPLIT_MAIN] = main;
 
@@ -4168,7 +4200,7 @@
 
                 const bparts = {};
                 const partFor = (id) => bparts[id] || (bparts[id] = {
-                    _building: id, _DailyWizard: { buildings: {} }, _PaperWizard: { entries: {} }, _overlays: { lots: {}, events: {} }
+                    _building: id, _DailyWizard: { buildings: {} }, _PaperWizard: { entries: {} }, _overlays: { lots: {}, events: {} }, _LotTransfers: {}
                 });
                 for (const id of buildingIds) partFor(id);
                 for (const [id, v] of Object.entries(dailyAll)) if (buildingIds.includes(id)) partFor(id)._DailyWizard.buildings[id] = v;
@@ -4200,8 +4232,18 @@
                         }
                     }
                 }
+                for (const [tid, rec] of Object.entries(db._LotTransfers || {})) {
+                    if (!db.lots?.[rec.lotId]) continue;
+                    const home = rec.acceptedAt ? rec.to : rec.from;
+                    if (bparts[home]) bparts[home]._LotTransfers[tid] = rec;
+                }
+                const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const [id, ov] of Object.entries(this.overlays)) {
-                    if (bparts[id]) bparts[id]._overlays = JSON.parse(JSON.stringify(ov));
+                    if (!bparts[id]) continue;
+                    const copy = { lots: {}, events: {} };
+                    for (const [rid, f] of Object.entries(ov.lots || {})) if (db.lots?.[rid]) copy.lots[rid] = JSON.parse(JSON.stringify(f));
+                    for (const [rid, f] of Object.entries(ov.events || {})) if (liveEvents.has(rid)) copy.events[rid] = JSON.parse(JSON.stringify(f));
+                    bparts[id]._overlays = copy;
                 }
                 for (const [id, p] of Object.entries(bparts)) parts[buildingFileName(id)] = p;
                 Object.defineProperty(parts, '_homes', { value: homes, enumerable: false });
@@ -4704,6 +4746,7 @@
                 status.innerHTML = `${roleText}<br>${DB.data ? 'A single-file database is open.' : 'No database open.'}`;
                 splitBtn.style.display = DB.data ? '' : 'none';
             }
+            if (DB.data) LotActions.render();
         }
 
         $('changeRoleBtn').addEventListener('click', async () => {
@@ -4713,6 +4756,227 @@
             if (DbSplit.active) alert('Device changed. Reopen the database files so this device saves the right ones.');
         });
         $('splitDbBtn').addEventListener('click', () => DbSplit.splitLegacy());
+
+        // =====================================================
+        // SitkaTools — Lot move & close-out (ROADMAP Phase 1)
+        // Move: the sending building records "Send to <building>"; the receiving building accepts it, picks the
+        // room and initials — which sets the lot's current room. Records live in DB.data._LotTransfers (pending in
+        // the sender's building file, accepted in the receiver's). Paperwork never moves: every device opens all
+        // building files, so the lot's whole paper trail stays visible.
+        // Close-out: everything about a finished lot goes to Archive/Lot-<id>-<date>.json, then the lot is
+        // removed from the database (office only when the DB is split).
+        // =====================================================
+        const LotActions = {
+            buildingOfLot(lot) {
+                return buildingOfRoomName(DB.data, lot?.currentRoom);
+            },
+            transfers() {
+                return Object.entries(DB.data?._LotTransfers || {}).map(([id, t]) => ({ id, ...t }));
+            },
+            pendingFor(lotId) {
+                return this.transfers().find(t => t.lotId === lotId && !t.acceptedAt) || null;
+            },
+            buildingName(id) {
+                return DB.buildings[id]?.name || id || '?';
+            },
+            canActFor(buildingId) {
+                return !DbSplit.active || DbSplit.role === 'office' || DbSplit.role === buildingId;
+            },
+
+            render() {
+                const select = $('lotActionSelect');
+                const where = $('lotActionWhere');
+                const sendTo = $('sendLotTo');
+                const list = $('incomingTransfers');
+                const lots = Object.entries(DB.data?.lots || {});
+                const keep = select.value;
+                select.innerHTML = lots.length ? '' : '<option value="">— No lots —</option>';
+                for (const [id, lot] of lots) {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                    select.appendChild(opt);
+                }
+                if (keep && DB.data?.lots?.[keep]) select.value = keep;
+
+                const lotId = select.value;
+                const lot = DB.data?.lots?.[lotId];
+                const from = this.buildingOfLot(lot);
+                const pending = lot ? this.pendingFor(lotId) : null;
+                where.textContent = !lot ? '' : pending
+                    ? `🚚 In transit to ${this.buildingName(pending.to)} (sent ${new Date(pending.sentAt).toLocaleDateString()})`
+                    : `Now in ${lot.currentRoom || 'no room set'}${from ? ` · ${this.buildingName(from)}` : ''}`;
+
+                sendTo.innerHTML = '';
+                for (const [id, b] of Object.entries(DB.buildings)) {
+                    if (id === from) continue;
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = `to ${b.name || id}`;
+                    sendTo.appendChild(opt);
+                }
+                $('sendLotBtn').disabled = !lot || !!pending || !sendTo.options.length || !this.canActFor(from);
+                $('sendLotBtn').title = lot && from && !this.canActFor(from) ? `Only ${this.buildingName(from)} or the office can send this lot` : '';
+                $('closeOutLotBtn').disabled = !lot || (DbSplit.active && DbSplit.role !== 'office');
+                $('closeOutLotBtn').title = DbSplit.active && DbSplit.role !== 'office' ? 'Only the office device can close out lots' : '';
+
+                list.innerHTML = '';
+                for (const t of this.transfers().filter(t => !t.acceptedAt && DB.data.lots?.[t.lotId])) {
+                    const row = document.createElement('div');
+                    row.className = 'split-transfer' + (this.canActFor(t.to) ? '' : ' pending');
+                    row.dataset.transfer = t.id;
+                    const label = document.createElement('span');
+                    label.textContent = `🚚 Lot ${t.lotId}: ${this.buildingName(t.from)} → ${this.buildingName(t.to)} · sent ${new Date(t.sentAt).toLocaleString()} by ${t.sentBy}`;
+                    row.appendChild(label);
+                    if (this.canActFor(t.to)) {
+                        const room = document.createElement('select');
+                        room.className = 'split-select';
+                        for (const r of Object.values(DB.data.rooms || {})) {
+                            if (r.buildingId !== t.to) continue;
+                            const opt = document.createElement('option');
+                            opt.value = r.name;
+                            opt.textContent = r.name;
+                            room.appendChild(opt);
+                        }
+                        const initials = document.createElement('input');
+                        initials.className = 'split-select';
+                        initials.placeholder = 'Initials';
+                        const accept = document.createElement('button');
+                        accept.className = 'btn btn-primary';
+                        accept.textContent = '✅ Accept';
+                        accept.addEventListener('click', () => this.accept(t.id, room.value, initials.value.trim()));
+                        row.append(room, initials, accept);
+                    } else {
+                        const note = document.createElement('span');
+                        note.textContent = `— waiting for ${this.buildingName(t.to)} to accept`;
+                        row.appendChild(note);
+                    }
+                    list.appendChild(row);
+                }
+            },
+
+            send() {
+                const lotId = $('lotActionSelect').value;
+                const to = $('sendLotTo').value;
+                const lot = DB.data?.lots?.[lotId];
+                if (!lot || !to) return;
+                const from = this.buildingOfLot(lot) || (DbSplit.role !== 'office' ? DbSplit.role : null);
+                if (!from) { alert(`Set lot ${lotId}'s current room first, so it's clear which building it leaves.`); return; }
+                if (!this.canActFor(from)) { alert(`Only ${this.buildingName(from)} or the office can send this lot.`); return; }
+                if (!confirm(`Send lot ${lotId} from ${this.buildingName(from)} to ${this.buildingName(to)}?\n\n${this.buildingName(to)} accepts it and picks the room.`)) return;
+                const sentAt = new Date().toISOString();
+                if (!DB.data._LotTransfers) DB.data._LotTransfers = {};
+                DB.data._LotTransfers[`${lotId}@${sentAt}`] = { lotId, from, to, sentAt, sentBy: DbSplit.active ? DbSplit.roleLabel() : 'SitkaTools' };
+                markUnsaved();
+                this.render();
+                showSyncToast(`Lot ${lotId} sent to ${this.buildingName(to)} — save to share it`);
+            },
+
+            accept(transferId, roomName, initials) {
+                const t = DB.data?._LotTransfers?.[transferId];
+                if (!t) return;
+                if (!roomName) { alert(`${this.buildingName(t.to)} has no rooms to put the lot in.`); return; }
+                if (!initials) { alert('Enter your initials to accept the lot.'); return; }
+                t.acceptedAt = new Date().toISOString();
+                t.acceptedBy = initials;
+                t.room = roomName;
+                DB.data.lots[t.lotId].currentRoom = roomName;
+                markUnsaved();
+                refreshAllViews();
+                showSyncToast(`Lot ${t.lotId} accepted into ${roomName} — save to record it`);
+            },
+
+            // Remove a lot and everything that belongs only to it
+            removeLot(lotId) {
+                delete DB.data.lots[lotId];
+                for (const room of Object.values(DB.data.rooms || {})) {
+                    if (Array.isArray(room.assignedLots)) room.assignedLots = room.assignedLots.filter(id => id !== lotId);
+                }
+                DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== lotId);
+                const clw = DB.data._CropLabourWizard;
+                if (clw?.generations) clw.generations = clw.generations.filter(g => g.lotId !== lotId);
+                if (DB.data._PaperWizard?.entries) delete DB.data._PaperWizard.entries[lotId];
+                for (const [id, t] of Object.entries(DB.data._LotTransfers || {})) if (t.lotId === lotId) delete DB.data._LotTransfers[id];
+                markUnsaved();
+                refreshAllViews();
+            },
+
+            async closeOut() {
+                const lotId = $('lotActionSelect').value;
+                const lot = DB.data?.lots?.[lotId];
+                if (!lot) return;
+                if (DbSplit.active && DbSplit.role !== 'office') { alert('Only the office device can close out lots.'); return; }
+                const today = localDate();
+                const events = DB.data.calendarEvents.filter(e => e.lotId === lotId);
+                const upcoming = events.filter(e => !e.completed && (e.endDate || e.date) >= today);
+                const name = `Lot-${String(lotId).replace(/[^A-Za-z0-9_-]/g, '_')}-${today}.json`;
+                let msg = `Close out lot ${lotId}?\n\nThe lot record, its ${events.length} calendar events (with labour hours), schedule history, ` +
+                    `paperwork and transfer history are saved to ${name}, then removed from the database.`;
+                if (upcoming.length) msg = `⚠️ ${upcoming.length} of its tasks are still upcoming or not completed.\n\n` + msg;
+                if (!confirm(msg)) return;
+
+                const archive = {
+                    lotId,
+                    closedAt: new Date().toISOString(),
+                    closedBy: DbSplit.active ? DbSplit.roleLabel() : 'SitkaTools',
+                    lot: { ...lot, closedDate: today },
+                    events,
+                    generations: (DB.data._CropLabourWizard?.generations || []).filter(g => g.lotId === lotId),
+                    paperwork: DB.data._PaperWizard?.entries?.[lotId] || {},
+                    transfers: this.transfers().filter(t => t.lotId === lotId),
+                    _meta: { schemaVersion: DB_SCHEMA_VERSION, kind: 'lot-archive' }
+                };
+                const text = JSON.stringify(archive, null, 2);
+
+                if (DbFolder.active && DbFolder.handle) {
+                    try {
+                        if (!await DbFolder.ensurePermission(DbFolder.handle)) throw new Error('no permission to write in the folder');
+                        const dir = await DbFolder.handle.getDirectoryHandle('Archive', { create: true });
+                        await DbFolder.writeFile(dir, name, text);
+                    } catch (err) {
+                        alert(`Couldn't write the archive (${err.message}). Lot ${lotId} was not removed.`);
+                        return;
+                    }
+                    this.removeLot(lotId);
+                    alert(`Saved Archive/${name}.\n\nLot ${lotId} is removed — now Save DB so the database files drop it too.`);
+                    return;
+                }
+
+                // No folder: offer the archive as a right-click link; remove the lot once the link is used
+                closeSavePopup();
+                saveLink.classList.add('hidden');
+                saveFolderAction.classList.add('hidden');
+                saveFileLinks.innerHTML = '';
+                const blob = new Blob([text], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                saveBlobUrls.push(url);
+                const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+                const a = document.createElement('a');
+                a.className = 'save-link';
+                a.id = 'archiveLink';
+                a.dataset.file = name;
+                a.href = url;
+                a.download = name;
+                a.textContent = `📦 ${name} — ${isTouchDevice ? 'Tap to save' : 'Right-click → Save Link As…'} (into your Archive folder)`;
+                let done = false;
+                const used = () => {
+                    if (done) return;
+                    done = true;
+                    a.classList.add('saved');
+                    this.removeLot(lotId);
+                    showSyncToast(`Lot ${lotId} archived and removed — now Save DB`);
+                };
+                if (isTouchDevice) a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name); used(); });
+                else { a.addEventListener('click', used); a.addEventListener('contextmenu', used); }
+                saveFileLinks.appendChild(a);
+                savePopup.classList.remove('hidden');
+            }
+        };
+
+        $('lotActionSelect').addEventListener('change', () => LotActions.render());
+        $('sendLotBtn').addEventListener('click', () => LotActions.send());
+        // stopPropagation: the archive link opens in the save popup, which a document click would close
+        $('closeOutLotBtn').addEventListener('click', (e) => { e.stopPropagation(); LotActions.closeOut(); });
 
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
