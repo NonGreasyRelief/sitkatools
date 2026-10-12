@@ -2488,20 +2488,25 @@
         }
 
         // Later recorded counts a backfilled plant-count change applies to (unsigned logs only).
+        // A later page's rows count from the edited date itself: after a phase/room change the
+        // move day is on both pages (double entry), so editing the old page's move-day row must
+        // reach the new page's row for the same date. `pages` = every unsigned later page (its
+        // header plant-count snapshot shifts too, even before it has any rows).
         function plantShiftPlan(lotId, sheetId, key, day, pcQ) {
-            const affected = [], signedDays = [];
+            const affected = [], signedDays = [], pages = [];
             let blocked = false;
             for (const { key: k, inst } of dailyChain(lotId, sheetId)) {
                 if (k < key) continue;
                 if (inst.signature) blocked = true;
-                for (const ds of Object.keys(inst.days || {}).filter(d => d > day).sort()) {
+                if (!blocked && k > key) pages.push(k);
+                for (const ds of Object.keys(inst.days || {}).filter(d => (k === key ? d > day : d >= day)).sort()) {
                     const v = inst.days[ds]?.[pcQ.id];
                     if (!hasValue(v)) continue;
                     if (blocked) signedDays.push(ds);
                     else affected.push({ inst, key: k, ds, value: Number(String(v).trim()) });
                 }
             }
-            return { affected, signedDays };
+            return { affected, signedDays, pages };
         }
 
         // Pages a backfilled phase/room change re-pages: the log it was recorded in, then later
@@ -2626,11 +2631,13 @@
                 if (Number.isFinite(newCount) && Number.isFinite(oldCount) && oldCount !== null && newCount !== oldCount) {
                     delta = newCount - oldCount;
                     const plan = plantShiftPlan(lotId, sheetId, key, day, pcQ);
-                    if (plan.affected.length) {
-                        const firstDs = plan.affected[0].ds, lastDs = plan.affected[plan.affected.length - 1].ds;
+                    if (plan.affected.length || plan.pages.length) {
+                        const n = plan.affected.length;
+                        const laterTxt = n
+                            ? `${n} later day${n === 1 ? '' : 's'} (${fmtShort(plan.affected[0].ds)} – ${fmtShort(plan.affected[n - 1].ds)}) still count from the old number`
+                            : `The log${plan.pages.length === 1 ? '' : 's'} after it still start${plan.pages.length === 1 ? 's' : ''} from the old number`;
                         let msg = `⚠️ You changed the plant count on ${fmtShort(day)} from ${oldCount} to ${newCount}.\n\n` +
-                            `${plan.affected.length} later day${plan.affected.length === 1 ? '' : 's'} (${fmtShort(firstDs)} – ${fmtShort(lastDs)}) still count from the old number.\n\n` +
-                            `OK — apply the ${delta > 0 ? '+' : ''}${delta} change to them.\nCancel — save this day only.`;
+                            `${laterTxt}.\n\nOK — apply the ${delta > 0 ? '+' : ''}${delta} change to them.\nCancel — save this day only.`;
                         if (plan.signedDays.length) msg += `\n\n${plan.signedDays.length} day(s) in logs the master grower has signed stay as they are.`;
                         if (confirm(msg)) shift = plan;
                     } else if (plan.signedDays.length) {
@@ -2690,7 +2697,7 @@
 
             // Apply — no more prompts from here on
             if (shift) {
-                const touched = new Set();
+                const touched = new Set(shift.pages);
                 for (const a of shift.affected) {
                     a.inst.days[a.ds][pcQ.id] = String(Math.max(0, a.value + delta));
                     touched.add(a.key);
@@ -2701,7 +2708,7 @@
                     if (hasValue(snap) && Number.isFinite(Number(snap))) t.snapshots['lot.plantCount'] = String(Math.max(0, Number(snap) + delta));
                     evaluateCompletion(sheetId, k, t);
                 }
-                notes.push(`${shift.affected.length} later count${shift.affected.length === 1 ? '' : 's'} adjusted by ${delta > 0 ? '+' : ''}${delta}`);
+                notes.push(`${shift.affected.length} later count${shift.affected.length === 1 ? '' : 's'}${shift.pages.length ? ` and ${shift.pages.length} later page${shift.pages.length === 1 ? '' : 's'}` : ''} adjusted by ${delta > 0 ? '+' : ''}${delta}`);
                 const reprint = [...touched].filter(k => DB.paperWizard.entries[lotId][sheetId].instances[k].printedAt);
                 if (reprint.length) notes.push(`reprint ${reprint.map(fmtShort).join(', ')}`);
             }
