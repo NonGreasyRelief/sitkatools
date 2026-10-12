@@ -102,6 +102,11 @@
             border-bottom-color: var(--bg-primary);
         }
 
+        /* Building device view: office work is hidden on a building device (see DeviceView) */
+        body.building-device .office-only,
+        body.building-device .terminal-delete-btn,
+        body.building-device .terminal-reschedule-btn { display: none !important; }
+
 
 
         .header-right {
@@ -2777,8 +2782,8 @@
             <div class="tabs-wrapper">
                 <nav class="tabs">
                     <button class="tab active" data-tab="calendar-view">Calendar View</button>
-                    <button class="tab" data-tab="lot-management">Lot Manager</button>
-                    <button class="tab" data-tab="room-management">Room Manager</button>
+                    <button class="tab office-only" data-tab="lot-management">Lot Manager</button>
+                    <button class="tab office-only" data-tab="room-management">Room Manager</button>
                     <button class="tab" data-tab="calendar-io">Data &amp; Files</button>
                 </nav>
                 <div class="tabs-fade" id="tabsFade"></div>
@@ -2896,7 +2901,7 @@
         </section>
 
         <!-- Lot Management Tab -->
-        <section class="tab-content" id="lot-management">
+        <section class="tab-content office-only" id="lot-management">
             <div class="status-bar empty" id="statusBar">
                 <span class="status-text">No database loaded. Import a DB file to begin.</span>
             </div>
@@ -3010,7 +3015,7 @@
         </section>
 
         <!-- Room Manager Tab -->
-        <section class="tab-content" id="room-management">
+        <section class="tab-content office-only" id="room-management">
             <div class="status-bar empty" id="roomStatusBar">
                 <span class="status-text">No database loaded. Import a DB file to begin.</span>
             </div>
@@ -3108,8 +3113,8 @@
                     <div class="io-result hidden" id="exportResult"></div>
                 </div>
 
-                <!-- Import Card -->
-                <div class="io-card">
+                <!-- Import Card (office only — imported events go in Main.json) -->
+                <div class="io-card office-only">
                     <h2 class="io-card-title">📥 Import Calendar</h2>
                     <p class="io-card-desc">
                         Import events from a standard .ICS file. Imported events will be created as GeneralEvent-type events in your calendar.
@@ -3129,7 +3134,7 @@
                     <div class="split-status" id="splitStatus"></div>
                     <div class="io-actions">
                         <button class="btn btn-secondary" id="changeRoleBtn">🏷️ Set this device…</button>
-                        <button class="btn btn-primary" id="splitDbBtn">✂️ Split into building files</button>
+                        <button class="btn btn-primary office-only" id="splitDbBtn">✂️ Split into building files</button>
                     </div>
                     <div class="io-result hidden" id="splitResult"></div>
 
@@ -3141,7 +3146,7 @@
                     <div class="io-actions">
                         <select id="sendLotTo" class="split-select"></select>
                         <button class="btn btn-secondary" id="sendLotBtn">🚚 Send</button>
-                        <button class="btn btn-secondary" id="closeOutLotBtn">📦 Close out lot</button>
+                        <button class="btn btn-secondary office-only" id="closeOutLotBtn">📦 Close out lot</button>
                     </div>
                     <div class="split-transfers" id="incomingTransfers"></div>
                 </div>
@@ -3152,16 +3157,16 @@
         <section class="card" id="tools-directory">
             <h2 class="card-title">Calendar Tools</h2>
             <div class="tools-grid">
-                <a class="tool-link module-link" href="../GeneralEvent/GeneralEvent.html">
+                <a class="tool-link module-link office-only" href="../GeneralEvent/GeneralEvent.html">
                     <span class="tool-link-name">📅 General Event</span>
                     <span class="tool-link-desc">Create standalone calendar events with text, date, and emoji</span>
                 </a>
 
-                <a class="tool-link module-link" href="../CropLabourWizard/CropLabourWizard.html">
+                <a class="tool-link module-link office-only" href="../CropLabourWizard/CropLabourWizard.html">
                     <span class="tool-link-name">👷 Crop Labour Wizard</span>
                     <span class="tool-link-desc">Quickly schedule all tasks related to a single lot</span>
                 </a>
-                <a class="tool-link module-link" href="../EquipmentWizard/EquipmentWizard.html">
+                <a class="tool-link module-link office-only" href="../EquipmentWizard/EquipmentWizard.html">
                     <span class="tool-link-name">🔧 Equipment Wizard</span>
                     <span class="tool-link-desc">Equipment maintenance scheduling and tracking</span>
                 </a>
@@ -3963,6 +3968,7 @@
 
         // Re-render every view after DB.data is replaced
         function refreshAllViews() {
+            DeviceView.apply();
             updateStatusBar();
             renderLotList();
             updateLotIdSuggestion();
@@ -4641,6 +4647,62 @@
         };
 
         // =====================================================
+        // SitkaTools — Building device view
+        // A building device (building files opened from its ?device=<building> link) sees only its own
+        // building: the rooms in it, the lots whose current room or flower room is in it, and those lots' and
+        // rooms' events (events tied to no lot or room show everywhere). Office work it couldn't save —
+        // lots, rooms, schedules, editing events, the office-only tools — is hidden (.office-only). Display
+        // only: the DB keeps everything, so merging and saving are unchanged. Tools get the building with
+        // the DB (`view: { building }`) and apply the same rules.
+        // =====================================================
+        const DeviceView = {
+            // This device's building id; null on the office or with a single-file DB
+            get building() {
+                const role = DbSplit.active ? DbSplit.role : null;
+                return role && role !== 'office' && DB.data?.buildings?.[role] ? role : null;
+            },
+
+            // What tools are sent with the DB
+            message() {
+                return { building: this.building };
+            },
+
+            buildingOfRoomName(name) {
+                const target = String(name || '').trim().toLowerCase();
+                if (!target) return null;
+                for (const room of Object.values(DB.data?.rooms || {})) {
+                    if (room && String(room.name || '').trim().toLowerCase() === target) return room.buildingId || null;
+                }
+                return null;
+            },
+
+            lotVisible(lot) {
+                const b = this.building;
+                if (!b) return true;
+                return !!lot && (this.buildingOfRoomName(lot.currentRoom) === b || this.buildingOfRoomName(lot.destRoom) === b);
+            },
+
+            eventVisible(ev) {
+                const b = this.building;
+                if (!b) return true;
+                const lot = ev.lotId ? DB.data?.lots?.[ev.lotId] : null;
+                if (lot) return this.lotVisible(lot);
+                const room = ev.roomId ? DB.data?.rooms?.[ev.roomId] : null;
+                if (room) return room.buildingId === b;
+                return !ev.lotId && !ev.roomId; // general events show everywhere; a removed lot's or room's don't
+            },
+
+            // Show or hide the office-only parts of the page
+            apply() {
+                const on = !!this.building;
+                document.body.classList.toggle('building-device', on);
+                if (on && document.querySelector('.tab.active.office-only')) {
+                    document.querySelector('.tab[data-tab="calendar-view"]')?.click();
+                }
+            }
+        };
+
+        // =====================================================
         // SitkaTools — Shared working copy (ROADMAP Phase 1, tablets)
         // The open DB is mirrored into IndexedDB ('sitkatools' → 'work') so tools opened as plain tabs (tablets,
         // where the popup / postMessage hand-off doesn't work) load it and write their changes back; a
@@ -4668,7 +4730,8 @@
                 if (!DB.data) return;
                 const value = {
                     db: DB.data, at: Date.now(), unsaved: hasUnsavedChanges, from: 'SitkaTools',
-                    fileName: DB.fileName, split: DbSplit.active ? DbSplit.exportState() : null
+                    fileName: DB.fileName, split: DbSplit.active ? DbSplit.exportState() : null,
+                    view: DeviceView.message()
                 };
                 try {
                     await FolderStore._tx('readwrite', store => store.put({ key: 'current', value }), 'work');
@@ -4851,6 +4914,8 @@
         $('changeRoleBtn').addEventListener('click', async () => {
             const before = DbSplit.role;
             await DbSplit.ensureRole(DB.data?.buildings || {}, true);
+            if (DB.data) refreshAllViews(); // what this device sees follows its role
+            WorkCopy.schedule();            // open tool tabs pick up the new view
             updateIOStatusBar();
             updateSplitCard();
             showDeviceLink(DbSplit.role);
@@ -4889,7 +4954,7 @@
                 const where = $('lotActionWhere');
                 const sendTo = $('sendLotTo');
                 const list = $('incomingTransfers');
-                const lots = Object.entries(DB.data?.lots || {});
+                const lots = Object.entries(DB.data?.lots || {}).filter(([, lot]) => DeviceView.lotVisible(lot));
                 const keep = select.value;
                 select.innerHTML = lots.length ? '' : '<option value="">— No lots —</option>';
                 for (const [id, lot] of lots) {
@@ -4898,7 +4963,7 @@
                     opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
                     select.appendChild(opt);
                 }
-                if (keep && DB.data?.lots?.[keep]) select.value = keep;
+                if (keep && lots.some(([id]) => id === keep)) select.value = keep;
 
                 const lotId = select.value;
                 const lot = DB.data?.lots?.[lotId];
@@ -4922,7 +4987,9 @@
                 $('closeOutLotBtn').title = DbSplit.active && DbSplit.role !== 'office' ? 'Only the office device can close out lots' : '';
 
                 list.innerHTML = '';
-                for (const t of this.transfers().filter(t => !t.acceptedAt && DB.data.lots?.[t.lotId])) {
+                // A building device lists only moves into or out of its own building
+                const b = DeviceView.building;
+                for (const t of this.transfers().filter(t => !t.acceptedAt && DB.data.lots?.[t.lotId] && (!b || t.to === b || t.from === b))) {
                     const row = document.createElement('div');
                     row.className = 'split-transfer' + (this.canActFor(t.to) ? '' : ' pending');
                     row.dataset.transfer = t.id;
@@ -5240,7 +5307,7 @@
 
         function generatePrintTodo() {
             const daysAhead = parseInt(printTodoDaysInput.value) || 7;
-            const events = DB.data?.calendarEvents || [];
+            const events = Calendar.shownEvents;
             if (events.length === 0) {
                 alert('No events in the database to print.');
                 return;
@@ -5529,7 +5596,7 @@
             function trySend() {
                 if (acknowledged || newWindow.closed || attempts >= 5) return;
                 attempts++;
-                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, SITKA_MSG_ORIGIN);
+                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload, view: DeviceView.message() }, SITKA_MSG_ORIGIN);
             }
 
             // Listen for acknowledgment from subtool
@@ -6081,7 +6148,7 @@
                 if (!win || win.closed) return;
                 if (url && !/CropLabourWizard/i.test(url)) return;
                 try {
-                    win.postMessage({ type: 'sitkaGit_db_update', payload }, SITKA_MSG_ORIGIN);
+                    win.postMessage({ type: 'sitkaGit_db_update', payload, view: DeviceView.message() }, SITKA_MSG_ORIGIN);
                 } catch (_) { /* window gone */ }
             });
         }
@@ -6767,6 +6834,11 @@
 
             get events() {
                 return DB.data?.calendarEvents || [];
+            },
+
+            // The events this device shows — a building device only its own building's (DeviceView)
+            get shownEvents() {
+                return DeviceView.building ? this.events.filter(ev => DeviceView.eventVisible(ev)) : this.events;
             },
 
             init() {
@@ -7635,7 +7707,7 @@
             // Events passing all active filters: values within a key OR
             // together, keys AND together (strict — missing value fails).
             filteredEvents() {
-                const all = this.events;
+                const all = this.shownEvents;
                 if (this.filters.length === 0) return all;
                 const byKey = this._activeFilterKeys();
                 return all.filter(ev => {
@@ -7656,7 +7728,7 @@
                 const byKey = Object.fromEntries(groups.map(g => [g.key, g]));
                 const active = this._activeFilterKeys();
 
-                for (const ev of this.events) {
+                for (const ev of this.shownEvents) {
                     const vals = this._filterCache.get(ev);
                     if (!vals) continue;
 
@@ -7728,7 +7800,7 @@
 
             openFilterMenu() {
                 const menu = $('filterMenu');
-                if (this.events.length === 0) return;
+                if (this.shownEvents.length === 0) return;
                 this._rebuildFilterCache();
                 const groups = this.availableFilterOptions();
                 const hasAny = groups.some(g => g.options.length > 0);
@@ -7805,7 +7877,7 @@
                 const clearBtn = $('clearFiltersBtn');
                 // Only show the bar when there are events to filter. (DB.data is not a
                 // reliable "loaded" signal — ensureStructure() makes it truthy on load.)
-                if (this.events.length === 0) {
+                if (this.shownEvents.length === 0) {
                     bar.classList.add('hidden');
                     return;
                 }
@@ -8025,7 +8097,7 @@
                         }
                         eventEl.textContent = displayText;
 
-                        eventEl.draggable = true;
+                        eventEl.draggable = !DeviceView.building; // a building device can't reschedule events
                         eventEl.dataset.eventIndex = this.events.indexOf(event);
 
                         // Drag events
@@ -8090,6 +8162,7 @@
             },
 
             moveEvent(eventIndex, newDate) {
+                if (DeviceView.building) return;
                 if (eventIndex < 0 || eventIndex >= DB.data.calendarEvents.length) return;
 
                 const event = DB.data.calendarEvents[eventIndex];
@@ -8178,8 +8251,10 @@
             renderEventPanel(event) {
                 const body = $('eventPanelBody');
 
-                // Determine which fields are modifiable
-                const MODIFIABLE_FIELDS = ['date', 'endDate', 'startTime', 'endTime', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                // Determine which fields are modifiable. A building device can only mark the event completed —
+                // everything else about an event is office work it couldn't save.
+                const readOnly = !!DeviceView.building;
+                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
                 const HIDDEN_FIELDS = ['type', 'id'];
                 const READONLY_FIELDS = [];
 
@@ -8227,16 +8302,20 @@
                 html += '</div>';
 
                 // Action buttons
-                html += `<div class="event-actions">`;
-                html += `<button class="btn btn-secondary" id="duplicateEventBtn">📋 Duplicate</button>`;
-                html += `<button class="btn btn-danger" id="deleteEventBtn">🗑 Delete</button>`;
-                html += `</div>`;
+                if (!readOnly) {
+                    html += `<div class="event-actions">`;
+                    html += `<button class="btn btn-secondary" id="duplicateEventBtn">📋 Duplicate</button>`;
+                    html += `<button class="btn btn-danger" id="deleteEventBtn">🗑 Delete</button>`;
+                    html += `</div>`;
+                }
 
                 body.innerHTML = html;
 
                 // Bind events
-                $('duplicateEventBtn').addEventListener('click', () => this.duplicateEvent());
-                $('deleteEventBtn').addEventListener('click', () => this.deleteEvent());
+                if (!readOnly) {
+                    $('duplicateEventBtn').addEventListener('click', () => this.duplicateEvent());
+                    $('deleteEventBtn').addEventListener('click', () => this.deleteEvent());
+                }
 
                 // Completed toggle
                 const completedCheckbox = $('completedCheckbox');
@@ -8301,7 +8380,7 @@
             },
 
             deleteEvent() {
-                if (!this.selectedEvent) return;
+                if (!this.selectedEvent || DeviceView.building) return;
 
                 if (!confirm(`Delete event "${this.selectedEvent.title}"?`)) return;
 
@@ -8327,7 +8406,8 @@
                 // Render from the filtered set when provided (render() always passes it).
                 const events = visibleEvents || this.events;
 
-                if (!DB.data || this.events.length === 0) {
+                const shownCount = this.shownEvents.length;
+                if (!DB.data || shownCount === 0) {
                     body.innerHTML = '<div class="terminal-line text-secondary">No events found. Create events using tools at the bottom of the page.</div>';
                     status.textContent = '0 events';
                     return;
@@ -8410,9 +8490,9 @@
                 body.innerHTML = lines.join('');
                 // When filters are active, show how many of the total events are visible.
                 if (this.filters.length > 0) {
-                    status.textContent = `${events.length} of ${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+                    status.textContent = `${events.length} of ${shownCount} event${shownCount !== 1 ? 's' : ''}`;
                 } else {
-                    status.textContent = `${this.events.length} event${this.events.length !== 1 ? 's' : ''}`;
+                    status.textContent = `${shownCount} event${shownCount !== 1 ? 's' : ''}`;
                 }
 
                 // Click terminal line to select event
@@ -8597,7 +8677,7 @@
                 return;
             }
 
-            const eventCount = DB.data.calendarEvents?.length || 0;
+            const eventCount = Calendar.shownEvents.length;
             bar.className = 'status-bar loaded';
             bar.innerHTML = `
                 <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
@@ -8619,7 +8699,7 @@
             // ---- Export to ICS ----
             exportICS() {
                 DB.ensureStructure();
-                const events = DB.data.calendarEvents || [];
+                const events = Calendar.shownEvents;
 
                 if (events.length === 0) {
                     this.showResult('export', 'No calendar events to export.', 'error');
@@ -8915,7 +8995,7 @@
                 return;
             }
 
-            const eventCount = DB.data.calendarEvents?.length || 0;
+            const eventCount = Calendar.shownEvents.length;
             const meta = DB.data._meta;
             const savedText = meta?.savedAt
                 ? ` · Last saved ${escapeHtml(new Date(meta.savedAt).toLocaleString())} (rev ${Number(meta.revision) || 0})`

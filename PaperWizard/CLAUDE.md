@@ -522,6 +522,12 @@ PaperWizard always runs through SitkaTools — there is no standalone mode or DB
 
 Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`; the lot's earlier paperwork from other buildings stays in their files and is still shown (every device opens all files).
 
+On a building device (root `CLAUDE.md` → "Building Device View"):
+- The lot selector lists only that building's lots: those whose current room or flower room is in it.
+- **Configure Sheets** is hidden, because sheets and wizards are saved in Main.json.
+- The 🏠 Room question and "Start on a chosen day" offer only that building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept.
+- **Read-only lots:** a lot whose flower room is here but whose current room is in another building (`lotElsewhere`) can only be viewed and printed. The cabinet shows 🔒 "Read only on this device — … is in <room> (<building>)" and has no Fill, Start, Sign or Initialize paperwork buttons. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, also for any lot this device doesn't list. Those pages are in another building's file, which this device can't save.
+
 ### Standard postMessage Pattern
 
 The standard subtool pattern from the root `CLAUDE.md` applies verbatim (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), plus non-disruptive handling of live `sitkaGit_db_update` pushes (refresh lot selector and sheet statuses without disturbing an open wizard).

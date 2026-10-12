@@ -148,8 +148,8 @@ Calendar events support an optional `endDate` field for events that span consecu
 
 **Message protocol (all tools use these exact message types):**
 ```js
-// SitkaTools → Subtool: Send database on open
-{ type: 'sitkaGit_db', payload: DB.data }
+// SitkaTools → Subtool: Send database on open (view: see "Building Device View")
+{ type: 'sitkaGit_db', payload: DB.data, view: { building: '<building id>' | null } }
 
 // Subtool → SitkaTools: Acknowledge receipt
 { type: 'sitkaGit_ready' }
@@ -412,6 +412,29 @@ All tools are served from the same site, so they share browser storage. SitkaToo
 - **Save stamp:** `_meta` belongs to SitkaTools; when it takes in a tool's DB (shared copy or postMessage) it keeps its own `_meta`, so a tool still holding the stamp from before the last save never undoes it.
 - **Forgetting:** the copy is deleted when SitkaTools closes with everything saved (open tool tabs finish the delete via a `sitka-closing` broadcast), saved copies are removed on the next start, nothing older than 12 hours is used, and unsaved work left behind is offered back once on the next SitkaTools start.
 - IndexedDB version is **3** everywhere (`folders`, `settings`, `work` stores); every copy of the open/upgrade code must match.
+
+### Building Device View
+
+A building device sees only its own building and only what it can save. It applies when building files are open and the device's role is a building (`DeviceView.building` in SitkaTools). The office, or a single-file DB, sees everything as before. **It only changes what's shown.** The DB still holds everything, so merging, overlays and saving are unchanged, and every building file is still opened, because a lot's moves and paper trail span files.
+
+- **What counts as the building's:**
+  - Rooms whose `buildingId` is the building.
+  - Lots whose `currentRoom` **or** `destRoom` (flower room) is in one of those rooms.
+  - Events tied to a visible lot (`lotId`) or a building room (`roomId`).
+  - Events tied to no lot and no room (general events, time off) show everywhere. Events of a removed lot or room show nowhere.
+- **SitkaTools on a building device:**
+  - Hidden (`body.building-device` + `.office-only`): Lot Manager, Room Manager, ICS import, Split, Close out, and the GeneralEvent, CropLabourWizard and EquipmentWizard links.
+  - The calendar, terminal list, filters, Print Todo and ICS export show only the building's events.
+  - Events can't be dragged. The event panel is read-only except **Completed** (a floor field, saved as an overlay). The terminal's ✕ and ↻ Reschedule are hidden; its completion checks stay.
+  - The lot move list holds only the building's lots, and the transfer list only moves into or out of the building.
+- **Tools get the view with the DB:**
+  - SitkaTools sends `view: { building }` on `sitkaGit_db` / `sitkaGit_db_update`, and stores the same `view` in the shared working copy. `WorkCopy.apply(db, initial, view)` passes it to the tool's own handler.
+  - Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
+  - **Office-only tools** (`OFFICE_ONLY: true`: CropLabourWizard, EquipmentWizard, GeneralEvent) cover the page with "Office only" and stop before loading. EquipmentWizard never resyncs there.
+  - **DailyWizard** locks its Building selector to the device's building.
+  - **PaperWizard** lists only the building's lots, hides Configure Sheets, and its Room question and "Start on a chosen day" offer only the building's rooms. Moves between buildings go through Send / Accept.
+  - **Read-only lots (PaperWizard):** a lot listed only because its flower room is here, but whose current room is in another building, is view-and-print only (`lotElsewhere`). Its open pages are in that building's file, which this device can't save. The cabinet shows 🔒 "Read only on this device" and drops Fill, Sign and Initialize paperwork. Every fill, sign or start entry point refuses with a toast, and printing doesn't stamp `printedAt`.
+  - **EmployeeWizard** shows only the Tasks tab (labour on the building's lots). The roster, time off and report are hidden.
 
 ## Crop Projection (Projected Lots)
 

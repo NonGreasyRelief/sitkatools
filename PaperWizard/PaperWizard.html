@@ -1065,6 +1065,13 @@
             renderAll();
         }
 
+        // Building device (DeviceView): Configure Sheets is office work — sheet layouts and wizards are saved
+        // in Main.json, which a building device can't save — so only the Filing Cabinet is offered.
+        function applyDeviceView() {
+            $('tabConfigureBtn').style.display = DeviceView.building ? 'none' : '';
+            if (DeviceView.building && activeTab === 'configure') switchTab('cabinet');
+        }
+
         // ---- Active lot state ----
         let activeLotId = null;
 
@@ -1091,6 +1098,8 @@
             // Lots from the main DB plus orphaned lots that only exist in PaperWizard entries.
             const ids = new Set(Object.keys(DB.lots));
             Object.keys(DB.paperWizard?.entries || {}).forEach(id => ids.add(id));
+            // A building device lists only its own building's lots (DeviceView — closed lots aren't among them)
+            if (DeviceView.building) [...ids].forEach(id => { if (!DeviceView.lotVisible(id)) ids.delete(id); });
 
             if (!ids.size) {
                 sel.innerHTML = '';
@@ -2737,13 +2746,14 @@
         // earlier paperwork is on paper). Sets the lot's live phase / room / plant count to the
         // chosen starting values, marks the days before as on paper, creates the first page.
         function openStartLogModal(lotId, sheetId) {
+            if (readOnlyHere(lotId)) return;
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const lot = DB.lots[lotId];
             if (!sheet || !lot) return;
             const today = todayStr();
             const curPhase = currentLotPhase(lotId);
             const curRoom = currentLotRoom(lotId);
-            const rooms = knownRoomNames().sort((a, b) => a.localeCompare(b));
+            const rooms = pickableRoomNames(curRoom).sort((a, b) => a.localeCompare(b));
             const ov = document.createElement('div');
             ov.className = 'wiz-overlay';
             ov.id = 'startLogOverlay';
@@ -3167,6 +3177,33 @@
             return [...names];
         }
 
+        // Room names offered when recording where a lot is. A building device offers only its own building's
+        // rooms (lots move between buildings with SitkaTools' Send / Accept), plus the values already in play.
+        function pickableRoomNames(...keep) {
+            if (!DeviceView.building) return knownRoomNames();
+            const names = new Set();
+            Object.values(DB.rooms || {}).forEach(r => { if (r?.name && r.buildingId === DeviceView.building) names.add(String(r.name)); });
+            keep.forEach(n => { if (n) names.add(String(n)); });
+            return [...names];
+        }
+
+        // Building device: a lot it lists because its flower room is here, but that is in another building right
+        // now, is read-only — its open pages are in that building's file, which this device can't save. View and
+        // print only. Returns where the lot is ({ room, building }), or null when this device may fill it.
+        function lotElsewhere(lotId) {
+            if (!DeviceView.building) return null;
+            const room = DB.lots[lotId]?.currentRoom;
+            const b = DeviceView.buildingOfRoomName(room);
+            return b && b !== DeviceView.building ? { room: String(room), building: DB.buildings?.[b]?.name || b } : null;
+        }
+
+        // Guard for every fill / sign / start action: true (after a toast) when the lot is read-only here
+        function readOnlyHere(lotId) {
+            const where = lotElsewhere(lotId);
+            if (where) showToast(`Read only here — ${lotId} is in ${where.room} (${where.building}), where its paperwork is filled`);
+            return !!where;
+        }
+
         // First date on which any of this lot's daily logs recorded the lot being in `roomName`
         // (via a 🏠 Room question answer). Null when no log has recorded it yet. This is the
         // authoritative move-in date — paperwork, not the schedule, is the source of truth.
@@ -3474,6 +3511,7 @@
         }
 
         async function openRunner(lotId, sheetId, key, preferDay) {
+            if (readOnlyHere(lotId)) return;
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const wiz = wizardForSheet(sheetId);
             if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
@@ -3653,6 +3691,7 @@
         }
 
         function openInitQuiz(lotId) {
+            if (readOnlyHere(lotId)) return;
             const steps = initQuizSteps(lotId);
             if (!steps.length) { showToast('No constant fields configured — flag a header box 📌 in Configure Sheets'); return; }
             const draft = {};
@@ -3786,6 +3825,7 @@
         function sigModalEscHandler(e) { if (e.key === 'Escape') closeSignatureModal(); }
 
         function openSignatureModal(lotId, sheetId, key) {
+            if (readOnlyHere(lotId)) return;
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet?.signature) { showToast('No signature box configured for this sheet'); return; }
             const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key] || null;
@@ -3983,7 +4023,7 @@
                     // Known room names from the DB. Picking a room DIFFERENT from the lot's
                     // current one writes it back and strikes out this log on save (after the
                     // day's entry is complete); picking the current room just records it.
-                    const rooms = knownRoomNames().sort((a, b) => a.localeCompare(b));
+                    const rooms = pickableRoomNames(currentLotRoom(ctx.lotId), ctx.draft[q.id]).sort((a, b) => a.localeCompare(b));
                     const opts = ['<option value="">— select —</option>']
                         .concat(rooms.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
@@ -4582,8 +4622,11 @@
             win.document.write(html);
             win.document.close();
             // Informational: record that this instance was rendered for print (re-print always allowed).
-            inst.printedAt = new Date().toISOString();
-            notifySitkaTools();
+            // Not for a lot this building device doesn't fill — its page is in a file this device can't save.
+            if (DeviceView.lotVisible(lotId) && !lotElsewhere(lotId)) {
+                inst.printedAt = new Date().toISOString();
+                notifySitkaTools();
+            }
         }
 
         function renderCabinet() {
@@ -4790,7 +4833,8 @@
             // Initialize paperwork button — shown when any daily-weekly sheet for this lot has
             // constant fields (set once per lot, printed on every page of the chain). A ⚠️ marks
             // that some values are still unset.
-            const initSteps = activeLotId ? initQuizSteps(activeLotId) : [];
+            const elsewhere = lot ? lotElsewhere(activeLotId) : null; // read-only on this building device
+            const initSteps = activeLotId && !elsewhere ? initQuizSteps(activeLotId) : [];
             let initBtnHtml = '';
             if (initSteps.length) {
                 let unset = 0;
@@ -4802,6 +4846,7 @@
             }
             panel.innerHTML = `
                 <div class="cab-head">🗄️ ${escapeHtml(activeLotId)}${strain} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}${totalMissing ? ` · <span style="color:var(--warning)">⚠️ ${totalMissing} missing</span>` : ''}${lot ? '' : '<div class="cab-sub">Lot no longer in database — history kept for reference.</div>'}</div>
+                ${elsewhere ? `<div class="cab-warn">🔒 Read only on this device — ${escapeHtml(activeLotId)} is in ${escapeHtml(elsewhere.room)} (${escapeHtml(elsewhere.building)}), so its paperwork is filled and saved there. You can view and print it here.</div>` : ''}
                 <div class="cab-toolbar">
                     <button type="button" class="cab-loaddoc" id="cabLoadDocBtn">📂 Load document</button>
                     ${initBtnHtml}
@@ -4811,14 +4856,16 @@
                 ${lot && !plantingDate ? `<div class="cab-warn">⚠️ This lot has no planting date on file — run it through the <b>CropLabourWizard</b> first. Grow-log coverage (one log per day since planting) can't be checked until a planting date is set.</div>` : ''}
                 ${sectionHtml}`;
 
+            // Read-only lot: no Fill / Start / Sign buttons — view and print only
+            if (elsewhere) panel.querySelectorAll('.cab-fill, [data-sign]').forEach(el => el.remove());
             // Fill buttons open the wizard runner for that instance.
             panel.querySelectorAll('[data-fill]').forEach(el => {
-                el.querySelector('.cab-fill').addEventListener('click', () =>
+                el.querySelector('.cab-fill')?.addEventListener('click', () =>
                     openRunner(activeLotId, el.dataset.sheet, el.dataset.key));
             });
             // "Start on a chosen day…" opens the start dialog (lot with no log yet).
             panel.querySelectorAll('[data-startlog]').forEach(el => {
-                el.querySelector('.cab-fill').addEventListener('click', () => openStartLogModal(activeLotId, el.dataset.sheet));
+                el.querySelector('.cab-fill')?.addEventListener('click', () => openStartLogModal(activeLotId, el.dataset.sheet));
             });
             // Print buttons open the print popup (only enabled when complete + doc loaded).
             panel.querySelectorAll('[data-print]').forEach(btn => {
@@ -5401,6 +5448,57 @@
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
 
+        // ---- Building device view (root CLAUDE.md → "Building Device View") ----
+        // SitkaTools sends `view: { building }` with the DB: the building's id on a building device, null on the
+        // office (or with a single-file DB). A building device sees only its own building — the rooms in it and the
+        // lots whose current room or flower room is in it — and only what it can save; office-only tools (schedules,
+        // plans) don't run there at all. Display only: the DB keeps everything. Every tool has this same snippet
+        // except OFFICE_ONLY. `var` (not const) so the message handlers can use it however early they run.
+        var DeviceView = {
+            OFFICE_ONLY: false,   // true: this whole tool is office work a building device couldn't save
+            building: null,
+            // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
+            take(msg) {
+                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) this.building = msg.view?.building || null;
+                if (!this.OFFICE_ONLY || !this.building) return false;
+                this.showOfficeOnly(msg?.payload?.buildings?.[this.building]?.name || this.building);
+                return true;
+            },
+            buildingOfRoomName(name) {
+                const target = String(name || '').trim().toLowerCase();
+                if (!target) return null;
+                for (const room of Object.values(DB.data?.rooms || {})) {
+                    if (room && String(room.name || '').trim().toLowerCase() === target) return room.buildingId || null;
+                }
+                return null;
+            },
+            lotVisible(lotId) {
+                if (!this.building) return true;
+                const lot = DB.data?.lots?.[lotId];
+                return !!lot && (this.buildingOfRoomName(lot.currentRoom) === this.building || this.buildingOfRoomName(lot.destRoom) === this.building);
+            },
+            roomVisible(roomId) {
+                return !this.building || DB.data?.rooms?.[roomId]?.buildingId === this.building;
+            },
+            showOfficeOnly(buildingName) {
+                if (document.getElementById('officeOnlyCover')) return;
+                const wrap = document.createElement('div');
+                wrap.id = 'officeOnlyCover';
+                wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10001; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                wrap.innerHTML = `
+                    <div style="max-width: 440px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 32px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🏢</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Office only</div>
+                        <div style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">
+                            This tool is run from the office. This device is set up for <strong data-building></strong>.</div>
+                        <button type="button" style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.95rem;">Close Tool</button>
+                    </div>`;
+                wrap.querySelector('[data-building]').textContent = buildingName;
+                wrap.querySelector('button').addEventListener('click', () => window.close());
+                document.body.appendChild(wrap);
+            }
+        };
+
         // ---- Shared working copy (ROADMAP Phase 1 — tablets) ----
         // Every tool is served from the same site, so they share browser storage. SitkaTools keeps the open DB in
         // IndexedDB ('sitkatools' → 'work'). When this tool is opened as a plain tab (tablets, where the popup /
@@ -5501,11 +5599,11 @@
                     </div>`;
                 document.body.appendChild(wrap);
             },
-            // Hand the DB to this tool's own "DB arrived from SitkaTools" message handler
-            apply(db, initial) {
-                if (!initial && JSON.stringify(db) === JSON.stringify(DB.data)) return;
+            // Hand the DB (and the device view sent with it) to this tool's own "DB arrived from SitkaTools" message handler
+            apply(db, initial, view) {
+                if (!initial && JSON.stringify(db) === JSON.stringify(DB.data) && (view?.building || null) === DeviceView.building) return;
                 const type = (initial || !this.LIVE) ? 'sitkaGit_db' : 'sitkaGit_db_update';
-                window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db } }));
+                window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db, view } }));
             },
             async start() {
                 const copy = await this.read();
@@ -5515,7 +5613,7 @@
                     return;
                 }
                 this.inUse = true;
-                this.apply(copy.db, true);
+                this.apply(copy.db, true, copy.view);
                 const banner = document.createElement('div');
                 banner.id = 'workCopyBanner';
                 banner.textContent = '📋 Using the database open in SitkaTools. ';
@@ -5544,7 +5642,7 @@
                 }
                 if (!WorkCopy.inUse || e.data?.type !== 'db-updated' || e.data.from === WorkCopy.TOOL) return;
                 const copy = await WorkCopy.read();
-                if (copy) WorkCopy.apply(copy.db, false);
+                if (copy) WorkCopy.apply(copy.db, false, copy.view);
             });
         }
 
@@ -5571,6 +5669,7 @@
             if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
+                DeviceView.take(e.data);
                 dbLoaded = true;
 
                 // Acknowledge receipt so SitkaTools stops retrying
@@ -5578,6 +5677,7 @@
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
                 }
 
+                applyDeviceView();
                 renderAll();
                 showToast('Database loaded from SitkaTools');
             }
@@ -5587,7 +5687,9 @@
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
+                DeviceView.take(e.data);
                 dbLoaded = true;
+                applyDeviceView();
                 renderAll();
             }
         });

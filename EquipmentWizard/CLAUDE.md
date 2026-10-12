@@ -171,6 +171,8 @@ When generating or regenerating a room's maintenance schedule, compare each occu
 
 ## Relationship to SitkaTools
 
+**Office only.** On a building device (root `CLAUDE.md` → "Building Device View"), SitkaTools hides this tool's link. If it's opened anyway, `DeviceView` covers the page with "Office only" and stops before loading anything, because a building device couldn't save the result.
+
 This tool is part of the SitkaGit suite. It operates as a standalone single-file HTML application with no communication to other tools. All shared state flows through the common JSON database file (`DB-YY-MM-DD.json`).
 
 ### How Data Fits Into the Database

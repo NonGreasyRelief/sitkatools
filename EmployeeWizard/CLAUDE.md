@@ -147,6 +147,8 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 
 ## Relationship to SitkaTools
 
+**Building devices** (root `CLAUDE.md` → "Building Device View") get only the **Tasks** tab, and its Active Lot list holds only that building's lots. Labour and completion are floor fields, saved in the building's own file. The roster, wages, time off and the Labour Report are office work, so they're hidden there.
+
 This tool is part of the SitkaGit suite. It operates as a standalone single-file HTML application with no communication to other tools. All shared state flows through the common JSON database file (`DB-YY-MM-DD.json`).
 
 - Opens as a centered popup from `SitkaTools.html` at **half the main app's viewport width** and **83% of the viewport height**.

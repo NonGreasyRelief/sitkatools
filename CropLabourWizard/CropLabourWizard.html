@@ -1706,6 +1706,57 @@
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
 
+        // ---- Building device view (root CLAUDE.md → "Building Device View") ----
+        // SitkaTools sends `view: { building }` with the DB: the building's id on a building device, null on the
+        // office (or with a single-file DB). A building device sees only its own building — the rooms in it and the
+        // lots whose current room or flower room is in it — and only what it can save; office-only tools (schedules,
+        // plans) don't run there at all. Display only: the DB keeps everything. Every tool has this same snippet
+        // except OFFICE_ONLY. `var` (not const) so the message handlers can use it however early they run.
+        var DeviceView = {
+            OFFICE_ONLY: true,   // true: this whole tool is office work a building device couldn't save
+            building: null,
+            // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
+            take(msg) {
+                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) this.building = msg.view?.building || null;
+                if (!this.OFFICE_ONLY || !this.building) return false;
+                this.showOfficeOnly(msg?.payload?.buildings?.[this.building]?.name || this.building);
+                return true;
+            },
+            buildingOfRoomName(name) {
+                const target = String(name || '').trim().toLowerCase();
+                if (!target) return null;
+                for (const room of Object.values(DB.data?.rooms || {})) {
+                    if (room && String(room.name || '').trim().toLowerCase() === target) return room.buildingId || null;
+                }
+                return null;
+            },
+            lotVisible(lotId) {
+                if (!this.building) return true;
+                const lot = DB.data?.lots?.[lotId];
+                return !!lot && (this.buildingOfRoomName(lot.currentRoom) === this.building || this.buildingOfRoomName(lot.destRoom) === this.building);
+            },
+            roomVisible(roomId) {
+                return !this.building || DB.data?.rooms?.[roomId]?.buildingId === this.building;
+            },
+            showOfficeOnly(buildingName) {
+                if (document.getElementById('officeOnlyCover')) return;
+                const wrap = document.createElement('div');
+                wrap.id = 'officeOnlyCover';
+                wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10001; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                wrap.innerHTML = `
+                    <div style="max-width: 440px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 32px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🏢</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Office only</div>
+                        <div style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">
+                            This tool is run from the office. This device is set up for <strong data-building></strong>.</div>
+                        <button type="button" style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.95rem;">Close Tool</button>
+                    </div>`;
+                wrap.querySelector('[data-building]').textContent = buildingName;
+                wrap.querySelector('button').addEventListener('click', () => window.close());
+                document.body.appendChild(wrap);
+            }
+        };
+
         // ---- Shared working copy (ROADMAP Phase 1 — tablets) ----
         // Every tool is served from the same site, so they share browser storage. SitkaTools keeps the open DB in
         // IndexedDB ('sitkatools' → 'work'). When this tool is opened as a plain tab (tablets, where the popup /
@@ -1806,11 +1857,11 @@
                     </div>`;
                 document.body.appendChild(wrap);
             },
-            // Hand the DB to this tool's own "DB arrived from SitkaTools" message handler
-            apply(db, initial) {
-                if (!initial && JSON.stringify(db) === JSON.stringify(DB.data)) return;
+            // Hand the DB (and the device view sent with it) to this tool's own "DB arrived from SitkaTools" message handler
+            apply(db, initial, view) {
+                if (!initial && JSON.stringify(db) === JSON.stringify(DB.data) && (view?.building || null) === DeviceView.building) return;
                 const type = (initial || !this.LIVE) ? 'sitkaGit_db' : 'sitkaGit_db_update';
-                window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db } }));
+                window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db, view } }));
             },
             async start() {
                 const copy = await this.read();
@@ -1820,7 +1871,7 @@
                     return;
                 }
                 this.inUse = true;
-                this.apply(copy.db, true);
+                this.apply(copy.db, true, copy.view);
                 const banner = document.createElement('div');
                 banner.id = 'workCopyBanner';
                 banner.textContent = '📋 Using the database open in SitkaTools. ';
@@ -1849,7 +1900,7 @@
                 }
                 if (!WorkCopy.inUse || e.data?.type !== 'db-updated' || e.data.from === WorkCopy.TOOL) return;
                 const copy = await WorkCopy.read();
-                if (copy) WorkCopy.apply(copy.db, false);
+                if (copy) WorkCopy.apply(copy.db, false, copy.view);
             });
         }
 
@@ -1879,6 +1930,7 @@
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
                 }
+                if (DeviceView.take(e.data)) return; // office only — schedules are made at the office
 
                 buildDefaultOffsets();
                 populateLotSelector();
@@ -1896,6 +1948,7 @@
             // projection events deleted there). Refresh selector + schedule list without
             // disrupting active form/preview editing.
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                if (DeviceView.take(e.data)) return;
                 DB.data = e.data.payload;
                 DB.ensureStructure();
                 populateLotSelector();

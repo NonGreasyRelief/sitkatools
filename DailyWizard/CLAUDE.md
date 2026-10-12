@@ -213,7 +213,7 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 ### Header
 
 - **Logo:** `📋 DailyWizard` on the left.
-- **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view.
+- **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") the selector holds only that building and is locked.
 - **Date input** (`<input type="date">`): defaults to today. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
 
 ### Status Bar
