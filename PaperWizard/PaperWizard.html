@@ -3187,20 +3187,36 @@
             return [...names];
         }
 
-        // Building device: a lot it lists because its flower room is here, but that is in another building right
-        // now, is read-only — its open pages are in that building's file, which this device can't save. View and
-        // print only. Returns where the lot is ({ room, building }), or null when this device may fill it.
+        // Building device: lots it lists but can't fill — view and print only. Returns { banner, toast }, or null
+        // when this device may fill the lot's paperwork.
+        // - Sent and not yet accepted: its paperwork is frozen; its unsigned pages go to the receiving building's
+        //   file when that building accepts it (SitkaTools → DbSplit lot hand-off).
+        // - In another building right now (listed because its flower room is here): its pages are saved there.
         function lotElsewhere(lotId) {
             if (!DeviceView.building) return null;
+            const name = id => DB.buildings?.[id]?.name || id;
+            const sent = Object.values(DB.data?._LotTransfers || {}).find(t => t && t.lotId === lotId && !t.acceptedAt);
+            if (sent && sent.to === DeviceView.building) return {
+                banner: `🚚 ${lotId} is on its way here from ${name(sent.from)} — accept it in SitkaTools (Data & Files → Lots) to fill its paperwork. You can view and print it here.`,
+                toast: `${lotId} isn't accepted yet — accept it in SitkaTools first`
+            };
+            if (sent) return {
+                banner: `🚚 Read only on this device — ${lotId} was sent to ${name(sent.to)}; its unsigned paperwork goes with it when ${name(sent.to)} accepts it. You can view and print it here.`,
+                toast: `Read only here — ${lotId} was sent to ${name(sent.to)}`
+            };
             const room = DB.lots[lotId]?.currentRoom;
             const b = DeviceView.buildingOfRoomName(room);
-            return b && b !== DeviceView.building ? { room: String(room), building: DB.buildings?.[b]?.name || b } : null;
+            if (!b || b === DeviceView.building) return null;
+            return {
+                banner: `🔒 Read only on this device — ${lotId} is in ${room} (${name(b)}), so its paperwork is filled and saved there. You can view and print it here.`,
+                toast: `Read only here — ${lotId} is in ${room} (${name(b)}), where its paperwork is filled`
+            };
         }
 
         // Guard for every fill / sign / start action: true (after a toast) when the lot is read-only here
         function readOnlyHere(lotId) {
             const where = lotElsewhere(lotId);
-            if (where) showToast(`Read only here — ${lotId} is in ${where.room} (${where.building}), where its paperwork is filled`);
+            if (where) showToast(where.toast);
             return !!where;
         }
 
@@ -4846,7 +4862,7 @@
             }
             panel.innerHTML = `
                 <div class="cab-head">🗄️ ${escapeHtml(activeLotId)}${strain} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}${totalMissing ? ` · <span style="color:var(--warning)">⚠️ ${totalMissing} missing</span>` : ''}${lot ? '' : '<div class="cab-sub">Lot no longer in database — history kept for reference.</div>'}</div>
-                ${elsewhere ? `<div class="cab-warn">🔒 Read only on this device — ${escapeHtml(activeLotId)} is in ${escapeHtml(elsewhere.room)} (${escapeHtml(elsewhere.building)}), so its paperwork is filled and saved there. You can view and print it here.</div>` : ''}
+                ${elsewhere ? `<div class="cab-warn">${escapeHtml(elsewhere.banner)}</div>` : ''}
                 <div class="cab-toolbar">
                     <button type="button" class="cab-loaddoc" id="cabLoadDocBtn">📂 Load document</button>
                     ${initBtnHtml}

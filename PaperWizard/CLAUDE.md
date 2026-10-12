@@ -520,13 +520,18 @@ PaperWizard always runs through SitkaTools — there is no standalone mode or DB
 1. **Laptops:** opens as a popup per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every mutation to `_PaperWizard` (sheet/wizard saves, entry saves, signatures) **and after every lot write-back** (`plantCount` / `stage` / `currentRoom`).
 2. **Tablets:** opens as a tab and loads SitkaTools' open DB from the shared working copy (root `CLAUDE.md` → "Shared Working Copy"). A banner offers **Go back to SitkaTools to save**; entries and write-backs flow back to SitkaTools.
 
-Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`; the lot's earlier paperwork from other buildings stays in their files and is still shown (every device opens all files).
+Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`. Paperwork from other buildings stays in their files and is still shown, because every device opens all files. When a building accepts a moved lot, the lot's unsigned pages and lot-level values move to the receiving building's file; signed pages stay put (root `CLAUDE.md` → "Lot hand-off"). PaperWizard itself needs no special handling for this.
 
 On a building device (root `CLAUDE.md` → "Building Device View"):
 - The lot selector lists only that building's lots: those whose current room or flower room is in it.
 - **Configure Sheets** is hidden, because sheets and wizards are saved in Main.json.
 - The 🏠 Room question and "Start on a chosen day" offer only that building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept.
-- **Read-only lots:** a lot whose flower room is here but whose current room is in another building (`lotElsewhere`) can only be viewed and printed. The cabinet shows 🔒 "Read only on this device — … is in <room> (<building>)" and has no Fill, Start, Sign or Initialize paperwork buttons. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, also for any lot this device doesn't list. Those pages are in another building's file, which this device can't save.
+- **Read-only lots:** `lotElsewhere` returns a `{ banner, toast }` for lots this device can only view and print:
+  - **Sent** and not yet accepted: "🚚 … was sent to <building>". Its paperwork is frozen so the receiver takes over exactly what was saved.
+  - **On its way here:** "🚚 … is on its way here from <building> — accept it in SitkaTools".
+  - **In another building right now**, even if its flower room is here: "🔒 … is in <room> (<building>)".
+
+  The cabinet shows the banner and has no Fill, Start, Sign or Initialize paperwork buttons. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, also for any lot this device doesn't list. Those pages are in another building's file, which this device can't save.
 
 ### Standard postMessage Pattern
 

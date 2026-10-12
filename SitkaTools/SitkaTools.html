@@ -4031,6 +4031,8 @@
             overlays: {},         // building id → { lots, events } floor updates as opened / last saved
             paperHome: {},        // 'lot|sheet|instanceKey' → building whose file holds that paperwork instance
             sheetHome: {},        // 'lot|sheet' → building whose file holds that sheet's lot-level data (constants)
+            diskPaper: {},        // building id → _PaperWizard.entries as that file holds it (opened / last saved)
+            diskTransfers: {},    // building id → _LotTransfers as that file holds it (opened / last saved)
             pending: null,        // manual (link) save in progress
 
             roleLabel(role = this.role, db = DB.data) {
@@ -4052,6 +4054,8 @@
                 this.overlays = {};
                 this.paperHome = {};
                 this.sheetHome = {};
+                this.diskPaper = {};
+                this.diskTransfers = {};
                 this.pending = null;
             },
 
@@ -4100,6 +4104,8 @@
                 this.paperHome = {};
                 this.sheetHome = {};
                 this.overlays = {};
+                this.diskPaper = {};
+                this.diskTransfers = {};
 
                 if (wages && db._EmployeeWizard?.employees) {
                     for (const [name, wage] of Object.entries(wages.wages || {})) {
@@ -4110,12 +4116,28 @@
                 for (const bf of buildingFiles) {
                     const id = bf._building;
                     if (!id) continue;
+                    // What this file holds on disk — the base for lot hand-offs
+                    this.diskPaper[id] = JSON.parse(JSON.stringify(bf._PaperWizard?.entries || {}));
+                    this.diskTransfers[id] = JSON.parse(JSON.stringify(bf._LotTransfers || {}));
                     const daily = bf._DailyWizard?.buildings;
                     if (daily && Object.keys(daily).length) {
                         if (!db._DailyWizard) db._DailyWizard = {};
                         if (!db._DailyWizard.buildings) db._DailyWizard.buildings = {};
                         Object.assign(db._DailyWizard.buildings, daily);
                     }
+                    this.overlays[id] = { lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} };
+                    for (const [tid, rec] of Object.entries(bf._LotTransfers || {})) {
+                        if (!db._LotTransfers) db._LotTransfers = {};
+                        const existing = db._LotTransfers[tid];
+                        if (!existing || (rec.acceptedAt && !existing.acceptedAt)) db._LotTransfers[tid] = rec;
+                    }
+                }
+
+                // Paperwork comes after the transfers: a moved lot's leftover copies are not used
+                const hand = this.handoffs(db);
+                for (const bf of buildingFiles) {
+                    const id = bf._building;
+                    if (!id) continue;
                     for (const [lotId, sheets] of Object.entries(bf._PaperWizard?.entries || {})) {
                         for (const [sheetId, entry] of Object.entries(sheets)) {
                             if (!db._PaperWizard) db._PaperWizard = {};
@@ -4126,21 +4148,17 @@
                                 if (k === 'instances') {
                                     target.instances = target.instances || {};
                                     for (const [key, inst] of Object.entries(v || {})) {
+                                        if (this.isLeftover(hand, id, lotId, sheetId, key)) continue;
                                         target.instances[key] = inst;
                                         this.paperHome[`${lotId}|${sheetId}|${key}`] = id;
                                     }
                                 } else {
+                                    if (this.isLeftover(hand, id, lotId, sheetId, null)) continue;
                                     target[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? { ...(target[k] || {}), ...v } : v;
                                     this.sheetHome[`${lotId}|${sheetId}`] = id;
                                 }
                             }
                         }
-                    }
-                    this.overlays[id] = { lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} };
-                    for (const [tid, rec] of Object.entries(bf._LotTransfers || {})) {
-                        if (!db._LotTransfers) db._LotTransfers = {};
-                        const existing = db._LotTransfers[tid];
-                        if (!existing || (rec.acceptedAt && !existing.acceptedAt)) db._LotTransfers[tid] = rec;
                     }
                 }
 
@@ -4181,6 +4199,89 @@
                 return Object.keys(db.buildings || {})[0] || null;
             },
 
+            // ---- Lot hand-off: a moved lot's paperwork goes with it ----
+            // When a building accepts a lot, the lot's unsigned pages and its lot-level values (constants) are saved
+            // in the receiving building's file from then on; signed pages stay where they are. The accepted transfer
+            // lists what it took over (`paperwork`). Once the receiver has saved that transfer (handed off), its file
+            // is the one used for those pages: copies still in other buildings' files are leftovers, ignored, and
+            // dropped by the next save of a device that may rewrite that file (the office, or that building).
+            // Until then the old file keeps its copies exactly as they are. Sending freezes the lot's paperwork on
+            // the sender (PaperWizard), so nothing is added there after the receiver takes it over.
+
+            // May this device overwrite this building's file? (the office: any it opened; a building: its own)
+            mayWrite(id) {
+                return this.loaded.has(buildingFileName(id)) && (this.role === 'office' || this.role === id);
+            },
+
+            // What a lot takes along when a building accepts it: its unsigned pages ('sheet|key') and the sheets
+            // whose lot-level values it has
+            handoffManifest(db, lotId) {
+                const pages = [], sheets = [];
+                for (const [sheetId, entry] of Object.entries(db._PaperWizard?.entries?.[lotId] || {})) {
+                    for (const [key, inst] of Object.entries(entry.instances || {})) if (!inst?.signature) pages.push(`${sheetId}|${key}`);
+                    if (Object.keys(entry).some(k => k !== 'instances')) sheets.push(sheetId);
+                }
+                return { pages, sheets };
+            },
+
+            // Moved lots → { target, authority }. target: the building the lot's unsigned paperwork now belongs
+            // to (its latest accepted move); authority: the latest move already saved in its receiver's file —
+            // { to, pages, sheets }. Only moves accepted with a paperwork list count (older ones leave pages put).
+            handoffs(db) {
+                const out = {};
+                const moves = Object.entries(db._LotTransfers || {})
+                    .filter(([, t]) => t?.acceptedAt && t.paperwork && db.lots?.[t.lotId] && db.buildings?.[t.to])
+                    .sort((a, b) => String(a[1].acceptedAt).localeCompare(String(b[1].acceptedAt)));
+                for (const [tid, t] of moves) {
+                    const h = out[t.lotId] || (out[t.lotId] = { target: null, authority: null });
+                    h.target = t.to;
+                    const saved = this.diskTransfers[t.to]?.[tid];
+                    if (saved?.acceptedAt && saved.paperwork) {
+                        h.authority = { to: t.to, pages: new Set(saved.paperwork.pages || []), sheets: new Set(saved.paperwork.sheets || []) };
+                    }
+                }
+                return out;
+            },
+
+            // Is building `bid`'s copy a leftover — paperwork the lot's authoritative file took over (or has saved
+            // since)? key null = the sheet's lot-level values.
+            isLeftover(hand, bid, lotId, sheetId, key) {
+                const a = hand[lotId]?.authority;
+                if (!a || a.to === bid) return false;
+                const theirs = this.diskPaper[a.to]?.[lotId]?.[sheetId];
+                if (key === null) return a.sheets.has(sheetId) || Object.keys(theirs || {}).some(k => k !== 'instances');
+                return a.pages.has(`${sheetId}|${key}`) || !!theirs?.instances?.[key];
+            },
+
+            // Where a page (or, with inst null, a sheet's lot-level values) is saved: a moved lot's unsigned
+            // paperwork goes with the lot; everything else stays where it is
+            paperTarget(db, hand, lotId, inst, sticky, roomName) {
+                const target = hand[lotId]?.target;
+                if (target && !inst?.signature) return target;
+                return this.homeFor(sticky, db, roomName, lotId);
+            },
+
+            // Building files this device may rewrite that still hold hand-off leftovers
+            tidyFiles(db) {
+                const hand = this.handoffs(db);
+                const names = [];
+                for (const [bid, lots] of Object.entries(this.diskPaper)) {
+                    if (!this.mayWrite(bid)) continue;
+                    const has = Object.entries(lots).some(([lotId, sheets]) => !!db.lots?.[lotId] &&
+                        Object.entries(sheets).some(([sheetId, entry]) =>
+                            (Object.keys(entry).some(k => k !== 'instances') && this.isLeftover(hand, bid, lotId, sheetId, null)) ||
+                            Object.keys(entry.instances || {}).some(key => this.isLeftover(hand, bid, lotId, sheetId, key))));
+                    if (has) names.push(buildingFileName(bid));
+                }
+                return names;
+            },
+
+            // Office: a finished hand-off left copies behind — saving now drops them
+            promptTidy(names) {
+                markUnsaved();
+                setTimeout(() => showSyncToast(`🚚 Lot hand-off done — 💾 Save DB to tidy ${names.join(', ')}`), 0);
+            },
+
             // ---- Split: one DB → { file name: part } ----
             split(db) {
                 const buildingIds = Object.keys(db.buildings || {});
@@ -4214,6 +4315,7 @@
                 for (const id of buildingIds) partFor(id);
                 for (const [id, v] of Object.entries(dailyAll)) if (buildingIds.includes(id)) partFor(id)._DailyWizard.buildings[id] = v;
                 const homes = { paper: {}, sheet: {} };
+                const hand = this.handoffs(db);
                 for (const [lotId, sheets] of Object.entries(entries)) {
                     for (const [sheetId, entry] of Object.entries(sheets)) {
                         const slot = (id) => {
@@ -4223,7 +4325,7 @@
                         let newestHome = null;
                         for (const [key, inst] of Object.entries(entry.instances || {})) {
                             const pk = `${lotId}|${sheetId}|${key}`;
-                            const home = this.homeFor(this.paperHome[pk], db, inst?.room, lotId);
+                            const home = this.paperTarget(db, hand, lotId, inst, this.paperHome[pk], inst?.room);
                             if (!home) continue;
                             const s = slot(home);
                             (s.instances || (s.instances = {}))[key] = inst;
@@ -4233,7 +4335,7 @@
                         const otherKeys = Object.keys(entry).filter(k => k !== 'instances');
                         if (otherKeys.length) {
                             const sk = `${lotId}|${sheetId}`;
-                            const home = this.homeFor(this.sheetHome[sk] || newestHome, db, null, lotId);
+                            const home = this.paperTarget(db, hand, lotId, null, this.sheetHome[sk] || newestHome, null);
                             if (!home) continue;
                             const s = slot(home);
                             for (const k of otherKeys) s[k] = entry[k];
@@ -4241,10 +4343,42 @@
                         }
                     }
                 }
+                // A moved lot's paperwork still in another building's file (an old home) stays there exactly as it
+                // is, until the hand-off is complete and this device may rewrite that file — then it's dropped
+                for (const [bid, lots] of Object.entries(this.diskPaper)) {
+                    if (!bparts[bid]) continue;
+                    const write = this.mayWrite(bid);
+                    for (const [lotId, sheets] of Object.entries(lots)) {
+                        const h = hand[lotId];
+                        if (!h || bid === h.target || !db.lots?.[lotId]) continue;
+                        const e = bparts[bid]._PaperWizard.entries;
+                        for (const [sheetId, entry] of Object.entries(sheets)) {
+                            const slot = () => (e[lotId] || (e[lotId] = {}))[sheetId] || (e[lotId][sheetId] = {});
+                            for (const [k, v] of Object.entries(entry)) {
+                                if (k === 'instances') {
+                                    for (const [key, inst] of Object.entries(v || {})) {
+                                        if (e[lotId]?.[sheetId]?.instances?.[key]) continue; // placed above (signed — it stays)
+                                        if (write && this.isLeftover(hand, bid, lotId, sheetId, key)) continue;
+                                        const s = slot();
+                                        (s.instances || (s.instances = {}))[key] = JSON.parse(JSON.stringify(inst));
+                                    }
+                                } else if (!(write && this.isLeftover(hand, bid, lotId, sheetId, null))) {
+                                    const s = slot();
+                                    if (!(k in s)) s[k] = JSON.parse(JSON.stringify(v));
+                                }
+                            }
+                        }
+                    }
+                }
                 for (const [tid, rec] of Object.entries(db._LotTransfers || {})) {
                     if (!db.lots?.[rec.lotId]) continue;
                     const home = rec.acceptedAt ? rec.to : rec.from;
                     if (bparts[home]) bparts[home]._LotTransfers[tid] = rec;
+                }
+                // A building file this device can't rewrite keeps its transfer records as on disk (accepting a lot
+                // moves the record to the receiver's file; the sender's pending copy goes on that file's next save)
+                for (const [bid, recs] of Object.entries(this.diskTransfers)) {
+                    if (bparts[bid] && !this.mayWrite(bid)) bparts[bid]._LotTransfers = JSON.parse(JSON.stringify(recs));
                 }
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const [id, ov] of Object.entries(this.overlays)) {
@@ -4365,6 +4499,8 @@
                 if (m && part._building) {
                     const id = part._building;
                     this.overlays[id] = JSON.parse(JSON.stringify(part._overlays || { lots: {}, events: {} }));
+                    this.diskPaper[id] = JSON.parse(JSON.stringify(part._PaperWizard?.entries || {}));
+                    this.diskTransfers[id] = JSON.parse(JSON.stringify(part._LotTransfers || {}));
                     if (homes) {
                         for (const [k, home] of Object.entries(homes.paper)) if (home === id) this.paperHome[k] = id;
                         for (const [k, home] of Object.entries(homes.sheet)) if (home === id) this.sheetHome[k] = id;
@@ -4415,10 +4551,14 @@
                 const parts = this.split(DB.data);
                 this.baseParts = {};
                 for (const [name, part] of Object.entries(parts)) this.baseParts[name] = this.partJson(part);
+                // Files holding hand-off leftovers this device may drop are saved even with no other change
+                const tidy = this.tidyFiles(DB.data);
+                for (const name of tidy) this.baseParts[name] = '';
 
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
+                if (this.role === 'office' && tidy.length) this.promptTidy(tidy);
                 return true;
             },
 
@@ -4474,6 +4614,11 @@
                 if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
                 if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
                 else if (plan.cannot.length) SaveRequired.hide(); // saved all this device may save; the rest was reported
+                // The office just saved a lot's new home: the old home's copies can go with the next save
+                if (this.role === 'office') {
+                    const tidy = this.tidyFiles(DB.data);
+                    if (tidy.length) this.promptTidy(tidy);
+                }
                 updateIOStatusBar();
                 updateSplitCard();
             },
@@ -4584,7 +4729,8 @@
                 return {
                     role: this.role, loaded: [...this.loaded], haveWages: this.haveWages, baseParts: this.baseParts,
                     metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
-                    overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome
+                    overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome,
+                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers
                 };
             },
             importState(state) {
@@ -5031,7 +5177,10 @@
                 const from = this.buildingOfLot(lot) || (DbSplit.role !== 'office' ? DbSplit.role : null);
                 if (!from) { alert(`Set lot ${lotId}'s current room first, so it's clear which building it leaves.`); return; }
                 if (!this.canActFor(from)) { alert(`Only ${this.buildingName(from)} or the office can send this lot.`); return; }
-                if (!confirm(`Send lot ${lotId} from ${this.buildingName(from)} to ${this.buildingName(to)}?\n\n${this.buildingName(to)} accepts it and picks the room.`)) return;
+                const paperNote = DbSplit.active
+                    ? `\n\nFill in today's paperwork for this lot first: once it's sent, its paperwork is read-only in ${this.buildingName(from)}, and its unsigned pages move to ${this.buildingName(to)}'s file when they accept it.`
+                    : '';
+                if (!confirm(`Send lot ${lotId} from ${this.buildingName(from)} to ${this.buildingName(to)}?\n\n${this.buildingName(to)} accepts it and picks the room.${paperNote}`)) return;
                 const sentAt = new Date().toISOString();
                 if (!DB.data._LotTransfers) DB.data._LotTransfers = {};
                 DB.data._LotTransfers[`${lotId}@${sentAt}`] = { lotId, from, to, sentAt, sentBy: DbSplit.active ? DbSplit.roleLabel() : 'SitkaTools' };
@@ -5048,6 +5197,8 @@
                 t.acceptedAt = new Date().toISOString();
                 t.acceptedBy = initials;
                 t.room = roomName;
+                // The lot's unsigned paperwork moves to the receiving building's file with it (DbSplit hand-off)
+                if (DbSplit.active) t.paperwork = DbSplit.handoffManifest(DB.data, t.lotId);
                 DB.data.lots[t.lotId].currentRoom = roomName;
                 markUnsaved();
                 refreshAllViews();
