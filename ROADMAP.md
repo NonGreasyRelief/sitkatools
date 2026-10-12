@@ -135,7 +135,7 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
   - An amber dot on **💾 Save DB** shows when there are unsaved changes.
   - Save keeps the right-click **Save Link As…** popup on every browser. (A Chrome/Edge Save dialog briefly replaced it and was reverted: Edge users need the right-click flow for custom names, and some PCs block downloads.)
   - Every save stamps a `_meta` block (schema version, revision, save time, save lineage), and the status bar shows when the loaded file was last saved.
-  - *Moved to Phase 1:* refusing to overwrite a newer copy. That needs folder access, so the app can read the file on disk before writing.
+  - *Done in Phase 1 folder mode:* refusing to overwrite a newer copy. That needs folder access, so the app can read the file on disk before writing.
 - [x] **0.2 Stable event IDs.**
   - Every calendar event carries an `id`.
   - Old files get IDs on load, worked out from the event's content, so every device assigns the same ID to the same event.
@@ -159,7 +159,7 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
 
 - **Device identity:** a one-time "This device is: Office / Building X" setting, stamped into everything it saves, including standalone tablet exports.
 - **File layout and loader:** load `plan.json` plus any number of `activity-*.json` files at once and combine them in memory.
-- **Folder mode (Chrome/Edge):** pick the synced SharePoint folder once, then get one-click load and save. Before writing, the app reads the file on disk and refuses to overwrite a save it didn't load. This is the overwrite check deferred from 0.1.
+- [x] **Folder mode (Chrome/Edge), for today's single DB file:** pick the synced SharePoint folder once (remembered, plus recent folders), then get one-click open and save. Before writing, SitkaTools re-reads the folder. If someone else saved after you opened, it writes a separate conflict copy instead of overwriting. It also warns about OneDrive conflict copies on open. Once the split lands, folder mode will load every device's file at once.
 - **Move floor data out of planning records:** completions, labour hours, and plant count / stage / room changes become activity entries keyed by event and lot ID.
 - **Migration:** a one-time "split my current DB" button that writes `plan.json` and one activity file per building from today's single file.
 - **Read-only guardrails:** a building device can view the plan but can't save it, and the office can't save a building's activity.

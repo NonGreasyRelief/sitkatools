@@ -2160,6 +2160,46 @@
             background: rgba(231, 76, 60, 0.15);
         }
 
+        /* DB folder menu (📁 Folder) — reuses the save-popup shell */
+        .folder-wrapper.hidden { display: none; }
+        .db-btn.folder { color: var(--accent); }
+        .db-btn.folder.active { border-color: var(--accent); background: rgba(83, 216, 168, 0.12); }
+        .folder-menu {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+            min-width: 260px;
+        }
+        .folder-menu-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 4px 0 2px;
+        }
+        .folder-menu-item {
+            background: none;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            text-align: left;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+        .folder-menu-item:hover { border-color: var(--accent); background: rgba(83, 216, 168, 0.1); }
+        .folder-menu-item .folder-menu-sub { display: block; font-size: 0.75rem; color: var(--text-secondary); }
+        .db-overlay-folder { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-bottom: 16px; }
+        .db-overlay-folder.hidden { display: none; }
+        .btn-link {
+            background: none;
+            border: none;
+            color: var(--accent);
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
         /* Text utilities */
         .text-secondary {
             color: var(--text-secondary);
@@ -2670,6 +2710,7 @@
             <div class="db-overlay-desc">
                 Load your database to continue where you left off, or press skip to start a fresh session.
             </div>
+            <div class="db-overlay-folder hidden" id="overlayFolder"></div>
             <div class="db-overlay-actions">
                 <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
                 <button class="btn-cancel-db" id="overlayCancelBtn">Skip</button>
@@ -2727,6 +2768,12 @@
             </div>
         </div>
         <div class="header-right">
+            <div class="export-wrapper folder-wrapper hidden" id="folderWrapper">
+                <button class="db-btn folder" id="folderBtn" title="Open the database straight from its SharePoint/OneDrive folder">
+                    📁 Folder
+                </button>
+                <div class="save-popup folder-menu hidden" id="folderMenu"></div>
+            </div>
             <button class="db-btn import" id="importBtn" title="Import database JSON file">
                 📂 Load DB
             </button>
@@ -3233,6 +3280,10 @@
                 showOverlay();
             }
 
+            // Folder mode: show the 📁 button and offer remembered folders on the start screen
+            updateFolderUi();
+            renderOverlayFolder();
+
             // Auto-generate Lot ID based on count
             updateLotIdSuggestion();
         }
@@ -3300,6 +3351,35 @@
             dbImportInput.click();
         });
 
+        // Replace the loaded DB with the JSON text of a DB file and refresh every view.
+        // Shared by the file picker and folder mode. Returns false (after alerting) on bad JSON.
+        function loadDbFromText(text, fileName) {
+            try {
+                const parsed = JSON.parse(text);
+                DB.data = parsed;
+                DB.ensureStructure();
+                DB.fileName = fileName.replace('.json', '');
+                clearUnsaved();
+                updateStatusBar();
+                renderLotList();
+                updateLotIdSuggestion();
+                RoomManager.renderRoomList();
+                updateRoomStatusBar();
+                RoomManager.updateRoomDatalist();
+                BuildingManager.renderBuildingList();
+                Calendar.onDbChanged();
+                Calendar.render();
+                updateCalendarStatusBar();
+                updateIOStatusBar();
+                hideOverlay();
+                hideMobileToolOverlay();
+                return true;
+            } catch (err) {
+                alert('Failed to parse JSON file: ' + err.message);
+                return false;
+            }
+        }
+
         dbImportInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) {
@@ -3318,28 +3398,8 @@
 
             const reader = new FileReader();
             reader.onload = (ev) => {
-                try {
-                    const parsed = JSON.parse(ev.target.result);
-                    DB.data = parsed;
-                    DB.ensureStructure();
-                    DB.fileName = file.name.replace('.json', '');
-                    clearUnsaved();
-                    updateStatusBar();
-                    renderLotList();
-                    updateLotIdSuggestion();
-                    RoomManager.renderRoomList();
-                    updateRoomStatusBar();
-                    RoomManager.updateRoomDatalist();
-                    BuildingManager.renderBuildingList();
-                    Calendar.onDbChanged();
-                    Calendar.render();
-                    updateCalendarStatusBar();
-                    updateIOStatusBar();
-                    hideOverlay();
-                    hideMobileToolOverlay();
-                } catch (err) {
-                    alert('Failed to parse JSON file: ' + err.message);
-                }
+                // A file picked outside folder mode: saving goes back to the download/Save-dialog flow
+                if (loadDbFromText(ev.target.result, file.name)) DbFolder.deactivate();
             };
             reader.readAsText(file);
             // Reset so the same file can be imported again
@@ -3414,8 +3474,343 @@
 
         // The save popup's right-click "Save Link As…" link is the save path on every browser: it lets
         // Edge users pick custom names, and it still works on PCs that block normal downloads.
+
+        // =====================================================
+        // SitkaTools — DB Folder Mode (ROADMAP Phase 1, step 1)
+        // Open and save the DB straight from the OneDrive-synced SharePoint folder (Chrome/Edge,
+        // File System Access API). Chosen folders are remembered in this browser — IndexedDB holds
+        // the folder handles only, never DB data. Before writing, Save re-reads the folder and never
+        // overwrites a DB file that was saved elsewhere after this one was opened; it writes a
+        // separate conflict copy instead, so nobody's work is lost.
+        // =====================================================
+        const DB_FILE_RE = /^DB-(\d{2})-(\d{2})-(\d{2})\.json$/;
+        const DB_COPY_RE = /^DB-(\d{2})-(\d{2})-(\d{2}).+\.json$/i; // e.g. OneDrive "DB-26-10-12-OFFICE-PC.json"
+
+        // Recent folder handles, most recent first (max 5). Every call degrades to a no-op when
+        // IndexedDB is unavailable (private window, blocked storage).
+        const FolderStore = {
+            MAX: 5,
+            _db() {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open('sitkatools', 1);
+                    req.onupgradeneeded = () => req.result.createObjectStore('folders', { keyPath: 'key' });
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+            async _tx(mode, fn) {
+                const db = await this._db();
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('folders', mode);
+                        const result = fn(tx.objectStore('folders'));
+                        tx.oncomplete = () => resolve(result.result ?? result);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                } finally {
+                    db.close();
+                }
+            },
+            async list() {
+                try {
+                    const rows = await this._tx('readonly', store => store.getAll());
+                    return (rows || []).sort((a, b) => b.lastUsed - a.lastUsed);
+                } catch (_) {
+                    return [];
+                }
+            },
+            async remember(handle) {
+                try {
+                    const rows = await this.list();
+                    let existing = null;
+                    for (const row of rows) {
+                        if (await row.handle.isSameEntry(handle)) { existing = row; break; }
+                    }
+                    const keep = rows.filter(r => r !== existing).slice(0, this.MAX - 1);
+                    const drop = rows.filter(r => r !== existing && !keep.includes(r));
+                    const key = existing ? existing.key : `f${Date.now()}`;
+                    await this._tx('readwrite', store => {
+                        drop.forEach(r => store.delete(r.key));
+                        return store.put({ key, name: handle.name, handle, lastUsed: Date.now() });
+                    });
+                } catch (_) { /* not remembered — the folder still works this session */ }
+            },
+            async forget(key) {
+                try {
+                    await this._tx('readwrite', store => store.delete(key));
+                } catch (_) { /* ignore */ }
+            }
+        };
+
+        const DbFolder = {
+            supported: typeof window.showDirectoryPicker === 'function',
+            handle: null,   // folder currently open
+            active: false,  // true while the loaded DB came from (or was first saved to) this folder
+            base: null,     // { name, hash } of the DB file opened or last saved here; null for an empty folder
+
+            dateKey(name) {
+                const m = DB_FILE_RE.exec(name) || DB_COPY_RE.exec(name);
+                return m ? m[1] + m[2] + m[3] : '';
+            },
+
+            // All DB-YY-MM-DD.json files, newest date first, plus any extra copies of DB files
+            async scan(dir) {
+                const files = [];
+                const copies = [];
+                for await (const entry of dir.values()) {
+                    if (entry.kind !== 'file') continue;
+                    if (DB_FILE_RE.test(entry.name)) files.push(entry);
+                    else if (DB_COPY_RE.test(entry.name)) copies.push(entry);
+                }
+                files.sort((a, b) => this.dateKey(b.name).localeCompare(this.dateKey(a.name)));
+                return { files, copies };
+            },
+
+            async ensurePermission(dir) {
+                const opts = { mode: 'readwrite' };
+                if (await dir.queryPermission(opts) === 'granted') return true;
+                return (await dir.requestPermission(opts)) === 'granted';
+            },
+
+            async readText(fileHandle) {
+                return (await fileHandle.getFile()).text();
+            },
+
+            // Open a folder: load its newest DB file and remember the folder for next time
+            async open(dir) {
+                if (hasUnsavedChanges && !confirm('You have unsaved changes. Loading another database will discard them.\n\nLoad anyway?')) return false;
+                if (!await this.ensurePermission(dir)) {
+                    alert(`SitkaTools needs permission to read and save in "${dir.name}".`);
+                    return false;
+                }
+                const { files, copies } = await this.scan(dir);
+                this.handle = dir;
+                FolderStore.remember(dir);
+
+                if (files.length === 0) {
+                    // Empty folder: start from whatever is loaded; the first save creates today's file
+                    this.active = true;
+                    this.base = null;
+                    if (!DB.data) { DB.ensureStructure(); DB.fileName = '(new)'; }
+                    hideOverlay();
+                    updateIOStatusBar();
+                    updateFolderUi();
+                    showSyncToast(`No DB files in "${dir.name}" yet — Save DB will create ${todayDbFileName()}`);
+                    return true;
+                }
+
+                const newest = files[0];
+                const text = await this.readText(newest);
+                if (!loadDbFromText(text, newest.name)) return false;
+                this.active = true;
+                this.base = { name: newest.name, hash: contentHash(text) };
+                updateIOStatusBar();
+                updateFolderUi();
+                showSyncToast(`Opened ${newest.name} from "${dir.name}"`);
+
+                // OneDrive leaves "DB-26-10-12-PCNAME.json" copies when two devices save the same file
+                const newestKey = this.dateKey(newest.name);
+                const recentCopies = copies.filter(c => this.dateKey(c.name) >= newestKey).map(c => c.name);
+                if (recentCopies.length > 0) {
+                    alert(`Heads up: "${dir.name}" also contains\n\n• ${recentCopies.join('\n• ')}\n\n` +
+                        `These are copies saved alongside ${newest.name} (for example a OneDrive conflict copy). ` +
+                        `They may hold changes that aren't in the file you just opened.`);
+                }
+                return true;
+            },
+
+            // Pick a folder with the browser's folder picker, then open it
+            async choose() {
+                const overlayWasOpen = !dbOverlay.classList.contains('hidden');
+                hideOverlay(); // Edge can hang if a native picker opens behind a full-screen overlay
+                try {
+                    const dir = await window.showDirectoryPicker({ id: 'sitkaDbFolder', mode: 'readwrite' });
+                    const opened = await this.open(dir);
+                    if (!opened && overlayWasOpen && !DB.data) showOverlay();
+                } catch (err) {
+                    if (overlayWasOpen && !DB.data) showOverlay();
+                    if (err.name !== 'AbortError') alert('Could not open the folder: ' + err.message);
+                }
+            },
+
+            deactivate() {
+                this.active = false;
+                this.base = null;
+                updateIOStatusBar();
+                updateFolderUi();
+            },
+
+            // Who saved a DB file and when, for conflict messages
+            async describe(fileHandle) {
+                try {
+                    const file = await fileHandle.getFile();
+                    const meta = JSON.parse(await file.text())._meta;
+                    const when = new Date(meta?.savedAt || file.lastModified).toLocaleString();
+                    return `${fileHandle.name} (saved ${when}${meta?.revision ? `, rev ${meta.revision}` : ''})`;
+                } catch (_) {
+                    return fileHandle.name;
+                }
+            },
+
+            async writeFile(dir, name, text) {
+                const fh = await dir.getFileHandle(name, { create: true });
+                const writable = await fh.createWritable();
+                await writable.write(text);
+                await writable.close();
+            },
+
+            // Save into the open folder. Re-reads the folder first; if a DB file was saved there after
+            // ours was opened, writes a separate conflict copy instead of overwriting it.
+            async save() {
+                const dir = this.handle;
+                try {
+                    if (!await this.ensurePermission(dir)) {
+                        alert(`SitkaTools needs permission to save in "${dir.name}".`);
+                        return;
+                    }
+                    const save = prepareSave();
+                    const { files } = await this.scan(dir);
+                    const newest = files[0] || null;
+
+                    let newer = null;
+                    if (newest) {
+                        if (!this.base || newest.name !== this.base.name) {
+                            newer = newest; // a DB file we didn't open (or a newer day's file) is there
+                        } else if (contentHash(await this.readText(newest)) !== this.base.hash) {
+                            newer = newest; // our file was re-saved from somewhere else
+                        }
+                    }
+
+                    if (newer) {
+                        const stamp = new Date();
+                        const hhmm = String(stamp.getHours()).padStart(2, '0') + String(stamp.getMinutes()).padStart(2, '0');
+                        const copyName = save.filename.replace('.json', `-conflict-${hhmm}.json`);
+                        const msg = `⚠️ ${await this.describe(newer)} was saved in "${dir.name}" after you opened ` +
+                            `${this.base ? this.base.name : 'this database'}.\n\nSaving over it would erase those changes.\n\n` +
+                            `OK — save your version as a separate file, ${copyName}, so nothing is lost.\nCancel — don't save.`;
+                        if (!confirm(msg)) return;
+                        await this.writeFile(dir, copyName, save.json);
+                        commitSave(save);
+                        alert(`Saved your version as ${copyName}.\n\nNothing was overwritten. Open ${newer.name} to see the other changes, ` +
+                            `then re-apply yours there — or keep working from your copy.`);
+                        return;
+                    }
+
+                    await this.writeFile(dir, save.filename, save.json);
+                    this.base = { name: save.filename, hash: contentHash(save.json) };
+                    DB.fileName = save.filename.replace('.json', '');
+                    commitSave(save);
+                    showSyncToast(`Saved ${save.filename} to "${dir.name}"`);
+                } catch (err) {
+                    alert('Save failed: ' + err.message + '\n\nYour changes are still here. Try again, or pick 📁 Folder → "Stop using this folder" and Save DB to download a copy.');
+                }
+            }
+        };
+
+        // ---- Folder UI: 📁 Folder menu, start-screen buttons, Save button tooltip ----
+        const folderWrapper = $('folderWrapper');
+        const folderBtn = $('folderBtn');
+        const folderMenu = $('folderMenu');
+        const overlayFolder = $('overlayFolder');
+
+        function updateFolderUi() {
+            const open = DbFolder.active && DbFolder.handle;
+            exportBtn.title = (open ? `Save to "${DbFolder.handle.name}"` : 'Save database') +
+                (hasUnsavedChanges ? ' — you have unsaved changes' : '');
+            if (!DbFolder.supported) return;
+            folderWrapper.classList.remove('hidden');
+            folderBtn.classList.toggle('active', !!open);
+            folderBtn.textContent = open ? `📁 ${DbFolder.handle.name}` : '📁 Folder';
+        }
+
+        function folderMenuButton(label, sub, onClick) {
+            const btn = document.createElement('button');
+            btn.className = 'folder-menu-item';
+            btn.textContent = label;
+            if (sub) {
+                const s = document.createElement('span');
+                s.className = 'folder-menu-sub';
+                s.textContent = sub;
+                btn.appendChild(s);
+            }
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                folderMenu.classList.add('hidden');
+                onClick();
+            });
+            return btn;
+        }
+
+        async function renderFolderMenu() {
+            folderMenu.innerHTML = '';
+            const label = (text) => {
+                const el = document.createElement('div');
+                el.className = 'folder-menu-label';
+                el.textContent = text;
+                folderMenu.appendChild(el);
+            };
+            if (DbFolder.active && DbFolder.handle) {
+                label('Open folder');
+                folderMenu.appendChild(folderMenuButton(`🔄 Reload newest from "${DbFolder.handle.name}"`, 'Re-open the latest saved database', () => DbFolder.open(DbFolder.handle)));
+                folderMenu.appendChild(folderMenuButton('⏏ Stop using this folder', 'Go back to 📂 Load DB / 💾 Save DB files', () => DbFolder.deactivate()));
+            }
+            const recent = await FolderStore.list();
+            const others = [];
+            for (const row of recent) {
+                if (DbFolder.active && DbFolder.handle && await row.handle.isSameEntry(DbFolder.handle)) continue;
+                others.push(row);
+            }
+            if (others.length > 0) {
+                label('Recent folders');
+                for (const row of others) {
+                    folderMenu.appendChild(folderMenuButton(`📁 ${row.name}`, `Last used ${new Date(row.lastUsed).toLocaleDateString()}`, () => DbFolder.open(row.handle)));
+                }
+            }
+            label(others.length || DbFolder.active ? 'Other' : 'Database folder');
+            folderMenu.appendChild(folderMenuButton('➕ Choose folder…', 'Pick the synced SharePoint folder that holds DB-YY-MM-DD.json', () => DbFolder.choose()));
+        }
+
+        async function renderOverlayFolder() {
+            if (!DbFolder.supported) return;
+            overlayFolder.innerHTML = '';
+            const recent = await FolderStore.list();
+            if (recent.length > 0) {
+                const openBtn = document.createElement('button');
+                openBtn.className = 'btn-load-db';
+                openBtn.id = 'overlayOpenRecentBtn';
+                openBtn.textContent = `📁 Open "${recent[0].name}"`;
+                openBtn.addEventListener('click', () => DbFolder.open(recent[0].handle));
+                overlayFolder.appendChild(openBtn);
+            }
+            const chooseBtn = document.createElement('button');
+            chooseBtn.className = recent.length > 0 ? 'btn-link' : 'btn-load-db';
+            chooseBtn.id = 'overlayChooseFolderBtn';
+            chooseBtn.textContent = recent.length > 0 ? 'Choose a different folder…' : '📁 Open database folder';
+            chooseBtn.addEventListener('click', () => DbFolder.choose());
+            overlayFolder.appendChild(chooseBtn);
+            overlayFolder.classList.remove('hidden');
+        }
+
+        folderBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!folderMenu.classList.contains('hidden')) {
+                folderMenu.classList.add('hidden');
+                return;
+            }
+            await renderFolderMenu();
+            folderMenu.classList.remove('hidden');
+        });
+        folderMenu.addEventListener('click', (e) => e.stopPropagation());
+        document.addEventListener('click', () => folderMenu.classList.add('hidden'));
+
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
+
+            if (DbFolder.active && DbFolder.handle) {
+                DbFolder.save();
+                return;
+            }
 
             const save = prepareSave();
             const filename = save.filename;
@@ -4421,13 +4816,13 @@
         function markUnsaved() {
             hasUnsavedChanges = true;
             exportBtn.classList.add('unsaved');
-            exportBtn.title = 'Save database — you have unsaved changes';
+            updateFolderUi();
         }
 
         function clearUnsaved() {
             hasUnsavedChanges = false;
             exportBtn.classList.remove('unsaved');
-            exportBtn.title = 'Save database';
+            updateFolderUi();
         }
 
         // Warn before closing if there are unsaved changes
@@ -7317,7 +7712,7 @@
                 : '';
             bar.className = 'status-bar loaded';
             bar.innerHTML = `
-                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName)}</strong>${savedText}</span>
+                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName)}</strong>${DbFolder.active && DbFolder.handle ? ` from 📁 ${escapeHtml(DbFolder.handle.name)}` : ''}${savedText}</span>
                 <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
             `;
         }
