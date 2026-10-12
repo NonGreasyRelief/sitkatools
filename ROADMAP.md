@@ -26,7 +26,7 @@ These came out of an audit of how each tool reads and writes the database:
 | 2 | EquipmentWizard deletes and rebuilds **every** maintenance event each time it opens, so **completed** ticks and date moves made on the calendar are lost. | `EquipmentWizard.html` `syncAllRooms` | **Ticks fixed in 0.3.** Date moves still reset on resync |
 | 3 | The "unsaved changes" warning is cleared as soon as the save popup opens, even if the file is never saved. Edits made in a subtool never mark the database unsaved at all. Someone can lose work by closing the tab. | `SitkaTools.html` export button, `sitkaGit_db_update` handler | **Fixed in 0.1** |
 | 4 | Calendar events have **no ID**. Tools find "their" event by list position or by matching title and date, so moving an event's date breaks the link between it and its labour hours. | All tools | **Fixed in 0.2** |
-| 5 | All deletes are permanent with no marker left behind, so no merge tool could tell "deleted" apart from "never existed". Deleting a lot leaves its events and paperwork behind as orphans. | All tools, `Bugs.MD` #4 | Open (0.5) |
+| 5 | All deletes are permanent with no marker left behind, so no merge tool could tell "deleted" apart from "never existed". Deleting a lot leaves its events and paperwork behind as orphans. | All tools | Open (0.5) |
 | 6 | Cross-window messages are sent to any origin and accepted from any sender. That was required under `file://`, but the app now runs on https. | `SitkaTools.html`, all subtools | **Fixed in 0.4** |
 
 ### Facts that shape the options
@@ -146,7 +146,7 @@ Needed under every option. It also fixes the data-loss bugs above. Items 0.1–0
   - EquipmentWizard keeps completed visits as history after an interval change.
   - EmployeeWizard finds its events by ID.
 - [x] **0.4 Lock down cross-window messages** to the app's own origin when served over https. Each window also accepts messages only from the window it expects.
-- [ ] **0.5 Deletion markers and orphan cleanup** (`Bugs.MD` #4, #5).
+- [ ] **0.5 Deletion markers and orphan cleanup.**
   - Deleting a lot also removes or archives its events and paperwork.
   - Rooms are referenced by ID instead of name.
 - [ ] **0.6 Smaller gaps found along the way**

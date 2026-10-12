@@ -6143,9 +6143,15 @@
                     const lotName = btn.dataset.lotName;
                     if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?\n\nThis action cannot be undone.`)) {
                         delete DB.lots[lotId];
+                        // Drop the lot from every room's assignedLots so no stale "(deleted)" entry stays behind
+                        for (const room of Object.values(DB.data.rooms || {})) {
+                            if (Array.isArray(room.assignedLots)) room.assignedLots = room.assignedLots.filter(id => id !== lotId);
+                        }
                         markUnsaved();
                         updateStatusBar();
                         renderLotList();
+                        RoomManager.renderRoomList();
+                        updateRoomStatusBar();
                     }
                 });
             });
@@ -6251,7 +6257,8 @@
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            // innerHTML escapes < > & but not quotes, and results also go into attribute values
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // ---- Crop Projection deletion hook (see root CLAUDE.md — "Deletion Hook — SitkaTools") ----
@@ -6410,6 +6417,13 @@
 
                 if (this.rooms[roomId]) {
                     alert(`A room with ID "${roomId}" already exists.`);
+                    return;
+                }
+
+                // Lots refer to rooms by name, so names must be unique too
+                const sameName = Object.entries(this.rooms).find(([, r]) => (r.name || '').trim().toLowerCase() === roomName.toLowerCase());
+                if (sameName) {
+                    alert(`A room named "${sameName[1].name}" already exists (ID ${sameName[0]}).`);
                     return;
                 }
 
@@ -8723,8 +8737,9 @@
                 const rect = button.getBoundingClientRect();
                 const picker = document.createElement('div');
                 picker.className = 'terminal-reschedule-picker';
-                picker.style.top = (rect.bottom + 4) + 'px';
-                picker.style.left = Math.max(10, rect.left - 160) + 'px';
+                // rect is viewport-relative; the picker is absolutely positioned in the page, so add the scroll
+                picker.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
+                picker.style.left = (Math.max(10, rect.left - 160) + window.scrollX) + 'px';
 
                 const defaultDate = localDate();
                 picker.innerHTML = `
@@ -8954,9 +8969,10 @@
                         let added = 0;
 
                         imported.forEach(event => {
-                            // Check for duplicates by SUMMARY + DTSTART
+                            // Check for duplicates by SUMMARY + DTSTART (date and start time)
                             const exists = DB.data.calendarEvents.some(existing => {
-                                return existing.title === event.title && existing.date === event.date;
+                                return existing.title === event.title && existing.date === event.date &&
+                                    (existing.startTime || '') === (event.startTime || '');
                             });
 
                             if (!exists) {
@@ -9010,28 +9026,22 @@
                 const event = {
                     sourceTool: 'GeneralEvent'
                 };
+                let start = null, end = null; // { date, time } from DTSTART / DTEND
 
                 for (const rawLine of lines) {
                     const line = rawLine.trim();
 
-                    // DTSTART;VALUE=DATE:20260115
-                    const dtstartMatch = line.match(/^DTSTART(?:;[^:]+)?:(\d{8})/);
+                    // DTSTART;VALUE=DATE:20260115 (all-day) or DTSTART:20260115T140000Z (timed)
+                    const dtstartMatch = line.match(/^DTSTART(?:;[^:]+)?:(.*)/);
                     if (dtstartMatch) {
-                        event.date = this.fromICSDate(dtstartMatch[1]);
+                        start = this.parseICSDateTime(dtstartMatch[1]);
                         continue;
                     }
 
-                    // DTEND;VALUE=DATE:20260117
-                    const dtendMatch = line.match(/^DTEND(?:;[^:]+)?:(\d{8})/);
+                    // DTEND;VALUE=DATE:20260117 (all-day) or DTEND:20260115T150000Z (timed)
+                    const dtendMatch = line.match(/^DTEND(?:;[^:]+)?:(.*)/);
                     if (dtendMatch) {
-                        const endDate = this.fromICSDate(dtendMatch[1]);
-                        // ICS DTEND is exclusive (day after last day), so subtract 1 day
-                        const endD = parseLocalDate(endDate);
-                        endD.setDate(endD.getDate() - 1);
-                        const adjustedEnd = localDate(endD);
-                        if (adjustedEnd !== event.date) {
-                            event.endDate = adjustedEnd;
-                        }
+                        end = this.parseICSDateTime(dtendMatch[1]);
                         continue;
                     }
 
@@ -9052,7 +9062,22 @@
                 }
 
                 // Require at least a date
-                if (!event.date) return null;
+                if (!start) return null;
+                event.date = start.date;
+                if (start.time) {
+                    // Timed event: DTEND is the real end time — no exclusive-day adjustment
+                    event.startTime = start.time;
+                    if (end?.time) {
+                        event.endTime = end.time;
+                        if (end.date > start.date) event.endDate = end.date;
+                    }
+                } else if (end) {
+                    // All-day event: ICS DTEND is exclusive (day after last day), so subtract 1 day
+                    const endD = parseLocalDate(end.date);
+                    endD.setDate(endD.getDate() - 1);
+                    const adjustedEnd = localDate(endD);
+                    if (adjustedEnd > event.date) event.endDate = adjustedEnd;
+                }
                 if (!event.title) event.title = 'Imported Event';
 
                 return event;
@@ -9077,6 +9102,23 @@
             fromICSDate(icsDate) {
                 // "20260115" -> "2026-01-15"
                 return `${icsDate.slice(0, 4)}-${icsDate.slice(4, 6)}-${icsDate.slice(6, 8)}`;
+            },
+
+            // ICS DTSTART/DTEND value -> { date: "YYYY-MM-DD", time: "HH:MM" | null }, or null if unreadable.
+            // "20260115" is all-day. "20260115T140000Z" is UTC (our own exports, most calendars) and is
+            // converted to this device's local time. "20260115T140000" (floating, or with a TZID) is
+            // taken as local wall-clock time.
+            parseICSDateTime(value) {
+                const m = value.trim().match(/^(\d{8})(?:T(\d{2})(\d{2})(\d{2})(Z?))?$/);
+                if (!m) return null;
+                const [, ymd, hh, mi, ss, utc] = m;
+                if (hh === undefined) return { date: this.fromICSDate(ymd), time: null };
+                if (!utc) return { date: this.fromICSDate(ymd), time: `${hh}:${mi}` };
+                const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8), +hh, +mi, +ss));
+                return {
+                    date: localDate(d),
+                    time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+                };
             },
 
             toICSTimestamp(date) {
