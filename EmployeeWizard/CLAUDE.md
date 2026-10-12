@@ -155,7 +155,7 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 
 ## UI Convention
 
-This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics:
+This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key specifics:
 
 - **Selector type:** Active Lot (the Tasks tab is lot-scoped; the Employees tab is global). Header shows the tool name on the left and the Active Lot dropdown on the right.
 - **Header:** Tool name "👥 EmployeeWizard" *(emoji tentative)* on the left, Active Lot dropdown on the right.

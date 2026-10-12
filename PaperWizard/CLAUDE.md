@@ -500,11 +500,11 @@ PaperWizard is part of the SitkaGit suite: a standalone single-file HTML applica
 
 ### Standard postMessage Pattern
 
-The standard subtool pattern from the root `Agent.MD` applies verbatim (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), plus non-disruptive handling of live `sitkaGit_db_update` pushes (refresh lot selector and sheet statuses without disturbing an open wizard).
+The standard subtool pattern from the root `CLAUDE.md` applies verbatim (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), plus non-disruptive handling of live `sitkaGit_db_update` pushes (refresh lot selector and sheet statuses without disturbing an open wizard).
 
 ## UI Convention
 
-Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky header/footer, card styles, `DB` object pattern). PaperWizard-specific layout:
+Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky header/footer, card styles, `DB` object pattern). PaperWizard-specific layout:
 
 ```
 ┌──────────────────────────────────────────────────────────┐

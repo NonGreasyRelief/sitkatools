@@ -17,7 +17,7 @@ A collection of standalone, single-file HTML tools for tracking licensed cannabi
 
 ```
 SitkaGit/
-├── Agent.MD                  # This file — project instructions for LLMs
+├── CLAUDE.md                  # This file — project instructions for LLMs
 ├── SitkaTools/
 │   └── SitkaTools.html       # Main hub: lot management + calendar viewer
 ├── <ToolName>/
@@ -96,7 +96,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 ```
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
-- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/Agent.MD`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
+- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Multi-Day Events

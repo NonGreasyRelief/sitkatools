@@ -13,7 +13,7 @@ CropLabourWizard is a **crop schedule calculator** for licensed cannabis cultiva
 
 ### Crop Schedule — Recipe-Driven Task Offsets
 
-The set of cultivation tasks is **data-driven**: it comes from the active recipe's `tasks[]` array (`activeRecipe.tasks`), not a hard-coded list in this file. The full recipe schema, validation rules, and compatibility contract live in the root `Agent.MD` → "Task Recipes". This section documents how this tool *consumes* a recipe to compute dates.
+The set of cultivation tasks is **data-driven**: it comes from the active recipe's `tasks[]` array (`activeRecipe.tasks`), not a hard-coded list in this file. The full recipe schema, validation rules, and compatibility contract live in the root `CLAUDE.md` → "Task Recipes". This section documents how this tool *consumes* a recipe to compute dates.
 
 **Default recipe:** the built-in **`sitka-9week`** ("Sitka Standard (9-week bloom)") is the default — 32 tasks, chain `cloneCutBeforeHarvest: 21`. It lives in code and is always available as the fallback; it is never written to the DB. Any user-created or imported recipe (stored under `_CropLabourWizard.recipes`) can be selected instead and fully replaces the task list. The values that used to be hard-coded are now the built-in recipe's defaults.
 
@@ -58,7 +58,7 @@ When a user generates a schedule for a lot, the tool first **removes all existin
 
 ## Task Recipes (Recipe Manager)
 
-The cultivation task list is defined by **recipes** — self-contained JSON documents (schema + validation in the root `Agent.MD` → "Task Recipes"). This tool ships one built-in recipe, **`sitka-9week`** (32 tasks, chain 21), which lives in code and is always the fallback. User recipes are created, edited, duplicated, imported, exported, and deleted from this tool and stored under `_CropLabourWizard.recipes`.
+The cultivation task list is defined by **recipes** — self-contained JSON documents (schema + validation in the root `CLAUDE.md` → "Task Recipes"). This tool ships one built-in recipe, **`sitka-9week`** (32 tasks, chain 21), which lives in code and is always the fallback. User recipes are created, edited, duplicated, imported, exported, and deleted from this tool and stored under `_CropLabourWizard.recipes`.
 
 ### Recipe Selection — Per-Lot `recipeId`
 
@@ -95,7 +95,7 @@ Flowering rooms can hold **projected lots** — placeholder future crops that le
 
 There are two distinct operations on a room's chain: **projection** (building or refreshing the full 5-lot chain for a room with no pending reprojection) and **reprojection** (shifting the surviving chain down one slot after TBA-1 has been replaced by a real lot — see "Reprojection" below). They are different concepts and must not be conflated.
 
-The full suite-level spec lives in the root `Agent.MD` ("Crop Projection (Projected Lots)"). The sections below document this tool's implementation details.
+The full suite-level spec lives in the root `CLAUDE.md` ("Crop Projection (Projected Lots)"). The sections below document this tool's implementation details.
 
 ### Unified Lot Abstraction
 
@@ -258,7 +258,7 @@ The hook is **idempotent**: if the room has no TBA-1 entry (or no projections at
 
 ## BC Civic Holidays
 
-This tool must be aware of British Columbia's **11 civic (statutory) holidays**. The canonical spec lives in the root `Agent.MD` ("BC Civic Holidays"); the full rules are reproduced below so this tool can be implemented from its own directory alone. Every holiday date is a pure function of its year — no external data, no network calls.
+This tool must be aware of British Columbia's **11 civic (statutory) holidays**. The canonical spec lives in the root `CLAUDE.md` ("BC Civic Holidays"); the full rules are reproduced below so this tool can be implemented from its own directory alone. Every holiday date is a pure function of its year — no external data, no network calls.
 
 ### Calculation Helpers
 
@@ -387,7 +387,7 @@ When the user generates a schedule, CropLabourWizard first purges all existing `
 
 ### Full Database Context
 
-For reference, the complete database structure is defined in the root `Agent.MD`. Key points:
+For reference, the complete database structure is defined in the root `CLAUDE.md`. Key points:
 - Database file naming: `DB-YY-MM-DD.json`
 - File I/O is user-managed via import (`<input type="file">`) and export (`URL.createObjectURL` + download)
 - Tools never communicate with each other — only through the JSON file on disk
@@ -395,7 +395,7 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 ### Database Import on Open — postMessage Convention
 
-CropLabourWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `Agent.MD`.
+CropLabourWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `CLAUDE.md`.
 
 **How it works:**
 1. When SitkaTools.html launches CropLabourWizard, it opens the subtool in a new window then sends the current DB via `postMessage` with type `sitkaGit_db`.
@@ -462,7 +462,7 @@ This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any bro
 
 ## UI Convention
 
-This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
+This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key specifics for this tool:
 
 - **Selector type:** Active Lot (lot-focused tool — labour hours are tracked per lot)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height

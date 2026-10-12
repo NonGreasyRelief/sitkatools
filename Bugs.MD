@@ -79,7 +79,7 @@ renderLotList();
 
 **Location:** `RoomManager.createRoom` (~line 3470) rejects duplicate room **IDs** (`this.rooms[roomId]`) but not duplicate **names**.
 
-**Why it matters:** lots reference rooms *by name* (`destRoom`/`vegRoom`/`cloningRoom` store the name — workspace-wide convention, see root `Agent.MD`). Duplicate names make assignment ambiguous: `deleteRoom` clears lot fields for every room sharing that name, and `updateRoomDatalist` restores selection by first name match.
+**Why it matters:** lots reference rooms *by name* (`destRoom`/`vegRoom`/`cloningRoom` store the name — workspace-wide convention, see root `CLAUDE.md`). Duplicate names make assignment ambiguous: `deleteRoom` clears lot fields for every room sharing that name, and `updateRoomDatalist` restores selection by first name match.
 
 **Fix:** reject duplicate names in `createRoom` (case-insensitive compare). Migrating lots to store room IDs instead of names is a much bigger change — prefer the validation.
 

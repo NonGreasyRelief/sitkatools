@@ -73,7 +73,7 @@ Month-based intervals use calendar-month arithmetic (e.g., Jan 15 + 3 months = A
 
 ## BC Civic Holidays
 
-This tool must be aware of British Columbia's **11 civic (statutory) holidays**. The canonical spec lives in the root `Agent.MD` ("BC Civic Holidays"); the full rules are reproduced below so this tool can be implemented from its own directory alone. Every holiday date is a pure function of its year — no external data, no network calls.
+This tool must be aware of British Columbia's **11 civic (statutory) holidays**. The canonical spec lives in the root `CLAUDE.md` ("BC Civic Holidays"); the full rules are reproduced below so this tool can be implemented from its own directory alone. Every holiday date is a pure function of its year — no external data, no network calls.
 
 ### Calculation Helpers
 
@@ -191,7 +191,7 @@ When EquipmentWizard generates reminders (e.g., "scheduled maintenance", "equipm
 
 ### Full Database Context
 
-For reference, the complete database structure is defined in the root `Agent.MD`. Key points:
+For reference, the complete database structure is defined in the root `CLAUDE.md`. Key points:
 - Database file naming: `DB-YY-MM-DD.json`
 - File I/O is user-managed via import (`<input type="file">`) and export (`URL.createObjectURL` + download)
 - Tools never communicate with each other — only through the JSON file on disk
@@ -199,7 +199,7 @@ For reference, the complete database structure is defined in the root `Agent.MD`
 
 ### Database Import on Open — postMessage Convention
 
-EquipmentWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `Agent.MD`.
+EquipmentWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `CLAUDE.md`.
 
 **How it works:**
 1. When SitkaTools.html launches EquipmentWizard, it opens the subtool in a new window then sends the current DB via `postMessage` with type `sitkaGit_db`.
@@ -243,7 +243,7 @@ This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any bro
 
 ## UI Convention
 
-This tool follows the shared UI Standards defined in the root `Agent.MD`. Key specifics for this tool:
+This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key specifics for this tool:
 
 - **Selector type:** Active Room (room-focused tool — equipment maintenance is tracked per room)
 - **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height

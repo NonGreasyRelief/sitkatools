@@ -164,7 +164,7 @@ Rules:
 
 ## Shared Suite Standard — Tool-Owned Keys & JSON Import/Export
 
-DailyWizard's pattern is now the **shared suite standard** for per-tool data: each tool owns exactly one top-level DB key (DailyWizard → `_DailyWizard`, CropLabourWizard → `_CropLabourWizard`, etc.), reads/writes only its own key, and supports standalone file import/export of that data. CropLabourWizard's **Task Recipes** feature follows this same pattern — recipes live under `_CropLabourWizard.recipes` and are imported/exported as self-contained `recipe-<id>.json` files via an explicit file picker (no auto-loading of adjacent JSONs). See the root `Agent.MD` → "Task Recipes" for the full contract.
+DailyWizard's pattern is now the **shared suite standard** for per-tool data: each tool owns exactly one top-level DB key (DailyWizard → `_DailyWizard`, CropLabourWizard → `_CropLabourWizard`, etc.), reads/writes only its own key, and supports standalone file import/export of that data. CropLabourWizard's **Task Recipes** feature follows this same pattern — recipes live under `_CropLabourWizard.recipes` and are imported/exported as self-contained `recipe-<id>.json` files via an explicit file picker (no auto-loading of adjacent JSONs). See the root `CLAUDE.md` → "Task Recipes" for the full contract.
 
 ### CLW Event Attribution — `roomPhase`
 
@@ -185,11 +185,11 @@ DailyWizard is part of the SitkaGit suite: a standalone single-file HTML applica
 
 ### Standard postMessage Pattern
 
-DailyWizard includes the standard subtool pattern from the root `Agent.MD` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor.
+DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor.
 
 ## UI Convention
 
-Follows the shared UI Standards in the root `Agent.MD` (theme variables, sticky header/footer, card styles, `DB` object pattern). DailyWizard-specific layout:
+Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky header/footer, card styles, `DB` object pattern). DailyWizard-specific layout:
 
 ```
 ┌──────────────────────────────────────────────┐
