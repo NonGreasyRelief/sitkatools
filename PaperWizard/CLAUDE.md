@@ -216,7 +216,7 @@ An instance stores:
 | `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
 | `printedAt` | ISO string \| null | Set after a successful print-popup render (informational; re-printing always allowed). |
 
-A daily-weekly sheet's entry object may also carry **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
+A daily-weekly sheet's entry object may also carry **`paperBefore`** (`YYYY-MM-DD`, set by "Start on a chosen day" — days before it are on paper) and **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
 
 ### Filing Cabinet (lot paperwork tree)
 
@@ -287,13 +287,33 @@ When a lot moves Clone → Veg → Bloom — or when it **moves rooms** (e.g. in
 
    A multi-page daily form (e.g. a two-page grow-log whose second page is also daily repeating) gets the **same strike-out on every page that has struck rows** — each page's remaining day rows are crossed by their own diagonal with the initials above and the change date below, computed in that page's coordinates. The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data. The drawn `strikeInitials` render as an SVG polyline inside `initialsRect`; a legacy string renders as centered text in the same rect.
 
+### Starting a Log Mid-Crop (earlier paperwork on paper)
+
+The facility is moving from paper, so a lot's early grow logs may only exist on paper. For a lot with **no daily log yet** for a daily-weekly sheet, that sheet's cabinet section shows **📅 Start on a chosen day…**. Its dialog asks for the first day (on or before today), the starting **phase**, **plant count** and **room**:
+
+- The lot's live `stage` / `currentRoom` / `plantCount` are set to those values (PaperWizard's write-back permission), so the new page and the mismatch checks agree.
+- `entries[lotId][sheetId].paperBefore = <date>` marks the days before as on paper: grow-log coverage starts at the later of the planting date and `paperBefore`, so those days are never flagged as missing.
+- The first page is created on that date with the chosen phase/room; a row-scoped plant-count question gets the starting count on day 1, and the wizard opens on that day.
+- Lots without paper history keep starting at day 1 as before.
+
+### Backfilled Changes (propagation)
+
+Saving a day that is **followed by later entries or pages** (`isBackfillDay`) takes the backfill path (`applyBackfill`) instead of the normal write-backs. Changes are compared with what **that day** said before (or the page's phase/room), not the lot's live values. Every confirmation — and the strike initials — is collected **before** anything beyond the day itself changes; Cancel restores the day exactly as it was.
+
+- **Plant count (row-scoped):** the difference (new − old) is applied to every later recorded count in **unsigned** logs, so later culls stay correct (540→538 becomes 500→498). "Cancel" saves the day only. Shifted pages' `lot.plantCount` snapshots move by the same amount.
+- **Phase / room:** the log is struck out on that day (drawn initials, `phaseChangeDate` = the day, its row stamped with the old value) and the unsigned pages after it are **re-paged**: their days move onto fresh 7-day pages starting on that day under the new value, and later answers that still carry the old value are updated. A later page that already holds the new value (a change recorded late) merges in. On the log's first day there is nothing to strike — the page switches to the new value in place.
+- **Stops:** propagation never changes a log the master grower has **signed**, and re-paging also stops at a page recording a different change. If the last rebuilt page would run into the page it stopped at, it is struck where it ends (on the linked change day, or the day before a signed log).
+- **Live lot values:** a backfilled day never drags the lot backwards. `lot.plantCount` always follows the newest recorded day in the chain; `lot.stage` / `lot.currentRoom` take the new value only when re-paging reached the end of the chain.
+- **Reprint:** pages that were already printed are named in the toast so they can be reprinted.
+- Opening an older page (one with a later page after it) never shows the "Lot is now in … — close this log?" prompt; that check only applies to the newest page.
+
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
 PaperWizard is the **only tool in the suite allowed to modify another tool's data**. The permission is narrow and fixed: it may write exactly three fields on a lot record — `plantCount`, `stage`, and `currentRoom`. No other field, no other tool. Everything else remains read-only.
 
 Write-backs are driven by wizard questions carrying a `writesTo` binding (see the question table above). The three dedicated question types — **🌱 plant count**, **🔄 phase**, and **🏠 room** (see "Write-Back Question Types") — lock their `writesTo` to the matching target, so the write-back is a property of the type:
 
-- **Plant count (`lot.plantCount`):** any plant-count question (row-scoped or instance-level) whose saved value differs from `DB.lots[lotId].plantCount` updates the lot record and calls `notifySitkaTools()`. Same value = no write. The lot's count follows the most recently saved entry; per-day entries remain the full paper trail. A count that **drops to 0** (all plants removed) additionally strikes out the open log on that day — drawn initials, no fresh page.
+- **Plant count (`lot.plantCount`):** any plant-count question (row-scoped or instance-level) whose saved value differs from `DB.lots[lotId].plantCount` updates the lot record and calls `notifySitkaTools()` — on the newest day of the chain. A backfilled day instead re-derives the live count from the newest recorded day (see "Backfilled Changes"). Same value = no write. The lot's count follows the most recently saved entry; per-day entries remain the full paper trail. A count that **drops to 0** (all plants removed) additionally strikes out the open log on that day — drawn initials, no fresh page.
 - **Phase (`lot.stage`):** any phase question (instance-level or row-scoped) whose answer differs from the lot's **live `stage`** triggers the standard rollover (strike-through + new instance, see above) **and** writes the new phase to `DB.lots[lotId].stage` + `notifySitkaTools()`. The write-back fires in the save-first flow (entry saved, then strike-out confirmed), and the save flow offers to run the move-day entry for the new instance — producing the double entry on the move day.
 - **Room (`lot.currentRoom`):** any room question whose answer differs from the lot's **live `currentRoom`** triggers the same rollover **and** writes the new room to `DB.lots[lotId].currentRoom` + `notifySitkaTools()`. When a phase rollover already ran in the same save, the fresh log carries the new room (absorbed by the rollover core) and only the write-back fires — no second strike-out.
 

@@ -856,6 +856,11 @@
             border-radius: 6px; color: var(--text-primary); font-size: 0.95rem; padding: 8px 12px;
         }
         .sig-name:focus { outline: none; border-color: var(--accent); }
+
+        /* "Start grow log on a chosen day" dialog */
+        .startlog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .startlog-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--text-secondary); }
+        .startlog-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 12px; line-height: 1.4; }
         .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
         .sig-clear {
             background: none; border: 1px dashed var(--border); border-radius: 6px;
@@ -2439,6 +2444,361 @@
             });
         }
 
+        // =====================================================
+        // Grow logs started mid-crop, and backfilled changes
+        // - A lot whose earlier paperwork is still on paper can start its first daily log on a
+        //   chosen day, with a chosen phase / plant count / room. Days before that are marked
+        //   "on paper" (entries[lot][sheet].paperBefore) and aren't flagged as missing.
+        // - A past day's plant count / phase / room changed while later days are on file:
+        //   plant count — later days in unsigned logs shift by the same difference;
+        //   phase / room — the log is struck out on that day and the unsigned pages after it are
+        //   rebuilt from that day with the new value (re-paged). Logs the master grower has signed
+        //   are never changed: propagation stops at the first one.
+        // =====================================================
+        function hasValue(v) {
+            return v !== null && v !== undefined && String(v).trim() !== '';
+        }
+
+        function sameTracked(field, a, b) {
+            return field === 'phase'
+                ? normalizeStage(a) === normalizeStage(b)
+                : String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+        }
+
+        // A lot's daily-weekly instances for one sheet, oldest first.
+        function dailyChain(lotId, sheetId) {
+            const instances = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances || {};
+            return Object.keys(instances).sort().map(key => ({ key, inst: instances[key] }));
+        }
+
+        // Is `day` followed by later entries (or a later page) in this lot's chain?
+        function isBackfillDay(lotId, sheetId, key, day) {
+            return dailyChain(lotId, sheetId).some(c => c.key > key || Object.keys(c.inst.days || {}).some(ds => ds > day));
+        }
+
+        // Plant count on the newest recorded day of the chain (a later page wins a same-date tie).
+        function latestChainPlantCount(lotId, sheetId, pcQ) {
+            let best = null, bestDay = '';
+            for (const { inst } of dailyChain(lotId, sheetId)) {
+                for (const [ds, row] of Object.entries(inst.days || {})) {
+                    if (hasValue(row?.[pcQ.id]) && ds >= bestDay) { best = Number(String(row[pcQ.id]).trim()); bestDay = ds; }
+                }
+            }
+            return best;
+        }
+
+        // Later recorded counts a backfilled plant-count change applies to (unsigned logs only).
+        function plantShiftPlan(lotId, sheetId, key, day, pcQ) {
+            const affected = [], signedDays = [];
+            let blocked = false;
+            for (const { key: k, inst } of dailyChain(lotId, sheetId)) {
+                if (k < key) continue;
+                if (inst.signature) blocked = true;
+                for (const ds of Object.keys(inst.days || {}).filter(d => d > day).sort()) {
+                    const v = inst.days[ds]?.[pcQ.id];
+                    if (!hasValue(v)) continue;
+                    if (blocked) signedDays.push(ds);
+                    else affected.push({ inst, key: k, ds, value: Number(String(v).trim()) });
+                }
+            }
+            return { affected, signedDays };
+        }
+
+        // Pages a backfilled phase/room change re-pages: the log it was recorded in, then later
+        // unsigned pages that only continue it (tracked value = old or new — a change recorded
+        // late merges in; the other tracked value unchanged). Stops at a signed page or a page
+        // that records a different change.
+        function repagePlan(lotId, sheetId, key, day, changes) {
+            const chain = dailyChain(lotId, sheetId);
+            const idx = chain.findIndex(c => c.key === key);
+            const first = chain[idx];
+            const pages = [first];
+            const otherFields = ['phase', 'room'].filter(f => !changes.some(c => c.field === f));
+            let stop = null;
+            for (const c of chain.slice(idx + 1)) {
+                const fits = changes.every(ch => !c.inst[ch.field]
+                        || sameTracked(ch.field, c.inst[ch.field], ch.oldValue) || sameTracked(ch.field, c.inst[ch.field], ch.newValue))
+                    && otherFields.every(f => !c.inst[f] || !first.inst[f] || sameTracked(f, c.inst[f], first.inst[f]));
+                if (c.inst.signature || !fits) { stop = c; break; }
+                pages.push(c);
+            }
+            // Days moving onto the rebuilt pages; a later page wins a double-entry date.
+            const moved = new Map();
+            for (const c of pages) {
+                for (const ds of Object.keys(c.inst.days || {}).sort()) if (ds > day) moved.set(ds, c.inst.days[ds]);
+            }
+            // The page that led into the stop was struck on the stop's first day for a real
+            // change ("linked"): the rebuilt pages end the same way and keep that day's row.
+            const linked = !!stop && pages[pages.length - 1].inst.phaseChangeDate === stop.key;
+            if (stop) for (const ds of [...moved.keys()]) if (linked ? ds > stop.key : ds >= stop.key) moved.delete(ds);
+            return { pages, stop, linked, moved };
+        }
+
+        // Apply a re-page plan. `savedRow` is the backfilled day's entry (new value); `drawn` the
+        // strike-out initials (null when the change is on the log's first day — that page simply
+        // switches to the new value, nothing to strike).
+        function applyRepage(lotId, sheetId, key, day, changes, plan, savedRow, drawn) {
+            const sheetData = DB.paperWizard.entries[lotId][sheetId];
+            const wiz = wizardForSheet(sheetId);
+            const originals = plan.pages.map(c => ({ key: c.key, inst: c.inst }));
+            const reprint = originals.filter(o => o.inst.printedAt).map(o => o.key);
+            const first = originals[0].inst;
+            const reuse = day === key;
+            for (const o of originals.slice(1)) delete sheetData.instances[o.key];
+            if (!reuse) {
+                // The log the change was recorded in ends on that day; its row keeps the OLD value
+                // (double entry), like a phase/room change recorded on the day.
+                for (const ds of Object.keys(first.days || {})) if (ds > day) delete first.days[ds];
+                first.phaseChangeDate = day;
+                first.strikeInitials = { name: drawn.name, strokes: drawn.strokes };
+                if (!first.days[day]) first.days[day] = {};
+                for (const ch of changes) {
+                    if (ch.q.rowScoped) first.days[day][ch.q.id] = ch.oldValue;
+                    else first.header[ch.q.id] = ch.oldValue;
+                }
+            }
+            const coverOf = (ds) => {
+                let best = originals[0];
+                for (const o of originals) if (o.key <= ds) best = o;
+                return best.inst;
+            };
+            const rows = new Map([[day, { ...savedRow }]]);
+            for (const [ds, row] of plan.moved) rows.set(ds, { ...row });
+            const dates = [...rows.keys()].sort();
+            const newKeys = [];
+            let page = null;
+            for (const ds of dates) {
+                if (!page || ds > addDaysStr(page.key, 6)) {
+                    const src = coverOf(ds);
+                    page = { key: ds, inst: { phase: src.phase ?? null, room: src.room ?? null, header: {}, days: {},
+                        phaseChangeDate: null, strikeInitials: null, snapshots: {}, signature: null, completedAt: null, printedAt: null } };
+                    for (const ch of changes) page.inst[ch.field] = ch.newValue;
+                    for (const [qid, v] of Object.entries(src.header || {})) {
+                        const q = wiz.questions.find(x => x.id === qid);
+                        if (q && q.type !== 'phase' && q.type !== 'room') page.inst.header[qid] = v;
+                    }
+                    for (const ch of changes) if (!ch.q.rowScoped) page.inst.header[ch.q.id] = ch.newValue;
+                    sheetData.instances[ds] = page.inst;
+                    newKeys.push(ds);
+                }
+                const row = rows.get(ds);
+                for (const ch of changes) {
+                    if (ch.q.rowScoped && hasValue(row[ch.q.id]) && sameTracked(ch.field, row[ch.q.id], ch.oldValue)) row[ch.q.id] = ch.newValue;
+                }
+                page.inst.days[ds] = row;
+            }
+            // The last rebuilt page must not run into the page we stopped at: end it like the
+            // original did (linked change), or strike it the day before a signed page.
+            if (plan.stop && page && addDaysStr(page.key, 6) >= plan.stop.key) {
+                const lastOrig = originals[originals.length - 1].inst;
+                if (plan.linked) {
+                    page.inst.phaseChangeDate = plan.stop.key;
+                    page.inst.strikeInitials = lastOrig.strikeInitials || (drawn ? { name: drawn.name, strokes: drawn.strokes } : null);
+                } else {
+                    page.inst.phaseChangeDate = addDaysStr(plan.stop.key, -1);
+                    page.inst.strikeInitials = drawn ? { name: drawn.name, strokes: drawn.strokes } : (lastOrig.strikeInitials || null);
+                }
+            }
+            for (const k of new Set([key, ...newKeys])) {
+                if (!sheetData.instances[k]) continue;
+                captureSnapshots(sheetId, lotId, k, sheetData.instances[k]);
+                evaluateCompletion(sheetId, k, sheetData.instances[k]);
+            }
+            return { newKeys, reprint };
+        }
+
+        // Saving a backfilled day: work out what the change means for later days, confirm with
+        // the user (and capture strike initials) BEFORE touching anything else, then apply.
+        // Returns { message } — or null when cancelled (the caller rolls the save back).
+        async function applyBackfill(ctx, wiz, inst, backup) {
+            const { lotId, sheetId, key, day } = ctx;
+            const phaseQ = wiz.questions.find(q => q.type === 'phase');
+            const roomQ = wiz.questions.find(q => q.type === 'room');
+            const pcQ = wiz.questions.find(q => q.type === 'plant-count' && q.rowScoped);
+            const notes = [];
+
+            // Plant count: shift later recorded counts by the same difference
+            let shift = null, delta = 0;
+            if (pcQ && hasValue(ctx.draft[pcQ.id])) {
+                const newCount = Number(String(ctx.draft[pcQ.id]).trim());
+                const before = backup.day?.[pcQ.id];
+                const oldCount = hasValue(before) ? Number(String(before).trim()) : lastRecordedPlantCount(lotId, sheetId, key, addDaysStr(day, -1));
+                if (Number.isFinite(newCount) && Number.isFinite(oldCount) && oldCount !== null && newCount !== oldCount) {
+                    delta = newCount - oldCount;
+                    const plan = plantShiftPlan(lotId, sheetId, key, day, pcQ);
+                    if (plan.affected.length) {
+                        const firstDs = plan.affected[0].ds, lastDs = plan.affected[plan.affected.length - 1].ds;
+                        let msg = `⚠️ You changed the plant count on ${fmtShort(day)} from ${oldCount} to ${newCount}.\n\n` +
+                            `${plan.affected.length} later day${plan.affected.length === 1 ? '' : 's'} (${fmtShort(firstDs)} – ${fmtShort(lastDs)}) still count from the old number.\n\n` +
+                            `OK — apply the ${delta > 0 ? '+' : ''}${delta} change to them.\nCancel — save this day only.`;
+                        if (plan.signedDays.length) msg += `\n\n${plan.signedDays.length} day(s) in logs the master grower has signed stay as they are.`;
+                        if (confirm(msg)) shift = plan;
+                    } else if (plan.signedDays.length) {
+                        notes.push(`${plan.signedDays.length} signed day(s) after it keep the old count`);
+                    }
+                }
+            }
+
+            // Phase / room: re-page the unsigned logs after the day
+            const changes = [];
+            for (const [field, q] of [['phase', phaseQ], ['room', roomQ]]) {
+                if (!q) continue;
+                const nv = String(ctx.draft[q.id] ?? '').trim();
+                if (!nv) continue;
+                const before = q.rowScoped ? backup.day?.[q.id] : backup.header?.[q.id];
+                const old = hasValue(before) ? String(before).trim() : (inst[field] || null);
+                if (old && !sameTracked(field, old, nv)) {
+                    changes.push({ field, q,
+                        oldValue: field === 'phase' ? normalizeStage(old) : old,
+                        newValue: field === 'phase' ? normalizeStage(nv) : nv });
+                }
+            }
+            let repage = null, drawn = null;
+            if (changes.length) {
+                const what = changes.map(c => `${c.field} (${c.oldValue} → ${c.newValue})`).join(' and ');
+                if (inst.signature) {
+                    alert(`This log is signed by the master grower, so the ${what} change can't be re-paged. Nothing was saved.`);
+                    return null;
+                }
+                if (inst.phaseChangeDate && day >= inst.phaseChangeDate) {
+                    alert(`This log already ends on ${fmtShort(inst.phaseChangeDate)} — record the ${what} change on the log that follows it. Nothing was saved.`);
+                    return null;
+                }
+                const plan = repagePlan(lotId, sheetId, key, day, changes);
+                const movedDays = [...plan.moved.keys()].sort();
+                let msg = `⚠️ You changed the ${what} on ${fmtShort(day)}, but the days after it were logged under the old value.\n\n`;
+                msg += day === key
+                    ? `This log starts on ${fmtShort(day)}, so it switches to the new value`
+                    : `The log starting ${fmtShort(key)} will be struck out on ${fmtShort(day)}, and a new page starts that day`;
+                msg += movedDays.length
+                    ? ` — ${movedDays.length} later day${movedDays.length === 1 ? '' : 's'} (${fmtShort(movedDays[0])} – ${fmtShort(movedDays[movedDays.length - 1])}) are re-paged under the new value.`
+                    : '.';
+                if (plan.stop) {
+                    msg += plan.stop.inst.signature
+                        ? `\n\nThe log starting ${fmtShort(plan.stop.key)} is signed by the master grower and stays as it is.`
+                        : `\n\nThe log starting ${fmtShort(plan.stop.key)} records a later change and stays as it is.`;
+                }
+                msg += `\n\nOK — re-page.\nCancel — don't save this change.`;
+                if (!confirm(msg)) return null;
+                if (day !== key) {
+                    const strikeSheet = DB.paperWizard.sheets[sheetId];
+                    drawn = await captureStrikeInitials(changes.map(c => c.newValue).join(' · '), 'Re-page logs', boxPrintAspect(strikeSheet, STRIKE_INITIALS_RECT));
+                    if (!drawn) { showToast('Re-page cancelled — no changes made'); return null; }
+                }
+                repage = plan;
+            }
+
+            // Apply — no more prompts from here on
+            if (shift) {
+                const touched = new Set();
+                for (const a of shift.affected) {
+                    a.inst.days[a.ds][pcQ.id] = String(Math.max(0, a.value + delta));
+                    touched.add(a.key);
+                }
+                for (const k of touched) {
+                    const t = DB.paperWizard.entries[lotId][sheetId].instances[k];
+                    const snap = t.snapshots?.['lot.plantCount'];
+                    if (hasValue(snap) && Number.isFinite(Number(snap))) t.snapshots['lot.plantCount'] = String(Math.max(0, Number(snap) + delta));
+                    evaluateCompletion(sheetId, k, t);
+                }
+                notes.push(`${shift.affected.length} later count${shift.affected.length === 1 ? '' : 's'} adjusted by ${delta > 0 ? '+' : ''}${delta}`);
+                const reprint = [...touched].filter(k => DB.paperWizard.entries[lotId][sheetId].instances[k].printedAt);
+                if (reprint.length) notes.push(`reprint ${reprint.map(fmtShort).join(', ')}`);
+            }
+            if (repage) {
+                const savedRow = { ...(inst.days[day] || {}) };
+                const r = applyRepage(lotId, sheetId, key, day, changes, repage, savedRow, drawn);
+                notes.push(`re-paged from ${fmtShort(day)} (${r.newKeys.length} page${r.newKeys.length === 1 ? '' : 's'})`);
+                if (r.reprint.length) notes.push(`reprint ${r.reprint.map(fmtShort).join(', ')}`);
+                // The lot's live phase/room follows the change only when nothing later overrides it
+                if (!repage.stop && DB.lots[lotId]) {
+                    for (const ch of changes) {
+                        if (ch.field === 'phase') DB.lots[lotId].stage = stageFromForm(ch.newValue);
+                        else DB.lots[lotId].currentRoom = ch.newValue;
+                    }
+                }
+            }
+            // The lot's live plant count always follows the newest recorded day
+            if (pcQ && DB.lots[lotId]) {
+                const latest = latestChainPlantCount(lotId, sheetId, pcQ);
+                if (latest !== null) DB.lots[lotId].plantCount = latest;
+            }
+            return { message: `Backfilled entry saved${notes.length ? ' · ' + notes.join(' · ') : ''}` };
+        }
+
+        // "Start grow log on a chosen day" — for a lot with no daily log of this sheet yet (its
+        // earlier paperwork is on paper). Sets the lot's live phase / room / plant count to the
+        // chosen starting values, marks the days before as on paper, creates the first page.
+        function openStartLogModal(lotId, sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            const lot = DB.lots[lotId];
+            if (!sheet || !lot) return;
+            const today = todayStr();
+            const curPhase = currentLotPhase(lotId);
+            const curRoom = currentLotRoom(lotId);
+            const rooms = knownRoomNames().sort((a, b) => a.localeCompare(b));
+            const ov = document.createElement('div');
+            ov.className = 'wiz-overlay';
+            ov.id = 'startLogOverlay';
+            ov.innerHTML = `
+                <div class="wiz-card">
+                    <div class="wiz-head"><span class="wiz-title">📅 Start ${escapeHtml(sheet.name || sheetId)} on a chosen day</span></div>
+                    <div class="wiz-body">
+                        <div class="startlog-grid">
+                            <label>First day of the log<input type="date" class="sig-name" id="startLogDate" max="${today}" value="${today}"></label>
+                            <label>Phase<select class="sig-name" id="startLogPhase">
+                                ${PHASE_OPTIONS.map(p => `<option${p === curPhase ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+                            </select></label>
+                            <label>Plant count<input type="number" min="0" step="1" class="sig-name" id="startLogCount" value="${hasValue(lot.plantCount) ? escapeHtml(String(lot.plantCount)) : ''}"></label>
+                            <label>Room<select class="sig-name" id="startLogRoom">
+                                <option value="">— none —</option>
+                                ${rooms.map(r => `<option${r === curRoom ? ' selected' : ''}>${escapeHtml(r)}</option>`).join('')}
+                            </select></label>
+                        </div>
+                        <div class="startlog-note">Days before this date stay on paper and won't be flagged as missing. The lot's current phase, room and plant count are set to these starting values.</div>
+                    </div>
+                    <div class="wiz-foot">
+                        <span class="spacer"></span>
+                        <button type="button" class="btn btn-secondary" id="startLogCancel">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="startLogOk">Start log</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(ov);
+            $('startLogCancel').addEventListener('click', () => ov.remove());
+            $('startLogOk').addEventListener('click', () => {
+                const date = $('startLogDate').value;
+                const phase = $('startLogPhase').value;
+                const countRaw = $('startLogCount').value.trim();
+                const room = $('startLogRoom').value || null;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) { showToast('Pick a start date on or before today'); return; }
+                if (countRaw !== '' && !(Number.isInteger(Number(countRaw)) && Number(countRaw) >= 0)) { showToast('Plant count must be a whole number'); return; }
+                if (dailyChain(lotId, sheetId).length) { showToast('This lot already has a log — use Fill instead'); ov.remove(); return; }
+                // Live lot values (PaperWizard's write-back permission: stage / currentRoom / plantCount)
+                lot.stage = stageFromForm(phase);
+                lot.currentRoom = room;
+                if (countRaw !== '') lot.plantCount = Number(countRaw);
+                const pw = DB.paperWizard;
+                if (!pw.entries[lotId]) pw.entries[lotId] = {};
+                if (!pw.entries[lotId][sheetId]) pw.entries[lotId][sheetId] = { instances: {} };
+                const sheetData = pw.entries[lotId][sheetId];
+                if (!sheetData.instances) sheetData.instances = {};
+                sheetData.paperBefore = date;
+                const inst = { phase: normalizeStage(phase), room, header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
+                               snapshots: {}, signature: null, completedAt: null, printedAt: null };
+                // Seed the first day's plant count so the wizard opens with it filled in
+                const pcQ = wizardForSheet(sheetId)?.questions.find(q => q.type === 'plant-count' && q.rowScoped);
+                if (pcQ && countRaw !== '') inst.days[date] = { [pcQ.id]: String(Number(countRaw)) };
+                sheetData.instances[date] = inst;
+                captureSnapshots(sheetId, lotId, date, inst);
+                evaluateCompletion(sheetId, date, inst);
+                ov.remove();
+                notifySitkaTools();
+                renderAll();
+                showToast(`Log started ${fmtShort(date)} — earlier days are on paper`);
+                openRunner(lotId, sheetId, date, date);
+            });
+        }
+
         // Rollover core for phase AND room changes (spec "Phase Change" + room-change rule) —
         // data-only: closes the open daily-weekly instance (phaseChangeDate = move day +
         // confirmer's drawn strikeInitials) and creates a fresh instance carrying the new value
@@ -2668,6 +3028,8 @@
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
+            // An older page opened to backfill a day isn't the open log either
+            if (runnerCtx && dailyChain(lotId, sheetId).some(c => c.key > runnerCtx.key)) return false;
             const lot = DB.lots[lotId];
             // Compare in the form's vocabulary — 'flower' and 'Bloom' are the same phase.
             if (!lot || !inst.phase || !lot.stage || normalizeStage(inst.phase) === normalizeStage(lot.stage)) return false;
@@ -2697,6 +3059,8 @@
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
+            // An older page opened to backfill a day isn't the open log either
+            if (runnerCtx && dailyChain(lotId, sheetId).some(c => c.key > runnerCtx.key)) return false;
             const roomQ = wizardForSheet(sheetId)?.questions.find(q => q.type === 'room');
             if (!roomQ) return false;
             const lot = DB.lots[lotId];
@@ -3102,7 +3466,7 @@
             return best;
         }
 
-        async function openRunner(lotId, sheetId, key) {
+        async function openRunner(lotId, sheetId, key, preferDay) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const wiz = wizardForSheet(sheetId);
             if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
@@ -3135,7 +3499,8 @@
             let day = null;
             if (sheet.cadence === 'daily-weekly') {
                 const winEnd = addDaysStr(instKey, 6);
-                if (today >= instKey && today <= winEnd) day = today; // today inside this window
+                if (preferDay && preferDay >= instKey && preferDay <= winEnd) day = preferDay; // e.g. a log just started on a chosen day
+                else if (today >= instKey && today <= winEnd) day = today; // today inside this window
                 else { // otherwise the first unfilled day in the window
                     for (let i = 0; i < 7; i++) {
                         const ds = addDaysStr(instKey, i);
@@ -3856,6 +4221,22 @@
             // only via the cabinet leaf's ✍️ Sign button (openSignatureModal), later, when he
             // reviews the paperwork at the end of a crop. Saving a day's entry leaves any
             // existing signature untouched.
+
+            // Backfill: later days are already on file. A changed plant count / phase / room is
+            // compared with what THIS day said before (not the lot's live value) and carried
+            // forward through the unsigned logs (see applyBackfill).
+            if (sheet.cadence === 'daily-weekly' && ctx.day && isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)) {
+                const done = await applyBackfill(ctx, wiz, inst, backup);
+                if (!done) { restoreBackup(); return; } // cancelled — nothing saved, runner stays open
+                captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
+                evaluateCompletion(ctx.sheetId, ctx.key, inst);
+                notifySitkaTools();
+                closeRunner();
+                renderAll();
+                showToast(done.message);
+                return;
+            }
+
             // 2) Write-backs to the main DB (PaperWizard's special permission).
             if (phaseChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = stageFromForm(nvPhase); // 'Bloom' → 'flower'
             if (roomChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].currentRoom = nvRoom;
@@ -4311,6 +4692,15 @@
                 // saved in it creates the new instance. With a planting date on file the
                 // coverage leaves below already surface today when it's uncovered, so skip
                 // the generic leaf to avoid a duplicate.
+                // No log yet (earlier paperwork on paper): start the first one on a chosen day,
+                // with a chosen starting phase / plant count / room.
+                if (keys.length === 0 && lot) {
+                    pushGrow(sec, { key: 'start', sort: '', html: `<div class="cab-leaf" data-startlog="1" data-sheet="${escapeHtml(sheetId)}">
+                        <span class="cab-label">📅 Start on a chosen day… · ${escapeHtml(sheet.name || sheetId)}</span>
+                        <button type="button" class="cab-fill">Start…</button>
+                        <span class="cab-status due">earlier days on paper</span>
+                    </div>` });
+                }
                 const inWindow = keys.some(k => k <= todayStr() && todayStr() <= addDaysStr(k, 6));
                 if (!inWindow && !plantingDate) {
                     pushGrow(sec, { key: 'new', sort: todayStr(), html: cabLeafFill(
@@ -4337,7 +4727,10 @@
                             { text: `⚠️ ${runDays} day${runDays === 1 ? '' : 's'} no log`, cls: 'miss' }, sheetId, runStart) });
                         runStart = null; runDays = 0;
                     };
-                    for (let ds = plantingDate; ds <= todayStr(); ds = addDaysStr(ds, 1)) {
+                    // Days before a log started on a chosen day are on paper — not missing
+                    const paperBefore = entries[sheetId]?.paperBefore;
+                    const coverFrom = paperBefore && paperBefore > plantingDate ? paperBefore : plantingDate;
+                    for (let ds = coverFrom; ds <= todayStr(); ds = addDaysStr(ds, 1)) {
                         if (covered.has(ds)) { flushRun(); continue; }
                         if (!runStart) runStart = ds;
                         runDays++;
@@ -4415,6 +4808,10 @@
             panel.querySelectorAll('[data-fill]').forEach(el => {
                 el.querySelector('.cab-fill').addEventListener('click', () =>
                     openRunner(activeLotId, el.dataset.sheet, el.dataset.key));
+            });
+            // "Start on a chosen day…" opens the start dialog (lot with no log yet).
+            panel.querySelectorAll('[data-startlog]').forEach(el => {
+                el.querySelector('.cab-fill').addEventListener('click', () => openStartLogModal(activeLotId, el.dataset.sheet));
             });
             // Print buttons open the print popup (only enabled when complete + doc loaded).
             panel.querySelectorAll('[data-print]').forEach(btn => {
