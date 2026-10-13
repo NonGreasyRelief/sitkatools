@@ -831,23 +831,28 @@
             return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
         }
 
+        // ---- Utility: a Date as YYYY-MM-DD in local time (never UTC — after 4–5 pm in BC that's tomorrow) ----
+        function localDateStr(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
         // ---- Utility: today as YYYY-MM-DD ----
         function todayStr() {
-            return new Date().toISOString().split('T')[0];
+            return localDateStr(new Date());
         }
 
         // ---- Utility: add months to a date string ----
+        // Clamped to the target month's last day: Jan 31 + 1 month = Feb 28 (29), not Mar 3.
         function addMonths(dateStr, months) {
-            const d = new Date(dateStr + 'T00:00:00');
-            d.setMonth(d.getMonth() + months);
-            return d.toISOString().split('T')[0];
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const lastDay = new Date(y, m - 1 + months + 1, 0).getDate();
+            return localDateStr(new Date(y, m - 1 + months, Math.min(d, lastDay)));
         }
 
         // ---- Utility: add days to a date string ----
         function addDays(dateStr, days) {
-            const d = new Date(dateStr + 'T00:00:00');
-            d.setDate(d.getDate() + days);
-            return d.toISOString().split('T')[0];
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return localDateStr(new Date(y, m - 1, d + days));
         }
 
         // ---- postMessage Convention ----
@@ -913,7 +918,7 @@
         // `var` (not const) so notifySitkaTools() can check it safely however early it runs.
         var WorkCopy = {
             TOOL: 'EquipmentWizard',
-            LIVE: false,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
+            LIVE: true,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
             MAX_AGE: 12 * 60 * 60 * 1000,
             inUse: false,            // the DB in this tab came from the shared copy
             gotDb: false,            // SitkaTools delivered the DB by postMessage
@@ -1088,6 +1093,24 @@
                 syncAllRooms();
                 showToast('Database loaded — calendar synced across all rooms');
             }
+
+            // Live DB updates — SitkaTools' DB changed (SitkaTools itself or another tool). Take the new DB and
+            // refresh the view only: no resync and never notifySitkaTools(), or the windows would ping-pong.
+            // The selected room is kept, and the equipment list (with its half-filled task / Repair Log forms)
+            // is only rebuilt when this room's equipment actually changed.
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                const roomId = getActiveRoomId();
+                const before = JSON.stringify(DB.data?._EquipmentWizard?.rooms?.[roomId]?.equipment || []);
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                if (DeviceView.take(e.data)) return; // office only
+                populateRoomSelector();
+                const roomNow = getActiveRoomId();
+                const after = JSON.stringify(DB.data._EquipmentWizard?.rooms?.[roomNow]?.equipment || []);
+                if (roomNow !== roomId || after !== before) renderEquipmentList();
+                if (roomNow) renderPreview();   // room names show in the event titles
+                updateStatusBar();
+            }
         });
 
         // ---- Expanded State Tracking ----
@@ -1115,6 +1138,7 @@
         function populateRoomSelector() {
             const sel = $('activeRoom');
             if (!sel) return;
+            const prevValue = sel.value;
             sel.innerHTML = '<option value="">— Select a room —</option>';
             for (const [id, room] of Object.entries(DB.rooms)) {
                 const opt = document.createElement('option');
@@ -1122,6 +1146,8 @@
                 opt.textContent = `${id} — ${room.name || 'Unnamed Room'}`;
                 sel.appendChild(opt);
             }
+            // Keep the selected room while it still exists (live DB updates repopulate this list)
+            if (prevValue && DB.rooms[prevValue]) sel.value = prevValue;
         }
 
         // ---- Active Room for this tool ----
@@ -1137,9 +1163,13 @@
             return DB.data._EquipmentWizard.rooms[roomId].equipment || [];
         }
 
-        // Regenerated maintenance events are matched to the previous ones by equipment + title + date
-        function equipmentEventKey(ev) {
-            return `${ev.equipmentId}|${ev.title}|${ev.date}`;
+        // Regenerated maintenance events are matched to the previous ones by equipment + task + date, so
+        // renaming a task or changing its emoji keeps its history. Events saved before `taskId` existed
+        // fall back to equipment + title + date: their title is mapped to the task whose fresh events carry it.
+        // Returns the keyOf function for carryOverAnnotations(previous, fresh, keyOf).
+        function equipmentEventKey(fresh) {
+            const taskOfTitle = new Map(fresh.map(ev => [`${ev.equipmentId}|${ev.title}`, ev.taskId]));
+            return ev => `${ev.equipmentId}|${ev.taskId || taskOfTitle.get(`${ev.equipmentId}|${ev.title}`) || 'title:' + ev.title}|${ev.date}`;
         }
 
         // Previous events with no regenerated match are dropped — except completed / labour-tracked
@@ -1162,7 +1192,7 @@
                 fresh.push(...events);
                 totalEvents += events.length;
             }
-            const history = retainedHistory(carryOverAnnotations(previous, fresh, equipmentEventKey));
+            const history = retainedHistory(carryOverAnnotations(previous, fresh, equipmentEventKey(fresh)));
             DB.data.calendarEvents.push(...fresh, ...history);
 
             // Update preview for active room
@@ -1186,7 +1216,7 @@
 
             // Compute and append fresh events, keeping ids / completion / labour from the previous ones
             const events = computeCalendarEvents(roomId);
-            const history = retainedHistory(carryOverAnnotations(previous, events, equipmentEventKey));
+            const history = retainedHistory(carryOverAnnotations(previous, events, equipmentEventKey(events)));
             DB.data.calendarEvents.push(...events, ...history);
 
             // Update preview
@@ -1324,7 +1354,8 @@
                                     </div>
                                 </div>
                                 <div class="form-actions">
-                                    <button type="submit" class="btn btn-primary btn-small">Add Task</button>
+                                    <button type="button" class="btn btn-secondary btn-small subtask-cancel-edit" hidden>Cancel</button>
+                                    <button type="submit" class="btn btn-primary btn-small subtask-submit-btn">Add Task</button>
                                 </div>
                             </form>
                         </div>
@@ -1450,6 +1481,11 @@
                 });
             });
 
+            // Cancel editing a task — rebuilds the list, so every task form is back to "Add Task"
+            equipmentListEl.querySelectorAll('.subtask-cancel-edit').forEach(btn => {
+                btn.addEventListener('click', () => renderEquipmentList());
+            });
+
             // Bind emoji buttons in subtask forms
             equipmentListEl.querySelectorAll('.emoji-row').forEach(row => {
                 row.querySelectorAll('.emoji-btn').forEach(btn => {
@@ -1548,6 +1584,12 @@
             const form = body.querySelector('.add-subtask-inner');
             if (!form) return;
 
+            // Remember which task is being edited, so submitting replaces it in place (same id) even when
+            // its name changes
+            form.dataset.editTaskId = task.id || '';
+            form.querySelector('.subtask-submit-btn').textContent = 'Update Task';
+            form.querySelector('.subtask-cancel-edit').hidden = false;
+
             form.querySelector('.subtask-name-input').value = task.name;
             form.querySelector('.subtask-interval-value').value = task.intervalValue;
             form.querySelector('.subtask-interval-unit').value = task.intervalUnit;
@@ -1591,6 +1633,18 @@
             if (!roomId) return;
 
             const equipment = getRoomEquipment(roomId);
+            const eq = equipment[idx];
+            if (!eq) return;
+
+            // One misclick on ✕ would lose the tasks, Repair Log and every completed visit — confirm first
+            const taskCount = eq.tasks?.length || 0;
+            const repairCount = eq.additionalMaintenance?.length || 0;
+            const visitCount = DB.data.calendarEvents.filter(ev =>
+                ev.sourceTool === 'EquipmentWizard' && ev.equipmentId === eq.id && hasWorkRecords(ev)).length;
+            if (!confirm(`Remove "${eq.name}" from this room?\n\n` +
+                `This also removes its ${taskCount} maintenance task(s), ${repairCount} Repair Log entr${repairCount === 1 ? 'y' : 'ies'} ` +
+                `and ${visitCount} completed or labour-tracked visit(s) from the calendar.\n\nThis cannot be undone.`)) return;
+
             const removed = equipment.splice(idx, 1)[0];
 
             DB.data._EquipmentWizard.rooms[roomId].equipment = equipment;
@@ -1620,12 +1674,16 @@
 
             if (!eq.tasks) eq.tasks = [];
 
-            // Check for a task with the same name — replace it instead of duplicating
-            const existingIdx = eq.tasks.findIndex(t => t.name === name);
+            // The task loaded with ✎ is replaced in place (it may have been renamed); otherwise a task with
+            // the same name is replaced instead of duplicated. A replaced task keeps its id, so its
+            // calendar history carries over.
+            const editId = form.dataset.editTaskId;
+            const editIdx = editId ? eq.tasks.findIndex(t => t.id === editId) : -1;
+            const existingIdx = editIdx >= 0 ? editIdx : eq.tasks.findIndex(t => t.name === name);
             const isNew = existingIdx === -1;
 
             const newTask = {
-                id: uid(),
+                id: (!isNew && eq.tasks[existingIdx].id) || uid(),
                 name: name,
                 intervalValue: parseInt(intervalValueInput.value),
                 intervalUnit: intervalUnitSelect.value,
@@ -1723,6 +1781,7 @@
             if (!eq.tasks) return events;
             for (const task of eq.tasks) {
                 let current = task.startDate;
+                let k = 0;
 
                 while (current <= endDate) {
                     events.push({
@@ -1732,11 +1791,15 @@
                         sourceTool: 'EquipmentWizard',
                         roomId: roomId,
                         equipmentId: eq.id,
+                        taskId: task.id,
                         taskType: 'equipment_maintenance'
                     });
 
+                    // Months: occurrence k is always start + k × interval (clamped to month end), never
+                    // chained from the previous date — a clamped Feb 28 must not pull later months to the 28th.
+                    k++;
                     if (task.intervalUnit === 'months') {
-                        current = addMonths(current, task.intervalValue);
+                        current = addMonths(task.startDate, k * task.intervalValue);
                     } else {
                         current = addDays(current, task.intervalValue);
                     }

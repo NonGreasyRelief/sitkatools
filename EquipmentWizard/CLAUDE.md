@@ -48,6 +48,7 @@ EquipmentWizard appends events to the shared `calendarEvents` array using `"sour
 - **SourceTool:** `"EquipmentWizard"`
 - **RoomId:** Always set to the room ID — every event is scoped to a room
 - **EquipmentId:** The ID of the parent equipment item, used during reconciliation
+- **TaskId:** The ID of the sub-task that generated the event, used during reconciliation (events saved before it existed have none)
 - **Id:** A stable event id (`newEventId()`), kept across resyncs — see "Schedule Reconciliation"
 - **TaskType:** `"equipment_maintenance"` — used during reconciliation to detect and replace stale schedules
 
@@ -55,10 +56,10 @@ EquipmentWizard appends events to the shared `calendarEvents` array using `"sour
 
 When a user generates (or regenerates) a schedule for a room, the tool first **removes all existing EquipmentWizard events** for that room from `calendarEvents` before inserting the new batch. This prevents duplicate or stale events when intervals change, equipment is removed, or the 12-month window rolls forward. The reconciliation logic matches on `sourceTool === 'EquipmentWizard'` AND `roomId === selectedRoom`.
 
-**Annotations carry over (ROADMAP 0.3):** both resync paths (`syncAllRooms` on open/import, `autoSyncCalendar` on room switch and equipment edits) keep the previous events and copy each one's `id`, `completed`, `labour_map` and SitkaTools event-panel fields onto the regenerated event with the same `equipmentId + title + date` (`carryOverAnnotations`). A previous event with no regenerated match is dropped — **except** a completed or labour-tracked occurrence whose equipment and room still exist, which stays on the calendar as maintenance history (e.g. after an interval change). Deleting the equipment removes its history too. A date moved on the SitkaTools calendar no longer matches and is regenerated at its computed date.
+**Annotations carry over (ROADMAP 0.3):** both resync paths (`syncAllRooms` on open/import, `autoSyncCalendar` on room switch and equipment edits) keep the previous events and copy each one's `id`, `completed`, `labour_map` and SitkaTools event-panel fields onto the regenerated event with the same `equipmentId + taskId + date` (`carryOverAnnotations`), so renaming a sub-task or changing its emoji keeps its history. A previous event without `taskId` (saved before it existed) falls back to `equipmentId + title + date`; the first resync gives every matched event its `taskId`. Editing a sub-task (✎ → **Update Task**) replaces it in place and keeps its id; **Cancel** leaves edit mode. A previous event with no regenerated match is dropped — **except** a completed or labour-tracked occurrence whose equipment and room still exist, which stays on the calendar as maintenance history (e.g. after an interval change). Deleting the equipment removes its history too. A date moved on the SitkaTools calendar no longer matches and is regenerated at its computed date.
 
 **Incremental reconciliation (auto-purge):** Calendar events are also automatically purged in these scenarios:
-- **Delete equipment:** All calendar events with matching `equipmentId` are immediately removed from the calendar.
+- **Delete equipment:** After a confirmation naming the item and how many tasks, Repair Log entries and completed / labour-tracked visits go with it, all calendar events with matching `equipmentId` are immediately removed from the calendar.
 - **Delete sub-task:** All calendar events for the parent equipment item are purged (the task list changed, so the schedule is stale).
 - **Add sub-task:** Old events for that equipment are purged and regenerated to include the new task's occurrences.
 
@@ -72,7 +73,7 @@ For each sub-task in a room:
 3. Collect all occurrences that fall within `[startDate, today + 12 months]`
 4. Each occurrence becomes a calendar event
 
-Month-based intervals use calendar-month arithmetic (e.g., Jan 15 + 3 months = Apr 15). Day-based intervals use simple day addition.
+Month-based intervals use calendar-month arithmetic (e.g., Jan 15 + 3 months = Apr 15). Occurrence *k* is always `startDate + k × interval` months, clamped to the last day of the target month — never chained from the previous occurrence — so Jan 31 monthly gives Jan 31, Feb 28 (29), Mar 31, Apr 30… Day-based intervals use simple day addition. All dates, including "today", are local dates (never UTC).
 
 ## BC Civic Holidays
 
@@ -213,6 +214,7 @@ EquipmentWizard receives its database from SitkaTools via `postMessage`, followi
 4. After every mutation (add/delete/edit), EquipmentWizard calls `notifySitkaTools()` which sends the updated DB back via `postMessage` with type `sitkaGit_db_update`.
 5. The main app auto-refreshes all views and shows a toast notification that auto-dismisses after 3 seconds.
 6. On init, EquipmentWizard calls `populateRoomSelector()` to fill the Active Room dropdown from `DB.rooms`, then renders its UI.
+7. **Live updates:** SitkaTools posts `{ type: 'sitkaGit_db_update', payload, view }` whenever its DB changes (the shared working copy delivers the same message, `WorkCopy.LIVE: true`). EquipmentWizard accepts it only from `window.opener` (or its own WorkCopy loader), replaces `DB.data`, runs `ensureStructure()`, applies the view, keeps the selected room, and rebuilds the equipment list (with its half-filled task / Repair Log forms) only when the selected room's equipment changed. It never resyncs and never calls `notifySitkaTools()` in response — only `sitkaGit_db` (open) resyncs.
 
 **Implementation:**
 ```js
