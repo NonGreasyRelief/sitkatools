@@ -550,6 +550,27 @@
 
         .overlay-footer.spread { justify-content: space-between; }
 
+        /* ---- ⏱ Hours on chores ---- */
+        .hours-btn { min-height: 48px; min-width: 48px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+        .hours-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+        .hours-btn.logged { color: var(--accent); border-color: var(--accent); }
+        .hours-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .hours-wrap { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 14px; }
+        .hours-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .hours-sub { color: var(--text-secondary); font-size: 0.9rem; }
+        .hours-entry { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-primary); flex-wrap: wrap; }
+        .hours-entry.removed { opacity: 0.55; }
+        .hours-entry.removed .who, .hours-entry.removed .hrs { text-decoration: line-through; }
+        .hours-entry .who { flex: 1; min-width: 120px; font-weight: 600; }
+        .hours-entry .hrs { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+        .hours-entry .when { flex-basis: 100%; font-size: 0.78rem; color: var(--text-secondary); }
+        .hours-entry svg { width: 96px; height: 30px; background: #fff; border-radius: 4px; flex-shrink: 0; }
+        .hours-del { min-width: 44px; min-height: 44px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--danger); font-size: 1rem; cursor: pointer; }
+        .hours-total { font-size: 0.9rem; color: var(--text-secondary); text-align: right; }
+        .hours-pad { width: 100%; height: 150px; background: #fff; border-radius: var(--radius); touch-action: none; cursor: crosshair; display: block; }
+        .hours-card input, .hours-card select { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+        .hours-note { font-size: 0.82rem; color: var(--text-secondary); max-width: 60%; }
+
         /* ---- Empty state ---- */
         .empty-state {
             text-align: center;
@@ -743,13 +764,58 @@
         </footer>
     </div>
 
+    <!-- Hours Overlay — who worked on a chore, for how long, signed with drawn initials -->
+    <div class="overlay" id="hoursOverlay">
+        <header class="overlay-header">
+            <button type="button" class="btn btn-secondary" id="hoursBackBtn">←</button>
+            <span class="overlay-title" id="hoursTitle">Hours</span>
+            <span style="width:44px;"></span>
+        </header>
+        <div class="overlay-body">
+            <div class="hours-wrap">
+                <div class="hours-card">
+                    <div class="hours-sub" id="hoursSub"></div>
+                    <div id="hoursList"></div>
+                    <div class="hours-total" id="hoursTotal"></div>
+                </div>
+                <div class="hours-card">
+                    <div class="form-group">
+                        <label for="hoursWho">Who worked on it</label>
+                        <select id="hoursWho"></select>
+                        <input type="text" id="hoursOther" placeholder="Name (not on the roster)" autocomplete="off" hidden>
+                    </div>
+                    <div class="editor-row">
+                        <div class="form-group">
+                            <label for="hoursH">Hours</label>
+                            <input type="number" id="hoursH" min="0" max="16" step="1" inputmode="numeric" placeholder="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="hoursM">Minutes</label>
+                            <input type="number" id="hoursM" min="0" max="59" step="5" inputmode="numeric" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="hoursPad">Your initials — draw them with your finger</label>
+                        <canvas id="hoursPad" class="hours-pad"></canvas>
+                        <button type="button" class="btn btn-secondary" id="hoursPadClear">Clear initials</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <footer class="overlay-footer spread">
+            <span class="hours-note" id="hoursNote"></span>
+            <button class="btn btn-primary" id="hoursAddBtn">Add hours</button>
+        </footer>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast"></div>
 
     <script>
         // =====================================================
         // DailyWizard — Daily task list builder & floor view
-        // Database Keys: "_DailyWizard" (read/write), "calendarEvents" (read-only)
+        // Database Keys: "_DailyWizard" (read/write — task lists and chore hours), "calendarEvents" (read-only),
+        //                "_EmployeeWizard.employees" (read-only — roster names for the hours log)
         // Stage 3: + task editor (add/edit) and full embedded emoji picker
         // Stage 4: + task detail view, inline step editing, step pictures
         // =====================================================
@@ -1076,6 +1142,7 @@
 
                 renderAll();
                 syncOpenDetail();
+                if (hoursCtx) renderHours();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -1088,6 +1155,7 @@
                 dbLoaded = true;
                 renderAll();
                 syncOpenDetail(); // keep an open detail view consistent (non-disruptive)
+                if (hoursCtx) renderHours();
             }
         });
 
@@ -1341,7 +1409,7 @@
             // Tapping anywhere on the row body (except the checkbox / move buttons)
             // opens the task's detail view (CLAUDE.md "Task Rows").
             row.addEventListener('click', (e) => {
-                if (e.target.closest('.task-check') || e.target.closest('.move-btns')) return;
+                if (e.target.closest('.task-check') || e.target.closest('.move-btns') || e.target.closest('.hours-btn')) return;
                 openTaskDetail(buildingId, task.code);
             });
 
@@ -1354,6 +1422,8 @@
             minChip.className = 'chip';
             minChip.textContent = `⏱ ${task.minutes ?? 0}m`;
             row.appendChild(minChip);
+
+            row.appendChild(makeHoursButton(buildingId, task));
 
             if (allowMove) {
                 const moveBtns = document.createElement('div');
@@ -2102,6 +2172,249 @@
             showToast('Task deleted');
         }
 
+        // ---- ⏱ Hours on chores (ROADMAP Phase 1 "Labour in DailyWizard") ----
+        // Staff log who worked on a chore, for how long, and sign it with drawn initials, on the day. The entries
+        // are stored with the building's task list, so they save in that building's own file:
+        //   _DailyWizard.buildings[<id>].labour[<YYYY-MM-DD>][<task code>] =
+        //       [{ employee | temp, hours, initials: { name, strokes }, at, by, removedAt?, removedBy? }]
+        // A building device can remove its own entries on the day they were logged (a same-day correction).
+        // After that only the office can, and an office removal is kept on record (removedAt / removedBy)
+        // instead of deleted. EmployeeWizard's Reports read these hours (rptChoreLabour). Check-offs stay
+        // session-only, as before.
+        let hoursCtx = null;   // { buildingId, code, date } while the hours view is open
+        let padStrokes = [];   // the initials being drawn: [[x, y, x, y, …], …], normalized 0–1
+
+        function choreEntries(buildingId, date, code) { return DB.dailyBuildings[buildingId]?.labour?.[date]?.[code] || []; }
+        function choreHours(buildingId, date, code) { return choreEntries(buildingId, date, code).filter(e => !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0); }
+        function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? `${hh}h ${mm}m` : `${hh}h`) : `${mm}m`; }
+        function rosterNames() { return Object.keys(DB.data?._EmployeeWizard?.employees || {}).sort((a, b) => a.localeCompare(b)); }
+        const loggedToday = e => !!e.at && dateToStr(new Date(e.at)) === todayStr();
+        function canRemoveEntry(e) { return !e.removedAt && (!DeviceView.building || loggedToday(e)); }
+
+        function makeHoursButton(buildingId, task) {
+            const date = selectedDateStr();
+            const h = choreHours(buildingId, date, task.code);
+            const future = date > todayStr();
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'hours-btn' + (h > 0 ? ' logged' : '');
+            btn.textContent = h > 0 ? `⏱ ${fmtHoursShort(h)}` : '⏱ Log';
+            btn.title = future ? 'Hours can only be logged for today or earlier' : h > 0 ? 'Hours logged on this chore — tap to review or add' : 'Log who worked on this chore and for how long';
+            btn.disabled = future;
+            btn.addEventListener('click', (e) => { e.stopPropagation(); openHours(buildingId, task.code, date); });
+            return btn;
+        }
+
+        function openHours(buildingId, code, date) {
+            const task = (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === code);
+            if (!task || date > todayStr()) return;
+            hoursCtx = { buildingId, code, date };
+            const who = $('hoursWho');
+            who.innerHTML = '';
+            const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
+            add('', '— Pick your name —');
+            for (const n of rosterNames()) add(n, n);
+            add('__other', 'Someone else (not on the roster)…');
+            $('hoursOther').value = '';
+            $('hoursOther').hidden = true;
+            $('hoursH').value = '';
+            $('hoursM').value = '';
+            padStrokes = [];
+            renderHours();
+            $('hoursOverlay').classList.add('open');
+            sizePad();
+        }
+
+        function closeHours() {
+            $('hoursOverlay').classList.remove('open');
+            hoursCtx = null;
+            padStrokes = [];
+        }
+
+        function renderHours() {
+            if (!hoursCtx) return;
+            const { buildingId, code, date } = hoursCtx;
+            const task = (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === code);
+            if (!task) { closeHours(); return; }
+            const est = (task.staff ?? 1) * (task.minutes ?? 0) / 60;
+            $('hoursTitle').textContent = `⏱ ${task.emoji || '📋'} ${task.name}`;
+            $('hoursSub').textContent = `${DB.buildings[buildingId]?.name || buildingId} · ${shortDate(date)}${date === todayStr() ? ' (today)' : ''} · estimate 👥 ${task.staff ?? 1} × ${fmtMinutes(task.minutes ?? 0)}`;
+            const list = $('hoursList');
+            list.innerHTML = '';
+            const entries = choreEntries(buildingId, date, code);
+            if (!entries.length) list.appendChild(mutedLine('No hours logged on this chore for this day yet.'));
+            entries.forEach((e, i) => list.appendChild(makeHoursEntry(e, i)));
+            const total = choreHours(buildingId, date, code);
+            $('hoursTotal').textContent = total > 0 ? `Total ${fmtHoursShort(total)} · estimate ${fmtHoursShort(est)}` : '';
+            $('hoursNote').textContent = DeviceView.building
+                ? 'You can remove an entry on the day you logged it. After that, ask the office.'
+                : 'Office: an entry removed after its day is kept on record as an adjustment.';
+        }
+
+        function makeHoursEntry(e, index) {
+            const row = document.createElement('div');
+            row.className = 'hours-entry' + (e.removedAt ? ' removed' : '');
+            const who = document.createElement('span');
+            who.className = 'who';
+            who.textContent = `${e.employee || e.temp || '?'}${e.temp != null ? ' (not on roster)' : ''}`;
+            const hrs = document.createElement('span');
+            hrs.className = 'hrs';
+            hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
+            row.append(who, hrs, initialsSvg(e.initials));
+            if (canRemoveEntry(e)) {
+                const del = document.createElement('button');
+                del.type = 'button';
+                del.className = 'hours-del';
+                del.textContent = '✕';
+                del.title = 'Remove this entry';
+                del.addEventListener('click', () => removeHours(index));
+                row.appendChild(del);
+            }
+            const when = document.createElement('span');
+            when.className = 'when';
+            const stamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            when.textContent = (e.at ? `Logged ${stamp(e.at)}` : '') + (e.removedAt ? ` · removed by the office ${stamp(e.removedAt)}` : '');
+            row.appendChild(when);
+            return row;
+        }
+
+        function initialsSvg(ini) {
+            const ns = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(ns, 'svg');
+            svg.setAttribute('viewBox', '0 0 100 30');
+            svg.setAttribute('preserveAspectRatio', 'none');
+            svg.setAttribute('role', 'img');
+            svg.setAttribute('aria-label', `Initials of ${ini?.name || 'unknown'}`);
+            for (const st of ini?.strokes || []) {
+                const pts = [];
+                for (let i = 0; i + 1 < st.length; i += 2) pts.push(`${(st[i] * 100).toFixed(1)},${(st[i + 1] * 30).toFixed(1)}`);
+                if (pts.length === 1) pts.push(pts[0]);
+                const pl = document.createElementNS(ns, 'polyline');
+                pl.setAttribute('points', pts.join(' '));
+                pl.setAttribute('fill', 'none');
+                pl.setAttribute('stroke', '#111');
+                pl.setAttribute('stroke-width', '2');
+                pl.setAttribute('stroke-linecap', 'round');
+                pl.setAttribute('stroke-linejoin', 'round');
+                pl.setAttribute('vector-effect', 'non-scaling-stroke');
+                svg.appendChild(pl);
+            }
+            return svg;
+        }
+
+        // Initials pad: pointer strokes, stored normalized (0–1) so they draw at any size
+        function sizePad() {
+            const c = $('hoursPad'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+            c.width = Math.max(1, Math.round(r.width * dpr));
+            c.height = Math.max(1, Math.round(r.height * dpr));
+            drawPad();
+        }
+        function drawPad() {
+            const c = $('hoursPad'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+            ctx.clearRect(0, 0, c.width, c.height);
+            ctx.strokeStyle = '#d0d4de';
+            ctx.lineWidth = dpr;
+            ctx.beginPath();
+            ctx.moveTo(c.width * 0.05, c.height * 0.78);
+            ctx.lineTo(c.width * 0.95, c.height * 0.78);
+            ctx.stroke();
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 2.5 * dpr;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            for (const st of padStrokes) {
+                if (st.length < 2) continue;
+                ctx.beginPath();
+                ctx.moveTo(st[0] * c.width, st[1] * c.height);
+                for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
+                if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
+                ctx.stroke();
+            }
+        }
+        function wirePad() {
+            const c = $('hoursPad');
+            let stroke = null;
+            const at = (e) => {
+                const r = c.getBoundingClientRect();
+                return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+            };
+            c.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                try { c.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
+                const [x, y] = at(e);
+                stroke = [+x.toFixed(3), +y.toFixed(3)];
+                padStrokes.push(stroke);
+                drawPad();
+            });
+            c.addEventListener('pointermove', (e) => {
+                if (!stroke) return;
+                const [x, y] = at(e);
+                if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;   // keep strokes small
+                stroke.push(+x.toFixed(3), +y.toFixed(3));
+                drawPad();
+            });
+            const end = () => { stroke = null; };
+            c.addEventListener('pointerup', end);
+            c.addEventListener('pointercancel', end);
+        }
+
+        function addHours() {
+            if (!hoursCtx) return;
+            const { buildingId, code, date } = hoursCtx;
+            const whoVal = $('hoursWho').value;
+            const name = whoVal === '__other' ? $('hoursOther').value.trim() : whoVal;
+            if (!name) { showToast(whoVal === '__other' ? 'Type the name of who worked on it' : 'Pick who worked on it'); return; }
+            const h = Math.max(0, parseInt($('hoursH').value, 10) || 0), m = Math.max(0, parseInt($('hoursM').value, 10) || 0);
+            const hours = h + m / 60;
+            if (hours <= 0) { showToast('Enter the hours and minutes worked'); return; }
+            if (hours > 16) { showToast('That’s more than 16 hours — check the entry'); return; }
+            if (!padStrokes.length) { showToast('Draw your initials to sign the entry'); return; }
+            const building = DB.ensureStructure()._DailyWizard.buildings[buildingId];
+            if (!building) return;
+            const day = (building.labour || (building.labour = {}))[date] || (building.labour[date] = {});
+            (day[code] || (day[code] = [])).push({
+                ...(whoVal === '__other' ? { temp: name } : { employee: name }),
+                hours: Math.round(hours * 1000) / 1000,
+                initials: { name, strokes: padStrokes.map(st => st.slice()) },
+                at: new Date().toISOString(),
+                by: DeviceView.building || 'office'
+            });
+            notifySitkaTools();
+            $('hoursWho').value = '';
+            $('hoursOther').value = '';
+            $('hoursOther').hidden = true;
+            $('hoursH').value = '';
+            $('hoursM').value = '';
+            padStrokes = [];
+            drawPad();
+            renderHours();
+            renderAll();
+            showToast(`Logged ${fmtHoursShort(hours)} for ${name}`);
+        }
+
+        function removeHours(index) {
+            if (!hoursCtx) return;
+            const { buildingId, code, date } = hoursCtx;
+            const labour = DB.dailyBuildings[buildingId]?.labour;
+            const list = labour?.[date]?.[code];
+            const e = list?.[index];
+            if (!e || !canRemoveEntry(e)) return;
+            if (!confirm(`Remove ${fmtHoursShort(Number(e.hours) || 0)} logged by ${e.employee || e.temp}?`)) return;
+            const sameDay = loggedToday(e);
+            if (sameDay) {
+                list.splice(index, 1);   // a same-day correction
+                if (!list.length) delete labour[date][code];
+                if (!Object.keys(labour[date]).length) delete labour[date];
+            } else {
+                e.removedAt = new Date().toISOString();   // a later office correction stays on record
+                e.removedBy = DeviceView.building || 'office';
+            }
+            notifySitkaTools();
+            renderHours();
+            renderAll();
+            showToast(sameDay ? 'Entry removed' : 'Entry removed — kept on record as an office adjustment');
+        }
+
         // ---- Views ----
 
         function renderBuildingView(container, buildingId, dateStr) {
@@ -2253,6 +2566,14 @@
             });
             $('deleteTaskBtn').addEventListener('click', deleteCurrentTask);
             $('refreshImagesBtn').addEventListener('click', refreshStepImages);
+
+            // ⏱ Hours on chores
+            wirePad();
+            $('hoursBackBtn').addEventListener('click', closeHours);
+            $('hoursAddBtn').addEventListener('click', addHours);
+            $('hoursPadClear').addEventListener('click', () => { padStrokes = []; drawPad(); });
+            $('hoursWho').addEventListener('change', () => { $('hoursOther').hidden = $('hoursWho').value !== '__other'; if (!$('hoursOther').hidden) $('hoursOther').focus(); });
+            window.addEventListener('resize', () => { if (hoursCtx) sizePad(); });
 
             renderAll();
         }

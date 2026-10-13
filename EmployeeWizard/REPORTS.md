@@ -111,6 +111,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 | `_EmployeeWizard.employees`: `workDays`, `timeOff`, `wage` (wages only while Wages.json is open) | capacity, cost |
 | `_PaperWizard.wizards[*].questions[*].metric` / `metricUnit` + `_PaperWizard.entries` | harvest numbers, grow-log series, plant counts (🌱 plant-count questions need no tag) |
 | `_DailyWizard.buildings[*].tasks` (minutes × staff, recurrence) | chore hours in the demand forecast |
+| `_DailyWizard.buildings[*].labour` (logged in DailyWizard with drawn initials) | chore hours in the labour mix, labour hours, logged vs scheduled, and the chores share of $ per gram. Office-removed entries (`removedAt`) don't count. |
 | `_EmployeeWizard.crops` | closed-out lots |
 | `_EmployeeWizard.settings` | canopy sq ft, shift length |
 | `_CropLabourWizard.taskTypes` | task names and order, and the cost phase of each task |
@@ -152,7 +153,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 | `rptQuestionMap` → `rptAnswers` → `rptRollup` | Tagged questions → answers (converted to base units) → per-lot values and daily series (plus air VPD) |
 | `rptBuildCrop` / `rptCrops` | The crop object; live crops plus closed summaries |
 | `rptHours`, `rptDoneTasks`, `rptAgg`, `rptCropCost`, `rptOtherCost`, `rptCapacity` | Labour hours by work date, completed tasks with estimates, headline numbers, costs with today's wages, roster capacity |
-| `rptOtherLabour` / **`rptChoreLabour`** | Non-crop labour. `rptChoreLabour` returns `[]` until DailyWizard records chore hours. Fill it in then (see the comment on it) and every labour chart picks chores up. |
+| `rptOtherLabour` / `rptChoreLabour` | Non-crop labour: equipment and other events with a `labour_map`, and the chore hours logged in DailyWizard |
 | `rptOverview` … `rptSetup` | One function per page |
 | `RPT_PER`, `rptPerDenom`, `rptPerHours`, `rptYieldOf` | The Per switch: each crop's divisor (plants harvested, canopy sq ft, grams of flower) and the unit labels |
 | `rptExploreMeasures`, `RPT_OUTCOMES`, `rptExplorer` | What drives yield? Measures include labour per plant and per task, flower days, density, survival, flower-phase climate and feed averages, water and nutrient per plant, and IPM days. Least-squares line and Pearson r. |
@@ -247,6 +248,6 @@ Answers are parsed leniently: `"1,250"`, `"12 kg"` and `"24.0"` all read as numb
 
 ## 9. Not built yet
 
-- **Chore hours:** fill in `rptChoreLabour` once DailyWizard records labour (ROADMAP Phase 1).
+- **Hours on crop and equipment rows in DailyWizard:** today those hours are entered in EmployeeWizard's Tasks tab. Chore hours are logged in DailyWizard and already feed the reports.
 - **Lab results card:** only if potency and terpenes aren't on a controlled form. They can also be tagged on any sheet, a lab-results sheet included.
 - **Data Health page:** partly covered today by Needs attention and the Setup & data tables.

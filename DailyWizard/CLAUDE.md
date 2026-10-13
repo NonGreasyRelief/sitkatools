@@ -7,6 +7,7 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 1. **Build per-building daily task lists.** The manager defines a set of recurring daily tasks for each building (emoji, name, estimated time, required staff). Task lists are saved directly to this tool's own database key (`_DailyWizard`) — they are *definitions*, not one-off events, and they never touch `calendarEvents`.
 2. **Show the day.** For any date (default: today), the tool renders that building's tasks for that day, followed by that building's scheduled calendar events from the main database (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent) for the same day — giving staff one complete picture of what happens in the building today.
 3. **Check things off.** Every row has a large thumb-friendly checkbox. Checking is **purely informational** — it never writes to the main database and never syncs back to SitkaTools. It exists so floor staff can coordinate on a tablet and the floor manager can direct staff day to day.
+4. **Log hours on chores.** Each daily-task row has a **⏱ Log** button. Staff pick their name, type hours and minutes, and sign with drawn initials. The hours save in the building's own file and feed EmployeeWizard's Reports (see "⏱ Hours on Chores").
 
 ### Intended Use
 
@@ -17,7 +18,7 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 ### What This Tool Is NOT
 
 - It does **not** create, edit, or delete `calendarEvents` — it only *reads* them to display a building's scheduled crop/equipment tasks for the selected day.
-- It does **not** track labour hours into the calendar or any other tool's data. (Future: labour tracking may be incorporated into the calendar; out of scope now.)
+- It does **not** write labour hours into the calendar or any other tool's data. Chore hours live in its own key (`_DailyWizard.buildings[<id>].labour`). Logging hours on the calendar-event rows (crop and equipment tasks) is not built yet; those hours are still entered in EmployeeWizard's Tasks tab.
 - It does **not** persist completion state anywhere — check-offs live only in the open page's memory.
 
 ## Task Model
@@ -116,6 +117,23 @@ buildingForEvent(event):
 - Completed rows stay in place (no auto-move to bottom) and render with an accent check, muted text, and strikethrough on the task name.
 - Progress is shown live: overall `✅ done/total` in the status bar, and per-building `done/total` in each section header of the All Buildings view.
 
+## ⏱ Hours on Chores
+
+Built 2026-10-12 (ROADMAP Phase 1, "Labour in DailyWizard"), following the decisions in the roadmap: each entry is the person's name, the hours and minutes they type, and their own drawn initials.
+
+- **The row button:** shows `⏱ Log`, or the hours logged for the selected date (`⏱ 1h 15m`, in the accent colour). It is disabled for future dates, and tapping it never opens the task detail.
+- **The hours view** (full-screen overlay, like the task editor):
+  - the entries for that chore and day, each with name, hours, an initials thumbnail and the time it was logged;
+  - the day's total against the task's estimate;
+  - a form: **Who** (roster names from `_EmployeeWizard.employees`, plus "Someone else (not on the roster)…" for a temp), **Hours**, **Minutes**, and an **initials pad**.
+- **Validation:** **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke on the pad.
+- **Corrections:**
+  - A **building device** can remove an entry only on the **day it was logged** (a same-day correction), and the entry is deleted.
+  - The **office** (or a single-file DB) can remove any entry. One removed after its day is kept on record as `removedAt` / `removedBy` (struck through in the list) instead of deleted.
+- **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`. The form fields and the initials being drawn are left alone.
+- **Check-offs** are unchanged: still session-only, and separate from hours.
+- **Reports:** EmployeeWizard's Reports read these entries (`rptChoreLabour`): labour mix, labour hours, logged vs scheduled, and the chores share of $ per gram. Temps logged here carry no wage, so their hours count in hours but not in $.
+
 ## Database Key — `_DailyWizard`
 
 All of this tool's data lives under one top-level key, owned exclusively by DailyWizard:
@@ -156,9 +174,28 @@ All of this tool's data lives under one top-level key, owned exclusively by Dail
 }
 ```
 
+**Chore hours** sit next to a building's task list:
+
+```json
+"labour": {
+  "2026-10-12": {
+    "j234": [
+      { "employee": "Kasia", "hours": 1.25, "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] },
+        "at": "2026-10-12T20:49:00.000Z", "by": "B6" },
+      { "temp": "Sam", "hours": 0.5, "initials": { "…": "…" }, "at": "…", "by": "office",
+        "removedAt": "2026-10-14T16:00:00.000Z", "removedBy": "office" }
+    ]
+  }
+}
+```
+
+- Keyed by day, then task `code`. Each entry has `employee` (a roster name) or `temp` (a typed name), plus `hours` (decimal), `initials` (`{ name, strokes }`, PaperWizard's normalized stroke format), `at` (ISO time logged) and `by` (the device: a building id or `office`).
+- `removedAt` / `removedBy` mark an office correction kept on record. Reports skip these entries.
+- The whole building entry, task list and hours together, is saved in that building's `Building-<ID>.json` (SitkaTools split).
+
 Rules:
 
-- **Ownership:** DailyWizard is the only tool that reads or writes `_DailyWizard`. No other tool may touch it.
+- **Ownership:** DailyWizard is the only tool that **writes** `_DailyWizard`. EmployeeWizard's Reports read the chore hours (read-only).
 - **Buildings are keyed by building ID** (matching `DB.data.buildings`). A building entry with no tasks yet is simply absent — absence means "no daily tasks defined".
 - **Orphaned entries:** if a building exists in `_DailyWizard.buildings` but no longer exists in `DB.data.buildings` (deleted in SitkaTools), it still appears in the building selector with a ⚠️ suffix so the manager can review and delete its task list. Orphaned buildings are excluded from the All Buildings view.
 - **No calendar events:** this tool appends nothing to `calendarEvents`.
@@ -319,8 +356,9 @@ Sticky footer per suite convention with one addition for this tool:
 - Vanilla HTML/CSS/JavaScript only
 - No network calls of any kind
 - No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage or SitkaTools' shared working copy; saving happens in SitkaTools
-- Reads `calendarEvents`, `rooms`, `buildings`, and `lots` (for attribution) but writes **only** to `_DailyWizard`
+- Reads `calendarEvents`, `rooms`, `buildings`, `lots` (for attribution) and the roster names in `_EmployeeWizard.employees` (for the hours log), but writes **only** to `_DailyWizard`
 
 ## Deferred Features
 
-- **Labour tracking:** future incorporation of actual labour hours into the calendar is explicitly out of scope for now — check-offs remain informational only.
+- **Hours on calendar-event rows:** logging hours on crop and equipment tasks here (it would write `labour_map` on the event, a floor field the split already saves as an overlay) is not built yet. Chore hours are built (see "⏱ Hours on Chores").
+- **Saved check-offs and floor-manager-only completion** (ROADMAP Phase 1) are not built; check-offs remain session-only.

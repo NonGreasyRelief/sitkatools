@@ -3549,11 +3549,27 @@
             return rows.concat(rptChoreLabour());
         }
 
-        // DailyWizard chore labour — not recorded yet (ROADMAP Phase 1, "Labour in DailyWizard"). When it is, return
-        // one row per entry here, in the same shape as rptOtherLabour's rows, with kind: 'chore':
-        //   { date, hours, kind: 'chore', roomId: null, buildingId, person: name | 'temp:' + name, temp, wage }
-        // Every labour chart, tile and the cost-per-gram waterfall picks the rows up with no other change.
-        function rptChoreLabour() { return []; }
+        // DailyWizard chore hours: _DailyWizard.buildings[<id>].labour[<day>][<task code>] = [{ employee | temp, hours, … }],
+        // logged on the building tablet with drawn initials. Entries the office removed later (removedAt) are kept on
+        // record there but don't count. Temps logged in DailyWizard carry no wage, so their hours count in hours, not $.
+        function rptChoreLabour() {
+            const rows = [];
+            for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                for (const [d, byCode] of Object.entries(b?.labour || {})) {
+                    if (!isDay(d) || !byCode || typeof byCode !== 'object') continue;
+                    for (const [code, entries] of Object.entries(byCode)) {
+                        if (!Array.isArray(entries)) continue;
+                        for (const e of entries) {
+                            const h = Number(e?.hours) || 0;
+                            if (h <= 0 || e.removedAt) continue;
+                            rows.push({ date: d, hours: h, kind: 'chore', code, roomId: null, buildingId: bid,
+                                person: e.temp != null ? 'temp:' + e.temp : e.employee, temp: e.temp != null, wage: e.temp != null ? Number(e.wage) || null : null });
+                        }
+                    }
+                }
+            }
+            return rows;
+        }
 
         // ---- Model: everything a page needs, built once per render ----
         function rptModel() {
@@ -4200,7 +4216,7 @@
             return `<div class="rpt-grid">` +
                 rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: parSub, body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: per === 'total' ? 'labour_map on crop tasks, by the day the work was done' : 'labour_map on the crops harvested in the period ÷ their plants, canopy or flower' }) +
                 rCard({ title: 'Which tasks run over their estimate?', chips: ['now'], sub: ovr ? 'Each dot is one crop (up to the 8 most recent): hours logged as a share of the estimate. The white tick is the median. Not affected by Per.' : '', body: ovr ? ovr.svg : rEmpty('No completed tasks with both an estimate and hours in this period.', 'Estimates come from CropLabourWizard recipes (minutes × staff per task).'), after: ovr?.after, table: ovr?.table, source: 'Completed crop tasks with an estimate and logged hours, planned in this period' }) +
-                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type: crop tasks, DailyWizard chores, equipment and anything else. Not affected by Per.', body: mix ? mix.svg : rEmpty('No hours logged in this period.', ''), table: mix?.table, source: 'Crop and equipment events · DailyWizard chore hours · roster shifts' }) +
+                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type: crop tasks (Tasks tab), daily chores (logged in DailyWizard), equipment and anything else. Not affected by Per.', body: mix ? mix.svg : rEmpty('No hours logged in this period.', ''), table: mix?.table, source: 'labour_map on crop and equipment events · DailyWizard chore hours · roster shifts' }) +
                 rCard({ title: per === 'g' ? 'Where does the labour cost of a gram come from?' : 'Where does the labour cost come from?', chips: ['harvest', 'wages'], sub: wfSub, body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'chores & equipment share') : '', source: 'Hours × wages (today’s, or frozen with a closed lot’s summary) ÷ the Per divisor · chores and equipment spread over the same crops' }) +
                 `</div>`;
         }
