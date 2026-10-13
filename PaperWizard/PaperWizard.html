@@ -5857,7 +5857,69 @@
         // file:// pages have opaque origins, so they can only be reached with '*'.
         const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
 
+        // ---- Lost link to SitkaTools ----
+        // A popup's changes reach SitkaTools only by postMessage. If SitkaTools is reloaded or closed while this
+        // window stays open, they would go nowhere while this window still looked fine. SitkaTools answers a
+        // message from a window it didn't open with 'sitkaGit_not_linked'; this window checks on every change and
+        // whenever it gets the focus, and then covers the page: reopen the tool from SitkaTools. Tablet tabs save
+        // through the shared working copy, so it never applies to them.
+        var LinkLost = {
+            dismissed: false,
+            timer: null,
+            applies() { return WorkCopy.gotDb && !WorkCopy.inUse; },
+            openerGone() { try { return !window.opener || window.opener.closed; } catch (_) { return true; } },
+            // Before a change is sent: false (and the cover) when SitkaTools is gone
+            canSend() {
+                if (!this.applies() || !this.openerGone()) return true;
+                this.show(true);
+                return false;
+            },
+            // Is SitkaTools still there, and does it still know this window?
+            check() {
+                if (!this.applies() || this.dismissed) return;
+                if (this.openerGone()) { this.show(false); return; }
+                try { window.opener.postMessage({ type: 'sitkaGit_ping' }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
+            },
+            // lostChange: a change was just made that SitkaTools didn't get
+            show(lostChange) {
+                if (!lostChange && this.dismissed) return;
+                this.dismissed = false;
+                let wrap = document.getElementById('linkLost');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'linkLost';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10002; background: rgba(10, 10, 25, 0.92); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                            <div style="margin-top: 14px;"><button type="button" data-keep style="background: none; border: none; color: var(--text-secondary); text-decoration: underline; cursor: pointer; font-size: 0.85rem;">Keep it open to look (changes here won't be saved)</button></div>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    wrap.querySelector('[data-keep]').addEventListener('click', () => { this.dismissed = true; wrap.style.display = 'none'; });
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = lostChange ? 'SitkaTools didn’t get your last change' : 'This window lost its link to SitkaTools';
+                wrap.querySelector('[data-text]').textContent = 'SitkaTools was reloaded or closed after it opened this window, so changes made here can’t be saved. ' +
+                    'Close this window and open the tool again from SitkaTools' + (lostChange ? ', then make your last change again.' : '.');
+                wrap.style.display = 'flex';
+            }
+        };
+        window.addEventListener('message', (e) => {
+            if (!e.isTrusted || !window.opener || e.source !== window.opener) return;
+            // From the first DB on: notice SitkaTools closing even while nothing is being changed
+            if (e.data?.type === 'sitkaGit_db' && !LinkLost.timer) {
+                LinkLost.timer = setInterval(() => { if (LinkLost.applies() && !LinkLost.dismissed && LinkLost.openerGone()) LinkLost.show(false); }, 3000);
+            }
+            if (e.data?.type === 'sitkaGit_not_linked' && LinkLost.applies()) LinkLost.show(e.data.about === 'sitkaGit_db_update');
+        });
+        window.addEventListener('focus', () => LinkLost.check());
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
+
         function notifySitkaTools() {
+            if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
             if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);
             if (window.opener && !window.opener.closed) {
                 window.opener.postMessage({

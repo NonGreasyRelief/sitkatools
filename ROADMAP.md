@@ -175,7 +175,12 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
 - [ ] **Labour in DailyWizard:** staff log their own hours and minutes and initial each entry, on all task types (DailyWizard chores, equipment, crop tasks). Only the floor manager marks tasks done. Check-offs are saved but start blank each day.
   - [x] **Chore hours** (2026-10-12): ⏱ Log on each daily task, with name, hours and minutes, and drawn initials. Saved in the building's file and read by EmployeeWizard's Reports. Same-day corrections on the building; later office corrections are kept on record.
   - [x] **Hours on crop and equipment rows** (2026-10-12): the same ⏱ form on "Scheduled today" rows writes signed entries into the event's `labour_map`, a floor field, so building devices save it as an overlay. Office removals after the day go to the building's adjustments log.
-  - [ ] Saved check-offs, and floor-manager-only completion.
+  - [x] **Labour Log** (2026-10-13): EmployeeWizard's 📜 Labour Log tab lists every hours entry (chores and tasks) with who, what, when it was logged, on which device, the drawn initials, removals and changes. Flags unsigned, late, changed, long days and over-estimate. Filters, grouping and print. The office sees all; a building device sees its own building.
+  - [x] **Hours fixes from the 2026-10-13 test** (`tests/`):
+    - Hours on one task from the office and a building between saves now merge entry by entry (entry ids, recorded removals). Before, the newest save's list replaced the other's.
+    - A tool window that outlived SitkaTools (reload or close) now says so, instead of looking as if its changes were kept.
+  - [ ] Saved check-offs, and floor-manager-only completion (who marked a task done, and when, isn't recorded yet).
+  - [ ] Deleting an entry in EmployeeWizard's Tasks tab leaves no record (DailyWizard's office removals do).
 - [ ] **Drawn initials** for lot Accept (typed for now) and labour entries, reusing PaperWizard's draw pad.
 
 ### Phase 2: Features (from Brainstorm)

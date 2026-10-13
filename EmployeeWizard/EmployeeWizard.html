@@ -220,6 +220,39 @@
         .report-chk { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); padding-bottom: 10px; cursor: pointer; }
         .report-chk input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
 
+        /* ---- 📜 Labour Log ---- */
+        .log-print { margin-left: auto; }
+        .log-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .log-chip { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 0.82rem; color: var(--text-secondary); }
+        .log-chip strong { color: var(--text-primary); }
+        .log-chip.warn { border-color: rgba(243, 156, 18, 0.6); }
+        .log-section { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow-x: auto; }
+        .log-section h4 { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.9rem; color: var(--accent); }
+        .log-section h4 span { color: var(--text-secondary); font-weight: 500; font-size: 0.8rem; }
+        .log-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+        .log-table th { text-align: left; padding: 6px 10px; color: var(--text-secondary); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        .log-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .log-table tr:last-child td { border-bottom: none; }
+        .log-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+        .log-table th.num { text-align: right; }
+        .log-sub { display: block; font-size: 0.74rem; color: var(--text-secondary); margin-top: 2px; }
+        .log-table tr.removed td { color: var(--text-secondary); }
+        .log-table tr.removed .log-what, .log-table tr.removed td.num { text-decoration: line-through; }
+        .log-flag { display: inline-block; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; margin: 0 4px 3px 0; color: var(--text-secondary); line-height: 1.35; }
+        .log-table td.log-notes { min-width: 150px; }
+        .log-flag.warn { color: var(--warning); border-color: rgba(243, 156, 18, 0.5); }
+        .log-flag.bad { color: var(--danger); border-color: rgba(231, 76, 60, 0.5); }
+        .log-sig { width: 96px; height: 30px; background: #fff; border-radius: 4px; border: 1px solid var(--border); cursor: zoom-in; display: block; padding: 0; }
+        .log-sig svg { width: 100%; height: 100%; display: block; }
+        .log-nosig { font-size: 0.75rem; color: var(--warning); }
+        .log-empty { color: var(--text-secondary); font-size: 0.9rem; padding: 24px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); }
+        .log-sig-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .log-sig-overlay[hidden] { display: none; }
+        .log-sig-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; align-items: center; width: min(560px, 100%); }
+        .log-sig-big { width: 100%; aspect-ratio: 10 / 3; background: #fff; border-radius: 8px; }
+        .log-sig-big svg { width: 100%; height: 100%; display: block; }
+        .log-sig-caption { font-size: 0.85rem; color: var(--text-secondary); text-align: center; line-height: 1.5; }
+
         .report-table-wrap { overflow-x: auto; }
 
         .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -1118,6 +1151,7 @@
         <div class="tabs">
             <button type="button" class="tab-btn active" id="tabEmployees">👥 Employees</button>
             <button type="button" class="tab-btn" id="tabTasks">📋 Tasks</button>
+            <button type="button" class="tab-btn" id="tabLog">📜 Labour Log</button>
             <button type="button" class="tab-btn" id="tabReports">📊 Reports</button>
         </div>
 
@@ -1317,6 +1351,44 @@
             </div>
         </div>
 
+        <!-- 📜 Labour Log — every hours entry: who, what, when, how long, and their drawn initials (read-only) -->
+        <div class="tab-pane" id="paneLog">
+            <div class="report-controls log-controls">
+                <div class="form-group"><label for="logFrom">From</label><input type="date" id="logFrom"></div>
+                <div class="form-group"><label for="logTo">To</label><input type="date" id="logTo"></div>
+                <div class="form-group"><label for="logPerson">Person</label><select id="logPerson"></select></div>
+                <div class="form-group"><label for="logBuilding">Building</label><select id="logBuilding"></select></div>
+                <div class="form-group">
+                    <label for="logKind">Work</label>
+                    <select id="logKind">
+                        <option value="">All work</option>
+                        <option value="chore">Daily chores</option>
+                        <option value="crop">Crop tasks</option>
+                        <option value="equipment">Equipment</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="logGroup">Group by</label>
+                    <select id="logGroup">
+                        <option value="day">Day</option>
+                        <option value="person">Person</option>
+                        <option value="task">Task</option>
+                    </select>
+                </div>
+                <label class="report-chk"><input type="checkbox" id="logRemoved" checked> Show removed entries</label>
+                <button type="button" class="btn btn-secondary rpt-pack log-print" id="logPrintBtn" title="Open this log, with these filters, as a page to print or save as PDF">🖨️ Print</button>
+            </div>
+            <div id="logBody"></div>
+        </div>
+        <div class="log-sig-overlay" id="logSigOverlay" hidden>
+            <div class="log-sig-box">
+                <div class="log-sig-big" id="logSigBig"></div>
+                <div class="log-sig-caption" id="logSigCaption"></div>
+                <button type="button" class="btn btn-secondary" id="logSigClose">Close</button>
+            </div>
+        </div>
+
         <!-- Reports Tab (office only) — charts and KPIs; spec and hook-up notes in EmployeeWizard/REPORTS.md -->
         <div class="tab-pane" id="paneReports">
             <div class="rpt-filters">
@@ -1418,6 +1490,21 @@
             const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
             const bytes = crypto.getRandomValues(new Uint8Array(10));
             return 'ev_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        // Labour entries carry an id too, so the office's and a building's hours merge entry by entry (SitkaTools)
+        function newLabourId() {
+            const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+            const bytes = crypto.getRandomValues(new Uint8Array(10));
+            return 'le_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        // A changed entry that was signed in DailyWizard keeps a record of the hours as signed (the Labour Log shows it)
+        function noteSignedEdit(en, newHours) {
+            if (!en.initials || Number(en.hours) === newHours) return;
+            if (en.signedHours === undefined) en.signedHours = en.hours;
+            en.editedAt = new Date().toISOString();
+            en.editedBy = DeviceView.building || 'office';
         }
 
         // cyrb53 — fast non-cryptographic 53-bit string hash
@@ -1697,8 +1784,70 @@
         // file:// pages have opaque origins, so they can only be reached with '*'.
         const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
 
+        // ---- Lost link to SitkaTools ----
+        // A popup's changes reach SitkaTools only by postMessage. If SitkaTools is reloaded or closed while this
+        // window stays open, they would go nowhere while this window still looked fine. SitkaTools answers a
+        // message from a window it didn't open with 'sitkaGit_not_linked'; this window checks on every change and
+        // whenever it gets the focus, and then covers the page: reopen the tool from SitkaTools. Tablet tabs save
+        // through the shared working copy, so it never applies to them.
+        var LinkLost = {
+            dismissed: false,
+            timer: null,
+            applies() { return WorkCopy.gotDb && !WorkCopy.inUse; },
+            openerGone() { try { return !window.opener || window.opener.closed; } catch (_) { return true; } },
+            // Before a change is sent: false (and the cover) when SitkaTools is gone
+            canSend() {
+                if (!this.applies() || !this.openerGone()) return true;
+                this.show(true);
+                return false;
+            },
+            // Is SitkaTools still there, and does it still know this window?
+            check() {
+                if (!this.applies() || this.dismissed) return;
+                if (this.openerGone()) { this.show(false); return; }
+                try { window.opener.postMessage({ type: 'sitkaGit_ping' }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
+            },
+            // lostChange: a change was just made that SitkaTools didn't get
+            show(lostChange) {
+                if (!lostChange && this.dismissed) return;
+                this.dismissed = false;
+                let wrap = document.getElementById('linkLost');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'linkLost';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10002; background: rgba(10, 10, 25, 0.92); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                            <div style="margin-top: 14px;"><button type="button" data-keep style="background: none; border: none; color: var(--text-secondary); text-decoration: underline; cursor: pointer; font-size: 0.85rem;">Keep it open to look (changes here won't be saved)</button></div>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    wrap.querySelector('[data-keep]').addEventListener('click', () => { this.dismissed = true; wrap.style.display = 'none'; });
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = lostChange ? 'SitkaTools didn’t get your last change' : 'This window lost its link to SitkaTools';
+                wrap.querySelector('[data-text]').textContent = 'SitkaTools was reloaded or closed after it opened this window, so changes made here can’t be saved. ' +
+                    'Close this window and open the tool again from SitkaTools' + (lostChange ? ', then make your last change again.' : '.');
+                wrap.style.display = 'flex';
+            }
+        };
+        window.addEventListener('message', (e) => {
+            if (!e.isTrusted || !window.opener || e.source !== window.opener) return;
+            // From the first DB on: notice SitkaTools closing even while nothing is being changed
+            if (e.data?.type === 'sitkaGit_db' && !LinkLost.timer) {
+                LinkLost.timer = setInterval(() => { if (LinkLost.applies() && !LinkLost.dismissed && LinkLost.openerGone()) LinkLost.show(false); }, 3000);
+            }
+            if (e.data?.type === 'sitkaGit_not_linked' && LinkLost.applies()) LinkLost.show(e.data.about === 'sitkaGit_db_update');
+        });
+        window.addEventListener('focus', () => LinkLost.check());
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
+
         // Notify SitkaTools of changes via postMessage
         function notifySitkaTools() {
+            if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
             if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);
             if (window.opener && !window.opener.closed) {
                 window.opener.postMessage({
@@ -1734,6 +1883,7 @@
                 reconcileSelectedTask();
                 renderTasksTab(true);
                 renderReports();
+                renderLabourLog();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -1757,6 +1907,7 @@
                 renderTasksTab();
                 // Only redraws while the Reports tab is open, and not under a Setup input being typed in
                 if (!document.activeElement?.closest?.('#rptBody input')) renderReports();
+                renderLabourLog();   // only while its tab is open
             }
         });
 
@@ -2678,7 +2829,7 @@
                         ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · ${Number(en.wage) > 0 ? `$${Number(en.wage)}/hr` : 'no wage'}</span>`
                         : escapeHtml(en.employee)) +
                         // Logged on the floor in DailyWizard, signed with drawn initials
-                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}">✍️ signed</span>` : '');
+                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>` : '');
                     return `<div class="entry-row">
                         <span class="entry-name">${who}</span>
                         <span class="entry-hours">${fmtHours(en.hours)}</span>
@@ -3085,10 +3236,11 @@
             const entries = dayEntryList(ev, TASK.editDate);
             const idx = entries.findIndex(en => en.employee === name);
             if (idx >= 0) {
+                noteSignedEdit(entries[idx], hours);
                 entries[idx].hours = hours;
                 showToast(`Updated ${name} — ${fmtHours(hours)}`);
             } else {
-                entries.push({ employee: name, hours });
+                entries.push({ id: newLabourId(), employee: name, hours });
                 showToast(`Added ${name} — ${fmtHours(hours)}`);
             }
 
@@ -3116,11 +3268,12 @@
             const entries = dayEntryList(ev, TASK.editDate);
             const idx = entries.findIndex(en => en.temp === name);
             if (idx >= 0) {
+                noteSignedEdit(entries[idx], hours);
                 entries[idx].hours = hours;
                 entries[idx].wage = wage;
                 showToast(`Updated temp ${name} — ${fmtHours(hours)}`);
             } else {
-                entries.push({ temp: name, wage, hours });
+                entries.push({ id: newLabourId(), temp: name, wage, hours });
                 showToast(`Added temp ${name} — ${fmtHours(hours)}`);
             }
 
@@ -4963,27 +5116,311 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
         })();
 
 
+        // =====================================================
+        // 📜 Labour Log — every hours entry in one place (read-only)
+        // Who did what, on which day, for how long, when they logged it and on which device, and the initials they
+        // drew. Reads (the Reports' read-everything permission, user decision 2026-10-13):
+        //   • DailyWizard chore hours — _DailyWizard.buildings[<id>].labour[<day>][<task code>]
+        //   • hours on calendar events — calendarEvents[].labour_map[<day>] (logged in DailyWizard or the Tasks tab)
+        //   • entries the office removed later, kept on record — _DailyWizard.buildings[<id>].adjustments
+        // Writes nothing. The office sees every building; a building device sees the work done in its building.
+        // Hours only — no wages or $.
+        // =====================================================
+        const LOG = { from: '', to: '', person: '', building: '', kind: '', group: 'day', removed: true, shown: [] };
+        const LOG_LONG_DAY = 12;     // hours one person logs in a day before the log flags it
+        const LOG_OVER_EST = 1.5;    // a task's day total this many times its estimate is flagged
+        const LOG_KIND_LABEL = { chore: 'Daily chore', crop: 'Crop task', equipment: 'Equipment', other: 'Other task' };
+
+        const logName = en => en.employee || en.temp || '?';
+        const logHours = en => Number(en.hours) || 0;
+        function logFmt(h) { const t = Math.round((Number(h) || 0) * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? `${hh}h ${mm}m` : `${hh}h`) : `${mm}m`; }
+        function logStamp(iso) { return iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; }
+        function logDevice(by) { return !by ? '' : by === 'office' ? 'the office' : `the ${DB.data.buildings?.[by]?.name || by} device`; }
+        function logDayTitle(day) { return parseISO(day).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+        function logKindOf(ev) {
+            if (ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection') return 'crop';
+            if (ev.sourceTool === 'EquipmentWizard') return 'equipment';
+            return 'other';
+        }
+
+        // Every entry, live and removed: { day, en, kind, building, key, label, where, est, removed? }
+        function logCollect() {
+            const rows = [];
+            const rooms = DB.data.rooms || {};
+            const evById = new Map((DB.data.calendarEvents || []).map(ev => [ev.id, ev]));
+            const evInfo = (ev) => {
+                const room = taskRoomId(ev);
+                const where = [room ? (rooms[room]?.name || room) : null, ev.lotId ? `Lot ${ev.lotId}` : null].filter(Boolean).join(' · ');
+                const est = Number(ev.estMinutes) > 0 ? { staff: Number(ev.estStaff) || 1, minutes: Number(ev.estMinutes) } : null;
+                return { kind: logKindOf(ev), building: (room && rooms[room]?.buildingId) || null, key: `ev|${ev.id}`, label: ev.title || '(untitled task)', where, est };
+            };
+            for (const ev of DB.data.calendarEvents || []) {
+                if (!ev?.labour_map) continue;
+                const info = evInfo(ev);
+                for (const [day, list] of Object.entries(ev.labour_map)) {
+                    if (!Array.isArray(list)) continue;
+                    // A task whose room isn't known counts for the building it was logged on
+                    for (const en of list) if (en) rows.push({ ...info, day, en, building: info.building || (DB.data.buildings?.[en.by] ? en.by : null) });
+                }
+            }
+            for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                const tasks = new Map((b?.tasks || []).map(t => [t.code, t]));
+                const choreInfo = (code) => {
+                    const t = tasks.get(code);
+                    return {
+                        kind: 'chore', building: bid, key: `chore|${bid}|${code}`, where: '',
+                        label: t ? `${t.emoji || '📋'} ${t.name}` : `📋 Daily task ${code} (since deleted)`,
+                        est: t && Number(t.minutes) > 0 ? { staff: Number(t.staff) || 1, minutes: Number(t.minutes) } : null
+                    };
+                };
+                for (const [day, codes] of Object.entries(b?.labour || {})) {
+                    for (const [code, list] of Object.entries(codes || {})) {
+                        if (!Array.isArray(list)) continue;
+                        const info = choreInfo(code);
+                        for (const en of list) if (en) rows.push({ ...info, day, en });
+                    }
+                }
+                for (const a of b?.adjustments || []) {
+                    if (!a?.entry || !a.date) continue;
+                    const ev = a.eventId ? evById.get(a.eventId) : null;
+                    const info = !a.eventId ? choreInfo(a.code)
+                        : ev ? { ...evInfo(ev), building: bid }
+                        : { kind: 'other', building: bid, key: `ev|${a.eventId}`, label: a.title || '(task since removed)', where: '', est: null };
+                    rows.push({ ...info, day: a.date, en: a.entry, removed: { at: a.at, by: a.by } });
+                }
+            }
+            return rows;
+        }
+
+        // Drawn initials (PaperWizard's normalized strokes) as an SVG string
+        function logInitialsSvg(ini) {
+            const lines = (ini?.strokes || []).map(st => {
+                const pts = [];
+                for (let i = 0; i + 1 < st.length; i += 2) pts.push(`${(Number(st[i]) * 100).toFixed(1)},${(Number(st[i + 1]) * 30).toFixed(1)}`);
+                if (pts.length === 1) pts.push(pts[0]);
+                return `<polyline points="${pts.join(' ')}" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+            }).join('');
+            return `<svg viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Initials of ${escapeHtml(ini?.name || 'unknown')}">${lines}</svg>`;
+        }
+
+        // The log for the current filters: { rows, flags, summary } — rows sorted into groups
+        function logModel() {
+            const all = logCollect().filter(r => !DeviceView.building || r.building === DeviceView.building);
+            const live = all.filter(r => !r.removed);
+            // A person's day across all their work, and a task's day across everyone (live entries only)
+            const personDay = new Map(), taskDay = new Map();
+            for (const r of live) {
+                const p = `${logName(r.en)}|${r.day}`, t = `${r.key}|${r.day}`;
+                personDay.set(p, (personDay.get(p) || 0) + logHours(r.en));
+                taskDay.set(t, (taskDay.get(t) || 0) + logHours(r.en));
+            }
+            const rows = all.filter(r => (!LOG.from || r.day >= LOG.from) && (!LOG.to || r.day <= LOG.to) &&
+                (!LOG.person || logName(r.en) === LOG.person) &&
+                (!LOG.building || (LOG.building === '__none' ? !r.building : r.building === LOG.building)) &&
+                (!LOG.kind || r.kind === LOG.kind) && (LOG.removed || !r.removed));
+            const flags = (r) => {
+                const out = [], en = r.en;
+                if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}`]);
+                if (!en.initials?.strokes?.length) out.push(['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
+                if (en.at) {
+                    const loggedDay = localDateStr(new Date(en.at));
+                    const late = Math.round((parseISO(loggedDay) - parseISO(r.day)) / 86400000);
+                    if (late > 0) out.push(['warn', `⏰ logged ${late} day${late === 1 ? '' : 's'} later`]);
+                }
+                if (en.editedAt) out.push(['warn', `✏️ signed for ${logFmt(en.signedHours)}, changed in the Tasks tab ${logStamp(en.editedAt)}`]);
+                if (en.temp != null) out.push(['', 'not on the roster']);
+                if (!r.removed) {
+                    const pd = personDay.get(`${logName(en)}|${r.day}`) || 0;
+                    if (pd > LOG_LONG_DAY) out.push(['warn', `⚠️ ${logFmt(pd)} logged by ${logName(en)} this day`]);
+                    const est = r.est ? r.est.staff * r.est.minutes / 60 : 0;
+                    const td = taskDay.get(`${r.key}|${r.day}`) || 0;
+                    if (est > 0 && td > est * LOG_OVER_EST) out.push(['warn', `📈 ${logFmt(td)} on this task this day — estimate ${logFmt(est)}`]);
+                }
+                return out;
+            };
+            const shownLive = rows.filter(r => !r.removed);
+            const summary = {
+                entries: shownLive.length,
+                hours: shownLive.reduce((s, r) => s + logHours(r.en), 0),
+                people: new Set(shownLive.map(r => logName(r.en))).size,
+                signed: shownLive.filter(r => r.en.initials?.strokes?.length).length,
+                late: shownLive.filter(r => r.en.at && localDateStr(new Date(r.en.at)) > r.day).length,
+                changed: shownLive.filter(r => r.en.editedAt).length,
+                removed: rows.length - shownLive.length,
+                longDays: new Set(shownLive.filter(r => (personDay.get(`${logName(r.en)}|${r.day}`) || 0) > LOG_LONG_DAY).map(r => `${logName(r.en)}|${r.day}`)).size
+            };
+            return { all, rows, flags, summary };
+        }
+
+        function logFillFilters(all) {
+            const names = new Map();
+            for (const r of all) names.set(logName(r.en), names.get(logName(r.en)) || r.en.temp != null);
+            const sel = $('logPerson');
+            sel.innerHTML = '<option value="">Everyone</option>' + [...names.keys()].sort((a, b) => a.localeCompare(b))
+                .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}${names.get(n) && !getEmployees()[n] ? ' (not on roster)' : ''}</option>`).join('');
+            if (!names.has(LOG.person)) LOG.person = '';
+            sel.value = LOG.person;
+            const bsel = $('logBuilding');
+            if (DeviceView.building) {
+                bsel.innerHTML = `<option value="${escapeHtml(DeviceView.building)}">${escapeHtml(DB.data.buildings?.[DeviceView.building]?.name || DeviceView.building)}</option>`;
+                bsel.disabled = true;
+                LOG.building = '';
+            } else {
+                const opts = Object.entries(DB.data.buildings || {}).map(([id, b]) => [id, b?.name || id]);
+                if (all.some(r => !r.building)) opts.push(['__none', 'No building known']);
+                bsel.innerHTML = '<option value="">All buildings</option>' + opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
+                bsel.disabled = false;
+                if (!opts.some(([v]) => v === LOG.building)) LOG.building = '';
+                bsel.value = LOG.building;
+            }
+            $('logFrom').value = LOG.from;
+            $('logTo').value = LOG.to;
+            $('logKind').value = LOG.kind;
+            $('logGroup').value = LOG.group;
+            $('logRemoved').checked = LOG.removed;
+        }
+
+        // The summary and the grouped tables, as HTML (the page and the print window share it)
+        function logHtml(M) {
+            const S = M.summary;
+            const chip = (label, value, warn) => `<span class="log-chip${warn ? ' warn' : ''}">${label} <strong>${value}</strong></span>`;
+            let html = `<div class="log-chips">${chip('Entries', S.entries)}${chip('Hours', logFmt(S.hours))}${chip('People', S.people)}` +
+                chip('✍️ Signed', S.signed) + chip('⌨️ Not signed', S.entries - S.signed, S.entries - S.signed > 0) +
+                chip('⏰ Logged late', S.late, S.late > 0) + chip('✏️ Changed after signing', S.changed, S.changed > 0) +
+                chip(`⚠️ Days over ${LOG_LONG_DAY}h`, S.longDays, S.longDays > 0) + (LOG.removed ? chip('🗑️ Removed', S.removed, S.removed > 0) : '') + '</div>';
+            if (!M.rows.length) return html + '<div class="log-empty">No hours logged for these filters.</div>';
+
+            // Hours by person (the person grouping shows the same in its headers)
+            if (LOG.group !== 'person') {
+                const per = new Map();
+                for (const r of M.rows) {
+                    if (r.removed) continue;
+                    const p = per.get(logName(r.en)) || per.set(logName(r.en), { days: new Set(), entries: 0, hours: 0, unsigned: 0 }).get(logName(r.en));
+                    p.days.add(r.day); p.entries++; p.hours += logHours(r.en);
+                    if (!r.en.initials?.strokes?.length) p.unsigned++;
+                }
+                html += `<div class="log-section"><h4>Hours by person</h4><table class="log-table"><thead><tr><th>Person</th><th class="num">Days</th><th class="num">Entries</th><th class="num">Hours</th><th class="num">Not signed</th></tr></thead><tbody>` +
+                    [...per.entries()].sort((a, b) => b[1].hours - a[1].hours).map(([n, p]) =>
+                        `<tr><td>${escapeHtml(n)}</td><td class="num">${p.days.size}</td><td class="num">${p.entries}</td><td class="num">${logFmt(p.hours)}</td><td class="num">${p.unsigned || ''}</td></tr>`).join('') +
+                    '</tbody></table></div>';
+            }
+
+            const groupOf = { day: r => r.day, person: r => logName(r.en), task: r => r.key }[LOG.group];
+            const groups = new Map();
+            for (const r of M.rows) (groups.get(groupOf(r)) || groups.set(groupOf(r), []).get(groupOf(r))).push(r);
+            const keys = [...groups.keys()];
+            if (LOG.group === 'day') keys.sort((a, b) => b.localeCompare(a));
+            else if (LOG.group === 'person') keys.sort((a, b) => a.localeCompare(b));
+            else keys.sort((a, b) => groups.get(a)[0].label.localeCompare(groups.get(b)[0].label));
+            const byTime = (a, b) => String(a.en.at || '').localeCompare(String(b.en.at || ''));
+            LOG.shown = [];
+            for (const k of keys) {
+                const list = groups.get(k);
+                if (LOG.group === 'day') list.sort((a, b) => a.label.localeCompare(b.label) || byTime(a, b));
+                else list.sort((a, b) => b.day.localeCompare(a.day) || byTime(a, b));
+                const first = list[0];
+                const title = LOG.group === 'day' ? logDayTitle(k) : LOG.group === 'person' ? k
+                    : `${first.label}${first.where ? ' — ' + first.where : ''}`;
+                const liveList = list.filter(r => !r.removed);
+                const meta = `${liveList.length} entr${liveList.length === 1 ? 'y' : 'ies'} · ${logFmt(liveList.reduce((s, r) => s + logHours(r.en), 0))}` +
+                    (list.length > liveList.length ? ` · ${list.length - liveList.length} removed` : '');
+                html += `<div class="log-section"><h4>${escapeHtml(title)}<span>${escapeHtml(meta)}</span></h4><table class="log-table"><thead><tr>` +
+                    (LOG.group !== 'day' ? '<th>Day</th>' : '') + (LOG.group !== 'person' ? '<th>Who</th>' : '') + (LOG.group !== 'task' ? '<th>Work</th>' : '') +
+                    '<th class="num">Hours</th><th>Initials</th><th>Logged</th><th>Notes</th></tr></thead><tbody>';
+                for (const r of list) {
+                    const i = LOG.shown.push(r) - 1, en = r.en;
+                    const bName = r.building ? (DB.data.buildings?.[r.building]?.name || r.building) : 'No building known';
+                    const sig = en.initials?.strokes?.length
+                        ? `<button type="button" class="log-sig" data-sig="${i}" title="Show the initials larger">${logInitialsSvg(en.initials)}</button>`
+                        : '<span class="log-nosig">not signed</span>';
+                    const logged = en.at ? `${escapeHtml(logStamp(en.at))}<span class="log-sub">on ${escapeHtml(logDevice(en.by) || 'unknown device')}</span>` : '—<span class="log-sub">Tasks tab</span>';
+                    html += `<tr${r.removed ? ' class="removed"' : ''}>` +
+                        (LOG.group !== 'day' ? `<td style="white-space:nowrap">${escapeHtml(logDayTitle(r.day))}</td>` : '') +
+                        (LOG.group !== 'person' ? `<td><strong>${escapeHtml(logName(en))}</strong></td>` : '') +
+                        (LOG.group !== 'task' ? `<td><span class="log-what">${escapeHtml(r.label)}</span><span class="log-sub">${escapeHtml([LOG_KIND_LABEL[r.kind], bName, r.where].filter(Boolean).join(' · '))}</span></td>` : '') +
+                        `<td class="num">${logFmt(logHours(en))}</td><td>${sig}</td><td>${logged}</td>` +
+                        `<td class="log-notes">${M.flags(r).map(([cls, t]) => `<span class="log-flag${cls ? ' ' + cls : ''}">${escapeHtml(t)}</span>`).join('')}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            return html;
+        }
+
+        function renderLabourLog() {
+            if (!DB.data || !$('paneLog').classList.contains('active')) return;
+            if (!LOG.to) LOG.to = localDateStr(new Date());
+            if (!LOG.from) LOG.from = localDateStr(addDays(parseISO(LOG.to), -6));
+            const M = logModel();
+            logFillFilters(M.all);
+            $('logBody').innerHTML = logHtml(M);
+        }
+
+        // Filters
+        for (const [id, field, ev] of [['logFrom', 'from', 'change'], ['logTo', 'to', 'change'], ['logPerson', 'person', 'change'],
+            ['logBuilding', 'building', 'change'], ['logKind', 'kind', 'change'], ['logGroup', 'group', 'change']]) {
+            $(id).addEventListener(ev, () => { LOG[field] = $(id).value; renderLabourLog(); });
+        }
+        $('logRemoved').addEventListener('change', () => { LOG.removed = $('logRemoved').checked; renderLabourLog(); });
+
+        // Initials, larger
+        $('logBody').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-sig]');
+            const r = btn && LOG.shown[Number(btn.dataset.sig)];
+            if (!r) return;
+            $('logSigBig').innerHTML = logInitialsSvg(r.en.initials);
+            $('logSigCaption').textContent = `${logName(r.en)} · ${logFmt(logHours(r.en))} on ${r.label} · ${logDayTitle(r.day)}` +
+                (r.en.at ? ` · logged ${logStamp(r.en.at)} on ${logDevice(r.en.by) || 'unknown device'}` : '');
+            $('logSigOverlay').hidden = false;
+        });
+        $('logSigClose').addEventListener('click', () => { $('logSigOverlay').hidden = true; });
+        $('logSigOverlay').addEventListener('click', (e) => { if (e.target === $('logSigOverlay')) $('logSigOverlay').hidden = true; });
+
+        // Print: the log with these filters in a light, print-ready window (like the board pack)
+        $('logPrintBtn').addEventListener('click', () => {
+            if (!DB.data) return;
+            const M = logModel();
+            const sel = id => $(id).selectedOptions[0]?.textContent || '';
+            const scope = [`${LOG.from ? logDayTitle(LOG.from) : 'start'} – ${LOG.to ? logDayTitle(LOG.to) : 'today'}`, sel('logPerson'), sel('logBuilding'), sel('logKind'),
+                LOG.removed ? 'removed entries shown' : 'removed entries hidden'].filter(Boolean).join(' · ');
+            const css = [...document.querySelectorAll('style')].map(st => st.textContent).join('\n');
+            const win = window.open('', '_blank', 'width=1100,height=900');
+            if (!win) { alert('The log opens in a new window to print — allow pop-ups for this page and try again.'); return; }
+            win.document.open();
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labour Log — ${escapeHtml(logDayTitle(localDateStr(new Date())))}</title><style>${css}\n${RPT_PRINT_CSS}
+                .log-sig { cursor: default; } .log-table tr { break-inside: avoid; } @media print { .log-section { overflow: visible; } }</style></head><body>
+<div class="bp-bar"><span>Labour Log</span><button type="button" id="bpPrint">🖨️ Print / Save as PDF</button></div>
+<header class="bp-head"><h1>SitkaTools — Labour Log</h1><p>${escapeHtml(scope)}</p><p>Printed ${escapeHtml(new Date().toLocaleString())}</p></header>
+${logHtml(M)}
+<script>document.getElementById('bpPrint').addEventListener('click', () => window.print());<\/script></body></html>`);
+            win.document.close();
+        });
+
+
         // ---- Tab Switching ----
         function switchTab(tabName) {
-            for (const [name, tab, pane] of [['employees', 'tabEmployees', 'paneEmployees'], ['tasks', 'tabTasks', 'paneTasks'], ['reports', 'tabReports', 'paneReports']]) {
+            for (const [name, tab, pane] of [['employees', 'tabEmployees', 'paneEmployees'], ['tasks', 'tabTasks', 'paneTasks'], ['log', 'tabLog', 'paneLog'], ['reports', 'tabReports', 'paneReports']]) {
                 $(tab).classList.toggle('active', name === tabName);
                 $(pane).classList.toggle('active', name === tabName);
             }
+            // The estimated-vs-actual report below the tabs belongs to the roster / task work, not to the log
+            document.querySelector('.report-section').style.display = (DeviceView.building || tabName === 'log') ? 'none' : '';
             if (tabName === 'reports') renderReports();
+            if (tabName === 'log') renderLabourLog();
         }
         $('tabEmployees').addEventListener('click', () => switchTab('employees'));
         $('tabTasks').addEventListener('click', () => switchTab('tasks'));
+        $('tabLog').addEventListener('click', () => switchTab('log'));
         $('tabReports').addEventListener('click', () => switchTab('reports'));
 
         // Building device (DeviceView): the roster, wages, time off and reports are office work (saved in
         // Main.json / Wages.json) — only the Tasks tab is offered, where labour recorded on this building's tasks
-        // is saved in the building's own file.
+        // is saved in the building's own file, and the Labour Log of this building's work (read-only).
         function applyDeviceView() {
             const onBuilding = !!DeviceView.building;
             $('tabEmployees').style.display = onBuilding ? 'none' : '';
             $('tabReports').style.display = onBuilding ? 'none' : '';
-            document.querySelector('.report-section').style.display = onBuilding ? 'none' : '';
-            if (onBuilding && !$('tabTasks').classList.contains('active')) switchTab('tasks');
+            document.querySelector('.report-section').style.display = (onBuilding || $('tabLog').classList.contains('active')) ? 'none' : '';
+            if (onBuilding && !$('tabTasks').classList.contains('active') && !$('tabLog').classList.contains('active')) switchTab('tasks');
         }
 
         // ---- Close Tool ----

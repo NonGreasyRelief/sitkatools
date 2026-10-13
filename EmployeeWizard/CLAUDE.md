@@ -14,13 +14,13 @@ EmployeeWizard is an **employee roster, work-schedule, and labour-cost tracking*
 
 ## UI Layout
 
-The tool has **three main tabs — Employees, Tasks and 📊 Reports**. Employees and Tasks use a two-panel setup: a scrolling list on the left and an editor panel on the right. Reports is a full-width page of charts (see "Reports Tab"). Below all three (full width) sits the **Labour Report** section.
+The tool has **four main tabs — Employees, Tasks, 📜 Labour Log and 📊 Reports**. Employees and Tasks use a two-panel setup: a scrolling list on the left and an editor panel on the right. The Labour Log is a full-width list of every hours entry (see "Labour Log Tab"), and Reports is a full-width page of charts (see "Reports Tab"). Below the tabs (full width) sits the **Labour Report** section, which the Labour Log tab hides.
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │ Header: 👥 EmployeeWizard            [Active Lot ▾]  │
 ├──────────────────────────────────────────────────────┤
-│  [ Employees ]   [ Tasks ]   [ 📊 Reports ]          │
+│ [Employees] [Tasks] [📜 Labour Log] [📊 Reports]   │
 ├────────────────────────┬─────────────────────────────┤
 │ Scrolling list         │ Editor panel                │
 │ (employees or tasks)   │ (context-dependent)         │
@@ -87,6 +87,34 @@ The tool has **three main tabs — Employees, Tasks and 📊 Reports**. Employee
 - **Notes under the table:** tasks with no estimate count as actual only, and tasks with an estimate but no hours are counted. Both totals are listed.
 - Hours only — no $ figures yet (wages stay out of reports per person; cost reports are later Phase 5 work).
 - Redrawn with the task tab (`renderTasksTab`), so it follows every labour entry, completion, lot change and DB load/update.
+
+### Labour Log Tab (📜)
+
+Built 2026-10-13 (user decision: its own tab; the office sees everything, a building sees the labour in its building). It is the accountability page: who did what, on which day, for how long, when they logged it and on which device, and the initials they drew. **Read-only:** it writes nothing.
+
+- **What it lists** (`logCollect`), one row per entry:
+  - DailyWizard chore hours: `_DailyWizard.buildings[<id>].labour[<day>][<task code>]`.
+  - Hours on calendar events: every event's `labour_map[<day>]`, whether logged in DailyWizard or typed in the Tasks tab. Crop tasks, equipment and any other event are included.
+  - Entries the office removed after their day: `_DailyWizard.buildings[<id>].adjustments`, struck through.
+- **Each row:**
+  - who (people not on the roster are flagged);
+  - the work: chore or task title, its kind, building, room and lot;
+  - the hours;
+  - the drawn initials (tap them for a larger view), or "not signed";
+  - when it was logged and on which device (`at` / `by`). Tasks-tab entries have no time.
+- **Flags:**
+  - typed in the Tasks tab, not signed;
+  - logged after the day worked ("⏰ logged 2 days later");
+  - a signed entry changed in the Tasks tab ("✏️ signed for 1h 15m, changed …", from `signedHours` / `editedAt`);
+  - removed by the office;
+  - a person with more than 12 h on one day (`LOG_LONG_DAY`);
+  - a task's day total more than 1.5× its estimate (`LOG_OVER_EST`; chores: staff × minutes, crop tasks: `estStaff × estMinutes`).
+- **Summary chips:** entries, hours, people, signed, not signed, logged late, changed after signing, days over 12 h, removed. Then an **Hours by person** table (days, entries, hours, not signed), except when grouped by person.
+- **Filters:** From / To (the last 7 days by default), person, building, kind of work (daily chores, crop tasks, equipment, other), Group by (day, newest first / person / task), and Show removed entries. Filters are session-only.
+- **Building of an entry:** a chore's building; an event's room by CropLabourWizard's phase rules (`taskRoomId`) → its building; failing that, the building it was logged on (`by`). Entries with neither count as "No building known".
+- **Building devices:** the tab is shown next to Tasks. It lists only the entries whose building is the device's building, and the Building filter is locked to it.
+- **🖨️ Print:** opens the log with the current filters in a light, print-ready window, the same way as the board pack.
+- Hours only: no wages or $. Redrawn on tab switch, on DB load and on live updates while the tab is open.
 
 ### Reports Tab (📊, office only)
 
@@ -172,6 +200,8 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 ```
 - `labour_map` keys are ISO dates; each value records who worked that day and for how long. Regular employees reference roster names (wage resolved from the roster at report time); temp entries carry their own name + wage inline.
 - **Hours logged on the floor:** DailyWizard adds entries to the same `labour_map` when staff log hours on a crop or equipment task. Those entries also carry `initials` (`{ name, strokes }`), `at` and `by`; a DailyWizard temp may have no `wage`. The Tasks tab lists them with a **✍️ signed** tag (and "no wage" for such a temp), and edits or deletes them like any other entry.
+- **Entry ids:** every entry has an `id` (`le_` + 10 characters, `newLabourId()`). New entries get one here and in DailyWizard. Older entries get one derived from their content when SitkaTools opens the file. SitkaTools uses them to merge the office's and a building's hours entry by entry (root `CLAUDE.md` → "Split Database").
+- **Changing a signed entry:** when "Add (or update)" changes the hours of an entry that was signed in DailyWizard, the entry keeps a record: `signedHours` (the hours as signed, set the first time), `editedAt` (ISO time) and `editedBy` (`office` or the building id). The tag reads "✍️ signed · changed", and the Labour Log and DailyWizard's hours view show the change. Deleting an entry in the Tasks tab leaves no record.
 - Keys may fall **outside** the event's `[date, endDate]` range: when a single-day event turns into multi-day work, the task editor's "+ Add day" picker records extra days in `labour_map` without touching the event's dates (the task keeps sitting in its original due state until completed). Task hour/cost totals span **all** recorded days, not just the event range.
 - `completed` is set when the task is marked finished from the task editor panel.
 
@@ -197,7 +227,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 
 ## Relationship to SitkaTools
 
-**Building devices** (root `CLAUDE.md` → "Building Device View") get only the **Tasks** tab, and its Active Lot list holds only that building's lots. Labour and completion are floor fields, saved in the building's own file. The roster, wages, time off, the Labour Report and the Reports tab are office work, so they're hidden there.
+**Building devices** (root `CLAUDE.md` → "Building Device View") get only the **Tasks** tab, whose Active Lot list holds only that building's lots, and the **📜 Labour Log** of the work done in that building. Labour and completion are floor fields, saved in the building's own file. The roster, wages, time off, the Labour Report and the Reports tab are office work, so they're hidden there.
 
 This tool is part of the SitkaGit suite. It operates as a standalone single-file HTML application with no communication to other tools. All shared state flows through the common JSON database file (`DB-YY-MM-DD.json`).
 
@@ -224,7 +254,7 @@ This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key s
 - No network calls of any kind
 - No localStorage, sessionStorage, IndexedDB, or cookies — all cross-window state via postMessage
 - Labour reports/graphs (Phase 5) must be hand-rolled (SVG/canvas) — no chart libraries
-- The Reports tab may **read** every tool's data; it writes only `_EmployeeWizard.crops` / `.settings`
+- The Reports tab may **read** every tool's data; it writes only `_EmployeeWizard.crops` / `.settings`. The Labour Log reads the same way and writes nothing.
 
 ## Design Decisions (Confirmed)
 

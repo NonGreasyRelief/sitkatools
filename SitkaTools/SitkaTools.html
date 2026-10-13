@@ -3251,6 +3251,46 @@
             }
         }
 
+        // ---- Labour entry ids ----
+        // Every hours entry in an event's labour_map carries an `id` ('le_…'), so a building's entries and the
+        // office's merge one by one (DbSplit.mergeLabour) instead of the newest file's list replacing the other's.
+        // Entries saved before ids existed get one derived from their content, the same on every device.
+        function ensureLabourMapIds(evId, map) {
+            if (!map || typeof map !== 'object') return;
+            const used = new Set();
+            for (const [day, list] of Object.entries(map)) {
+                if (!Array.isArray(list)) continue;
+                for (const en of list) {
+                    if (!en || typeof en !== 'object') continue;
+                    if (typeof en.id === 'string' && en.id && !used.has(en.id)) {
+                        used.add(en.id);
+                        continue;
+                    }
+                    const base = 'le_' + contentHash([evId, day, en.employee, en.temp, en.hours, en.at, en.by].join('|'));
+                    let id = base;
+                    for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+                    en.id = id;
+                    used.add(id);
+                }
+            }
+        }
+
+        function ensureLabourIds(events) {
+            for (const ev of events) if (ev?.labour_map) ensureLabourMapIds(ev.id, ev.labour_map);
+        }
+
+        // An event's labour entries by id → { day, entry } (ids are derived on a copy when missing)
+        function labourIndex(evId, map) {
+            const out = new Map();
+            if (!map || typeof map !== 'object') return out;
+            const copy = JSON.parse(JSON.stringify(map));
+            ensureLabourMapIds(evId, copy);
+            for (const [day, list] of Object.entries(copy)) {
+                if (Array.isArray(list)) for (const en of list) if (en?.id) out.set(en.id, { day, entry: en });
+            }
+            return out;
+        }
+
         const DB = {
             data: null,
             fileName: '',
@@ -3272,6 +3312,7 @@
                 if (!this.data.buildings) this.data.buildings = {};
                 if (!this.data.calendarEvents) this.data.calendarEvents = [];
                 ensureEventIds(this.data.calendarEvents);
+                ensureLabourIds(this.data.calendarEvents);
                 return this.data;
             }
         };
@@ -4058,8 +4099,9 @@
                 this.metas = {};
                 this.hashes = {};
                 this.baseline = null;
-                this.stamps = { lots: {}, events: {} };
+                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {} };
                 this.overlays = {};
+                this.mainLabour = {};
                 this.paperHome = {};
                 this.sheetHome = {};
                 this.diskPaper = {};
@@ -4108,7 +4150,11 @@
                 const db = JSON.parse(JSON.stringify(main));
                 const stamps = db._fieldStamps || {};
                 delete db._fieldStamps;
-                this.stamps = { lots: stamps.lots || {}, events: stamps.events || {} };
+                this.stamps = { lots: stamps.lots || {}, events: stamps.events || {}, labour: stamps.labour || {}, labourRemoved: stamps.labourRemoved || {} };
+                // Labour hours as Main holds them (ids filled in) — a building device tidies its updates against it
+                ensureLabourIds(db.calendarEvents || []);
+                this.mainLabour = {};
+                for (const ev of db.calendarEvents || []) if (ev?.id && ev.labour_map) this.mainLabour[ev.id] = JSON.parse(JSON.stringify(ev.labour_map));
                 this.paperHome = {};
                 this.sheetHome = {};
                 this.overlays = {};
@@ -4175,8 +4221,10 @@
                     }
                 }
 
-                // Floor updates: per field, the newest of the office's stamped edit and every building's overlay wins
+                // Floor updates: per field, the newest of the office's stamped edit and every building's overlay wins.
+                // Labour hours are the exception: they merge entry by entry (mergeLabour).
                 const eventsById = new Map((db.calendarEvents || []).map(ev => [ev.id, ev]));
+                const labourUpdates = new Map();
                 const newest = {};
                 const wins = (kind, id, field, at) => {
                     const k = `${kind}|${id}|${field}`;
@@ -4193,10 +4241,103 @@
                     for (const [evId, fields] of Object.entries(ov.events)) {
                         const ev = eventsById.get(evId);
                         if (!ev) continue;
-                        for (const [f, u] of Object.entries(fields)) if (wins('events', evId, f, u.at)) setOrDelete(ev, f, u.value);
+                        for (const [f, u] of Object.entries(fields)) {
+                            if (f === 'labour_map') {
+                                const u2 = this.labourUpdate(evId, u);
+                                if (u2) (labourUpdates.get(evId) || labourUpdates.set(evId, []).get(evId)).push(u2);
+                            } else if (wins('events', evId, f, u.at)) setOrDelete(ev, f, u.value);
+                        }
                     }
                 }
+                for (const [evId, updates] of labourUpdates) {
+                    const ev = eventsById.get(evId);
+                    const merged = this.mergeLabour(evId, ev.labour_map, updates);
+                    if (!sameValue(merged, ev.labour_map)) setOrDelete(ev, 'labour_map', merged);
+                }
                 return db;
+            },
+
+            // ---- Labour hours: merged entry by entry ----
+            // An event's labour_map is a list of entries per day, and the office and a building can both add to it
+            // between saves. A building's file keeps, next to the event's whole list (`value`, which older builds use
+            // newest-wins), which entries it added or changed (`entries`: id → time) and which it removed
+            // (`removed`: id → time). The office keeps the same in Main._fieldStamps (`labour`, `labourRemoved`).
+            // Merged: Main's list, plus every building's added or changed entries (the newer change wins), minus
+            // every entry anyone removed.
+
+            // A building's labour update in the merge's shape; one saved by an older build counts all its entries,
+            // as long as the office hasn't edited the hours since (the old newest-wins rule)
+            labourUpdate(evId, u) {
+                if (!u || typeof u !== 'object') return null;
+                if (u.entries || u.removed) return { value: u.value, entries: u.entries || {}, removed: u.removed || {} };
+                if ((u.at || 0) <= (this.stamps.events[evId]?.labour_map || 0)) return null;
+                const entries = {};
+                for (const id of labourIndex(evId, u.value).keys()) entries[id] = u.at || 0;
+                return { value: u.value, entries, removed: {} };
+            },
+
+            mergeLabour(evId, mainMap, updates) {
+                const removed = { ...(this.stamps.labourRemoved[evId] || {}) };
+                for (const u of updates) Object.assign(removed, u.removed);
+                const officeAt = this.stamps.labour[evId] || {};
+                const days = {};          // day → [entry id…], in order
+                const pick = new Map();   // entry id → { day, entry, t }
+                const keepEmpty = new Set();
+                for (const [day, list] of Object.entries(mainMap || {})) {
+                    if (!Array.isArray(list)) continue;
+                    days[day] = [];
+                    if (!list.length) keepEmpty.add(day);   // a day added in EmployeeWizard, no hours yet
+                    for (const en of list) {
+                        if (!en?.id || removed[en.id] || pick.has(en.id)) continue;
+                        pick.set(en.id, { day, entry: en, t: officeAt[en.id] || 0 });
+                        days[day].push(en.id);
+                    }
+                }
+                for (const u of updates) {
+                    const idx = labourIndex(evId, u.value);
+                    for (const [id, t] of Object.entries(u.entries)) {
+                        const hit = idx.get(id);
+                        if (!hit || removed[id]) continue;
+                        const cur = pick.get(id);
+                        if (cur && cur.t >= t) continue;
+                        if (cur && cur.day !== hit.day) days[cur.day] = days[cur.day].filter(x => x !== id);
+                        if (!cur || cur.day !== hit.day) (days[hit.day] || (days[hit.day] = [])).push(id);
+                        pick.set(id, { day: hit.day, entry: hit.entry, t });
+                    }
+                }
+                const out = {};
+                const order = [...Object.keys(mainMap || {}), ...Object.keys(days).filter(d => !(mainMap && d in mainMap)).sort()];
+                for (const day of order) {
+                    const ids = days[day] || [];
+                    if (ids.length || keepEmpty.has(day)) out[day] = ids.map(id => JSON.parse(JSON.stringify(pick.get(id).entry)));
+                }
+                return Object.keys(out).length ? out : null;
+            },
+
+            // Building device: its labour update for one event — the entries it added or changed and the ones it
+            // removed since the files were opened, on top of its earlier update. What Main already holds (or the
+            // office has changed since) needs no update, and a removal Main no longer holds needs no record.
+            labourOverlay(evId, baseMap, curMap, prev, now) {
+                const base = labourIndex(evId, baseMap), cur = labourIndex(evId, curMap);
+                const old = prev ? this.labourUpdate(evId, prev) : null;
+                const entries = { ...(old?.entries || {}) }, removed = { ...(old?.removed || {}) };
+                for (const [id, hit] of cur) if (!sameValue(hit, base.get(id))) entries[id] = now;
+                for (const id of base.keys()) {
+                    if (cur.has(id)) continue;
+                    removed[id] = now;
+                    delete entries[id];
+                }
+                const main = labourIndex(evId, this.mainLabour[evId]);
+                const officeAt = this.stamps.labour[evId] || {}, officeRemoved = this.stamps.labourRemoved[evId] || {};
+                for (const id of Object.keys(entries)) {
+                    const hit = cur.get(id);
+                    if (!hit || officeRemoved[id] || sameValue(hit, main.get(id)) || (officeAt[id] || 0) >= entries[id]) delete entries[id];
+                }
+                for (const id of Object.keys(removed)) if (!main.has(id)) delete removed[id];
+                if (!Object.keys(entries).length && !Object.keys(removed).length) return null;
+                const value = curMap ? JSON.parse(JSON.stringify(curMap)) : null;
+                ensureLabourMapIds(evId, value);
+                return { value, at: prev && sameValue(prev.value, value) && prev.at ? prev.at : now, entries, removed };
             },
 
             // Which building's file a paperwork instance / sheet belongs in. Sticky once saved somewhere;
@@ -4430,10 +4571,25 @@
                     for (const f of EVENT_FLOOR_FIELDS) {
                         if (!sameValue(ev[f], baseEvents.get(ev.id)?.[f])) (this.stamps.events[ev.id] || (this.stamps.events[ev.id] = {}))[f] = now;
                     }
+                    // Labour hours, entry by entry: what the office added or changed, and what it removed
+                    const before = labourIndex(ev.id, baseEvents.get(ev.id)?.labour_map), after = labourIndex(ev.id, ev.labour_map);
+                    for (const [id, hit] of after) {
+                        if (!sameValue(hit, before.get(id))) (this.stamps.labour[ev.id] || (this.stamps.labour[ev.id] = {}))[id] = now;
+                    }
+                    for (const id of before.keys()) {
+                        if (after.has(id)) continue;
+                        (this.stamps.labourRemoved[ev.id] || (this.stamps.labourRemoved[ev.id] = {}))[id] = now;
+                        if (this.stamps.labour[ev.id]) delete this.stamps.labour[ev.id][id];
+                    }
                 }
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const id of Object.keys(this.stamps.lots)) if (!db.lots?.[id]) delete this.stamps.lots[id];
                 for (const id of Object.keys(this.stamps.events)) if (!liveEvents.has(id)) delete this.stamps.events[id];
+                for (const key of ['labour', 'labourRemoved']) {
+                    for (const id of Object.keys(this.stamps[key])) {
+                        if (!liveEvents.has(id) || !Object.keys(this.stamps[key][id]).length) delete this.stamps[key][id];
+                    }
+                }
             },
 
             // Building device: its floor-field edits become timestamped overlays in its own file.
@@ -4458,16 +4614,25 @@
                 const baseEvents = new Map((base.calendarEvents || []).map(e => [e.id, e]));
                 for (const ev of db.calendarEvents || []) {
                     for (const f of EVENT_FLOOR_FIELDS) {
+                        if (f === 'labour_map') continue;
                         if (!sameValue(ev[f], baseEvents.get(ev.id)?.[f])) record('events', ev.id, f, ev[f]);
                     }
+                    // Labour hours: the entries this building added, changed or removed (merged entry by entry)
+                    const prevLabour = ov.events[ev.id]?.labour_map;
+                    const baseLabour = baseEvents.get(ev.id)?.labour_map;
+                    if (!prevLabour && sameValue(ev.labour_map, baseLabour)) continue;
+                    const lab = this.labourOverlay(ev.id, baseLabour, ev.labour_map, prevLabour, now);
+                    if (lab) (ov.events[ev.id] || (ov.events[ev.id] = {})).labour_map = lab;
+                    else if (ov.events[ev.id]) delete ov.events[ev.id].labour_map;
                 }
                 // Drop overlays for records that are gone, or that a later office edit has superseded
+                // (labour updates were tidied above, entry by entry)
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const kind of ['lots', 'events']) {
                     for (const [rid, fields] of Object.entries(ov[kind])) {
                         const exists = kind === 'lots' ? !!db.lots?.[rid] : liveEvents.has(rid);
                         for (const [f, u] of Object.entries(fields)) {
-                            if (!exists || (this.stamps[kind][rid]?.[f] || 0) >= u.at) delete fields[f];
+                            if (!exists || (!(kind === 'events' && f === 'labour_map') && (this.stamps[kind][rid]?.[f] || 0) >= u.at)) delete fields[f];
                         }
                         if (!Object.keys(fields).length) delete ov[kind][rid];
                     }
@@ -4515,7 +4680,11 @@
                 this.metas[name] = meta;
                 this.hashes[name] = contentHash(text);
                 this.loaded.add(name);
-                if (name === SPLIT_MAIN) DB.data._meta = meta;
+                if (name === SPLIT_MAIN) {
+                    DB.data._meta = meta;
+                    this.mainLabour = {};
+                    for (const ev of part.calendarEvents || []) if (ev?.id && ev.labour_map) this.mainLabour[ev.id] = JSON.parse(JSON.stringify(ev.labour_map));
+                }
                 if (name === SPLIT_WAGES) this.haveWages = true;
                 const m = SPLIT_BUILDING_RE.exec(name);
                 if (m && part._building) {
@@ -4777,12 +4946,15 @@
                     role: this.role, loaded: [...this.loaded], haveWages: this.haveWages, baseParts: this.baseParts,
                     metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
                     overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome,
-                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers
+                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, mainLabour: this.mainLabour
                 };
             },
             importState(state) {
                 this.reset();
                 Object.assign(this, state, { loaded: new Set(state.loaded || []) });
+                // A copy saved by an older build has no labour stamps / Main labour yet
+                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {}, ...(state.stamps || {}) };
+                this.mainLabour = state.mainLabour || {};
                 this.active = true;
             },
 
@@ -5832,12 +6004,19 @@
 
         // Listen for subtool updates via postMessage
         window.addEventListener('message', (e) => {
-            if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
+            const isUpdate = e.data?.type === 'sitkaGit_db_update' && !!e.data.payload;
+            if (!isUpdate && e.data?.type !== 'sitkaGit_ping') return;
             // Only accept DB updates from subtool windows this page opened (ROADMAP 0.4)
             if (!openSubtools.some(entry => (entry.win || entry) === e.source)) {
-                console.warn('[SitkaTools] Ignored sitkaGit_db_update from a window SitkaTools did not open');
+                // A tool window that outlived the page that opened it (SitkaTools was reloaded): tell it, so it asks
+                // the user to reopen it from here instead of looking as if its changes were kept
+                if (e.source) {
+                    try { e.source.postMessage({ type: 'sitkaGit_not_linked', about: e.data.type }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
+                }
+                if (isUpdate) console.warn('[SitkaTools] Ignored sitkaGit_db_update from a window SitkaTools did not open');
                 return;
             }
+            if (!isUpdate) return;   // a known window checking its link: nothing to do
 
             console.log('[SitkaTools] Received sitkaGit_db_update');
             console.log('[SitkaTools] Incoming calendarEvents count:', e.data.payload.calendarEvents?.length || 0);

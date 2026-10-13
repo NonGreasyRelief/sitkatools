@@ -139,6 +139,9 @@ Built 2026-10-12 (ROADMAP Phase 1, "Labour in DailyWizard"), following the roadm
   - An entry the office removes after its day is deleted from the hours and **kept on record** in the building's adjustments log. It stays visible, struck through, in the hours view. So the hours themselves stay clean for every tool that reads them.
 - **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`. The form fields and the initials being drawn are left alone.
 - **Check-offs** are unchanged: still session-only, and separate from hours.
+- **Where to see them all:** EmployeeWizard's **📜 Labour Log** tab lists every entry, chores and tasks, with who, what, when it was logged, on which device, the drawn initials and the office's removals. The office sees every building; a building device sees its own.
+- **A signed entry changed in EmployeeWizard's Tasks tab** keeps `signedHours` / `editedAt` / `editedBy`. The hours view shows "signed for 1h 15m, changed in EmployeeWizard …" under it.
+- **A window that lost its link:** if SitkaTools is reloaded or closed while this popup stays open, a cover says so, and an entry added anyway is reported as not kept (root `CLAUDE.md` → postMessage rule 10).
 - **Reports:** EmployeeWizard's Reports read chore hours (`rptChoreLabour`) and event hours (`labour_map`): labour mix, labour hours, logged vs scheduled, estimate vs actual, and $ per gram.
   - A temp's typed wage is used for cost.
   - A temp with no wage counts in hours. A crop with such hours is left out of $ figures, the same rule as any missing wage.
@@ -189,7 +192,7 @@ All of this tool's data lives under one top-level key, owned exclusively by Dail
 "labour": {
   "2026-10-12": {
     "j234": [
-      { "employee": "Kasia", "hours": 1.25, "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] },
+      { "id": "le_k3m9qa2xtd", "employee": "Kasia", "hours": 1.25, "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] },
         "at": "2026-10-12T20:49:00.000Z", "by": "B6" }
     ]
   }
@@ -203,6 +206,7 @@ All of this tool's data lives under one top-level key, owned exclusively by Dail
 ```
 
 - `labour` is keyed by day, then task `code`. Each entry has:
+  - `id` (`le_` + 10 characters, `newLabourId()`): the office's and a building's hours on an event merge entry by entry by it (root `CLAUDE.md` → "Split Database"). Older entries get one derived from their content when SitkaTools opens the file;
   - `employee` (a roster name), or `temp` (a typed name) with an optional `wage`;
   - `hours` (decimal);
   - `initials` (`{ name, strokes }`, PaperWizard's normalized stroke format);

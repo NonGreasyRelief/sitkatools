@@ -25,6 +25,7 @@ SitkaGit/
 │   └── SitkaTools.html       # Main hub: lot management + calendar viewer
 ├── <ToolName>/
 │   └── <ToolName>.html       # Individual tool (pattern for all future tools)
+├── tests/                     # Browser tests: node tests/run.mjs (see "Tests")
 └── ...                       # Additional tool directories
 ```
 
@@ -109,7 +110,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
 - **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (the save link clicked, right-clicked, or tapped), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
-- Tools only read/write their own keys — they do not modify other tools' data. **Reports exception (read-only):** EmployeeWizard's 📊 Reports tab may *read* every tool's data (user decision 2026-10-12); it writes only `_EmployeeWizard.crops` / `.settings` (see `EmployeeWizard/REPORTS.md`). PaperWizard questions may carry an optional `metric` tag for it. **Write exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
+- Tools only read/write their own keys — they do not modify other tools' data. **Reports exception (read-only):** EmployeeWizard's 📊 Reports tab may *read* every tool's data (user decision 2026-10-12); it writes only `_EmployeeWizard.crops` / `.settings` (see `EmployeeWizard/REPORTS.md`). Its 📜 Labour Log tab reads every hours entry the same way — DailyWizard chore hours and adjustments, and every event's `labour_map` — and writes nothing (user decision 2026-10-13). PaperWizard questions may carry an optional `metric` tag for it. **Write exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Event IDs
@@ -160,6 +161,12 @@ Calendar events support an optional `endDate` field for events that span consecu
 
 // SitkaTools → every open subtool: the current DB, whenever it changes (see rule 9)
 { type: 'sitkaGit_db_update', payload: DB.data, view: { building: '<building id>' | null } }
+
+// Subtool → SitkaTools: is this window still linked? (sent when the tool window gets the focus — rule 10)
+{ type: 'sitkaGit_ping' }
+
+// SitkaTools → a window it didn't open (it outlived a reload), in answer to sitkaGit_db_update or sitkaGit_ping
+{ type: 'sitkaGit_not_linked', about: 'sitkaGit_db_update' | 'sitkaGit_ping' }
 ```
 
 #### Rules
@@ -170,13 +177,19 @@ Calendar events support an optional `endDate` field for events that span consecu
 4. **Subtools notify after every mutation.** After adding/deleting/editing data, call `notifySitkaTools()` which posts the updated DB back to the opener window.
 5. **Retry mechanism for initial DB delivery.** SitkaTools retries sending the DB up to 5 times at 200ms intervals until the subtool acknowledges with `sitkaGit_ready`.
 6. **No localStorage, sessionStorage, IndexedDB, or cookies in subtools.** All cross-window state flows through postMessage.
-7. **Same-origin messages only.** Every `postMessage` targets `SITKA_MSG_ORIGIN` — the page's own origin when served over http(s) (GitHub Pages), falling back to `'*'` only under `file://`, where origins are opaque and can't be targeted. Receivers check the sender: SitkaTools accepts `sitkaGit_db_update` only from windows in its `openSubtools` list, and subtools accept messages only from `window.opener`.
+7. **Same-origin messages only.** Every `postMessage` targets `SITKA_MSG_ORIGIN` — the page's own origin when served over http(s) (GitHub Pages), falling back to `'*'` only under `file://`, where origins are opaque and can't be targeted. Receivers check the sender: SitkaTools accepts `sitkaGit_db_update` only from windows in its `openSubtools` list (any other sender gets `sitkaGit_not_linked` back — rule 10), and subtools accept messages only from `window.opener`.
 8. **Subtool updates mark the DB unsaved.** SitkaTools calls `markUnsaved()` when a `sitkaGit_db_update` arrives, so closing the main window after a subtool edit triggers the unsaved-changes warning.
 9. **SitkaTools pushes every change to every open subtool.** Otherwise a tool window keeps the DB it opened with, and its next edit writes that old copy back over newer work. `broadcastToSubtools()` posts `sitkaGit_db_update` (with `view`) to each window in `openSubtools`:
    - whenever SitkaTools' DB changes or is loaded, reloaded or replaced — debounced, from `WorkCopy.flush()`, which `markUnsaved()` / `clearUnsaved()` schedule;
    - right after it takes a subtool's `sitkaGit_db_update`, skipping the sender (it already has that DB).
 
    A window that was already sent exactly this DB (the save stamp `_meta` aside) is skipped, and the initial `sitkaGit_db` retries always send the current DB. Subtools handle it from their opener like `sitkaGit_db` — replace `DB.data`, `ensureStructure()`, re-render without losing half-typed input or an open draft — but **never reply** to it (no `sitkaGit_ready`, no `notifySitkaTools()`), so nothing ping-pongs. EquipmentWizard doesn't resync on it.
+10. **A tool window that lost its link says so.** When SitkaTools is reloaded or closed, a popup it opened stays open, but its changes can no longer reach SitkaTools. Without a warning, the tool would still say "Logged 1h" while nothing was kept (found by the 2026-10-13 test). Every subtool has the same `LinkLost` snippet, right after `SITKA_MSG_ORIGIN`:
+    - `notifySitkaTools()` starts with `if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;`. When the opener is gone, that shows the cover ("SitkaTools didn't get your last change").
+    - SitkaTools answers a `sitkaGit_db_update` or `sitkaGit_ping` from a window that isn't in `openSubtools` with `sitkaGit_not_linked`.
+    - The tool pings on `focus` / `visibilitychange`, and from its first `sitkaGit_db` on it checks every 3 s whether the opener has closed.
+    - The cover offers **Close this window**, or **Keep it open to look** (changes made after that bring the cover back).
+    - It applies only to a window that got its DB by postMessage and isn't using the shared working copy (`WorkCopy.gotDb && !WorkCopy.inUse`). Tablet tabs save through the shared copy and never see it.
 
 ```js
 // postMessage target origin: our own origin when served over http(s).
@@ -300,9 +313,14 @@ function showSyncToast(message) {
 
 // Listen for subtool updates via postMessage
 window.addEventListener('message', (e) => {
-    if (e.data?.type !== 'sitkaGit_db_update' || !e.data.payload) return;
-    // Only accept DB updates from subtool windows this page opened
-    if (!openSubtools.some(entry => (entry.win || entry) === e.source)) return;
+    const isUpdate = e.data?.type === 'sitkaGit_db_update' && !!e.data.payload;
+    if (!isUpdate && e.data?.type !== 'sitkaGit_ping') return;
+    // Only accept DB updates from subtool windows this page opened; a window that outlived a reload is told (rule 10)
+    if (!openSubtools.some(entry => (entry.win || entry) === e.source)) {
+        e.source?.postMessage({ type: 'sitkaGit_not_linked', about: e.data.type }, SITKA_MSG_ORIGIN);
+        return;
+    }
+    if (!isUpdate) return;   // a linked window checking its link
 
     // Keep SitkaTools' own save stamp; only a real change counts as unsaved (some tools resync on open)
     keepOwnSaveStamp(e.data.payload);
@@ -336,6 +354,7 @@ DB.ensureStructure();
 
 // Notify SitkaTools of changes via postMessage
 function notifySitkaTools() {
+    if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (rule 10: cover shown)
     if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data); // tablet tab: via the shared working copy
     if (window.opener && !window.opener.closed) {
         window.opener.postMessage({
@@ -459,6 +478,13 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 **Every device opens all the files and saves only its own.** SitkaTools merges them into the usual single-DB shape (`DbSplit.merge`), so every tool works unchanged, and splits it back on save (`DbSplit.split`). The device's role — `office` or a building id — comes from the **page link**: each device bookmarks / adds to its home screen `SitkaTools.html?device=office` or `?device=<building id>` (matched case-insensitively; 🏢 Building Files → **Set this device…** shows the link). Without it, opening the files asks "Which device is this?" and the answer lasts only for that page session. The role is **never stored in the browser** (an older build's stored role is deleted on start).
 
 - **Overlays (building → office records):** a building device can't save Main, so its edits to the floor fields `lots.plantCount / stage / currentRoom` and `calendarEvents[].completed / labour_map` are saved in its own file as `{ value, at }` overlays. On merge, for each field the newest of the office's stamped edit (`Main._fieldStamps`, written when the office changes that field) and every building's overlay wins. An overlay keeps its original `at` while its value is unchanged, and is dropped once the office has superseded it or the record is gone.
+- **Labour hours merge entry by entry** (since 2026-10-13). `labour_map` is a list per day, and the office and a building can both add to it between saves. Newest-wins on the whole list used to drop the other side's entries (found by the 2026-10-13 test).
+  - **Entry ids:** every entry has an `id` (`le_` + 10 characters). DailyWizard and EmployeeWizard give new entries one. Entries saved before ids existed get one derived from their content (`ensureLabourIds`, the same on every device), assigned in `DB.ensureStructure()` and on merge.
+  - **A building's overlay** for `labour_map` is `{ value, at, entries: { id: time }, removed: { id: time } }`. `value`/`at` is the whole list, which older builds still use newest-wins. `entries` lists the entries this building added or changed, and `removed` the ones it removed.
+  - **The office** keeps the same in `Main._fieldStamps.labour` (`event id → { entry id: time }`, what it added or changed) and `.labourRemoved` (what it removed). Both are written by `stampOfficeChanges` from the diff against the opened files.
+  - **Merge (`mergeLabour`):** Main's list, plus each building's added or changed entries, minus every entry anyone removed. If the same entry was changed in two places, the newer change wins. Main's empty days ("+ Add day") are kept.
+  - **Tidy:** a building's update drops an entry once Main holds it unchanged (or the office has changed or removed it since), and drops a removal once Main no longer holds that entry. So the update shrinks away after the office has saved the result.
+  - **Older files:** an overlay saved before this change (no `entries` / `removed`) counts all its entries, as long as the office hasn't edited the hours since. If the office has, it is ignored, as before.
 - **Paperwork routing:** an instance stays in the building file it was opened from; a new one filled on a building device goes in that device's file; otherwise it is routed by the instance's room → building (then the lot's rooms). The exception is a moved lot: its unsigned pages go with it (see Lot move). Signed pages never move, so a lot's paper trail can span building files.
 - **What a device may save:** the office saves Main, Wages (only if Wages.json was opened) and any building file; a building device saves only its own building file. A file is only overwritten if it was opened this session (or, in folder mode, doesn't exist yet). Changes a device can't save are listed in a warning and stay unsaved. Folder saves re-check each file on disk and write `<name>-conflict-HHMM.json` instead of overwriting one saved elsewhere since opening.
 - **Saving:** 💾 Save DB shows one right-click **Save Link As…** link per changed file, plus **Save to "<folder>"** when a folder is open.
@@ -511,7 +537,7 @@ A building device sees only its own building and only what it can save. It appli
     - a lot on its way **to** this building — accept it in SitkaTools first.
 
     The cabinet shows a banner and drops Fill, Sign and Initialize paperwork. Every fill, sign or start entry point refuses with a toast, and printing doesn't stamp `printedAt`.
-  - **EmployeeWizard** shows only the Tasks tab (labour on the building's lots). The roster, time off and report are hidden.
+  - **EmployeeWizard** shows only the Tasks tab (labour on the building's lots) and the 📜 Labour Log of the work done in the building. The roster, time off and reports are hidden.
 
 ## Crop Projection (Projected Lots)
 
@@ -886,7 +912,7 @@ Any implementation must reproduce this table exactly:
 | GeneralEvent | `GeneralEvent/` | Active | Create standalone calendar events with text, date, and emoji |
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
-| EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
+| EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
 | DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs and ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials) |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
@@ -1222,6 +1248,13 @@ function populateRoomSelector() {
 - Modern CSS with custom properties (CSS variables) for theming
 - Clean, readable grow-room-friendly contrast ratios
 - Prefer CSS Grid/Flexbox for layouts
+
+### Tests
+- `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in a headless Firefox. It serves this folder on 127.0.0.1 and drives the browser over WebDriver BiDi, with real clicks, real pen strokes on the initials pad and real right-click save links.
+- Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
+- The tests use a made-up database (`tests/lib/helpers.mjs` → `fixtureDb()`) and never touch real DB files.
+- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; and every tool opening without page errors.
+- Run them before a change to saving, merging or the postMessage protocol goes out.
 
 ### JSON Database
 - Always use ISO date strings (`YYYY-MM-DD`) for dates in data
