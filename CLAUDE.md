@@ -108,7 +108,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
 - **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (the save link clicked, right-clicked, or tapped), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
-- Tools only read/write their own keys — they do not modify other tools' data. **Exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
+- Tools only read/write their own keys — they do not modify other tools' data. **Reports exception (read-only):** EmployeeWizard's 📊 Reports tab may *read* every tool's data (user decision 2026-10-12); it writes only `_EmployeeWizard.crops` / `.settings` (see `EmployeeWizard/REPORTS.md`). PaperWizard questions may carry an optional `metric` tag for it. **Write exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Event IDs
@@ -450,7 +450,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 | File | Saved by | Holds |
 |---|---|---|
-| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
+| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries and report settings (`_EmployeeWizard.crops` / `.settings`), recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
 | `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h } }` |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]`, the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
@@ -470,7 +470,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
   - **Until then** the old file keeps its copies exactly as on disk (`diskPaper`).
   - **Tidy:** leftovers are dropped by the next save of a device that may rewrite that file (the office, or that building). `tidyFiles` marks those files for saving when opened; on the office it also marks the DB unsaved with a "🚚 Lot hand-off done — Save DB to tidy …" toast, including right after the office itself saves an Accept.
   - **Older moves:** transfers accepted before this (no `paperwork` list) leave their pages where they are.
-- **Lot close-out:** office only in split mode. The lot record, its events (with labour), CLW generation history, paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json` (written into the folder's `Archive/` subfolder, or offered as a right-click link). The lot is removed from the DB only after the archive is written or its link used; Save DB then drops it from every file.
+- **Lot close-out:** office only in split mode. The lot record, its events (with labour), CLW generation history, paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json` (written into the folder's `Archive/` subfolder, or offered as a right-click link). The lot is removed from the DB only after the archive is written or its link used; Save DB then drops it from every file. Its saved crop summary (`_EmployeeWizard.crops[lotId]`, EmployeeWizard → Reports → Setup & data) is not touched, so the lot stays in the report trends for 36 months; a lot closed without one can be re-imported there from its archive file.
 
 ### Shared Working Copy (tablets)
 
@@ -885,7 +885,7 @@ Any implementation must reproduce this table exactly:
 | GeneralEvent | `GeneralEvent/` | Active | Create standalone calendar events with text, date, and emoji |
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
-| EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking |
+| EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
 | DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 

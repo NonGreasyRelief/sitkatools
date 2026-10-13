@@ -191,7 +191,10 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
   - A per-lot tree of propagation sheet, IPM log, weekly grow logs, room-cleaning sheets inherited from the previous lot in each room, and the harvest log.
   - N/A fill for unanswered questions.
   - The strike-out rule for grow logs that end early.
-- **Cost graphs.**
+- [x] **Cost graphs and reports:** built on 2026-10-12 as EmployeeWizard's 📊 Reports tab (branch `reports`, not merged). See `EmployeeWizard/REPORTS.md`.
+  - Labour Gantt per crop, room schedule Gantt, hours by task, over/under estimate with suggested recipe estimates, labour mix, $/g by phase, staffing forecast against roster capacity.
+  - Yield, potency and terpene charts by strain and room, weight cascade, harvest forecast. These fill in once the harvest log's questions are tagged with report metrics (PaperWizard → Configure Sheets → Report metric).
+  - Crop summaries keep closed-out lots in the trends for 36 months; archived lots can be re-imported.
 
 ### Phase 3: Live sync (optional, only if wanted)
 

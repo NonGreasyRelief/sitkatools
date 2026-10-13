@@ -1,6 +1,8 @@
 <!-- EmployeeWizard.html — Employee roster, scheduling & labour tracking for SitkaGit suite -->
 <!-- Tool: EmployeeWizard | Purpose: Employee work schedules, time-off booking, per-task labour hour tracking, labour cost reports -->
-<!-- Database Keys: "_EmployeeWizard" (top-level), "calendarEvents" (time-off events + labour_map annotations on Labour wizard events) -->
+<!-- Database Keys: "_EmployeeWizard" (top-level: employees, crops = saved crop summaries, settings), "calendarEvents" (time-off events + labour_map annotations on Labour wizard events) -->
+<!-- Reports tab reads every tool's data (read-only) — see EmployeeWizard/REPORTS.md -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -994,6 +996,97 @@
             bottom: 0;
             z-index: 100;
         }
+
+        /* ---- 📊 Reports tab (office only) — spec: EmployeeWizard/REPORTS.md ----
+           Chart colours were checked for colour-blind separation on --bg-secondary: series in fixed order
+           (blue, orange, aqua, yellow, magenta, green, violet, red); scatters use only the first three. */
+        :root {
+            --rv-blue: #3987e5; --rv-orange: #d95926; --rv-aqua: #199e70; --rv-yellow: #c98500;
+            --rv-magenta: #d55181; --rv-green: #008300; --rv-violet: #9085e9; --rv-red: #e66767;
+            --rv-neutral: #626b92; --rv-total: #d6d8e6;
+            --rv-ph-clone: var(--rv-violet); --rv-ph-veg: var(--rv-green); --rv-ph-flower: var(--rv-magenta); --rv-ph-post: var(--rv-yellow);
+            --rv-seq-0: #1c2848; --rv-seq-1: #184f95; --rv-seq-2: #1c5cab; --rv-seq-3: #256abf;
+            --rv-seq-4: #2a78d6; --rv-seq-5: #3987e5; --rv-seq-6: #5598e7; --rv-seq-7: #86b6ef;
+            --rv-grid: #222d4f; --rv-axis: #3a4670; --rv-zebra: #19244a; --rv-muted: #8789a6;
+        }
+        .rpt-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 12px; }
+        .rpt-filters .form-group select { padding: 7px 10px; font-size: 0.85rem; }
+        .rpt-expand { margin-left: auto; padding: 7px 14px; font-size: 0.82rem; }
+        .rpt-pages { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+        .rpt-pages button { background: none; border: 1px solid transparent; color: var(--text-secondary); font-size: 0.85rem; padding: 6px 12px; border-radius: 99px; cursor: pointer; }
+        .rpt-pages button:hover { color: var(--text-primary); background: var(--bg-secondary); }
+        .rpt-pages button.active { color: var(--text-primary); border-color: var(--accent); }
+        .rpt-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 14px; }
+        @media (min-width: 900px) { .rpt-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        .rpt-kpi { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .rpt-kpi.empty .rpt-kpi-value { color: var(--rv-muted); }
+        .rpt-kpi-label { font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+        .rpt-kpi-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+        .rpt-kpi-value { font-size: 1.6rem; font-weight: 700; line-height: 1.15; }
+        .rpt-kpi-value span { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-left: 4px; }
+        .rpt-kpi svg { width: 110px; height: 32px; flex: none; }
+        .rpt-kpi-sub { font-size: 0.75rem; color: var(--rv-muted); }
+        .rpt-kpi-delta { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
+        .rpt-kpi-delta.good { color: var(--accent); }
+        .rpt-kpi-delta.bad { color: var(--warning); }
+        .rpt-kpi-delta span { font-weight: 400; color: var(--rv-muted); }
+        .rpt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 14px; }
+        .rpt-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+        .rpt-card.wide { grid-column: 1 / -1; }
+        .rpt-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+        .rpt-card-head h4 { margin: 0; font-size: 0.98rem; font-weight: 600; }
+        .rpt-card-head p { margin: 3px 0 0; font-size: 0.8rem; color: var(--text-secondary); max-width: 75ch; line-height: 1.45; }
+        .rpt-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .rpt-chip { font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--rv-muted); white-space: nowrap; }
+        .rpt-inline-sel { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 0.8rem; }
+        .rpt-chart { overflow-x: auto; }
+        .rpt-chart svg { display: block; width: 100%; height: auto; min-width: 520px; }
+        .rpt-card.wide .rpt-chart svg { min-width: 900px; }
+        .rpt-chart svg text { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        .rpt-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.76rem; color: var(--text-secondary); }
+        .rpt-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+        .rpt-legend i.rv-hatch { background: repeating-linear-gradient(45deg, var(--rv-blue) 0 2px, transparent 2px 5px); outline: 1px dashed var(--rv-blue); outline-offset: -1px; }
+        .rpt-legend i.rv-hatch-n { background: repeating-linear-gradient(45deg, var(--rv-neutral) 0 2px, transparent 2px 5px); }
+        .rpt-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 8px; font-size: 0.74rem; color: var(--rv-muted); }
+        .rpt-tbtn { font-size: 0.78rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+        .rpt-tbtn:hover:not(:disabled) { border-color: var(--accent); }
+        .rpt-tbtn:disabled { opacity: 0.5; cursor: default; }
+        .rpt-tbtn.danger:hover { border-color: var(--danger); }
+        .rpt-tbl { overflow: auto; max-height: 420px; }
+        .rpt-tbl table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+        .rpt-tbl th, .rpt-tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .rpt-tbl th { color: var(--rv-muted); font-weight: 600; position: sticky; top: 0; background: var(--bg-secondary); white-space: nowrap; }
+        .rpt-tbl .n { text-align: right; white-space: nowrap; }
+        .rpt-tbl code { font-size: 0.78rem; color: var(--accent); }
+        .rpt-tune h5 { margin: 4px 0 6px; font-size: 0.82rem; font-weight: 600; }
+        .rpt-note { margin: 0; font-size: 0.78rem; color: var(--rv-muted); }
+        .rpt-empty { display: flex; flex-direction: column; gap: 4px; padding: 20px 4px; color: var(--text-secondary); font-size: 0.88rem; }
+        .rpt-empty span { font-size: 0.8rem; color: var(--rv-muted); }
+        .rpt-attn { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+        .rpt-attn li { display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); font-size: 0.86rem; }
+        .rpt-sev { flex: none; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; color: var(--warning); }
+        .rpt-sev.crit { color: var(--danger); }
+        .rpt-sev.info { color: var(--text-secondary); }
+        .rpt-go { margin-left: auto; flex: none; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.78rem; white-space: nowrap; }
+        .rpt-ok { color: var(--accent); }
+        .rpt-warn { color: var(--warning); }
+        .rpt-muted { color: var(--rv-muted); }
+        .rpt-num { width: 90px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); text-align: right; }
+        .rpt-inline { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; color: var(--text-secondary); }
+        .rv-ax { fill: var(--rv-muted); font-size: 11px; }
+        .rv-axs { fill: var(--rv-muted); font-size: 10px; }
+        .rv-lbl { fill: var(--text-secondary); font-size: 12px; }
+        .rv-lblp { fill: var(--text-primary); font-size: 12px; }
+        .rv-val { fill: var(--text-primary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .rv-big { fill: var(--text-primary); font-size: 22px; font-weight: 700; }
+        .rv-quad { fill: var(--rv-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; }
+        .rv-ok { fill: var(--accent); font-size: 12px; font-weight: 600; }
+        .rv-warn { fill: var(--warning); font-size: 12px; font-weight: 600; }
+        .rv-barlbl { fill: #fff; font-size: 10px; font-weight: 600; paint-order: stroke; stroke: rgba(8, 12, 30, 0.6); stroke-width: 3px; }
+        .rv-grid { stroke: var(--rv-grid); stroke-width: 1; }
+        .rv-base { stroke: var(--rv-axis); stroke-width: 1; }
+        .rpt-tip { position: fixed; z-index: 10002; pointer-events: none; background: #0c1430; border: 1px solid var(--rv-axis); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; max-width: 300px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); color: var(--text-secondary); }
+        .rpt-tip b { color: var(--text-primary); font-weight: 600; }
     </style>
 </head>
 <body>
@@ -1024,6 +1117,7 @@
         <div class="tabs">
             <button type="button" class="tab-btn active" id="tabEmployees">👥 Employees</button>
             <button type="button" class="tab-btn" id="tabTasks">📋 Tasks</button>
+            <button type="button" class="tab-btn" id="tabReports">📊 Reports</button>
         </div>
 
         <!-- Employees Tab (Phase 3 — fully functional) -->
@@ -1221,6 +1315,41 @@
                 </div>
             </div>
         </div>
+
+        <!-- Reports Tab (office only) — charts and KPIs; spec and hook-up notes in EmployeeWizard/REPORTS.md -->
+        <div class="tab-pane" id="paneReports">
+            <div class="rpt-filters">
+                <div class="form-group">
+                    <label for="rptPeriod">Period</label>
+                    <select id="rptPeriod">
+                        <option value="3m">Last 3 months</option>
+                        <option value="6m">Last 6 months</option>
+                        <option value="12m" selected>Last 12 months</option>
+                        <option value="ytd">Year to date</option>
+                        <option value="24m">Last 24 months</option>
+                        <option value="36m">Last 36 months</option>
+                    </select>
+                </div>
+                <div class="form-group"><label for="rptBuilding">Building</label><select id="rptBuilding"></select></div>
+                <div class="form-group"><label for="rptRoom">Flower room</label><select id="rptRoom"></select></div>
+                <div class="form-group"><label for="rptStrain">Strain</label><select id="rptStrain"></select></div>
+                <button type="button" class="btn btn-secondary rpt-expand" id="rptExpandBtn" title="Fill the screen with this window">⤢ Expand</button>
+            </div>
+            <nav class="rpt-pages" id="rptPages" aria-label="Report pages">
+                <button type="button" data-page="overview" class="active">Overview</button>
+                <button type="button" data-page="timeline">Crop Timeline</button>
+                <button type="button" data-page="labour">Labour</button>
+                <button type="button" data-page="yield">Yield &amp; Quality</button>
+                <button type="button" data-page="rooms">Rooms &amp; Environment</button>
+                <button type="button" data-page="forecast">Forecast</button>
+                <button type="button" data-page="settings">⚙️ Setup &amp; data</button>
+            </nav>
+            <div id="rptBody"></div>
+            <input type="file" id="rptArchiveInput" accept=".json,application/json" multiple hidden>
+        </div>
+        <div class="rpt-tip" id="rptTip" hidden></div>
+        <!-- Report chart hatches: projected lots (the suite draws projections muted/dashed) and weight lost -->
+        <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="rvh-blue" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-blue);fill-opacity:.16"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-blue);stroke-width:2"/></pattern><pattern id="rvh-clone" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-clone);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-clone);stroke-width:2"/></pattern><pattern id="rvh-veg" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-veg);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-veg);stroke-width:2"/></pattern><pattern id="rvh-flower" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-flower);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-flower);stroke-width:2"/></pattern><pattern id="rvh-post" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-post);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-post);stroke-width:2"/></pattern><pattern id="rvh-neutral" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-neutral);fill-opacity:.25"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-neutral);stroke-width:2"/></pattern></defs></svg>
 
         <!-- Labour Report — estimated vs. actual hours on crop tasks (office only) -->
         <section class="report-section">
@@ -1592,6 +1721,7 @@
                 else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
                 reconcileSelectedTask();
                 renderTasksTab(true);
+                renderReports();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -1613,6 +1743,8 @@
                 else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
                 reconcileSelectedTask();
                 renderTasksTab();
+                // Only redraws while the Reports tab is open, and not under a Setup input being typed in
+                if (!document.activeElement?.closest?.('#rptBody input')) renderReports();
             }
         });
 
@@ -3016,27 +3148,1596 @@
             TASK.selectedKey = null;
             TASK.editDate = null;
             renderTasksTab(true);
+            RPT.ganttLot = RPT.envLot = '';   // the reports follow the newly picked lot
+            renderReports();
         });
+
+        // =====================================================
+        // 📊 Reports tab — office only. Spec, metric list and the harvest-log hook-up steps:
+        // EmployeeWizard/REPORTS.md.
+        //
+        // Everything is read from the DB on each render (it is small) — nothing is cached:
+        //   • crop tasks: CropLabourWizard events, their estimate (estStaff / estMinutes) and labour_map
+        //   • projections: CropProjection events (schedule and estimates only)
+        //   • roster: work days, time off, wages (wages only while Wages.json is open)
+        //   • PaperWizard answers to questions tagged with a report metric (question.metric)
+        //   • DailyWizard chores (estimates now; logged chore hours once DailyWizard records them)
+        //   • crop summaries in _EmployeeWizard.crops, which keep closed-out lots in the charts
+        // Reports may read every tool's data (user decision, 2026-10-12). They write only
+        // _EmployeeWizard.crops and _EmployeeWizard.settings. Charts are hand-rolled SVG.
+        // =====================================================
+
+        // Report metrics a PaperWizard question can be tagged with (question.metric, unit in question.metricUnit).
+        // PaperWizard's question editor has the same list (REPORT_METRICS there) — keep the two in step.
+        //   kind: weight (stored in grams) · temp (°F) · pct · count · number · yesno
+        //   once-per-lot metrics: agg 'sum' adds every answer (each is one weighing), 'latest' keeps the newest
+        //   daily metrics: answers on the same day are averaged ('avg'), added ('sum') or any-YES ('max')
+        const REPORT_METRICS = {
+            'harvest.wetWeight': { label: 'Wet weight (drying room, harvest day)', kind: 'weight', agg: 'sum' },
+            'harvest.dryWeight': { label: 'Dry weight (whole lot after drying)', kind: 'weight', agg: 'sum' },
+            'harvest.bigs': { label: 'Flower — bigs', kind: 'weight', agg: 'sum' },
+            'harvest.mids': { label: 'Flower — mids', kind: 'weight', agg: 'sum' },
+            'harvest.smalls': { label: 'Flower — smalls', kind: 'weight', agg: 'sum' },
+            'harvest.popcorn': { label: 'Flower — popcorn', kind: 'weight', agg: 'sum' },
+            'harvest.flowerTotal': { label: 'Flower — total of all grades', kind: 'weight', agg: 'sum' },
+            'harvest.trim': { label: 'Trim weight', kind: 'weight', agg: 'sum' },
+            'harvest.potency': { label: 'Potency — total THC %', kind: 'pct', agg: 'latest' },
+            'harvest.terpenes': { label: 'Terpenes — total %', kind: 'pct', agg: 'latest' },
+            'harvest.plantsHarvested': { label: 'Plants harvested', kind: 'count', agg: 'latest' },
+            'env.temp': { label: 'Room temperature', kind: 'temp', agg: 'avg', daily: true },
+            'env.rh': { label: 'Relative humidity %', kind: 'number', agg: 'avg', daily: true },
+            'env.co2': { label: 'CO₂ (ppm)', kind: 'number', agg: 'avg', daily: true },
+            'env.par': { label: 'PAR', kind: 'number', agg: 'avg', daily: true },
+            'feed.ph': { label: 'Feed pH', kind: 'number', agg: 'avg', daily: true },
+            'feed.ec': { label: 'Feed EC', kind: 'number', agg: 'avg', daily: true },
+            'feed.nutrient': { label: 'Nutrient used (mL)', kind: 'number', agg: 'sum', daily: true },
+            'water.total': { label: 'Water used (L)', kind: 'number', agg: 'sum', daily: true },
+            'water.perPlant': { label: 'Irrigation per plant (L)', kind: 'number', agg: 'avg', daily: true },
+            'water.runoff': { label: 'Runoff volume (mL)', kind: 'number', agg: 'avg', daily: true },
+            'runoff.ec': { label: 'Runoff EC', kind: 'number', agg: 'avg', daily: true },
+            'runoff.ph': { label: 'Runoff pH', kind: 'number', agg: 'avg', daily: true },
+            'ipm.pests': { label: 'New pests found (YES/NO)', kind: 'yesno', agg: 'max', daily: true },
+            'ipm.disease': { label: 'Diseased plants found (YES/NO)', kind: 'yesno', agg: 'max', daily: true },
+            'ipm.herm': { label: 'Hermaphrodites / males found (YES/NO)', kind: 'yesno', agg: 'max', daily: true },
+            'ipm.issue': { label: 'Other issues observed (YES/NO)', kind: 'yesno', agg: 'max', daily: true }
+        };
+        const RPT_PLANTS = 'plants.count';                 // every 🌱 plant-count question, no tag needed
+        const RPT_GRADES = ['bigs', 'mids', 'smalls', 'popcorn'];
+        const RPT_IPM = ['ipm.pests', 'ipm.disease', 'ipm.herm', 'ipm.issue'];
+        const RPT_HARVEST_CORE = ['harvest.wetWeight', 'harvest.dryWeight', 'harvest.bigs', 'harvest.trim', 'harvest.potency', 'harvest.terpenes'];
+        const RPT_KEEP_MONTHS = 36;                        // crop summaries older than this are dropped on save
+        const RPT_MIN_PEOPLE = 3;                          // a $ figure from fewer paid people would reveal a wage
+        const RPT_TARGETS = { 'env.temp': [70, 82], 'env.rh': [40, 65], vpd: [0.8, 1.6] };   // default bands
+
+        const RPT = { page: 'overview', period: '12m', building: '', room: '', strain: '', ganttLot: '', envLot: '' };
+
+        // ---- small helpers ----
+        const rEsc = s => escapeHtml(s == null ? '' : s);
+        const rSum = (a, f = x => x) => a.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+        const rMean = (a, f = x => x) => a.length ? rSum(a, f) / a.length : null;
+        const rMedian = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+        const rN = (n, d = 0) => Number(n).toLocaleString('en-CA', { minimumFractionDigits: d, maximumFractionDigits: d });
+        const rPct = (x, d = 0) => `${rN(x * 100, d)} %`;
+        const rH = h => (h >= 100 ? rN(h, 0) : rN(h, 1)) + ' h';
+        const rKg = g => rN(g / 1000, g >= 100000 ? 0 : 1) + ' kg';
+        const rMoney = (v, d = 2) => '$' + rN(v, d);
+        const R_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const rToday = () => localDateStr(new Date());
+        const dAdd = (s, n) => localDateStr(addDays(parseISO(s), n));
+        const dMonths = (s, n) => { const d = parseISO(s); return localDateStr(new Date(d.getFullYear(), d.getMonth() + n, d.getDate())); };
+        const dDiff = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000);
+        const dFmt = s => { const d = parseISO(s); return `${R_MON[d.getMonth()]} ${d.getDate()}`; };
+        const dFmtY = s => { const d = parseISO(s); return `${R_MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; };
+        const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+        const inRange = (d, a, b) => isDay(d) && d >= a && d <= b;
+        const rptEmployees = () => DB.data._EmployeeWizard?.employees || {};
+        const rptSettings = () => DB.data._EmployeeWizard?.settings || {};
+
+        function rptRoomIdByName(name) {
+            const target = String(name || '').trim().toLowerCase();
+            if (!target) return null;
+            for (const [id, r] of Object.entries(DB.data.rooms || {})) if (String(r?.name || '').trim().toLowerCase() === target) return id;
+            return DB.data.rooms?.[name] ? name : null;
+        }
+        const rptRoomName = id => DB.data.rooms?.[id]?.name || id || '—';
+        const rptBuildingName = id => DB.data.buildings?.[id]?.name || id || 'No building';
+        const rptCanopy = roomId => { const v = Number(rptSettings().canopySqFt?.[roomId]); return v > 0 ? v : null; };
+        const rptShiftHours = () => { const v = Number(rptSettings().shiftHours); return v > 0 ? v : 8; };
+
+        function rptTaskTypes() { return DB.data._CropLabourWizard?.taskTypes || {}; }
+        function rptTaskLabel(tt, fallback) {
+            const t = rptTaskTypes()[tt];
+            return t ? `${t.emoji || ''} ${t.name || tt}`.trim() : (fallback || tt || 'Other');
+        }
+        function rptTaskOrder() { const keys = Object.keys(rptTaskTypes()); return tt => { const i = keys.indexOf(tt); return i < 0 ? 999 : i; }; }
+        // Crop phase of a task type, for cost by phase: cloning / veg by the room rules, then registry order around harvest
+        function rptPhaseOf(tt) {
+            if (CLW_CLONE_ROOM_TYPES.includes(tt) || tt === 'clone_cut') return 'clone';
+            if (CLW_VEG_ROOM_TYPES.includes(tt) || tt === 'ipm_spray_veg_second') return 'veg';
+            const order = Object.keys(rptTaskTypes()), i = order.indexOf(tt), h = order.indexOf('harvest');
+            return i >= 0 && h >= 0 && i >= h ? 'post' : 'flower';
+        }
+        const RPT_PHASES = { clone: 'Cloning', veg: 'Veg', flower: 'Flower', post: 'Harvest & post' };
+
+        // BC civic holidays (root CLAUDE.md → "BC Civic Holidays"). Reports use them only to take holidays out of
+        // roster capacity; the rest of EmployeeWizard stays holiday-unaware (design decision 6).
+        function rptHolidays(y) {
+            const nth = (m, wd, n) => { const f = new Date(y, m, 1).getDay(); return new Date(y, m, 1 + ((wd - f + 7) % 7) + (n - 1) * 7); };
+            const obs = d => { const w = d.getDay(); return w === 6 ? addDays(d, 2) : w === 0 ? addDays(d, 1) : d; };
+            const vic = new Date(y, 4, 24); while (vic.getDay() !== 1) vic.setDate(vic.getDate() - 1);
+            const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+            const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+            const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+            const easter = new Date(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1);
+            return [['New Year’s Day', obs(new Date(y, 0, 1))], ['Family Day', nth(1, 1, 3)], ['Good Friday', addDays(easter, -2)],
+                ['Victoria Day', vic], ['Canada Day', obs(new Date(y, 6, 1))], ['BC Day', nth(7, 1, 1)], ['Labour Day', nth(8, 1, 1)],
+                ['Truth and Reconciliation', obs(new Date(y, 8, 30))], ['Thanksgiving', nth(9, 1, 2)],
+                ['Remembrance Day', obs(new Date(y, 10, 11))], ['Christmas Day', obs(new Date(y, 11, 25))]]
+                .map(([name, dt]) => [localDateStr(dt), name]);
+        }
+        function rptHolidayMap(fromDay, toDay) {
+            const map = {};
+            for (let y = parseISO(fromDay).getFullYear(); y <= parseISO(toDay).getFullYear(); y++) for (const [d, n] of rptHolidays(y)) map[d] = n;
+            return map;
+        }
+
+        // ---- PaperWizard answers → metrics ----
+        // Questions tagged with a metric, per sheet: { sheetId: { questionId: { metric, unit } } }.
+        // 🌱 plant-count questions need no tag: they always feed the plant-count series.
+        function rptQuestionMap() {
+            const map = {};
+            for (const w of Object.values(DB.data._PaperWizard?.wizards || {})) {
+                if (!w?.sheetId) continue;
+                for (const q of w.questions || []) {
+                    const metric = q?.metric && REPORT_METRICS[q.metric] ? q.metric : (q?.type === 'plant-count' ? RPT_PLANTS : null);
+                    if (metric) (map[w.sheetId] || (map[w.sheetId] = {}))[q.id] = { metric, unit: q.metricUnit || null };
+                }
+            }
+            return map;
+        }
+        const rptMetricDef = metric => metric === RPT_PLANTS ? { kind: 'count', agg: 'avg', daily: true } : REPORT_METRICS[metric];
+
+        // A raw answer → a number in the metric's base unit (grams, °F, %), or null
+        function rptValue(def, unit, raw) {
+            if (raw == null || typeof raw === 'object') return null;
+            if (def.kind === 'yesno') {
+                const s = String(raw).trim().toLowerCase();
+                return ['yes', 'y', 'true', '1'].includes(s) ? 1 : (['no', 'n', 'false', '0'].includes(s) ? 0 : null);
+            }
+            const n = parseFloat(String(raw).replace(/,/g, '').replace(/[^0-9.\-]/g, ''));
+            if (!Number.isFinite(n)) return null;
+            if (def.kind === 'weight') return n * (unit === 'kg' ? 1000 : unit === 'lb' ? 453.592 : 1);
+            if (def.kind === 'temp') return unit === 'C' ? n * 9 / 5 + 32 : n;
+            return n;
+        }
+
+        // Every tagged answer in one lot's paperwork ({ sheetId: entry } — _PaperWizard.entries[lotId], or an archive
+        // file's `paperwork`): [{ metric, value, date, room }]. Instance-level answers are dated by the instance key
+        // (the event date, or the first day of a weekly log); per-day answers by their day. Constants have no date.
+        function rptAnswers(paper, qmap) {
+            const out = [];
+            const add = (q, raw, date, room) => {
+                const value = rptValue(rptMetricDef(q.metric), q.unit, raw);
+                if (value != null) out.push({ metric: q.metric, value, date: date || null, room: room || null });
+            };
+            for (const [sheetId, entry] of Object.entries(paper || {})) {
+                const qs = qmap[sheetId];
+                if (!qs || !entry || typeof entry !== 'object') continue;
+                for (const [qid, v] of Object.entries(entry.constants || {})) if (qs[qid]) add(qs[qid], v, null, null);
+                for (const [key, inst] of Object.entries(entry.instances || {})) {
+                    if (!inst) continue;
+                    const instDate = /^\d{4}-\d{2}-\d{2}/.test(key) ? key.slice(0, 10) : null;
+                    for (const [qid, v] of Object.entries(inst.header || {})) if (qs[qid]) add(qs[qid], v, instDate, inst.room);
+                    for (const [day, answers] of Object.entries(inst.days || {})) {
+                        if (!isDay(day) || (inst.phaseChangeDate && day > inst.phaseChangeDate)) continue;   // struck-out rows
+                        for (const [qid, v] of Object.entries(answers || {})) if (qs[qid]) add(qs[qid], v, day, inst.room);
+                    }
+                }
+            }
+            return out;
+        }
+
+        // Per-lot values: once-per-lot metrics in `once`, daily series in `series[metric][day]`, and the room
+        // the grow log was filled for on each day in `rooms[day]` (for the IPM heat map)
+        function rptRollup(answers) {
+            const once = {}, onceDate = {}, daily = {}, rooms = {};
+            for (const a of answers) {
+                const def = rptMetricDef(a.metric);
+                if (def.daily) {
+                    if (!a.date) continue;
+                    const m = daily[a.metric] || (daily[a.metric] = {});
+                    const c = m[a.date] || (m[a.date] = { sum: 0, n: 0, max: -Infinity });
+                    c.sum += a.value; c.n++; c.max = Math.max(c.max, a.value);
+                    if (a.room && !rooms[a.date]) rooms[a.date] = a.room;
+                } else if (def.agg === 'sum') {
+                    once[a.metric] = (once[a.metric] || 0) + a.value;
+                } else if (!(a.metric in once) || (a.date || '') >= (onceDate[a.metric] || '')) {
+                    once[a.metric] = a.value;
+                    onceDate[a.metric] = a.date || '';
+                }
+            }
+            const series = {};
+            for (const [metric, days] of Object.entries(daily)) {
+                const agg = rptMetricDef(metric).agg;
+                series[metric] = {};
+                for (const [d, c] of Object.entries(days)) series[metric][d] = agg === 'sum' ? c.sum : agg === 'max' ? c.max : c.sum / c.n;
+            }
+            // Air VPD (kPa) on days with both temperature and humidity
+            series.vpd = {};
+            for (const [d, tF] of Object.entries(series['env.temp'] || {})) {
+                const rh = series['env.rh']?.[d];
+                if (rh == null) continue;
+                const tc = (tF - 32) * 5 / 9;
+                series.vpd[d] = 0.6108 * Math.exp(17.27 * tc / (tc + 237.3)) * (1 - rh / 100);
+            }
+            return { once, series, rooms };
+        }
+
+        // The room a crop task happens in (CropLabourWizard's phase rules, as taskRoomId), for any lot record
+        function rptTaskRoom(ev, lot) {
+            const rooms = DB.data.rooms || {};
+            if (ev.roomId && rooms[ev.roomId]) return ev.roomId;
+            if (!lot) return null;
+            let name;
+            if (ev.roomPhase === 'cloning') name = lot.cloningRoom;
+            else if (ev.roomPhase === 'veg') name = lot.vegRoom;
+            else if (ev.roomPhase === 'flower') name = lot.destRoom;
+            else if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) name = lot.cloningRoom;
+            else if (CLW_VEG_ROOM_TYPES.includes(ev.taskType)) name = lot.vegRoom;
+            else name = lot.destRoom;
+            const id = rptRoomIdByName(name);
+            if (id) return id;
+            const names = [...new Set([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean))];
+            return names.length === 1 ? rptRoomIdByName(names[0]) : null;
+        }
+
+        // ---- One crop's numbers ----
+        // From the live DB, or from an archive file (lot, events, paperwork). This object is what "Save summary"
+        // stores in _EmployeeWizard.crops[lotId] (version 1); `series` and `rooms` are kept off it (not enumerable).
+        function rptBuildCrop(lotId, lot, events, paper, qmap) {
+            const tasks = (events || []).filter(ev => ev && ev.lotId === lotId && ev.sourceTool === 'CropLabourWizard' && isDay(ev.date))
+                .sort((a, b) => a.date.localeCompare(b.date));
+            const sched = {};
+            for (const ev of tasks) if (ev.taskType && !sched[ev.taskType]) sched[ev.taskType] = { date: ev.date, end: ev.endDate || ev.date };
+            const flowerRoomId = rptRoomIdByName(lot?.destRoom);
+            const c = {
+                version: 1, lotId, strain: lot?.strain || 'Unknown', parentLotId: lot?.parentLotId || null,
+                rooms: { cloning: lot?.cloningRoom || null, veg: lot?.vegRoom || null, flower: lot?.destRoom || null, dry: lot?.dryRoom || null, trim: lot?.trimRoom || null },
+                flowerRoomId: flowerRoomId || null,
+                buildingId: DB.data.rooms?.[flowerRoomId]?.buildingId || null,
+                canopySqFt: rptCanopy(flowerRoomId),
+                dates: {
+                    day0: sched.clone_cut_prep?.date || null, planting: sched.planting?.date || null,
+                    transplant: sched.transplant?.date || null, flip: sched.flip?.date || null,
+                    harvestStart: sched.harvest?.date || null, harvestEnd: sched.harvest?.end || null,
+                    tankClean: sched.tank_irrigation_clean?.date || null, bucking: sched.bucking?.date || null,
+                    trimStart: sched.trim?.date || null, trimEnd: sched.trim?.end || null, ship: sched.weigh_ship?.date || null
+                },
+                labour: { est: 0, act: 0, temp: 0, tempCost: 0, tempNoWage: 0, byPerson: {}, byTask: {} }
+            };
+            for (const ev of tasks) {
+                const tt = ev.taskType || 'other';
+                const t = c.labour.byTask[tt] || (c.labour.byTask[tt] = { date: ev.date, est: 0, act: 0, temp: 0, n: 0, done: 0, estStaff: null, estMinutes: null, roomId: null, days: {} });
+                const est = taskEstimate(ev);
+                t.n++;
+                if (ev.completed === true) t.done++;
+                if (est) { t.est += est.hours; c.labour.est += est.hours; t.estStaff = est.staff; t.estMinutes = est.minutes; }
+                if (!t.roomId) t.roomId = rptTaskRoom(ev, lot);
+                for (const [d, entries] of Object.entries(ev.labour_map || {})) {
+                    if (!isDay(d) || !Array.isArray(entries)) continue;
+                    for (const e of entries) {
+                        const h = Number(e?.hours) || 0;
+                        if (h <= 0) continue;
+                        t.act += h; c.labour.act += h;
+                        t.days[d] = (t.days[d] || 0) + h;
+                        if (e.temp != null) {
+                            t.temp += h; c.labour.temp += h;
+                            const key = 'temp:' + e.temp;
+                            c.labour.byPerson[key] = (c.labour.byPerson[key] || 0) + h;
+                            if (Number(e.wage) > 0) c.labour.tempCost += h * Number(e.wage); else c.labour.tempNoWage += h;
+                        } else if (e.employee) {
+                            c.labour.byPerson[e.employee] = (c.labour.byPerson[e.employee] || 0) + h;
+                        }
+                    }
+                }
+            }
+
+            const { once, series, rooms } = rptRollup(rptAnswers(paper, qmap));
+            const grades = {};
+            for (const g of RPT_GRADES) if (once['harvest.' + g] != null) grades[g] = once['harvest.' + g];
+            const gradeSum = Object.keys(grades).length ? rSum(Object.values(grades)) : null;
+            const flower = gradeSum != null ? gradeSum : (once['harvest.flowerTotal'] ?? null);
+            const trim = once['harvest.trim'] ?? null;
+            c.weights = { wet: once['harvest.wetWeight'] ?? null, dry: once['harvest.dryWeight'] ?? null, grades, flower, trim, total: flower != null ? flower + (trim || 0) : null };
+            c.lab = { potency: once['harvest.potency'] ?? null, terpenes: once['harvest.terpenes'] ?? null };
+
+            const counts = Object.entries(series[RPT_PLANTS] || {}).sort(([a], [b]) => a.localeCompare(b));
+            const hs = c.dates.harvestStart;
+            const upToHarvest = counts.filter(([d]) => !hs || d <= hs);
+            const lotCount = Number(lot?.plantCount) > 0 ? Number(lot.plantCount) : null;
+            c.plants = {
+                started: counts.length ? counts[0][1] : lotCount,
+                harvested: once['harvest.plantsHarvested'] ?? (upToHarvest.length ? upToHarvest[upToHarvest.length - 1][1] : lotCount)
+            };
+
+            const held = c.dates.transplant && c.dates.tankClean ? dDiff(c.dates.transplant, c.dates.tankClean) + 1 : null;
+            const gsf = flower != null && c.canopySqFt ? flower / c.canopySqFt : null;
+            c.derived = {
+                gpp: flower != null && c.plants.harvested > 0 ? flower / c.plants.harvested : null,
+                gsf, heldDays: held,
+                gsfy: gsf != null && held > 0 ? gsf * 365 / held : null,
+                dryDown: c.weights.wet > 0 && c.weights.dry != null ? c.weights.dry / c.weights.wet : null,
+                trimOut: c.weights.dry > 0 && flower != null ? flower / c.weights.dry : null
+            };
+
+            const avg = (key, a, b) => { const v = Object.entries(series[key] || {}).filter(([d]) => (!a || d >= a) && (!b || d < b)).map(([, x]) => x); return v.length ? rMean(v) : null; };
+            const phase = (a, b) => ({
+                temp: avg('env.temp', a, b), rh: avg('env.rh', a, b), vpd: avg('vpd', a, b), co2: avg('env.co2', a, b), par: avg('env.par', a, b),
+                feedEc: avg('feed.ec', a, b), feedPh: avg('feed.ph', a, b), runoffEc: avg('runoff.ec', a, b), runoffPh: avg('runoff.ph', a, b)
+            });
+            const total = key => { const v = Object.values(series[key] || {}); return v.length ? rSum(v) : null; };
+            c.env = { veg: phase(c.dates.planting, c.dates.flip), flower: phase(c.dates.flip, c.dates.harvestStart), waterL: total('water.total'), nutrientMl: total('feed.nutrient') };
+            const flagged = new Set(), herm = new Set();
+            for (const m of RPT_IPM) for (const [d, v] of Object.entries(series[m] || {})) if (v >= 1) { flagged.add(d); if (m === 'ipm.herm') herm.add(d); }
+            c.ipm = { flagDays: flagged.size, hermDays: herm.size };
+            Object.defineProperty(c, 'series', { value: series, enumerable: false });
+            Object.defineProperty(c, 'rooms_', { value: rooms, enumerable: false });
+            return c;
+        }
+
+        // Live crops (every lot with a CropLabourWizard schedule) plus the saved summaries of closed-out lots.
+        // While a lot is still in the DB its live numbers are used; its summary only takes over after close-out.
+        function rptCrops(qmap) {
+            const byLot = {};
+            for (const ev of DB.data.calendarEvents) if (ev.lotId && ev.sourceTool === 'CropLabourWizard') (byLot[ev.lotId] || (byLot[ev.lotId] = [])).push(ev);
+            const out = [];
+            for (const [lotId, lot] of Object.entries(DB.lots)) {
+                if (byLot[lotId]) out.push(rptBuildCrop(lotId, lot, byLot[lotId], DB.data._PaperWizard?.entries?.[lotId], qmap));
+            }
+            for (const [lotId, s] of Object.entries(DB.data._EmployeeWizard?.crops || {})) {
+                if (!DB.lots[lotId] && s && typeof s === 'object' && s.dates && s.labour) out.push({ ...s, lotId, closed: true });
+            }
+            return out;
+        }
+
+        // Labour cost of a crop with today's wages: null while Wages.json isn't open
+        function rptCropCost(c) {
+            if (!wagesLoaded()) return null;
+            let cost = c.labour.tempCost || 0, missing = c.labour.tempNoWage || 0;
+            const people = Object.keys(c.labour.byPerson || {});
+            for (const k of people) {
+                if (k.startsWith('temp:')) continue;
+                const w = Number(rptEmployees()[k]?.wage);
+                if (rptEmployees()[k]?.wage == null || !Number.isFinite(w)) missing += c.labour.byPerson[k];
+                else cost += c.labour.byPerson[k] * w;
+            }
+            return { cost, missing, people };
+        }
+
+        // Labour on events that aren't crop tasks (equipment visits, anything else with a labour_map), plus chores
+        function rptOtherLabour() {
+            const rows = [];
+            for (const ev of DB.data.calendarEvents) {
+                if (!ev.labour_map || ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection') continue;
+                const roomId = ev.roomId && DB.data.rooms?.[ev.roomId] ? ev.roomId : null;
+                const kind = ev.sourceTool === 'EquipmentWizard' ? 'equipment' : 'other';
+                for (const [d, entries] of Object.entries(ev.labour_map)) {
+                    if (!isDay(d) || !Array.isArray(entries)) continue;
+                    for (const e of entries) {
+                        const h = Number(e?.hours) || 0;
+                        if (h > 0) rows.push({ date: d, hours: h, kind, roomId, buildingId: DB.data.rooms?.[roomId]?.buildingId || null,
+                            person: e.temp != null ? 'temp:' + e.temp : e.employee, temp: e.temp != null, wage: e.temp != null ? Number(e.wage) || null : null });
+                    }
+                }
+            }
+            return rows.concat(rptChoreLabour());
+        }
+
+        // DailyWizard chore labour — not recorded yet (ROADMAP Phase 1, "Labour in DailyWizard"). When it is, return
+        // one row per entry here, in the same shape as rptOtherLabour's rows, with kind: 'chore':
+        //   { date, hours, kind: 'chore', roomId: null, buildingId, person: name | 'temp:' + name, temp, wage }
+        // Every labour chart, tile and the cost-per-gram waterfall picks the rows up with no other change.
+        function rptChoreLabour() { return []; }
+
+        // ---- Model: everything a page needs, built once per render ----
+        function rptModel() {
+            const today = rToday();
+            const months = { '3m': 3, '6m': 6, '12m': 12, '24m': 24, '36m': 36 }[RPT.period];
+            const from = RPT.period === 'ytd' ? today.slice(0, 4) + '-01-01' : dAdd(dMonths(today, -(months || 12)), 1);
+            const len = dDiff(from, today) + 1;
+            const qmap = rptQuestionMap();
+            const crops = rptCrops(qmap);
+            // Colours follow the entity: the three most-grown strains keep blue / orange / aqua whatever the filters
+            const counts = {};
+            for (const c of crops) counts[c.strain] = (counts[c.strain] || 0) + 1;
+            const topStrains = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b)).slice(0, 3);
+            const flowerRooms = Object.keys(DB.data.rooms || {}).filter(id => DB.data.rooms[id]?.isFlowering).sort();
+            const roomColors = {};
+            flowerRooms.forEach((id, i) => { roomColors[id] = ['var(--rv-magenta)', 'var(--rv-yellow)', 'var(--rv-violet)', 'var(--rv-green)', 'var(--rv-red)'][i] || 'var(--rv-neutral)'; });
+            return {
+                today, qmap, crops, topStrains, roomColors, flowerRooms,
+                per: { from, to: today, prevFrom: dAdd(from, -len), prevTo: dAdd(from, -1) },
+                other: rptOtherLabour().filter(r => rptRowMatch(r)),
+                strainColor: s => ['var(--rv-blue)', 'var(--rv-orange)', 'var(--rv-aqua)'][topStrains.indexOf(s)] || 'var(--rv-neutral)'
+            };
+        }
+        function rptCropMatch(c) {
+            return (!RPT.building || c.buildingId === RPT.building) && (!RPT.room || c.flowerRoomId === RPT.room) && (!RPT.strain || c.strain === RPT.strain);
+        }
+        function rptRowMatch(r) {
+            if (RPT.strain) return false;   // equipment and chores belong to no strain
+            return (!RPT.building || r.buildingId === RPT.building) && (!RPT.room || r.roomId === RPT.room);
+        }
+        const rptHarvested = (M, from, to) => M.crops.filter(c => rptCropMatch(c) && inRange(c.dates?.harvestStart, from, to) && c.dates.harvestStart <= M.today);
+
+        // Hours logged by work date in [from, to]: crop tasks (and the temps' share of them), equipment, chores
+        function rptHours(M, from, to) {
+            const out = { crop: 0, temp: 0, equipment: 0, chore: 0, other: 0, byTask: {}, byMonth: {} };
+            for (const c of M.crops) {
+                if (!rptCropMatch(c)) continue;
+                for (const [tt, t] of Object.entries(c.labour?.byTask || {})) {
+                    const tempShare = t.act > 0 ? t.temp / t.act : 0;
+                    for (const [d, h] of Object.entries(t.days || {})) {
+                        if (!inRange(d, from, to)) continue;
+                        out.crop += h; out.temp += h * tempShare;
+                        out.byTask[tt] = (out.byTask[tt] || 0) + h;
+                        out.byMonth[d.slice(0, 7)] = (out.byMonth[d.slice(0, 7)] || 0) + h;
+                    }
+                }
+            }
+            for (const r of M.other) {
+                if (!inRange(r.date, from, to)) continue;
+                out[r.kind] = (out[r.kind] || 0) + r.hours;
+                out.byMonth[r.date.slice(0, 7)] = (out.byMonth[r.date.slice(0, 7)] || 0) + r.hours;
+            }
+            out.total = out.crop + out.equipment + out.chore + out.other;
+            return out;
+        }
+
+        // Completed crop tasks with both an estimate and logged hours, planned in [from, to]: one row per crop × task type
+        function rptDoneTasks(M, from, to) {
+            const rows = [];
+            for (const c of M.crops) {
+                if (!rptCropMatch(c)) continue;
+                for (const [tt, t] of Object.entries(c.labour?.byTask || {})) {
+                    if (t.n > 0 && t.done === t.n && t.est > 0 && t.act > 0 && inRange(t.date, from, to)) rows.push({ c, tt, t, ratio: t.act / t.est });
+                }
+            }
+            return rows;
+        }
+
+        // Cost of non-crop labour in [from, to] with today's wages (null when wages aren't open)
+        function rptOtherCost(M, from, to) {
+            if (!wagesLoaded()) return null;
+            let cost = 0, missing = 0;
+            for (const r of M.other) {
+                if (!inRange(r.date, from, to)) continue;
+                const w = r.temp ? r.wage : Number(rptEmployees()[r.person]?.wage);
+                if (w > 0) cost += r.hours * w; else missing += r.hours;
+            }
+            return { cost, missing };
+        }
+
+        // Headline numbers for a set of harvested crops (and the labour logged in the same dates)
+        function rptAgg(M, crops, from, to) {
+            const withFlower = crops.filter(c => c.weights?.flower != null);
+            const flower = rSum(withFlower, c => c.weights.flower);
+            const gppSet = withFlower.filter(c => c.plants?.harvested > 0);
+            const vals = key => crops.map(key).filter(v => v != null && Number.isFinite(v));
+            const hours = rptHours(M, from, to);
+            const done = rptDoneTasks(M, from, to);
+            let cost = null, direct = null, loaded = null;
+            if (wagesLoaded() && withFlower.length) {
+                const costed = withFlower.map(c => ({ c, k: rptCropCost(c) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0);
+                const people = new Set(costed.flatMap(x => x.k.people));
+                const g = rSum(costed, x => x.c.weights.flower);
+                if (costed.length && people.size >= RPT_MIN_PEOPLE && g > 0) {
+                    cost = rSum(costed, x => x.k.cost);
+                    direct = cost / g;
+                    const other = rptOtherCost(M, from, to);
+                    loaded = direct + (other ? other.cost / g : 0);
+                }
+            }
+            return {
+                n: crops.length, nFlower: withFlower.length, flower,
+                gpp: gppSet.length ? rSum(gppSet, c => c.weights.flower) / rSum(gppSet, c => c.plants.harvested) : null,
+                gsfy: rMean(vals(c => c.derived?.gsfy)), potency: rMean(vals(c => c.lab?.potency)), terpenes: rMean(vals(c => c.lab?.terpenes)),
+                hours, acc: done.length ? rSum(done, x => x.t.act) / rSum(done, x => x.t.est) : null, nDone: done.length,
+                cost, direct, loaded
+            };
+        }
+
+        // ---- Chart kit (hand-rolled SVG) ----
+        const rLin = (d0, d1, r0, r1) => v => r0 + (v - d0) * (r1 - r0) / ((d1 - d0) || 1);
+        function rNice(min, max, count = 5) {
+            if (!(max > min)) max = min + 1;
+            const raw = (max - min) / count, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+            const s = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+            const lo = Math.floor(min / s + 1e-9) * s, hi = Math.ceil(max / s - 1e-9) * s, t = [];
+            for (let v = lo; v <= hi + s / 2; v += s) t.push(+v.toFixed(6));
+            return { lo, hi, t, step: s };
+        }
+        const rF = v => +Number(v).toFixed(1);
+        const rT = (x, y, s, cls = 'rv-lbl', anchor = 'start', style = '') => `<text x="${rF(x)}" y="${rF(y)}" class="${cls}" text-anchor="${anchor}"${style ? ` style="${style}"` : ''}>${rEsc(s)}</text>`;
+        const rTip = s => `data-tip="${rEsc(s)}"`;
+        const rSvg = (w, h, body, label) => `<svg viewBox="0 0 ${w} ${rF(h)}" role="img" aria-label="${rEsc(label)}">${body}</svg>`;
+        const rHl = (x1, x2, y, cls = 'rv-grid') => `<line class="${cls}" x1="${rF(x1)}" x2="${rF(x2)}" y1="${rF(y)}" y2="${rF(y)}"/>`;
+        const rVl = (x, y1, y2, cls = 'rv-grid') => `<line class="${cls}" x1="${rF(x)}" x2="${rF(x)}" y1="${rF(y1)}" y2="${rF(y2)}"/>`;
+        const rRect = (x, y, w, h, style, extra = '', rx = 2) => `<rect x="${rF(x)}" y="${rF(y)}" width="${Math.max(0, rF(w))}" height="${Math.max(0, rF(h))}" rx="${rx}" style="${style}" ${extra}/>`;
+        const rDot = (cx, cy, r, style, tipText) => `<circle cx="${rF(cx)}" cy="${rF(cy)}" r="${r}" style="${style}"/>` + (tipText ? `<circle cx="${rF(cx)}" cy="${rF(cy)}" r="11" style="fill:transparent" ${rTip(tipText)}/>` : '');
+        const rSw = (color, label, cls = '') => `<span><i class="${cls}" style="background:${color}"></i>${rEsc(label)}</span>`;
+        const rShort = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '…' : s;
+        const RPT_STEP = { now: 'Data exists today', tags: 'Needs grow-log tags', harvest: 'Needs harvest numbers', wages: 'Needs Wages.json' };
+
+        function rEmpty(title, how) {
+            return `<div class="rpt-empty"><b>${rEsc(title)}</b>${how ? `<span>${how}</span>` : ''}</div>`;
+        }
+        // A chart card: the title is the question it answers; ⊞ Table shows the same numbers
+        function rCard(o) {
+            const chips = (o.chips || []).map(k => `<span class="rpt-chip">${rEsc(RPT_STEP[k] || k)}</span>`).join('');
+            return `<article class="rpt-card${o.wide ? ' wide' : ''}">
+                <div class="rpt-card-head"><div><h4>${rEsc(o.title)}</h4>${o.sub ? `<p>${o.sub}</p>` : ''}</div><div class="rpt-chips">${o.control || ''}${chips}</div></div>
+                <div class="rpt-chart" data-chart>${o.body}</div>
+                ${o.legend ? `<div class="rpt-legend" data-extra>${o.legend}</div>` : ''}
+                ${o.after ? `<div data-extra>${o.after}</div>` : ''}
+                ${o.table ? `<div class="rpt-tbl" data-table hidden>${rTable(o.table)}</div>` : ''}
+                <div class="rpt-card-foot"><span>${rEsc(o.source || '')}</span>${o.table ? '<button type="button" class="rpt-tbtn" data-toggle>⊞ Table</button>' : ''}</div>
+            </article>`;
+        }
+        function rTable({ cols, rows }) {
+            return `<table><thead><tr>${cols.map(c => `<th class="${c.n ? 'n' : ''}">${rEsc(c.h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((v, i) => `<td class="${cols[i]?.n ? 'n' : ''}">${rEsc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+        }
+        function rSpark(vals) {
+            if (vals.length < 2) return '';
+            const w = 110, h = 32, lo = Math.min(...vals), hi = Math.max(...vals), xs = rLin(0, vals.length - 1, 2, w - 4), ys = rLin(lo, hi === lo ? lo + 1 : hi, h - 4, 4);
+            const pts = vals.map((v, i) => `${rF(xs(i))} ${rF(ys(v))}`);
+            return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="M${pts.join(' L')} L${rF(xs(vals.length - 1))} ${h} L${rF(xs(0))} ${h}Z" style="fill:var(--rv-blue);fill-opacity:.14"/><path d="M${pts.join(' L')}" style="fill:none;stroke:var(--rv-blue);stroke-width:1.6"/><circle cx="${rF(xs(vals.length - 1))}" cy="${rF(ys(vals[vals.length - 1]))}" r="2.8" style="fill:var(--rv-blue)"/></svg>`;
+        }
+
+        // =====================================================
+        // Pages
+        // =====================================================
+
+        // ---- Overview ----
+        function rptOverview(M) {
+            const cur = rptHarvested(M, M.per.from, M.per.to), prev = rptHarvested(M, M.per.prevFrom, M.per.prevTo);
+            const a = rptAgg(M, cur, M.per.from, M.per.to), b = rptAgg(M, prev, M.per.prevFrom, M.per.prevTo);
+            const last = M.crops.filter(c => rptCropMatch(c) && c.dates?.harvestStart && c.dates.harvestStart <= M.today)
+                .sort((x, y) => x.dates.harvestStart.localeCompare(y.dates.harvestStart)).slice(-10);
+            const months = [];
+            for (let m = M.per.from.slice(0, 7); m <= M.per.to.slice(0, 7) && months.length < 40; m = dMonths(m + '-01', 1).slice(0, 7)) months.push(m);
+            const sp = f => last.map(f).filter(v => v != null && Number.isFinite(v));
+            const noHarvest = 'Needs harvest numbers — tag harvest-log questions in PaperWizard (see Setup & data)';
+            const tiles = [
+                { label: 'Flower yield', v: a.nFlower ? rN(a.flower / 1000, 1) : null, u: 'kg', sub: `${a.nFlower} of ${a.n} harvested crops weighed`, d: a.nFlower && b.nFlower ? a.flower / b.flower - 1 : null, good: 1, s: sp(c => c.weights?.flower), empty: noHarvest },
+                { label: 'Grams per plant', v: a.gpp != null ? rN(a.gpp, 0) : null, u: 'g', sub: 'flower ÷ plants harvested', d: a.gpp != null && b.gpp ? a.gpp / b.gpp - 1 : null, good: 1, s: sp(c => c.derived?.gpp), empty: noHarvest },
+                { label: 'g / sq ft / year', v: a.gsfy != null ? rN(a.gsfy, 0) : null, u: 'g', sub: 'per sq ft of canopy, annualized', d: a.gsfy != null && b.gsfy ? a.gsfy / b.gsfy - 1 : null, good: 1, s: sp(c => c.derived?.gsfy), empty: 'Needs harvest numbers and canopy sq ft (Setup & data)' },
+                { label: 'Potency', v: a.potency != null ? rN(a.potency, 1) : null, u: '% THC', sub: 'average total THC', d: a.potency != null && b.potency != null ? a.potency - b.potency : null, pts: 1, good: 1, s: sp(c => c.lab?.potency), empty: noHarvest },
+                { label: 'Terpenes', v: a.terpenes != null ? rN(a.terpenes, 2) : null, u: '%', sub: 'average total terpenes', d: a.terpenes != null && b.terpenes != null ? a.terpenes - b.terpenes : null, pts: 1, good: 1, s: sp(c => c.lab?.terpenes), empty: noHarvest },
+                { label: 'Labour cost / g', v: a.loaded != null ? rMoney(a.loaded) : null, u: '', sub: a.direct != null ? `fully loaded · ${rMoney(a.direct)} direct` : '', d: a.loaded != null && b.loaded ? a.loaded / b.loaded - 1 : null, good: -1, s: [], empty: wagesLoaded() ? 'Needs harvest numbers and hours from 3+ people' : 'Open Wages.json in SitkaTools to see costs' },
+                { label: 'Labour hours', v: a.hours.total > 0 ? rN(a.hours.total, 0) : null, u: 'h', sub: a.hours.crop > 0 ? `${rPct(a.hours.temp / a.hours.crop)} of crop-task hours by temps` : '', d: a.hours.total > 0 && b.hours.total > 0 ? a.hours.total / b.hours.total - 1 : null, good: 0, s: months.map(m => a.hours.byMonth[m] || 0), empty: 'No hours logged in this period yet' },
+                { label: 'Estimate accuracy', v: a.acc != null ? rN(a.acc * 100, 0) : null, u: '%', sub: `actual ÷ estimated, ${a.nDone} completed tasks`, d: a.acc != null && b.acc != null ? (a.acc - b.acc) * 100 : null, pts: 1, good: a.acc != null && b.acc != null ? (Math.abs(a.acc - 1) <= Math.abs(b.acc - 1) ? 2 : -2) : 0, s: [], empty: 'Needs completed tasks with an estimate and hours' }
+            ];
+            const tileHTML = tiles.map(t => {
+                if (t.v == null) return `<div class="rpt-kpi empty"><span class="rpt-kpi-label">${rEsc(t.label)}</span><div class="rpt-kpi-value">—</div><div class="rpt-kpi-sub">${rEsc(t.empty)}</div></div>`;
+                let delta = '';
+                if (t.d != null && Number.isFinite(t.d)) {
+                    const up = t.d >= 0, mag = t.pts ? `${rN(Math.abs(t.d), 1)} pts` : rPct(Math.abs(t.d), 1);
+                    const good = t.good === 2 ? true : t.good === -2 ? false : t.good === 0 ? null : (up === (t.good === 1));
+                    delta = `<div class="rpt-kpi-delta ${good === null ? '' : good ? 'good' : 'bad'}">${up ? '▲' : '▼'} ${mag} <span>vs previous period</span></div>`;
+                }
+                return `<div class="rpt-kpi"><span class="rpt-kpi-label">${rEsc(t.label)}</span>
+                    <div class="rpt-kpi-row"><div class="rpt-kpi-value">${rEsc(t.v)}<span>${rEsc(t.u)}</span></div>${rSpark(t.s)}</div>
+                    <div class="rpt-kpi-sub">${rEsc(t.sub)}</div>${delta}</div>`;
+            }).join('');
+            const attn = rptAttention(M);
+            const list = attn.length
+                ? `<ul class="rpt-attn">${attn.map(x => `<li><span class="rpt-sev ${x.sev}">${x.sev === 'crit' ? '⛔ Short' : x.sev === 'info' ? 'ℹ️ Note' : '⚠ Watch'}</span><span>${rEsc(x.text)}</span><button type="button" class="rpt-go" data-go="${x.page}">${rEsc(x.where)} →</button></li>`).join('')}</ul>`
+                : rEmpty('Nothing needs attention.', '');
+            return `<div class="rpt-kpis">${tileHTML}</div><div class="rpt-grid">${rCard({ wide: true, title: 'Needs attention', sub: 'Picked out of the other pages. Each line opens the page behind it.', body: list, source: 'Labour, Crop Timeline, Yield & Quality, Forecast and Setup & data' })}</div>`;
+        }
+
+        function rptAttention(M) {
+            const out = [];
+            const over = rptOverrunRows(M).filter(r => r.crops >= 3 && r.med >= 1.1).sort((a, b) => b.med - a.med)[0];
+            if (over) out.push({ sev: 'warn', page: 'labour', where: 'Labour', text: `${rptTaskLabel(over.tt)} runs ${rPct(over.med - 1)} over its estimate (median of ${over.crops} crops).` });
+            const trend = rptRoomTrendData(M);
+            for (const r of trend.rooms) {
+                const l = r.points;
+                if (l.length < 6) continue;
+                const last3 = rMean(l.slice(-3), p => p.v), prev3 = rMean(l.slice(-6, -3), p => p.v);
+                if (prev3 > 0 && last3 / prev3 < 0.95) out.push({ sev: 'warn', page: 'yield', where: 'Yield & Quality', text: `${rptRoomName(r.id)} yield is down ${rPct(1 - last3 / prev3)} over its last 3 crops (${trend.unit}, against the 3 before).` });
+            }
+            const weeks = rptDemandWeeks(M);
+            const peak = weeks.filter(w => w.total > w.cap && w.est > 0).sort((a, b) => (b.total - b.cap) - (a.total - a.cap))[0];
+            if (peak) out.push({ sev: 'crit', page: 'forecast', where: 'Forecast', text: `Week of ${dFmt(peak.start)} needs ${rN(peak.total, 0)} h of estimated work; the roster covers ${rN(peak.cap, 0)} h.` });
+            const gaps = rptFlowerGaps(rptStays(M)).filter(g => g.to < M.today && g.to >= dAdd(M.today, -90) && g.days >= 5).sort((a, b) => b.days - a.days);
+            if (gaps[0]) out.push({ sev: 'warn', page: 'timeline', where: 'Crop Timeline', text: `${rptRoomName(gaps[0].room)} sat empty ${gaps[0].days} days (${dFmt(gaps[0].from)} – ${dFmt(gaps[0].to)}) between ${gaps[0].prev.label} and ${gaps[0].next.label}.` });
+            const past = DB.data.calendarEvents.filter(ev => ev.sourceTool === 'CropLabourWizard' && DB.lots[ev.lotId] && !ev.completed && taskEnd(ev) < M.today && taskEnd(ev) >= dAdd(M.today, -60) && rptCropMatch({ buildingId: DB.data.rooms?.[rptRoomIdByName(DB.lots[ev.lotId].destRoom)]?.buildingId || null, flowerRoomId: rptRoomIdByName(DB.lots[ev.lotId].destRoom), strain: DB.lots[ev.lotId].strain }));
+            if (past.length) out.push({ sev: 'warn', page: 'timeline', where: 'Crop Timeline', text: `${past.length} crop task${past.length > 1 ? 's are' : ' is'} past due and not marked completed (last 60 days), e.g. lot ${past[0].lotId}: ${rptTaskLabel(past[0].taskType, past[0].title)} (${dFmt(past[0].date)}).` });
+            const noHours = DB.data.calendarEvents.filter(ev => ev.sourceTool === 'CropLabourWizard' && ev.completed === true && DB.lots[ev.lotId] && taskHours(ev) <= 0).length;
+            if (noHours) out.push({ sev: 'info', page: 'settings', where: 'Setup & data', text: `${noHours} completed crop task${noHours > 1 ? 's have' : ' has'} no hours logged.` });
+            const unweighed = rptHarvested(M, dAdd(M.today, -365), M.today).filter(c => c.weights?.flower == null && c.dates.ship && c.dates.ship < M.today).length;
+            if (unweighed) out.push({ sev: 'info', page: 'settings', where: 'Setup & data', text: `${unweighed} shipped crop${unweighed > 1 ? 's have' : ' has'} no flower weight yet — tag the harvest-log questions with report metrics.` });
+            const unsaved = M.crops.filter(c => !c.closed && c.dates?.ship && c.dates.ship < M.today && !DB.data._EmployeeWizard?.crops?.[c.lotId]).length;
+            if (unsaved) out.push({ sev: 'info', page: 'settings', where: 'Setup & data', text: `${unsaved} shipped lot${unsaved > 1 ? 's have' : ' has'} no saved crop summary — save it before closing the lot out.` });
+            return out;
+        }
+
+        // ---- Crop Timeline: one crop's labour Gantt ----
+        function rptGanttLots(M) {
+            return M.crops.filter(c => !c.closed && c.dates?.day0 && rptCropMatch(c)).sort((a, b) => b.dates.day0.localeCompare(a.dates.day0));
+        }
+        function rptDefaultLot(list, pick) {
+            if (pick && list.some(c => c.lotId === pick)) return pick;
+            const act = activeLotId();
+            if (act && list.some(c => c.lotId === act)) return act;
+            const running = list.filter(c => c.dates.day0 <= rToday());
+            return (running[0] || list[0])?.lotId || '';
+        }
+        function rptCropGantt(lotId, M) {
+            const evs = DB.data.calendarEvents.filter(ev => ev.lotId === lotId && ev.sourceTool === 'CropLabourWizard' && isDay(ev.date));
+            if (!evs.length) return null;
+            const order = rptTaskOrder();
+            const rows = evs.map(ev => {
+                const est = taskEstimate(ev);
+                const work = taskDays(ev).map(d => [d, dayHours(ev, d)]).filter(([, h]) => h > 0);
+                const end = taskEnd(ev), completed = ev.completed === true;
+                return { tt: ev.taskType, name: rShort(rptTaskLabel(ev.taskType, taskDisplayTitle(ev)), 34), date: ev.date, end, est: est ? est.hours : null, act: rSum(work, w => w[1]), work, completed, overdue: !completed && end < M.today };
+            }).sort((a, b) => a.date.localeCompare(b.date) || order(a.tt) - order(b.tt));
+            const sched = {};
+            for (const r of rows) if (r.tt && !sched[r.tt]) sched[r.tt] = r;
+            let first = rows[0].date, last = rows[0].end;
+            for (const r of rows) { if (r.end > last) last = r.end; for (const [d] of r.work) { if (d > last) last = d; if (d < first) first = d; } }
+            const start = dAdd(first, -2), end = dAdd(last, 3), span = dDiff(start, end) + 1;
+            const W = 1200, X0 = 250, X1 = 990, top = 62, RH = 22, dw = (X1 - X0) / span, x = d => X0 + dDiff(start, d) * dw;
+            const P = { planting: sched.planting?.date, transplant: sched.transplant?.date, harvest: sched.harvest?.date };
+            const phaseOf = d => P.planting && d < P.planting ? 'clone' : P.transplant && d < P.transplant ? 'veg' : P.harvest && d < P.harvest ? 'flower' : (P.harvest ? 'post' : 'flower');
+            const stripTop = top + rows.length * RH + 26, stripH = 80, H = stripTop + stripH + 30;
+            let s = '';
+            for (let d = start; d <= end; d = dAdd(d, 1)) {
+                const dt = parseISO(d);
+                if (dt.getDay() === 1) s += rVl(x(d), top - 2, stripTop + stripH);
+                if (dt.getDate() === 1) s += rT(x(d) + 3, 14, `${R_MON[dt.getMonth()]}${dt.getMonth() === 0 ? ' ' + dt.getFullYear() : ''}`, 'rv-ax');
+            }
+            const bands = [['clone', sched.clone_cut_prep?.date || start, P.planting], ['veg', P.planting, P.transplant], ['flower', P.transplant, P.harvest], ['post', P.harvest, dAdd(sched.weigh_ship?.end || last, 1)]];
+            for (const [k, a, b] of bands) {
+                if (!a || !b || b <= a) continue;
+                s += rRect(x(a), 22, x(b) - x(a) - 1, 18, `fill:var(--rv-ph-${k});fill-opacity:.3`, rTip(`${RPT_PHASES[k]}\n${dFmt(a)} – ${dFmt(dAdd(b, -1))} · ${dDiff(a, b)} days`), 3);
+                if (x(b) - x(a) > 70) s += rT(x(a) + 6, 35, RPT_PHASES[k], 'rv-lblp');
+            }
+            for (const [k, nm] of [['flip', 'Flip'], ['harvest', 'Harvest']]) {
+                if (!sched[k]) continue;
+                const cx = x(sched[k].date) + dw / 2, cy = 50;
+                s += `<path d="M${rF(cx)} ${cy - 6} L${rF(cx + 6)} ${cy} L${rF(cx)} ${cy + 6} L${rF(cx - 6)} ${cy}Z" style="fill:var(--text-primary)" ${rTip(`${nm}\n${dFmtY(sched[k].date)}`)}/>` + rT(cx + 9, cy + 4, nm, 'rv-axs');
+            }
+            s += rT(X1 + 75, top - 8, 'Est.', 'rv-ax', 'end') + rT(X1 + 145, top - 8, 'Actual', 'rv-ax', 'end') + rT(X1 + 205, top - 8, 'Δ', 'rv-ax', 'end');
+            rows.forEach((t, i) => {
+                const y = top + i * RH, ph = phaseOf(t.date);
+                if (i % 2) s += rRect(0, y, W, RH, 'fill:var(--rv-zebra)', '', 0);
+                s += rT(10, y + 15, t.name, 'rv-lbl');
+                const bx = x(t.date), bw = (dDiff(t.date, t.end) + 1) * dw;
+                const state = t.completed ? 'completed' : t.overdue ? 'past due, not completed' : t.date > M.today ? 'planned' : 'in progress';
+                s += rRect(bx, y + 4, bw, 14, `fill:var(--rv-ph-${ph});fill-opacity:.15;stroke:var(--rv-ph-${ph});stroke-width:1.2`,
+                    rTip(`${t.name}\nPlanned ${dFmt(t.date)}${t.end !== t.date ? ' – ' + dFmt(t.end) : ''} · ${state}\nEstimate ${t.est != null ? rH(t.est) : '—'} · logged ${t.work.length ? rH(t.act) : '—'}`), 3);
+                const maxH = Math.max(1, ...t.work.map(w => w[1]));
+                for (const [d, h] of t.work) {
+                    s += rRect(x(d) + 1, y + 7, Math.max(dw - 2, 2), 8, `fill:var(--rv-ph-${ph});fill-opacity:${(0.45 + 0.55 * h / maxH).toFixed(2)}`,
+                        rTip(`${t.name}${d > t.end || d < t.date ? ' (added day)' : ''}\n${dFmtY(d)}: ${rN(h, 2)} h logged`), 1.5);
+                }
+                const mx = Math.max(bx + bw, ...t.work.map(w => x(w[0]) + dw)) + 5;
+                if (t.completed) s += rT(mx, y + 15, '✓', 'rv-ok');
+                else if (t.overdue) s += rT(mx, y + 15, '⚠ past due', 'rv-warn');
+                s += rT(X1 + 75, y + 15, t.est != null ? rH(t.est) : '—', 'rv-ax', 'end') + rT(X1 + 145, y + 15, t.work.length ? rH(t.act) : '—', 'rv-lblp', 'end');
+                if (t.completed && t.est > 0 && t.act > 0) {
+                    const dp = t.act / t.est - 1;
+                    s += rT(X1 + 205, y + 15, Math.abs(dp) < 0.05 ? 'on' : `${dp > 0 ? '▲' : '▼'} ${rN(Math.abs(dp * 100), 0)}%`, dp > 0.05 ? 'rv-warn' : dp < -0.05 ? 'rv-ok' : 'rv-ax', 'end');
+                }
+            });
+            const act = {}, est = {};
+            for (const t of rows) {
+                for (const [d, h] of t.work) act[d] = (act[d] || 0) + h;
+                if (t.est == null) continue;
+                const nd = dDiff(t.date, t.end) + 1;
+                for (let i = 0; i < nd; i++) { const d = dAdd(t.date, i); est[d] = (est[d] || 0) + t.est / nd; }
+            }
+            const yn = rNice(0, Math.max(1, ...Object.values(act), ...Object.values(est)), 3), ys = rLin(0, yn.hi, stripTop + stripH, stripTop);
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, 0), 'rv-ax', 'end'); });
+            s += rT(10, stripTop + 14, 'Hours per day, whole lot', 'rv-lblp') + rT(10, stripTop + 32, 'bars = logged', 'rv-ax') + rT(10, stripTop + 48, 'line = estimate', 'rv-ax');
+            for (const [d, h] of Object.entries(act)) s += rRect(x(d) + 0.5, ys(h), Math.max(dw - 1, 1.5), stripTop + stripH - ys(h), 'fill:var(--rv-blue)', rTip(`${dFmtY(d)}\n${rN(h, 1)} h logged · estimate ${rN(est[d] || 0, 1)} h`), 1);
+            if (Object.keys(est).length) {
+                let p = '';
+                for (let d = start; d <= end; d = dAdd(d, 1)) { const v = rF(ys(est[d] || 0)); p += `${p ? 'L' : 'M'}${rF(x(d))} ${v} L${rF(x(d) + dw)} ${v} `; }
+                s += `<path d="${p}" style="fill:none;stroke:var(--text-secondary);stroke-width:1.4"/>`;
+            }
+            s += rHl(X0, X1, stripTop + stripH, 'rv-base');
+            for (let d = start; d <= end; d = dAdd(d, 1)) if (parseISO(d).getDate() === 1) s += rT(x(d) + 3, stripTop + stripH + 16, R_MON[parseISO(d).getMonth()], 'rv-ax');
+            if (M.today >= start && M.today <= end) s += `<line x1="${rF(x(M.today))}" x2="${rF(x(M.today))}" y1="20" y2="${stripTop + stripH}" style="stroke:var(--accent);stroke-width:2"/>` + rT(x(M.today) - 4, stripTop + stripH + 16, 'today', 'rv-ok', 'end');
+            const lot = DB.lots[lotId] || {};
+            const totEst = rSum(rows.filter(r => r.est != null), r => r.est), totAct = rSum(rows, r => r.act);
+            return {
+                svg: rSvg(W, H, s, `Labour Gantt for lot ${lotId}`),
+                sub: `${rEsc(lot.strain || '?')} · ${lot.plantCount ? rEsc(lot.plantCount) + ' plants · ' : ''}${rEsc([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean).join(' → '))}. Logged so far: <b>${rN(totAct, 0)} h</b>${totEst > 0 ? ` of <b>${rN(totEst, 0)} h</b> estimated for the whole crop` : ' (this schedule has no estimates)'}.`,
+                table: { cols: [{ h: 'Task' }, { h: 'Planned' }, { h: 'Est. h', n: 1 }, { h: 'Logged h', n: 1 }, { h: 'Days logged', n: 1 }, { h: 'Status' }],
+                    rows: rows.map(t => [t.name, t.end !== t.date ? `${t.date} – ${t.end}` : t.date, t.est != null ? rN(t.est, 1) : '—', t.work.length ? rN(t.act, 1) : '—', String(t.work.length), t.completed ? 'Completed' : t.overdue ? 'Past due' : t.date > M.today ? 'Planned' : 'In progress']) }
+            };
+        }
+
+        // ---- Crop Timeline: every room's lots (real, closed and projected) ----
+        function rptStays(M) {
+            const stays = [];
+            const push = (roomRef, c, ph, from, to) => {
+                const room = rptRoomIdByName(roomRef);
+                if (room && isDay(from) && isDay(to) && to >= from) stays.push({ room, lotId: c.lotId, label: c.lotId, strain: c.strain, ph, from, to, proj: false, closed: !!c.closed });
+            };
+            for (const c of M.crops) {
+                const d = c.dates || {}, r = c.rooms || {};
+                if (!c.closed) {
+                    push(r.cloning, c, 'clone', d.day0, d.planting && dAdd(d.planting, -1));
+                    push(r.veg, c, 'veg', d.planting, d.transplant && dAdd(d.transplant, -1));
+                    push(r.dry, c, 'post', d.harvestStart, d.bucking || d.trimStart);
+                    if (r.trim && r.trim !== r.dry) push(r.trim, c, 'post', d.trimStart, d.trimEnd);
+                }
+                push(r.flower, c, 'flower', d.transplant, d.tankClean || d.harvestEnd);
+            }
+            const proj = {};
+            for (const ev of DB.data.calendarEvents) {
+                if (ev.sourceTool !== 'CropProjection' || !ev.lotId) continue;
+                const p = proj[ev.lotId] || (proj[ev.lotId] = { roomId: ev.roomId, t: {} });
+                if (ev.taskType && !p.t[ev.taskType]) p.t[ev.taskType] = ev;
+            }
+            for (const [id, p] of Object.entries(proj)) {
+                const tp = p.t.transplant?.date, end = p.t.tank_irrigation_clean?.date || p.t.harvest?.endDate || p.t.harvest?.date;
+                if (p.roomId && DB.data.rooms?.[p.roomId] && isDay(tp) && isDay(end) && end >= tp) stays.push({ room: p.roomId, lotId: id, label: id.replace(/^.*-TBA-/, 'TBA-'), strain: null, ph: 'flower', from: tp, to: end, proj: true });
+            }
+            return stays;
+        }
+        function rptFlowerGaps(stays) {
+            const gaps = [], rooms = [...new Set(stays.filter(s => s.ph === 'flower').map(s => s.room))];
+            for (const room of rooms) {
+                const list = stays.filter(s => s.room === room && s.ph === 'flower').sort((a, b) => a.from.localeCompare(b.from));
+                for (let i = 1; i < list.length; i++) {
+                    const g = dDiff(list[i - 1].to, list[i].from) - 1;
+                    if (g >= 1) gaps.push({ room, from: dAdd(list[i - 1].to, 1), to: dAdd(list[i].from, -1), days: g, prev: list[i - 1], next: list[i] });
+                }
+            }
+            return gaps;
+        }
+        function rptRoomGantt(M) {
+            const all = rptStays(M), gaps = rptFlowerGaps(all);
+            const WIN0 = dAdd(M.today, -120), WIN1 = dAdd(M.today, 240), span = dDiff(WIN0, WIN1) + 1;
+            const stays = all.filter(st => st.to >= WIN0 && st.from <= WIN1 && (!RPT.building || DB.data.rooms?.[st.room]?.buildingId === RPT.building) && (!RPT.room || st.room === RPT.room) && (!RPT.strain || st.strain === RPT.strain));
+            if (!stays.length) return null;
+            const W = 1200, X0 = 160, X1 = 1110, dw = (X1 - X0) / span, x = d => X0 + dDiff(WIN0, d) * dw, LANE = 17, top = 34;
+            const groups = {};
+            for (const st of stays) { const b = DB.data.rooms?.[st.room]?.buildingId || ''; (groups[b] || (groups[b] = new Set())).add(st.room); }
+            const bOrder = [...Object.keys(DB.data.buildings || {}).filter(b => groups[b]), ...(groups[''] ? [''] : [])];
+            let y = top, body = '';
+            const util = [];
+            for (const b of bOrder) {
+                body += rT(10, y + 15, rptBuildingName(b).toUpperCase(), 'rv-quad');
+                y += 22;
+                for (const room of [...groups[b]].sort((a, c) => rptRoomName(a).localeCompare(rptRoomName(c)))) {
+                    const list = stays.filter(st => st.room === room).sort((a, c) => a.from.localeCompare(c.from));
+                    const lanes = [];
+                    for (const st of list) { let k = lanes.findIndex(e => e < st.from); if (k < 0) { k = lanes.length; lanes.push(''); } lanes[k] = st.to; st.lane = k; }
+                    const rh = Math.max(1, lanes.length) * LANE + 8, isFlower = !!DB.data.rooms?.[room]?.isFlowering;
+                    body += rRect(0, y, W, rh, 'fill:var(--rv-zebra)', '', 0) + rT(18, y + rh / 2 + 4, rShort(rptRoomName(room), 20), 'rv-lblp');
+                    for (const st of list) {
+                        const a = st.from < WIN0 ? WIN0 : st.from, z = st.to > WIN1 ? WIN1 : st.to;
+                        const bx = x(a), bw = (dDiff(a, z) + 1) * dw - 1, by = y + 4 + st.lane * LANE;
+                        const t = `${st.proj ? st.lotId + ' (projected)' : 'Lot ' + st.lotId + (st.closed ? ' (closed out)' : '')}${st.strain ? ' · ' + st.strain : ''}\n${rptRoomName(room)} · ${RPT_PHASES[st.ph]}\n${dFmtY(st.from)} – ${dFmtY(st.to)} · ${dDiff(st.from, st.to) + 1} days`;
+                        body += st.proj ? rRect(bx, by, bw, 13, `fill:url(#rvh-${st.ph});stroke:var(--rv-ph-${st.ph});stroke-width:1;stroke-dasharray:3 2`, rTip(t), 3)
+                                        : rRect(bx, by, bw, 13, `fill:var(--rv-ph-${st.ph});fill-opacity:.9`, rTip(t), 3);
+                        if (bw > 38) body += rT(bx + 5, by + 10, rShort(st.label, Math.floor(bw / 6.5)), 'rv-barlbl');
+                    }
+                    if (isFlower) {
+                        for (const g of gaps.filter(g => g.room === room && g.to >= WIN0 && g.from <= WIN1)) {
+                            const gx = x(g.from < WIN0 ? WIN0 : g.from), gw = g.days * dw;
+                            body += rRect(gx, y + 3, Math.max(gw, 2), 15, `fill:var(--warning);fill-opacity:${g.days >= 5 ? 0.55 : 0.25}`, rTip(`${rptRoomName(room)} empty ${g.days} day${g.days > 1 ? 's' : ''}\n${dFmt(g.from)}${g.days > 1 ? ' – ' + dFmt(g.to) : ''} · between ${g.prev.label} and ${g.next.label}`), 2);
+                            if (g.days >= 5) body += rT(gx + gw / 2, y + rh + 10, `${g.days} d idle`, 'rv-warn', 'middle', 'font-size:10px');
+                        }
+                        let occ = 0;
+                        for (let d = WIN0; d <= WIN1; d = dAdd(d, 1)) if (list.some(st => st.ph === 'flower' && st.from <= d && st.to >= d)) occ++;
+                        util.push([rptRoomName(room), occ / span]);
+                        body += rT(W - 8, y + rh / 2 + 4, rPct(occ / span), 'rv-val', 'end');
+                    }
+                    y += rh + (isFlower ? 14 : 4);
+                }
+                y += 6;
+            }
+            let s = '';
+            for (let d = WIN0; d <= WIN1; d = dAdd(d, 1)) {
+                const dt = parseISO(d);
+                if (dt.getDate() === 1) s += rVl(x(d), top - 4, y) + rT(x(d) + 3, 16, `${R_MON[dt.getMonth()]}${dt.getMonth() === 0 ? ' ' + dt.getFullYear() : ''}`, dt.getMonth() === 0 ? 'rv-lblp' : 'rv-ax');
+            }
+            s += rT(W - 8, top + 15, 'Flower room in use', 'rv-ax', 'end');
+            let hol = '';
+            for (const [d, n] of Object.entries(rptHolidayMap(WIN0, WIN1))) if (d >= WIN0 && d <= WIN1) hol += rRect(x(d), top - 4, Math.max(dw, 2), y - top + 4, 'fill:var(--warning);fill-opacity:.22', rTip(`🏛️ ${n}\n${dFmtY(d)} (BC civic holiday)`), 0);
+            const today = `<line x1="${rF(x(M.today))}" x2="${rF(x(M.today))}" y1="${top - 8}" y2="${y}" style="stroke:var(--accent);stroke-width:2"/>` + rT(x(M.today) + 4, top - 10, 'today', 'rv-ok');
+            return {
+                svg: rSvg(W, y + 8, s + body + hol + today, 'Room schedule Gantt'),
+                table: { cols: [{ h: 'Room' }, { h: 'Lot' }, { h: 'Phase' }, { h: 'From' }, { h: 'To' }, { h: 'Days', n: 1 }, { h: 'Kind' }],
+                    rows: stays.sort((a, b) => rptRoomName(a.room).localeCompare(rptRoomName(b.room)) || a.from.localeCompare(b.from)).map(st => [rptRoomName(st.room), st.lotId, RPT_PHASES[st.ph], st.from, st.to, String(dDiff(st.from, st.to) + 1), st.proj ? 'Projected' : st.closed ? 'Closed out' : 'Lot']) }
+            };
+        }
+
+        function rptTimeline(M) {
+            const lots = rptGanttLots(M);
+            RPT.ganttLot = rptDefaultLot(lots, RPT.ganttLot);
+            const g = RPT.ganttLot ? rptCropGantt(RPT.ganttLot, M) : null;
+            const lotSel = `<select id="rptGanttLot" class="rpt-inline-sel" aria-label="Lot">${lots.map(c => `<option value="${rEsc(c.lotId)}"${c.lotId === RPT.ganttLot ? ' selected' : ''}>${rEsc(c.lotId)} — ${rEsc(c.strain)}</option>`).join('')}</select>`;
+            const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
+            const rg = rptRoomGantt(M);
+            return `<div class="rpt-grid">` + rCard({
+                wide: true, title: 'How is this crop’s work unfolding?', chips: ['now'], control: lots.length ? lotSel : '',
+                sub: g ? g.sub : '', body: g ? g.svg : rEmpty('No crop schedules match these filters.', 'Generate a schedule in CropLabourWizard.'), table: g?.table,
+                legend: g ? phaseLegend + '<span>▭ planned · ■ hours logged that day (darker = more)</span><span>◆ milestone</span><span class="rpt-ok">┃ today · ✓ done</span><span class="rpt-warn">⚠ past due</span>' : '',
+                source: 'CropLabourWizard events · hours from labour_map · estimates from the recipe (staff × minutes per day)'
+            }) + rCard({
+                wide: true, title: 'Is every room busy, and where are the gaps?', chips: ['now'],
+                sub: 'Every lot’s stay in each room, 4 months back to 8 months ahead. Solid = lots; hatched = projected TBA lots. Amber blocks are days a flower room sat empty.',
+                body: rg ? rg.svg : rEmpty('No lots with a schedule in this window.', ''), table: rg?.table,
+                legend: rg ? phaseLegend + `<span><i class="rv-hatch"></i>projected</span>${rSw('var(--warning)', 'room empty / BC civic holiday')}<span class="rpt-ok">┃ today</span>` : '',
+                source: 'CropLabourWizard schedules (clone cut → planting → transplant → tank clean, dry and trim rooms) · CropProjection events · saved summaries of closed lots'
+            }) + `</div>`;
+        }
+
+        // ---- Labour ----
+        function rptOverrunRows(M) {
+            const byTask = {};
+            for (const r of rptDoneTasks(M, M.per.from, M.per.to)) (byTask[r.tt] || (byTask[r.tt] = [])).push(r);
+            return Object.entries(byTask).map(([tt, list]) => {
+                list.sort((a, b) => (a.c.dates?.day0 || '').localeCompare(b.c.dates?.day0 || ''));
+                const recent = list.slice(-8);
+                return { tt, list: recent, crops: recent.length, med: rMedian(recent.map(r => r.ratio)), hours: rSum(recent, r => r.t.act), staff: recent[recent.length - 1].t.estStaff, minutes: recent[recent.length - 1].t.estMinutes };
+            });
+        }
+        function rptPareto(M) {
+            const h = rptHours(M, M.per.from, M.per.to);
+            const est = {};
+            for (const c of M.crops) if (rptCropMatch(c)) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) if (inRange(t.date, M.per.from, M.per.to) && t.est > 0) est[tt] = (est[tt] || 0) + t.est;
+            const all = rSum(Object.values(h.byTask));
+            if (all <= 0) return null;
+            const sorted = Object.entries(h.byTask).map(([tt, act]) => ({ tt, act, est: est[tt] || 0 })).sort((a, b) => b.act - a.act);
+            const top = sorted.slice(0, 10), rest = sorted.slice(10);
+            const rows = rest.length ? [...top, { tt: null, act: rSum(rest, r => r.act), est: rSum(rest, r => r.est), other: rest.length }] : top;
+            let cum = 0;
+            rows.forEach(r => { cum += r.act; r.cum = cum / all; });
+            const k = Math.max(1, rows.findIndex(r => r.cum >= 0.75) + 1);
+            const W = 640, X0 = 210, X1 = 520, top0 = 30, RH = 24, H = top0 + rows.length * RH + 26;
+            const xn = rNice(0, Math.max(...rows.map(r => Math.max(r.act, r.est))), 4), xs = rLin(0, xn.hi, X0, X1);
+            let s = rT(W - 8, 16, 'Running share', 'rv-ax', 'end');
+            xn.t.forEach(v => { s += rVl(xs(v), top0 - 6, top0 + rows.length * RH) + rT(xs(v), H - 8, rN(v, 0), 'rv-ax', 'middle'); });
+            rows.forEach((r, i) => {
+                const y = top0 + i * RH, name = r.tt == null ? `${r.other} other tasks` : rShort(rptTaskLabel(r.tt), 30), strong = i < k && r.tt != null;
+                s += rT(X0 - 8, y + 16, name, strong ? 'rv-lblp' : 'rv-lbl', 'end');
+                s += rRect(X0, y + 5, xs(r.act) - X0, 14, `fill:var(--rv-blue);fill-opacity:${strong ? 1 : 0.45}`, rTip(`${name}\n${rN(r.act, 0)} h logged${r.est ? ` · ${rN(r.est, 0)} h estimated` : ''}\n${rPct(r.act / all, 1)} of crop-task hours`), 3);
+                if (r.est > 0) s += rRect(X0, y + 2, xs(r.est) - X0, 20, 'fill:none;stroke:var(--text-secondary);stroke-width:1.2', '', 3);
+                s += rT(W - 8, y + 16, rPct(r.cum), strong ? 'rv-val' : 'rv-ax', 'end');
+            });
+            s += rVl(X0, top0 - 6, top0 + rows.length * RH, 'rv-base');
+            return { k, share: rows[k - 1].cum, svg: rSvg(W, H, s, 'Hours by task'),
+                table: { cols: [{ h: 'Task' }, { h: 'Logged h', n: 1 }, { h: 'Estimated h', n: 1 }, { h: 'Share', n: 1 }, { h: 'Running share', n: 1 }], rows: rows.map(r => [r.tt == null ? `${r.other} other tasks` : rptTaskLabel(r.tt), rN(r.act, 1), r.est ? rN(r.est, 1) : '—', rPct(r.act / all, 1), rPct(r.cum, 1)]) } };
+        }
+        function rptOverrun(M) {
+            const rows = rptOverrunRows(M).sort((a, b) => b.hours - a.hours).slice(0, 10);
+            if (!rows.length) return null;
+            const W = 640, X0 = 210, X1 = 520, top0 = 30, RH = 26, H = top0 + rows.length * RH + 28;
+            const lo = 0.5, hi = 1.6, xs = rLin(lo, hi, X0, X1), clamp = v => Math.min(hi, Math.max(lo, v));
+            let s = '';
+            [0.6, 0.8, 1, 1.2, 1.4].forEach(v => { s += rVl(xs(v), top0 - 6, top0 + rows.length * RH, v === 1 ? 'rv-base' : 'rv-grid') + rT(xs(v), H - 8, `${Math.round(v * 100)}%`, 'rv-ax', 'middle'); });
+            s += rT(xs(1), top0 - 12, 'estimate', 'rv-ax', 'middle') + rT(W - 8, 16, 'Median', 'rv-ax', 'end');
+            rows.forEach((r, i) => {
+                const y = top0 + i * RH + RH / 2, name = rShort(rptTaskLabel(r.tt), 30);
+                s += rT(X0 - 8, y + 4, name, 'rv-lbl', 'end');
+                for (const x of r.list) s += rDot(xs(clamp(x.ratio)), y, 4.5, 'fill:var(--rv-blue);fill-opacity:.75;stroke:var(--bg-secondary);stroke-width:1.5', `${name} · lot ${x.c.lotId}\n${x.c.strain} · ${rptRoomName(x.c.flowerRoomId)}\n${rPct(x.ratio)} of estimate (${rN(x.t.act, 1)} h vs ${rN(x.t.est, 1)} h)`);
+                s += `<line x1="${rF(xs(clamp(r.med)))}" x2="${rF(xs(clamp(r.med)))}" y1="${y - 9}" y2="${y + 9}" style="stroke:var(--text-primary);stroke-width:2.5"/>`;
+                const dv = r.med - 1;
+                s += rT(W - 8, y + 4, Math.abs(dv) < 0.05 ? 'on target' : `${dv > 0 ? '▲' : '▼'} ${rN(Math.abs(dv) * 100, 0)}% ${dv > 0 ? 'over' : 'under'}`, Math.abs(dv) < 0.05 ? 'rv-ax' : dv > 0 ? 'rv-warn' : 'rv-ok', 'end');
+            });
+            const tune = rows.filter(r => r.crops >= 3 && Math.abs(r.med - 1) >= 0.05 && r.minutes > 0).map(r => ({ ...r, sug: Math.max(5, Math.round(r.minutes * r.med / 5) * 5) }));
+            const after = tune.length
+                ? `<div class="rpt-tune"><h5>Suggested estimates (3+ crops) — change them in CropLabourWizard's recipe editor</h5><div class="rpt-tbl"><table><thead><tr><th>Task</th><th class="n">Now</th><th class="n">Median actual</th><th class="n">Suggested</th></tr></thead><tbody>${tune.map(t => `<tr><td>${rEsc(rptTaskLabel(t.tt))}</td><td class="n">${t.staff || 1} × ${rEsc(fmtMinutes(t.minutes))}/day</td><td class="n ${t.med > 1 ? 'rpt-warn' : 'rpt-ok'}">${t.med > 1 ? '▲' : '▼'} ${rPct(t.med)}</td><td class="n">${t.staff || 1} × ${rEsc(fmtMinutes(t.sug))}/day</td></tr>`).join('')}</tbody></table></div></div>`
+                : '<p class="rpt-note">Suggested estimates appear once a task has been completed on 3 or more crops.</p>';
+            return { svg: rSvg(W, H, s, 'Hours logged as a share of the estimate, by task'), after,
+                table: { cols: [{ h: 'Task' }, { h: 'Crops', n: 1 }, { h: 'Median', n: 1 }, { h: 'Each crop' }], rows: rows.map(r => [rptTaskLabel(r.tt), String(r.crops), rPct(r.med), r.list.map(x => `${x.c.lotId}: ${rPct(x.ratio)}`).join(', ')]) } };
+        }
+        function rptArc(cx, cy, r0, r1, a0, a1) {
+            const p = (r, a) => `${rF(cx + r * Math.sin(a))} ${rF(cy - r * Math.cos(a))}`, big = a1 - a0 > Math.PI ? 1 : 0;
+            if (a1 - a0 >= Math.PI * 2 - 1e-6) a1 = a0 + Math.PI * 2 - 1e-4;
+            return `M${p(r1, a0)} A${r1} ${r1} 0 ${big} 1 ${p(r1, a1)} L${p(r0, a1)} A${r0} ${r0} 0 ${big} 0 ${p(r0, a0)}Z`;
+        }
+        // Scheduled shift hours of roster staff on [from, to] (work days × shift, less booked time off and BC holidays)
+        function rptCapacity(from, to) {
+            const shift = rptShiftHours(), hol = rptHolidayMap(from, to), byDay = {};
+            for (const emp of Object.values(rptEmployees())) {
+                const off = {};
+                for (const t of emp?.timeOff || []) {
+                    if (!isDay(t.date)) continue;
+                    const partial = {};
+                    for (const h of t.hoursOff || []) {
+                        if (!isDay(h.date)) continue;
+                        const [sh, sm] = String(h.start || '0:0').split(':').map(Number), [eh, em] = String(h.end || '0:0').split(':').map(Number);
+                        partial[h.date] = (partial[h.date] || 0) + Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
+                    }
+                    for (let d = t.date; d <= (t.endDate || t.date) && d <= to; d = dAdd(d, 1)) off[d] = d in partial ? Math.min(shift, (off[d] || 0) + partial[d]) : shift;
+                }
+                for (let d = from; d <= to; d = dAdd(d, 1)) {
+                    if (hol[d] || !(emp?.workDays || []).includes(parseISO(d).getDay())) continue;
+                    byDay[d] = (byDay[d] || 0) + Math.max(0, shift - (off[d] || 0));
+                }
+            }
+            return byDay;
+        }
+        function rptMix(M) {
+            const h = rptHours(M, M.per.from, M.per.to);
+            const segs = [{ k: 'Crop tasks', v: h.crop, c: 'var(--rv-blue)' }, { k: 'Daily chores', v: h.chore, c: 'var(--rv-orange)' }, { k: 'Equipment & other', v: h.equipment + h.other, c: 'var(--rv-aqua)' }];
+            const total = rSum(segs, x => x.v);
+            if (total <= 0) return null;
+            // Logged vs scheduled: hours roster staff logged (not temps) against their shifts, up to today
+            let staffLogged = 0;
+            for (const c of M.crops) if (rptCropMatch(c)) for (const t of Object.values(c.labour?.byTask || {})) {
+                const share = t.act > 0 ? 1 - t.temp / t.act : 1;
+                for (const [d, hrs] of Object.entries(t.days || {})) if (inRange(d, M.per.from, M.per.to)) staffLogged += hrs * share;
+            }
+            for (const r of M.other) if (!r.temp && inRange(r.date, M.per.from, M.per.to)) staffLogged += r.hours;
+            const sched = rSum(Object.values(rptCapacity(M.per.from, M.per.to)));
+            const W = 640, H = 250, cx = 130, cy = 125;
+            const live = segs.filter(g => g.v > 0);
+            let s = '';
+            if (live.length >= 2) {
+                let a = 0;
+                for (const g of live) { const a1 = a + g.v / total * Math.PI * 2; s += `<path d="${rptArc(cx, cy, 64, 104, a, a1)}" style="fill:${g.c};stroke:var(--bg-secondary);stroke-width:2" ${rTip(`${g.k}\n${rN(g.v, 0)} h · ${rPct(g.v / total, 1)}`)}/>`; a = a1; }
+                s += rT(cx, cy - 2, rN(total, 0), 'rv-big', 'middle') + rT(cx, cy + 16, 'hours logged', 'rv-ax', 'middle');
+            } else {
+                s += rT(cx, cy - 18, rN(total, 0), 'rv-big', 'middle') + rT(cx, cy, 'hours logged, all on', 'rv-ax', 'middle') + rT(cx, cy + 16, live[0].k.toLowerCase(), 'rv-ax', 'middle');
+            }
+            segs.forEach((g, i) => { const y = 62 + i * 46; s += rRect(270, y - 11, 12, 12, `fill:${g.c}`, '', 3) + rT(290, y, g.k, 'rv-lblp') + rT(W - 12, y, `${rN(g.v, 0)} h`, 'rv-val', 'end') + rT(W - 12, y + 18, rPct(g.v / total, 1), 'rv-ax', 'end'); });
+            s += rHl(270, W - 12, 196);
+            s += rT(270, 218, h.crop > 0 ? `Temps did ${rPct(h.temp / h.crop)} of crop-task hours` : 'No crop-task hours yet', 'rv-lbl');
+            s += rT(270, 238, sched > 0 ? `Staff logged ${rPct(staffLogged / sched)} of their scheduled shift hours` : 'No roster shifts in this period', 'rv-lbl');
+            return { svg: rSvg(W, H, s, 'Labour mix'), table: { cols: [{ h: 'Work type' }, { h: 'Hours', n: 1 }, { h: 'Share', n: 1 }], rows: segs.map(g => [g.k, rN(g.v, 1), rPct(g.v / total, 1)]).concat([['Staff shift hours scheduled', rN(sched, 0), ''], ['Staff hours logged', rN(staffLogged, 1), sched > 0 ? rPct(staffLogged / sched, 1) : '']]) } };
+        }
+        function rptWaterfall(M) {
+            if (!wagesLoaded()) return { empty: rEmpty('Open Wages.json in SitkaTools to see labour cost.', 'Costs use today’s wages. No figure is shown per person, or for groups of fewer than 3 people.') };
+            const crops = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.flower > 0);
+            const costed = crops.map(c => ({ c, k: rptCropCost(c) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0 && x.c.labour.act > 0);
+            const people = new Set(costed.flatMap(x => x.k.people));
+            if (!costed.length) return { empty: rEmpty('No harvested crops with both a flower weight and fully-costed hours in this period.', 'Needs harvest numbers, and a wage for everyone who logged hours on the crop.') };
+            if (people.size < RPT_MIN_PEOPLE) return { empty: rEmpty('Hidden: fewer than 3 people logged hours on these crops.', 'A cost from so few people would show their wage.') };
+            const g = rSum(costed, x => x.c.weights.flower), by = { clone: 0, veg: 0, flower: 0, post: 0 };
+            for (const { c, k } of costed) {
+                const rate = k.cost / c.labour.act;   // the crop's average $/h, spread over its tasks
+                for (const [tt, t] of Object.entries(c.labour.byTask || {})) by[rptPhaseOf(tt)] += t.act * rate;
+            }
+            const other = rptOtherCost(M, M.per.from, M.per.to);
+            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / g, c: `var(--rv-ph-${k})` })), { k: 'Chores & equipment', v: (other?.cost || 0) / g, c: 'var(--rv-neutral)' }];
+            const total = rSum(steps, x => x.v);
+            const W = 640, H = 270, X0 = 56, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
+            const yn = rNice(0, total, 4), ys = rLin(0, yn.hi, base, top0);
+            let s = '';
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rMoney(v, v < 1 ? 2 : 0), 'rv-ax', 'end'); });
+            let run = 0;
+            steps.forEach((st, i) => {
+                const x0 = X0 + i * bw + 10, w = bw - 20;
+                s += rRect(x0, ys(run + st.v), w, ys(run) - ys(run + st.v), `fill:${st.c}`, rTip(`${st.k}\n${rMoney(st.v, 3)} per gram · ${total > 0 ? rPct(st.v / total) : '—'} of the total`), 3);
+                s += rT(x0 + w / 2, ys(run + st.v) - 6, rMoney(st.v, 3), 'rv-val', 'middle');
+                s += `<line x1="${rF(x0 + w)}" x2="${rF(x0 + bw)}" y1="${rF(ys(run + st.v))}" y2="${rF(ys(run + st.v))}" style="stroke:var(--rv-axis)"/>`;
+                const words = st.k.split(' ');
+                s += rT(x0 + w / 2, base + 18, words.length > 2 ? words.slice(0, 2).join(' ') : st.k, 'rv-lbl', 'middle');
+                if (words.length > 2) s += rT(x0 + w / 2, base + 33, words.slice(2).join(' '), 'rv-lbl', 'middle');
+                run += st.v;
+            });
+            const tx = X0 + steps.length * bw + 10, tw = bw - 20;
+            s += rRect(tx, ys(total), tw, base - ys(total), 'fill:var(--rv-total)', rTip(`Fully loaded labour cost\n${rMoney(total, 3)} per gram of flower`), 3) + rT(tx + tw / 2, ys(total) - 6, rMoney(total), 'rv-val', 'middle') + rT(tx + tw / 2, base + 18, 'Total', 'rv-lblp', 'middle');
+            s += rHl(X0, X1, base, 'rv-base');
+            return { total, n: costed.length, svg: rSvg(W, H, s, 'Labour cost per gram by phase'),
+                table: { cols: [{ h: 'Step' }, { h: '$ per gram', n: 1 }, { h: 'Share', n: 1 }], rows: [...steps.map(st => [st.k, rMoney(st.v, 3), total > 0 ? rPct(st.v / total, 1) : '—']), ['Total', rMoney(total, 3), '100 %']] } };
+        }
+        function rptLabour(M) {
+            const par = rptPareto(M), ovr = rptOverrun(M), mix = rptMix(M), wf = rptWaterfall(M);
+            const noHours = rEmpty('No crop-task hours logged in this period.', 'Hours come from the Tasks tab (labour_map on each crop task).');
+            const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
+            return `<div class="rpt-grid">` +
+                rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: par ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of crop-task hours in this period. Bars are hours logged; outlines are the estimate.` : '', body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: 'labour_map on crop tasks, by the day the work was done' }) +
+                rCard({ title: 'Which tasks run over their estimate?', chips: ['now'], sub: ovr ? 'Each dot is one crop (up to the 8 most recent): hours logged as a share of the estimate. The white tick is the median.' : '', body: ovr ? ovr.svg : rEmpty('No completed tasks with both an estimate and hours in this period.', 'Estimates come from CropLabourWizard recipes (minutes × staff per task).'), after: ovr?.after, table: ovr?.table, source: 'Completed crop tasks with an estimate and logged hours, planned in this period' }) +
+                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type. Daily chores join this chart once DailyWizard records hours.', body: mix ? mix.svg : noHours, table: mix?.table, source: 'Crop and equipment events · DailyWizard chores · roster shifts' }) +
+                rCard({ title: 'Where does the labour cost of a gram come from?', chips: ['harvest', 'wages'], sub: wf.svg ? `Labour $ per gram of flower, built up phase by phase across ${wf.n} crop${wf.n > 1 ? 's' : ''}: <b>${rMoney(wf.total)}/g</b> fully loaded.` : '', body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'chores & equipment share') : '', source: 'Hours × today’s wages ÷ flower weight · chores and equipment spread over the flower harvested in the period' }) +
+                `</div>`;
+        }
+
+        // ---- Yield & Quality ----
+        function rptScatter(M) {
+            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.derived?.gpp != null && c.lab?.potency != null);
+            if (list.length < 2) return null;
+            const W = 640, H = 380, X0 = 56, X1 = 600, Y0 = 330, Y1 = 30;
+            const xn = rNice(Math.min(...list.map(c => c.derived.gpp)) * 0.95, Math.max(...list.map(c => c.derived.gpp)) * 1.05, 5), yn = rNice(Math.min(...list.map(c => c.lab.potency)) - 0.5, Math.max(...list.map(c => c.lab.potency)) + 0.5, 5);
+            const xs = rLin(xn.lo, xn.hi, X0, X1), ys = rLin(yn.lo, yn.hi, Y0, Y1);
+            const mx = rMedian(list.map(c => c.derived.gpp)), my = rMedian(list.map(c => c.lab.potency));
+            let s = '';
+            xn.t.forEach(v => { s += rVl(xs(v), Y1, Y0) + rT(xs(v), Y0 + 18, rN(v, 0), 'rv-ax', 'middle'); });
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 8, ys(v) + 4, rN(v, yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
+            s += rT((X0 + X1) / 2, H - 6, 'Grams of flower per plant →', 'rv-lbl', 'middle') + `<text x="14" y="${(Y0 + Y1) / 2}" class="rv-lbl" text-anchor="middle" transform="rotate(-90 14 ${(Y0 + Y1) / 2})">Total THC % →</text>`;
+            s += rVl(xs(mx), Y1, Y0, 'rv-base') + rHl(X0, X1, ys(my), 'rv-base');
+            s += rT(X1 - 6, Y1 + 16, 'KEEP', 'rv-quad', 'end') + rT(X0 + 8, Y1 + 16, 'POTENCY PLAY', 'rv-quad') + rT(X1 - 6, Y0 - 8, 'VOLUME PLAY', 'rv-quad', 'end') + rT(X0 + 8, Y0 - 8, 'REVIEW', 'rv-quad');
+            s += rT(xs(mx) + 4, Y0 - 24, `median ${rN(mx, 0)} g`, 'rv-axs') + rT(X1 - 6, ys(my) - 5, `median ${rN(my, 1)} %`, 'rv-axs', 'end');
+            for (const c of list) s += rDot(xs(c.derived.gpp), ys(c.lab.potency), 5.5, `fill:${M.strainColor(c.strain)};stroke:var(--bg-secondary);stroke-width:2`, `Lot ${c.lotId} · ${c.strain}\n${rptRoomName(c.flowerRoomId)} · harvested ${dFmtY(c.dates.harvestStart)}\n${rN(c.derived.gpp, 0)} g/plant · ${rN(c.lab.potency, 1)} % THC${c.lab.terpenes != null ? ` · ${rN(c.lab.terpenes, 2)} % terpenes` : ''}`);
+            const strains = [...new Set(list.map(c => c.strain))].filter(st => M.topStrains.includes(st));
+            for (const st of strains) {
+                const l = list.filter(c => c.strain === st), cx = xs(rMean(l, c => c.derived.gpp)), cy = ys(rMean(l, c => c.lab.potency));
+                s += `<circle cx="${rF(cx)}" cy="${rF(cy)}" r="12" style="fill:none;stroke:${M.strainColor(st)};stroke-width:2.5"/>` + rT(cx + 17, cy + 4, `${rShort(st, 24)} (${l.length})`, 'rv-val');
+            }
+            const legend = [...new Set(list.map(c => c.strain))].map(st => M.topStrains.includes(st) ? rSw(M.strainColor(st), st) : null).filter(Boolean).join('') + (list.some(c => !M.topStrains.includes(c.strain)) ? rSw('var(--rv-neutral)', 'Other strains') : '');
+            return { svg: rSvg(W, H, s, 'Strain scorecard: grams per plant against potency'), legend,
+                table: { cols: [{ h: 'Lot' }, { h: 'Strain' }, { h: 'Room' }, { h: 'Harvested' }, { h: 'g/plant', n: 1 }, { h: 'THC %', n: 1 }], rows: list.map(c => [c.lotId, c.strain, rptRoomName(c.flowerRoomId), c.dates.harvestStart, rN(c.derived.gpp, 0), rN(c.lab.potency, 1)]) } };
+        }
+        function rptStrips(M) {
+            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.lab?.potency != null || c.lab?.terpenes != null);
+            if (!list.length) return null;
+            const counts = {};
+            for (const c of list) counts[c.strain] = (counts[c.strain] || 0) + 1;
+            const strains = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b)).slice(0, 8);
+            const W = 640, LW = 158, PW = 210, GAP = 32, top0 = 40, RH = 46, H = top0 + strains.length * RH + 30;
+            let s = '';
+            [['Total THC %', 'potency', 1], ['Total terpenes %', 'terpenes', 2]].forEach(([title, key, dp], p) => {
+                const vals = list.map(c => c.lab[key]).filter(v => v != null);
+                if (!vals.length) { s += rT(LW + p * (PW + GAP), 16, `${title} — none yet`, 'rv-ax'); return; }
+                const tn = rNice(Math.min(...vals) * 0.97, Math.max(...vals) * 1.03, 4), X0 = LW + p * (PW + GAP), xs = rLin(tn.lo, tn.hi, X0, X0 + PW);
+                s += rT(X0, 16, title, 'rv-lblp');
+                tn.t.forEach(v => { s += rVl(xs(v), top0 - 8, top0 + strains.length * RH - 6) + rT(xs(v), H - 8, rN(v, tn.step < 1 ? 1 : 0), 'rv-ax', 'middle'); });
+                strains.forEach((st, i) => {
+                    const y = top0 + i * RH + RH / 2 - 6, l = list.filter(c => c.strain === st && c.lab[key] != null), col = M.strainColor(st);
+                    if (p === 0) s += rT(LW - 12, y + 4, rShort(st, 22), 'rv-lblp', 'end');
+                    if (!l.length) return;
+                    const v = l.map(c => c.lab[key]);
+                    s += `<line x1="${rF(xs(Math.min(...v)))}" x2="${rF(xs(Math.max(...v)))}" y1="${y}" y2="${y}" style="stroke:${col};stroke-opacity:.5;stroke-width:2"/>`;
+                    for (const c of l) s += rDot(xs(c.lab[key]), y, 4.5, `fill:${col};stroke:var(--bg-secondary);stroke-width:1.5`, `Lot ${c.lotId} · ${st}\n${rN(c.lab[key], dp)} % ${key === 'potency' ? 'THC' : 'terpenes'}`);
+                    const m = rMedian(v);
+                    s += `<line x1="${rF(xs(m))}" x2="${rF(xs(m))}" y1="${y - 10}" y2="${y + 10}" style="stroke:var(--text-primary);stroke-width:2.5"/>` + rT(xs(m), y + 24, rN(m, dp), 'rv-axs', 'middle');
+                });
+            });
+            const stat = (st, key, dp) => { const v = list.filter(c => c.strain === st && c.lab[key] != null).map(c => c.lab[key]); return v.length ? [rN(rMedian(v), dp), `${rN(Math.min(...v), dp)}–${rN(Math.max(...v), dp)}`] : ['—', '—']; };
+            return { svg: rSvg(W, H, s, 'Potency and terpenes by strain'),
+                table: { cols: [{ h: 'Strain' }, { h: 'Crops', n: 1 }, { h: 'THC median', n: 1 }, { h: 'THC range', n: 1 }, { h: 'Terp median', n: 1 }, { h: 'Terp range', n: 1 }], rows: strains.map(st => [st, String(counts[st]), ...stat(st, 'potency', 1), ...stat(st, 'terpenes', 2)]) } };
+        }
+        function rptCascade(M) {
+            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.wet > 0 && c.weights?.dry > 0 && c.weights?.flower > 0);
+            if (!list.length) return null;
+            const wet = rSum(list, c => c.weights.wet), dry = rSum(list, c => c.weights.dry), flower = rSum(list, c => c.weights.flower);
+            const trim = rSum(list, c => c.weights.trim || 0), total = flower + trim;
+            const grades = {};
+            for (const g of RPT_GRADES) grades[g] = rSum(list, c => c.weights.grades?.[g] || 0);
+            const graded = rSum(Object.values(grades)) > 0;
+            const steps = [{ k: 'Wet weight', a: 0, b: wet, tot: true }, { k: 'Water lost drying', a: dry, b: wet }, { k: 'Dry weight', a: 0, b: dry, tot: true }, { k: 'Stems & waste', a: total, b: dry }];
+            if (trim > 0) steps.push({ k: 'Total yield', a: 0, b: total, tot: true }, { k: 'Trim', a: flower, b: total });
+            steps.push({ k: 'Flower yield', a: 0, b: flower, tot: true, flower: true });
+            const W = 640, H = 280, X0 = 60, X1 = 628, top0 = 34, base = 226, bw = (X1 - X0) / steps.length;
+            const yn = rNice(0, wet / 1000, 4), ys = rLin(0, yn.hi * 1000, base, top0);
+            let s = '';
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v * 1000)) + rT(X0 - 6, ys(v * 1000) + 4, `${rN(v, 0)} kg`, 'rv-ax', 'end'); });
+            const gradeFill = { bigs: 'var(--rv-seq-6)', mids: 'var(--rv-seq-5)', smalls: 'var(--rv-seq-3)', popcorn: 'var(--rv-seq-2)' };
+            steps.forEach((st, i) => {
+                const x0 = X0 + i * bw + 8, w = bw - 16, v = st.b - st.a;
+                const t = `${st.k}\n${st.tot ? '' : '−'}${rN(v / 1000, 1)} kg · ${rPct(v / wet, 1)} of wet weight`;
+                if (st.flower && graded) {
+                    let y0 = st.a;
+                    for (const g of RPT_GRADES) { if (!grades[g]) continue; s += rRect(x0, ys(y0 + grades[g]), w, ys(y0) - ys(y0 + grades[g]) - 1, `fill:${gradeFill[g]}`, rTip(`${g[0].toUpperCase() + g.slice(1)}\n${rN(grades[g] / 1000, 1)} kg · ${rPct(grades[g] / flower, 1)} of flower`), 2); y0 += grades[g]; }
+                } else {
+                    s += st.tot ? rRect(x0, ys(st.b), w, ys(st.a) - ys(st.b), 'fill:var(--rv-blue)', rTip(t), 3) : rRect(x0, ys(st.b), w, ys(st.a) - ys(st.b), 'fill:url(#rvh-neutral);stroke:var(--rv-neutral);stroke-width:1', rTip(t), 3);
+                }
+                s += rT(x0 + w / 2, ys(st.b) - 20, `${st.tot ? '' : '−'}${rN(v / 1000, 1)} kg`, 'rv-val', 'middle') + rT(x0 + w / 2, ys(st.b) - 6, rPct(v / wet, 1), 'rv-ax', 'middle');
+                const words = st.k.split(' ');
+                s += rT(x0 + w / 2, base + 18, words[0], st.tot ? 'rv-lblp' : 'rv-lbl', 'middle') + (words.length > 1 ? rT(x0 + w / 2, base + 32, words.slice(1).join(' '), st.tot ? 'rv-lblp' : 'rv-lbl', 'middle') : '');
+                if (i < steps.length - 1) { const yy = ys(st.tot ? st.b : st.a); s += `<line x1="${rF(x0 + w)}" x2="${rF(x0 + bw)}" y1="${rF(yy)}" y2="${rF(yy)}" style="stroke:var(--rv-axis)"/>`; }
+            });
+            s += rHl(X0, X1, base, 'rv-base');
+            const legend = rSw('var(--rv-blue)', 'weight on hand') + '<span><i class="rv-hatch-n"></i>weight lost</span>' + (graded ? RPT_GRADES.filter(g => grades[g]).map(g => rSw(gradeFill[g], g[0].toUpperCase() + g.slice(1))).join('') : '');
+            return { n: list.length, dryDown: dry / wet, trimOut: flower / dry, svg: rSvg(W, H, s, 'Weight from wet weight to flower yield'), legend,
+                table: { cols: [{ h: 'Step' }, { h: 'kg', n: 1 }, { h: '% of wet', n: 1 }], rows: steps.map(st => [st.k, (st.tot ? '' : '−') + rN((st.b - st.a) / 1000, 2), rPct((st.b - st.a) / wet, 1)]).concat(graded ? RPT_GRADES.map(g => [`  ${g}`, rN(grades[g] / 1000, 2), rPct(grades[g] / wet, 1)]) : []) } };
+        }
+        function rptRoomTrendData(M) {
+            const list = M.crops.filter(c => rptCropMatch(c) && c.dates?.harvestStart && c.dates.harvestStart <= M.today && c.flowerRoomId && c.weights?.flower != null)
+                .sort((a, b) => a.dates.harvestStart.localeCompare(b.dates.harvestStart));
+            const useSf = list.length > 0 && list.every(c => c.derived?.gsf != null);
+            const val = c => useSf ? c.derived.gsf : c.derived?.gpp;
+            const rooms = [...new Set(list.map(c => c.flowerRoomId))].map(id => ({ id, points: list.filter(c => c.flowerRoomId === id && val(c) != null).map(c => ({ c, d: c.dates.harvestStart, v: val(c) })) })).filter(r => r.points.length);
+            return { rooms, unit: useSf ? 'g/sq ft' : 'g/plant', useSf };
+        }
+        function rptRoomTrend(M) {
+            const T = rptRoomTrendData(M);
+            const pts = T.rooms.flatMap(r => r.points.filter(p => p.d >= M.per.from));
+            if (pts.length < 2) return null;
+            const W = 640, H = 300, X0 = 50, X1 = 530, Y0 = 256, Y1 = 22;
+            const t0 = pts.reduce((m, p) => p.d < m ? p.d : m, pts[0].d), t1 = M.today, xs = d => rLin(0, Math.max(1, dDiff(t0, t1)), X0, X1)(dDiff(t0, d));
+            const yn = rNice(Math.min(...pts.map(p => p.v)) * 0.9, Math.max(...pts.map(p => p.v)) * 1.05, 4), ys = rLin(yn.lo, yn.hi, Y0, Y1);
+            let s = '';
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, 0), 'rv-ax', 'end'); });
+            const span = dDiff(t0, t1), stepM = span > 500 ? 6 : span > 200 ? 3 : 1;
+            for (let d = t0.slice(0, 8) + '01'; d <= t1; d = dMonths(d, 1)) { const dt = parseISO(d); if (d >= t0 && dt.getMonth() % stepM === 0) s += rVl(xs(d), Y1, Y0) + rT(xs(d), Y0 + 18, `${R_MON[dt.getMonth()]}${dt.getMonth() === 0 || stepM >= 6 ? ' ' + dt.getFullYear() : ''}`, 'rv-ax', 'middle'); }
+            s += rT(X0, 12, `${T.unit} per crop`, 'rv-ax');
+            for (const r of T.rooms) {
+                const l = r.points.filter(p => p.d >= M.per.from), col = M.roomColors[r.id] || 'var(--rv-neutral)';
+                if (!l.length) continue;
+                if (l.length > 1) s += `<path d="M${l.map(p => `${rF(xs(p.d))} ${rF(ys(p.v))}`).join(' L')}" style="fill:none;stroke:${col};stroke-width:2"/>`;
+                for (const p of l) s += rDot(xs(p.d), ys(p.v), 3.5, `fill:${col};stroke:var(--bg-secondary);stroke-width:1.5`, `${rptRoomName(r.id)} · lot ${p.c.lotId}\n${p.c.strain} · harvested ${dFmtY(p.d)}\n${rN(p.v, 1)} ${T.unit}`);
+                const lp = l[l.length - 1];
+                s += rT(xs(lp.d) + 9, ys(lp.v) + 4, rShort(rptRoomName(r.id), 14), 'rv-val');
+            }
+            s += rHl(X0, X1, Y0, 'rv-base');
+            return { unit: T.unit, useSf: T.useSf, svg: rSvg(W, H, s, 'Yield by room over time'), legend: T.rooms.map(r => rSw(M.roomColors[r.id] || 'var(--rv-neutral)', rptRoomName(r.id))).join(''),
+                table: { cols: [{ h: 'Room' }, { h: 'Lot' }, { h: 'Harvested' }, { h: 'Strain' }, { h: T.unit, n: 1 }], rows: T.rooms.flatMap(r => r.points.filter(p => p.d >= M.per.from).map(p => [rptRoomName(r.id), p.c.lotId, p.d, p.c.strain, rN(p.v, 1)])) } };
+        }
+        function rptYield(M) {
+            const sc = rptScatter(M), st = rptStrips(M), ca = rptCascade(M), tr = rptRoomTrend(M);
+            const need = rEmpty('Needs harvest numbers.', 'Tag the harvest-log questions with report metrics in PaperWizard → Configure Sheets (see Setup &amp; data).');
+            return `<div class="rpt-grid">` +
+                rCard({ title: 'Which strains should we keep growing?', chips: ['harvest'], sub: sc ? 'Each dot is a harvested crop in this period. Rings mark the three most-grown strains’ averages; the median lines split the field into four calls.' : '', body: sc ? sc.svg : need, table: sc?.table, legend: sc?.legend, source: 'Flower yield ÷ plants harvested · harvest.potency' }) +
+                rCard({ title: 'How consistent is each strain?', chips: ['harvest'], sub: st ? 'Every crop’s potency and terpene result, with the range and the median (white tick).' : '', body: st ? st.svg : need, table: st?.table, source: 'harvest.potency · harvest.terpenes' }) +
+                rCard({ title: 'Where does the weight go between harvest and processing?', chips: ['harvest'], sub: ca ? `${ca.n} crop${ca.n > 1 ? 's' : ''} harvested in this period. Dry weight is <b>${rPct(ca.dryDown, 1)}</b> of wet weight; flower is <b>${rPct(ca.trimOut, 1)}</b> of dry weight.` : '', body: ca ? ca.svg : need, table: ca?.table, legend: ca?.legend, source: 'harvest.wetWeight → harvest.dryWeight → bigs + mids + smalls + popcorn (+ trim = total yield)' }) +
+                rCard({ title: 'Is any room slipping?', chips: ['harvest'], sub: tr ? (tr.useSf ? 'Flower yield per square foot of canopy, crop by crop.' : 'Flower yield per plant, crop by crop. Set canopy sq ft in Setup &amp; data to compare rooms of different sizes per sq ft.') : '', body: tr ? tr.svg : need, table: tr?.table, legend: tr?.legend, source: tr?.useSf ? 'Flower yield ÷ canopy sq ft (Setup & data)' : 'Flower yield ÷ plants harvested' }) +
+                `</div>`;
+        }
+
+        // ---- Rooms & Environment ----
+        function rptEnvLots(M) { return M.crops.filter(c => !c.closed && c.series && (c.series['env.temp'] || c.series['env.rh']) && rptCropMatch(c)).sort((a, b) => (b.dates?.day0 || '').localeCompare(a.dates?.day0 || '')); }
+        function rptEnv(M, c) {
+            const panels = [['Temperature', 'env.temp', '°F', RPT_TARGETS['env.temp'], 1], ['Relative humidity', 'env.rh', '%', RPT_TARGETS['env.rh'], 0], ['VPD (air)', 'vpd', 'kPa', RPT_TARGETS.vpd, 2]].filter(p => Object.keys(c.series[p[1]] || {}).length);
+            if (!panels.length) return null;
+            const dates = [...new Set(panels.flatMap(p => Object.keys(c.series[p[1]])))].sort();
+            const from = dates[0], to = dates[dates.length - 1], n = Math.max(1, dDiff(from, to));
+            const W = 640, X0 = 58, X1 = 628, PH = 74, GAP = 26, top0 = 34, H = top0 + panels.length * (PH + GAP) + 10, xs = d => X0 + dDiff(from, d) / n * (X1 - X0);
+            const flags = [];
+            for (const m of RPT_IPM) for (const [d, v] of Object.entries(c.series[m] || {})) if (v >= 1) flags.push([d, REPORT_METRICS[m].label.replace(/ \(YES\/NO\)$/, '')]);
+            let s = '';
+            panels.forEach(([title, key, unit, band, dp], p) => {
+                const y0 = top0 + p * (PH + GAP), ser = c.series[key], vals = Object.values(ser);
+                const yn = rNice(Math.min(band[0], ...vals), Math.max(band[1], ...vals), 3), ys = rLin(yn.lo, yn.hi, y0 + PH, y0);
+                s += rT(X0, y0 - 8, `${title} (${unit})`, 'rv-lblp') + rT(X1, y0 - 8, `target ${rN(band[0], dp === 2 ? 1 : 0)}–${rN(band[1], dp === 2 ? 1 : 0)}`, 'rv-ax', 'end');
+                s += rRect(X0, ys(band[1]), X1 - X0, ys(band[0]) - ys(band[1]), 'fill:var(--accent);fill-opacity:.09', '', 0);
+                yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, dp === 2 ? 1 : 0), 'rv-ax', 'end'); });
+                const pts = Object.entries(ser).sort(([a], [b]) => a.localeCompare(b));
+                s += `<path d="M${pts.map(([d, v]) => `${rF(xs(d))} ${rF(ys(v))}`).join(' L')}" style="fill:none;stroke:var(--rv-blue);stroke-width:1.8"/>`;
+                for (const [d, v] of pts) if (v < band[0] || v > band[1]) s += `<circle cx="${rF(xs(d))}" cy="${rF(ys(v))}" r="3" style="fill:var(--warning)"/>`;
+                for (const [d] of flags) s += rVl(xs(d), y0, y0 + PH, 'rv-base');
+            });
+            if (flags.length) s += rT(X1, top0 - 22, `▏ ${flags.length} IPM flag day${flags.length > 1 ? 's' : ''} (grey lines)`, 'rv-warn', 'end', 'font-size:10px');
+            for (let d = from; d <= to; d = dAdd(d, 1)) if (parseISO(d).getDate() === 1) s += rT(xs(d), H - 2, R_MON[parseISO(d).getMonth()], 'rv-ax', 'middle');
+            const cw = (X1 - X0) / n;
+            for (const d of dates) {
+                const parts = panels.map(([, key, unit, , dp]) => c.series[key][d] != null ? `${rN(c.series[key][d], dp)} ${unit}` : null).filter(Boolean);
+                const fl = flags.filter(f => f[0] === d).map(f => f[1]);
+                s += rRect(xs(d) - cw / 2, top0, cw, panels.length * (PH + GAP) - GAP, 'fill:transparent', rTip(`${dFmtY(d)}\n${parts.join(' · ')}${fl.length ? '\n⚠ ' + fl.join(', ') : ''}`), 0);
+            }
+            return { svg: rSvg(W, H, s, `Grow-room climate for lot ${c.lotId}`),
+                table: { cols: [{ h: 'Date' }, ...panels.map(p => ({ h: `${p[0]} (${p[2]})`, n: 1 }))], rows: dates.map(d => [d, ...panels.map(([, key, , , dp]) => c.series[key][d] != null ? rN(c.series[key][d], dp) : '—')]) } };
+        }
+        function rptIpm(M) {
+            const N = 16, mon = dAdd(M.today, -((parseISO(M.today).getDay() + 6) % 7));
+            const weeks = Array.from({ length: N }, (_, i) => dAdd(mon, -7 * (N - 1 - i)));
+            const cells = {}, herm = {};
+            let any = false;
+            for (const c of M.crops) {
+                if (c.closed || !c.series || !rptCropMatch(c)) continue;
+                const days = {};
+                for (const m of RPT_IPM) for (const [d, v] of Object.entries(c.series[m] || {})) if (v >= 1) { days[d] = days[d] || { herm: false }; if (m === 'ipm.herm') days[d].herm = true; }
+                for (const m of RPT_IPM) if (c.series[m]) any = true;
+                for (const [d, f] of Object.entries(days)) {
+                    const w = Math.floor(dDiff(weeks[0], d) / 7);
+                    if (w < 0 || w >= N) continue;
+                    const room = rptRoomIdByName(c.rooms_?.[d]) || rptRoomIdByName(DB.lots[c.lotId]?.currentRoom) || c.flowerRoomId || '?';
+                    const key = room + '|' + w;
+                    cells[key] = (cells[key] || 0) + 1;
+                    if (f.herm) herm[key] = true;
+                }
+            }
+            if (!any) return null;
+            // Rows: rooms that hold lots (any of a lot's rooms) or had a flag, in building order
+            const held = new Set(Object.keys(cells).map(k => k.split('|')[0]));
+            for (const l of Object.values(DB.lots)) for (const n of [l?.cloningRoom, l?.vegRoom, l?.destRoom, l?.dryRoom, l?.trimRoom, l?.currentRoom]) { const id = rptRoomIdByName(n); if (id) held.add(id); }
+            const rooms = [...held].filter(id => id !== '?' && DB.data.rooms?.[id] && (!RPT.building || DB.data.rooms[id].buildingId === RPT.building) && (!RPT.room || id === RPT.room))
+                .sort((a, b) => (DB.data.rooms[a]?.buildingId || '').localeCompare(DB.data.rooms[b]?.buildingId || '') || rptRoomName(a).localeCompare(rptRoomName(b)));
+            if (Object.keys(cells).some(k => k.startsWith('?|'))) rooms.push('?');
+            const W = 640, X0 = 130, X1 = 630, top0 = 26, RH = 26, cw = (X1 - X0) / N, H = top0 + rooms.length * RH + 62;
+            let s = '';
+            weeks.forEach((w, i) => { if (i % 2 === 0) s += rT(X0 + i * cw + cw / 2, 16, dFmt(w), 'rv-axs', 'middle'); });
+            rooms.forEach((room, r) => {
+                const y = top0 + r * RH;
+                s += rT(X0 - 10, y + RH / 2 + 4, rShort(room === '?' ? 'Room unknown' : rptRoomName(room), 18), 'rv-lbl', 'end');
+                weeks.forEach((w, i) => {
+                    const v = Math.min(7, cells[room + '|' + i] || 0), hm = herm[room + '|' + i];
+                    s += rRect(X0 + i * cw + 1, y + 1, cw - 2, RH - 2, `fill:var(--rv-seq-${v})`, rTip(`${room === '?' ? 'Room unknown' : rptRoomName(room)} · week of ${dFmt(w)}\n${v ? `${v} day${v > 1 ? 's' : ''} with pests, disease or issues flagged` : 'Nothing flagged'}${hm ? '\nHermaphrodites found' : ''}`), 3);
+                    if (v) s += rT(X0 + i * cw + cw / 2, y + RH / 2 + 4, String(v), 'rv-val', 'middle', v >= 6 ? 'fill:#0d1530' : '');
+                    if (hm) s += `<path d="M${rF(X0 + (i + 1) * cw - 3)} ${y + 3} l0 9 l-9 -9z" style="fill:var(--warning)"/>`;
+                });
+            });
+            const ly = top0 + rooms.length * RH + 22;
+            s += rT(X0, ly + 10, 'Days flagged', 'rv-ax');
+            for (let v = 0; v <= 7; v++) s += rRect(X0 + 78 + v * 26, ly, 24, 12, `fill:var(--rv-seq-${v})`, '', 2) + rT(X0 + 90 + v * 26, ly + 26, String(v), 'rv-axs', 'middle');
+            s += `<path d="M${X0 + 310} ${ly} l0 10 l-10 -10z" style="fill:var(--warning)"/>` + rT(X0 + 318, ly + 10, 'hermaphrodites found', 'rv-ax');
+            return { svg: rSvg(W, H, s, 'IPM flags by room and week'),
+                table: { cols: [{ h: 'Room' }, ...weeks.map(w => ({ h: dFmt(w), n: 1 }))], rows: rooms.map(room => [room === '?' ? 'Room unknown' : rptRoomName(room), ...weeks.map((w, i) => String(cells[room + '|' + i] || 0))]) } };
+        }
+        function rptRooms(M) {
+            const lots = rptEnvLots(M);
+            RPT.envLot = rptDefaultLot(lots, RPT.envLot);
+            const c = lots.find(x => x.lotId === RPT.envLot);
+            const env = c ? rptEnv(M, c) : null, ipm = rptIpm(M);
+            const sel = `<select id="rptEnvLot" class="rpt-inline-sel" aria-label="Lot">${lots.map(x => `<option value="${rEsc(x.lotId)}"${x.lotId === RPT.envLot ? ' selected' : ''}>${rEsc(x.lotId)} — ${rEsc(x.strain)}</option>`).join('')}</select>`;
+            const need = rEmpty('Needs grow-log tags.', 'Tag the grow-log questions (temperature, humidity, pests…) with report metrics in PaperWizard → Configure Sheets.');
+            return `<div class="rpt-grid">` +
+                rCard({ title: c ? `Was the climate right for lot ${c.lotId}?` : 'Was the climate right?', chips: ['tags'], control: lots.length ? sel : '', sub: env ? 'Daily grow-log readings. Green bands are default targets; amber dots are readings outside them. VPD is worked out from temperature and humidity.' : '', body: env ? env.svg : need, table: env?.table, source: 'Grow-log answers tagged env.temp and env.rh · IPM flags from ipm.*' }) +
+                rCard({ title: 'Where and when do pests show up?', chips: ['tags'], sub: ipm ? 'Days per week with new pests, disease, hermaphrodites or other issues flagged on a grow log, by room. Last 16 weeks.' : '', body: ipm ? ipm.svg : need, table: ipm?.table, source: 'Grow-log YES/NO answers tagged ipm.*' }) +
+                `</div>`;
+        }
+
+        // ---- Forecast ----
+        function rptDemandWeeks(M) {
+            const N = 12, W0 = dAdd(M.today, -((parseISO(M.today).getDay() + 6) % 7)), end = dAdd(W0, N * 7 - 1);
+            const weeks = Array.from({ length: N }, (_, i) => ({ start: dAdd(W0, i * 7), crop: 0, proj: 0, chores: 0, cap: 0, hol: [] }));
+            const wk = d => { const k = Math.floor(dDiff(W0, d) / 7); return k >= 0 && k < N ? k : -1; };
+            for (const ev of DB.data.calendarEvents) {
+                if (ev.sourceTool !== 'CropLabourWizard' && ev.sourceTool !== 'CropProjection') continue;
+                if (ev.completed === true || !isDay(ev.date) || taskEnd(ev) < W0 || ev.date > end) continue;
+                const est = taskEstimate(ev);
+                if (!est) continue;
+                const lot = DB.lots[ev.lotId];
+                const room = ev.sourceTool === 'CropProjection' ? ev.roomId : rptTaskRoom(ev, lot);
+                if (RPT.building && DB.data.rooms?.[room]?.buildingId !== RPT.building) continue;
+                if (RPT.room && (ev.sourceTool === 'CropProjection' ? ev.roomId : rptRoomIdByName(lot?.destRoom)) !== RPT.room) continue;
+                if (RPT.strain && lot?.strain !== RPT.strain) continue;
+                const perDay = est.staff * est.minutes / 60;
+                for (let d = ev.date; d <= taskEnd(ev); d = dAdd(d, 1)) { const k = wk(d); if (k >= 0) weeks[k][ev.sourceTool === 'CropProjection' ? 'proj' : 'crop'] += perDay; }
+            }
+            if (!RPT.strain && !RPT.room) {
+                for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                    if (RPT.building && bid !== RPT.building) continue;
+                    for (const t of b?.tasks || []) {
+                        const h = (Number(t.minutes) || 0) * (Number(t.staff) || 1) / 60;
+                        if (h <= 0) continue;
+                        for (let d = W0; d <= end; d = dAdd(d, 1)) {
+                            const dt = parseISO(d);
+                            if ((t.days || []).includes(dt.getDay()) || (t.monthDays || []).includes(dt.getDate())) weeks[wk(d)].chores += h;
+                        }
+                    }
+                }
+            }
+            const cap = rptCapacity(W0, end), hol = rptHolidayMap(W0, end);
+            for (const [d, h] of Object.entries(cap)) weeks[wk(d)].cap += h;
+            for (const [d, n] of Object.entries(hol)) if (wk(d) >= 0) weeks[wk(d)].hol.push(n);
+            for (const w of weeks) { w.est = w.crop + w.proj; w.total = w.est + w.chores; }
+            return weeks;
+        }
+        function rptDemand(M) {
+            const weeks = rptDemandWeeks(M);
+            if (!weeks.some(w => w.total > 0)) return null;
+            const W = 640, H = 300, X0 = 50, X1 = 630, top0 = 30, base = 246, bw = (X1 - X0) / weeks.length;
+            const yn = rNice(0, Math.max(...weeks.map(w => Math.max(w.total, w.cap))) * 1.08, 4), ys = rLin(0, yn.hi, base, top0);
+            let s = '', cap = '';
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, 0), 'rv-ax', 'end'); });
+            s += rT(X0, 14, 'Hours per week', 'rv-ax');
+            weeks.forEach((w, i) => {
+                const x0 = X0 + i * bw + 5, bwi = bw - 10;
+                const t = `Week of ${dFmt(w.start)}${w.hol.length ? ' · 🏛️ ' + w.hol.join(', ') : ''}\nScheduled crops ${rN(w.crop, 0)} h · projected ${rN(w.proj, 0)} h · chores ${rN(w.chores, 0)} h\nRoster capacity ${rN(w.cap, 0)} h${w.total > w.cap ? ` · ${rN(w.total - w.cap, 0)} h short` : ''}`;
+                let yb = base;
+                for (const [v, st] of [[w.chores, 'fill:var(--rv-orange)'], [w.crop, 'fill:var(--rv-blue)'], [w.proj, 'fill:url(#rvh-blue);stroke:var(--rv-blue);stroke-width:1;stroke-dasharray:3 2']]) {
+                    if (v <= 0) continue;
+                    const h = base - ys(v);
+                    s += rRect(x0, yb - h, bwi, Math.max(h - 2, 1), st, rTip(t), 2);
+                    yb -= h;
+                }
+                if (w.total <= 0) s += rRect(x0, base - 2, bwi, 2, 'fill:transparent', rTip(t), 0);
+                cap += `${cap ? 'L' : 'M'}${rF(X0 + i * bw)} ${rF(ys(w.cap))} L${rF(X0 + (i + 1) * bw)} ${rF(ys(w.cap))} `;
+                if (w.total > w.cap * 1.05 && w.total > 0) s += rT(x0 + bwi / 2, ys(w.total) - 6, `▲${rN(w.total - w.cap, 0)}`, 'rv-warn', 'middle', 'font-size:10.5px');
+                s += rT(x0 + bwi / 2, base + 16, dFmt(w.start), 'rv-axs', 'middle');
+                if (w.hol.length) s += rT(x0 + bwi / 2, base + 30, '🏛️', 'rv-axs', 'middle');
+            });
+            s += `<path d="${cap}" style="fill:none;stroke:var(--text-primary);stroke-width:2"/>` + rT(X1, ys(weeks[weeks.length - 1].cap) - 6, 'roster capacity', 'rv-lblp', 'end');
+            s += rHl(X0, X1, base, 'rv-base');
+            const over = weeks.filter(w => w.total > w.cap && w.total > 0);
+            return { over, svg: rSvg(W, H, s, 'Labour needed against roster capacity, next 12 weeks'),
+                table: { cols: [{ h: 'Week of' }, { h: 'Scheduled h', n: 1 }, { h: 'Projected h', n: 1 }, { h: 'Chores h', n: 1 }, { h: 'Capacity h', n: 1 }, { h: 'Short h', n: 1 }], rows: weeks.map(w => [w.start, rN(w.crop, 0), rN(w.proj, 0), rN(w.chores, 0), rN(w.cap, 0), w.total > w.cap ? rN(w.total - w.cap, 0) : '—']) } };
+        }
+        function rptUpcoming(M) {
+            const until = dAdd(M.today, 183), seen = new Set(), out = [];
+            const hist = M.crops.filter(c => c.derived?.gpp != null && c.dates?.harvestStart && c.dates.harvestStart <= M.today);
+            const roomPlants = {};
+            for (const [id, lot] of Object.entries(DB.lots).sort(([, a], [, b]) => (a.createdDate || '').localeCompare(b.createdDate || ''))) { const r = rptRoomIdByName(lot.destRoom); if (r && Number(lot.plantCount) > 0) roomPlants[r] = Number(lot.plantCount); }
+            for (const ev of DB.data.calendarEvents) {
+                if (ev.taskType !== 'harvest' || !ev.lotId || (ev.sourceTool !== 'CropLabourWizard' && ev.sourceTool !== 'CropProjection')) continue;
+                if (!isDay(ev.date) || ev.date < M.today || ev.date > until || seen.has(ev.lotId)) continue;
+                const proj = ev.sourceTool === 'CropProjection', lot = DB.lots[ev.lotId];
+                if (!proj && !lot) continue;
+                const room = proj ? ev.roomId : rptRoomIdByName(lot.destRoom), strain = proj ? null : lot.strain;
+                if (RPT.building && DB.data.rooms?.[room]?.buildingId !== RPT.building) continue;
+                if (RPT.room && room !== RPT.room) continue;
+                if (RPT.strain && strain !== RPT.strain) continue;
+                seen.add(ev.lotId);
+                const plants = proj ? roomPlants[room] || null : Number(lot.plantCount) || null;
+                let h = hist.filter(c => c.flowerRoomId === room && (!strain || c.strain === strain)), basis = 'room and strain';
+                if (h.length < 2) { h = hist.filter(c => c.flowerRoomId === room); basis = 'room'; }
+                if (h.length < 2) { h = hist; basis = 'facility'; }
+                const g = h.map(c => c.derived.gpp);
+                out.push({ id: ev.lotId, short: proj ? ev.lotId.replace(/^.*-TBA-/, 'TBA-') : ev.lotId, proj, room, strain, date: ev.date, plants, basis, n: g.length,
+                    exp: plants && g.length ? plants * rMean(g) : null, lo: plants && g.length ? plants * Math.min(...g) : null, hi: plants && g.length ? plants * Math.max(...g) : null });
+            }
+            return out.sort((a, b) => a.date.localeCompare(b.date));
+        }
+        function rptHarvestChart(list) {
+            const W = 640, H = 312, X0 = 50, X1 = 630, top0 = 30, base = 236, bw = (X1 - X0) / Math.max(list.length, 4);
+            const yn = rNice(0, Math.max(...list.map(h => h.hi || 0)) / 1000 * 1.05, 4), ys = rLin(0, yn.hi, base, top0);
+            let s = '';
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, 0), 'rv-ax', 'end'); });
+            s += rT(X0, 14, 'Expected flower, kg', 'rv-ax');
+            list.forEach((h, i) => {
+                const x0 = X0 + i * bw + 8, w = bw - 16, cx = x0 + w / 2;
+                const t = `${h.proj ? h.id + ' (projected)' : 'Lot ' + h.id + ' · ' + h.strain}\n${rptRoomName(h.room)} · harvest ${dFmtY(h.date)}\n${h.plants || '?'} plants × ${rN(h.exp / h.plants, 0)} g/plant ≈ ${rN(h.exp / 1000, 1)} kg\nRange ${rN(h.lo / 1000, 1)}–${rN(h.hi / 1000, 1)} kg (${h.n} past crops, same ${h.basis})`;
+                s += h.proj ? rRect(x0, ys(h.exp / 1000), w, base - ys(h.exp / 1000), 'fill:url(#rvh-blue);stroke:var(--rv-blue);stroke-width:1;stroke-dasharray:3 2', rTip(t), 3)
+                            : rRect(x0, ys(h.exp / 1000), w, base - ys(h.exp / 1000), 'fill:var(--rv-blue)', rTip(t), 3);
+                s += `<path d="M${rF(cx)} ${rF(ys(h.lo / 1000))} V${rF(ys(h.hi / 1000))} M${rF(cx - 5)} ${rF(ys(h.lo / 1000))} h10 M${rF(cx - 5)} ${rF(ys(h.hi / 1000))} h10" style="stroke:var(--text-primary);stroke-width:1.5;fill:none"/>`;
+                s += rT(cx, ys(h.hi / 1000) - 7, rN(h.exp / 1000, 0), 'rv-val', 'middle');
+                s += rT(cx, base + 16, dFmt(h.date), 'rv-axs', 'middle') + rT(cx, base + 30, h.short, h.proj ? 'rv-axs' : 'rv-lblp', 'middle', 'font-size:10.5px') + rT(cx, base + 43, rShort(rptRoomName(h.room), 12), 'rv-axs', 'middle');
+            });
+            s += rHl(X0, X1, base, 'rv-base');
+            return rSvg(W, H, s, 'Upcoming harvests, next 6 months');
+        }
+        function rptForecast(M) {
+            const dm = rptDemand(M), ups = rptUpcoming(M), withExp = ups.filter(h => h.exp != null);
+            const capNote = RPT.building || RPT.room ? ' Capacity is the whole roster — the roster has no buildings.' : '';
+            return `<div class="rpt-grid">` +
+                rCard({ title: 'Do we have enough people?', chips: ['now'], sub: dm ? `Estimated hours for the next 12 weeks against what the roster covers (${rptShiftHours()} h shifts on work days, less booked time off and BC holidays). <b>${dm.over.length} of 12 weeks</b> are over capacity.${capNote}` : '',
+                    body: dm ? dm.svg : rEmpty('No estimated hours in the next 12 weeks.', 'Add minutes × staff to the tasks in your CropLabourWizard recipe, then regenerate the schedules.'), table: dm?.table,
+                    legend: dm ? rSw('var(--rv-blue)', 'scheduled crops') + '<span><i class="rv-hatch"></i>projected crops</span>' + rSw('var(--rv-orange)', 'daily chores') + '<span>━ roster capacity</span><span>🏛️ holiday week</span>' : '',
+                    source: 'estStaff × estMinutes on open CropLabourWizard and CropProjection tasks · DailyWizard chore lists · roster work days and time off' }) +
+                rCard({ title: 'What will we harvest in the next 6 months?', chips: ['harvest'], sub: withExp.length ? `${ups.length} harvest${ups.length > 1 ? 's' : ''}, about <b>${rN(rSum(withExp, h => h.exp) / 1000, 0)} kg</b> of flower (range ${rN(rSum(withExp, h => h.lo) / 1000, 0)}–${rN(rSum(withExp, h => h.hi) / 1000, 0)} kg). Expected = plants × past grams per plant for the same room and strain; whiskers are the best and worst past crop.` : '',
+                    body: withExp.length ? rptHarvestChart(withExp) : (ups.length ? rEmpty(`${ups.length} harvest${ups.length > 1 ? 's' : ''} scheduled, but no yield history to forecast from yet.`, 'Needs harvest numbers on at least two past crops.') : rEmpty('No harvests in the next 6 months.', '')),
+                    table: ups.length ? { cols: [{ h: 'Harvest' }, { h: 'Lot' }, { h: 'Room' }, { h: 'Plants', n: 1 }, { h: 'Expected kg', n: 1 }, { h: 'Range kg', n: 1 }], rows: ups.map(h => [h.date, h.id, rptRoomName(h.room), String(h.plants ?? '—'), h.exp != null ? rN(h.exp / 1000, 1) : '—', h.exp != null ? `${rN(h.lo / 1000, 1)}–${rN(h.hi / 1000, 1)}` : '—']) } : null,
+                    legend: withExp.length ? rSw('var(--rv-blue)', 'scheduled lot') + '<span><i class="rv-hatch"></i>projected TBA lot</span><span>┃ past range</span>' : '',
+                    source: 'Harvest dates from CropLabourWizard and CropProjection · grams per plant from past crops' }) +
+                `</div>`;
+        }
+
+        // ---- Setup & data: canopy, shift length, crop summaries, archive import, metric hook-up ----
+        function rptSummaryOf(c) {
+            const s = JSON.parse(JSON.stringify(c));
+            delete s.closed;
+            s.savedAt = new Date().toISOString();
+            return s;
+        }
+        const rptSameSummary = (a, b) => { const strip = o => { const { savedAt, closed, ...rest } = o || {}; return JSON.stringify(rest); }; return strip(a) === strip(b); };
+        function rptEnsureOwnKeys() {
+            if (!DB.data._EmployeeWizard) DB.data._EmployeeWizard = { employees: {} };
+            const ew = DB.data._EmployeeWizard;
+            if (!ew.crops) ew.crops = {};
+            if (!ew.settings) ew.settings = {};
+            return ew;
+        }
+        // Save summaries (and drop any older than RPT_KEEP_MONTHS), then sync
+        function rptSaveSummaries(list) {
+            const ew = rptEnsureOwnKeys(), cutoff = dMonths(rToday(), -RPT_KEEP_MONTHS);
+            for (const c of list) ew.crops[c.lotId] = rptSummaryOf(c);
+            let dropped = 0;
+            for (const [id, s] of Object.entries(ew.crops)) {
+                const when = s?.dates?.harvestStart || String(s?.savedAt || '').slice(0, 10);
+                if (when && when < cutoff) { delete ew.crops[id]; dropped++; }
+            }
+            notifySitkaTools();
+            return dropped;
+        }
+        function rptSetup(M) {
+            const ew = DB.data._EmployeeWizard || {}, saved = ew.crops || {};
+            const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n"><input type="number" min="0" step="10" class="rpt-num" data-canopy="${rEsc(id)}" value="${rptCanopy(id) ?? ''}" placeholder="sq ft"></td></tr>`).join('');
+            const live = M.crops.filter(c => !c.closed && c.dates?.harvestStart).sort((a, b) => b.dates.harvestStart.localeCompare(a.dates.harvestStart));
+            const closed = M.crops.filter(c => c.closed).sort((a, b) => (b.dates?.harvestStart || '').localeCompare(a.dates?.harvestStart || ''));
+            const status = c => {
+                const s = saved[c.lotId];
+                if (!s) return c.dates.ship && c.dates.ship < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
+                return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(String(s.savedAt).slice(0, 10))}</span>` : `<span class="rpt-warn">Saved ${rEsc(String(s.savedAt).slice(0, 10))} — out of date</span>`;
+            };
+            const fmtW = g => g != null ? rKg(g) : '—';
+            const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
+                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(String(c.savedAt || '').slice(0, 10))}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
+            // Metric hook-up: which questions feed each metric, and how many answers they hold
+            const tagged = {};
+            for (const [wid, w] of Object.entries(DB.data._PaperWizard?.wizards || {})) for (const q of w?.questions || []) if (q?.metric && REPORT_METRICS[q.metric]) (tagged[q.metric] || (tagged[q.metric] = [])).push({ sheet: DB.data._PaperWizard?.sheets?.[w.sheetId]?.name || w.sheetId, label: q.label, unit: q.metricUnit, sheetId: w.sheetId, qid: q.id, wid });
+            const answerCount = (sheetId, qid) => {
+                let n = 0;
+                for (const sheets of Object.values(DB.data._PaperWizard?.entries || {})) {
+                    const e = sheets?.[sheetId];
+                    if (!e) continue;
+                    if (e.constants?.[qid] != null && e.constants[qid] !== '') n++;
+                    for (const inst of Object.values(e.instances || {})) {
+                        if (inst?.header?.[qid] != null && inst.header[qid] !== '') n++;
+                        for (const ans of Object.values(inst?.days || {})) if (ans?.[qid] != null && ans[qid] !== '') n++;
+                    }
+                }
+                return n;
+            };
+            const metricRows = Object.entries(REPORT_METRICS).map(([key, def]) => {
+                const t = tagged[key] || [];
+                const where = t.length ? t.map(x => `${rEsc(x.sheet)}: “${rEsc(rShort(x.label, 48))}”${x.unit ? ` (${rEsc(x.unit)})` : ''} · ${answerCount(x.sheetId, x.qid)} answer${answerCount(x.sheetId, x.qid) === 1 ? '' : 's'}`).join('<br>') : (RPT_HARVEST_CORE.includes(key) ? '<span class="rpt-warn">Not tagged yet</span>' : '<span class="rpt-muted">Not tagged</span>');
+                return `<tr><td><code>${rEsc(key)}</code></td><td>${rEsc(def.label)}</td><td>${where}</td></tr>`;
+            }).join('');
+            const ready = live.filter(c => c.dates.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
+            return `<div class="rpt-grid">` +
+                rCard({ title: 'Canopy area of each flower room', sub: 'Used for grams per square foot. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: '_EmployeeWizard.settings.canopySqFt' }) +
+                rCard({ title: 'Shift length', sub: 'Roster capacity = work days × this many hours, less booked time off and BC holidays.', body: `<label class="rpt-inline">Hours per shift <input type="number" min="1" max="16" step="0.5" class="rpt-num" id="rptShiftInput" value="${rptShiftHours()}"></label>`, source: '_EmployeeWizard.settings.shiftHours' }) +
+                rCard({ wide: true, title: 'Crop summaries — keep closed-out lots in the charts', sub: `Close-out moves a lot’s events and paperwork to its archive file. A saved summary (dates, rooms, plants, hours by task and person, the harvest numbers and grow-log averages — never wages) stays in Main.json for ${RPT_KEEP_MONTHS} months so the trends keep that crop. Save a lot once it has shipped, and update it if numbers change before close-out. A lot closed without one can be brought back from its archive file.`,
+                    control: `<button type="button" class="rpt-tbtn" id="rptSaveAll"${ready.length ? '' : ' disabled'}>💾 Save ${ready.length} shipped</button><button type="button" class="rpt-tbtn" id="rptImportBtn">📂 Import archived lots</button>`,
+                    body: live.length || closed.length ? `<div class="rpt-tbl"><table><thead><tr><th>Lot</th><th>Strain</th><th>Harvest</th><th class="n">Flower</th><th class="n">THC</th><th>Summary</th><th></th></tr></thead><tbody>${sumRows}</tbody></table></div>` : rEmpty('No lots with a harvest scheduled yet.', ''),
+                    source: '_EmployeeWizard.crops · Archive/Lot-<id>-<date>.json files from SitkaTools close-out' }) +
+                rCard({ wide: true, title: 'Report metrics — which paperwork questions feed the charts', sub: 'Tag a question in PaperWizard → Configure Sheets → the question’s “Report metric” drop-down. Weights can be asked in g, kg or lb; they are converted to grams. Flower yield = bigs + mids + smalls + popcorn (or “Flower — total” when the grades aren’t weighed separately); total yield adds trim. 🌱 plant-count questions are read without a tag.',
+                    body: `<div class="rpt-tbl"><table><thead><tr><th>Metric</th><th>Meaning</th><th>Tagged question</th></tr></thead><tbody>${metricRows}</tbody></table></div>`, source: '_PaperWizard.wizards[*].questions[*].metric · answers in _PaperWizard.entries' }) +
+                `</div>`;
+        }
+
+        async function rptImportArchives(files) {
+            const qmap = rptQuestionMap(), got = [], bad = [];
+            for (const f of files) {
+                try {
+                    const a = JSON.parse(await f.text());
+                    if (a?._meta?.kind !== 'lot-archive' || !a.lotId || !a.lot) throw new Error('not a lot archive');
+                    const c = rptBuildCrop(a.lotId, a.lot, a.events || [], a.paperwork || {}, qmap);
+                    if (!c.dates.harvestStart && !c.labour.act) throw new Error('no schedule or hours in it');
+                    got.push(c);
+                } catch (err) { bad.push(`${f.name}: ${err.message}`); }
+            }
+            if (got.length) {
+                const existing = got.filter(c => DB.data._EmployeeWizard?.crops?.[c.lotId]).map(c => c.lotId);
+                if (existing.length && !confirm(`Replace the saved summaries of lot ${existing.join(', ')} with the archive's numbers?`)) return;
+                const dropped = rptSaveSummaries(got);
+                showToast(`Imported ${got.length} archived lot${got.length > 1 ? 's' : ''}${dropped ? ` · ${dropped} summaries older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+            }
+            if (bad.length) alert(`These files couldn't be imported:\n\n${bad.join('\n')}`);
+            renderReports();
+        }
+
+        // ---- Render + wiring ----
+        function rptFillFilters() {
+            const fill = (id, opts, val, all) => {
+                const sel = $(id);
+                sel.innerHTML = `<option value="">${all}</option>` + opts.map(([v, l]) => `<option value="${rEsc(v)}">${rEsc(l)}</option>`).join('');
+                sel.value = opts.some(([v]) => v === val) ? val : '';
+                return sel.value;
+            };
+            RPT.building = fill('rptBuilding', Object.entries(DB.data.buildings || {}).map(([id, b]) => [id, b?.name || id]), RPT.building, 'All buildings');
+            RPT.room = fill('rptRoom', Object.keys(DB.data.rooms || {}).filter(id => DB.data.rooms[id]?.isFlowering && (!RPT.building || DB.data.rooms[id]?.buildingId === RPT.building)).map(id => [id, rptRoomName(id)]), RPT.room, 'All flower rooms');
+            const strains = new Set();
+            for (const l of Object.values(DB.lots)) if (l?.strain) strains.add(l.strain);
+            for (const s of Object.values(DB.data._EmployeeWizard?.crops || {})) if (s?.strain) strains.add(s.strain);
+            RPT.strain = fill('rptStrain', [...strains].sort().map(s => [s, s]), RPT.strain, 'All strains');
+            $('rptPeriod').value = RPT.period;
+        }
+        function renderReports() {
+            const body = $('rptBody');
+            if (!body || !DB.data || DeviceView.building || !$('paneReports').classList.contains('active')) return;
+            rptFillFilters();
+            document.querySelectorAll('#rptPages button').forEach(b => b.classList.toggle('active', b.dataset.page === RPT.page));
+            try {
+                const M = rptModel();
+                const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, yield: rptYield, rooms: rptRooms, forecast: rptForecast, settings: rptSetup };
+                body.innerHTML = (pages[RPT.page] || rptOverview)(M);
+            } catch (err) {
+                console.error(err);
+                body.innerHTML = rEmpty('This report hit a problem.', rEsc(err && err.message || err));
+            }
+            const gl = $('rptGanttLot'); if (gl) gl.addEventListener('change', () => { RPT.ganttLot = gl.value; renderReports(); });
+            const el = $('rptEnvLot'); if (el) el.addEventListener('change', () => { RPT.envLot = el.value; renderReports(); });
+            const shift = $('rptShiftInput');
+            if (shift) shift.addEventListener('change', () => {
+                const v = Number(shift.value);
+                const ew = rptEnsureOwnKeys();
+                if (v > 0 && v <= 24) ew.settings.shiftHours = v; else delete ew.settings.shiftHours;
+                notifySitkaTools();
+                showToast(`Shift length set to ${rptShiftHours()} h`);
+            });
+            body.querySelectorAll('[data-canopy]').forEach(inp => inp.addEventListener('change', () => {
+                const ew = rptEnsureOwnKeys(), v = Number(inp.value);
+                if (!ew.settings.canopySqFt) ew.settings.canopySqFt = {};
+                if (v > 0) ew.settings.canopySqFt[inp.dataset.canopy] = v; else delete ew.settings.canopySqFt[inp.dataset.canopy];
+                notifySitkaTools();
+                showToast(`Canopy for ${rptRoomName(inp.dataset.canopy)} ${v > 0 ? `set to ${rN(v, 0)} sq ft` : 'cleared'}`);
+            }));
+        }
+
+        $('rptPages').addEventListener('click', e => {
+            const b = e.target.closest('button[data-page]');
+            if (!b) return;
+            RPT.page = b.dataset.page;
+            renderReports();
+        });
+        ['rptPeriod', 'rptBuilding', 'rptRoom', 'rptStrain'].forEach(id => $(id).addEventListener('change', () => {
+            RPT[{ rptPeriod: 'period', rptBuilding: 'building', rptRoom: 'room', rptStrain: 'strain' }[id]] = $(id).value;
+            renderReports();
+        }));
+        $('rptExpandBtn').addEventListener('click', () => {
+            try { window.moveTo(0, 0); window.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { /* not a script-opened popup */ }
+        });
+        $('rptArchiveInput').addEventListener('change', e => { const files = [...e.target.files]; e.target.value = ''; if (files.length) rptImportArchives(files); });
+        $('paneReports').addEventListener('click', e => {
+            const t = e.target;
+            const toggle = t.closest('[data-toggle]');
+            if (toggle) {
+                const card = toggle.closest('.rpt-card'), chart = card.querySelector('[data-chart]'), table = card.querySelector('[data-table]'), show = table.hidden;
+                table.hidden = !show; chart.hidden = show;
+                card.querySelectorAll('[data-extra]').forEach(x => { x.hidden = show; });
+                toggle.textContent = show ? '◫ Chart' : '⊞ Table';
+                return;
+            }
+            const go = t.closest('[data-go]');
+            if (go) { RPT.page = go.dataset.go; renderReports(); return; }
+            if (t.closest('#rptImportBtn')) { $('rptArchiveInput').click(); return; }
+            if (t.closest('#rptSaveAll')) {
+                const M = rptModel(), saved = DB.data._EmployeeWizard?.crops || {};
+                const list = M.crops.filter(c => !c.closed && c.dates?.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
+                if (!list.length) return;
+                const dropped = rptSaveSummaries(list);
+                showToast(`Saved ${list.length} crop summar${list.length > 1 ? 'ies' : 'y'}${dropped ? ` · ${dropped} older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+                renderReports();
+                return;
+            }
+            const save = t.closest('[data-save]');
+            if (save) {
+                const c = rptModel().crops.find(x => x.lotId === save.dataset.save && !x.closed);
+                if (!c) return;
+                const dropped = rptSaveSummaries([c]);
+                showToast(`Crop summary saved for lot ${c.lotId}${dropped ? ` · ${dropped} older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+                renderReports();
+                return;
+            }
+            const unsave = t.closest('[data-unsave]');
+            if (unsave) {
+                const id = unsave.dataset.unsave;
+                if (!confirm(`Remove the saved summary of closed lot ${id}? Its numbers drop out of every chart. Importing its archive file brings it back.`)) return;
+                delete DB.data._EmployeeWizard.crops[id];
+                notifySitkaTools();
+                showToast(`Summary of lot ${id} removed`);
+                renderReports();
+            }
+        });
+        // One shared tooltip for every chart mark (data-tip)
+        (function () {
+            const tipEl = $('rptTip');
+            const show = e => {
+                const t = e.target.closest && e.target.closest('#paneReports [data-tip]');
+                if (!t) { tipEl.hidden = true; return; }
+                const lines = t.getAttribute('data-tip').split('\n');
+                tipEl.innerHTML = `<b>${rEsc(lines[0])}</b>${lines.slice(1).map(l => '<br>' + rEsc(l)).join('')}`;
+                tipEl.hidden = false;
+                const r = tipEl.getBoundingClientRect(), pad = 14;
+                let x = e.clientX + pad, y = e.clientY + pad;
+                if (x + r.width > innerWidth - 8) x = e.clientX - r.width - pad;
+                if (y + r.height > innerHeight - 8) y = e.clientY - r.height - pad;
+                tipEl.style.left = Math.max(8, x) + 'px';
+                tipEl.style.top = Math.max(8, y) + 'px';
+            };
+            document.addEventListener('pointermove', show);
+            document.addEventListener('pointerdown', show);
+            document.addEventListener('scroll', () => { tipEl.hidden = true; }, { passive: true, capture: true });
+        })();
+
 
         // ---- Tab Switching ----
         function switchTab(tabName) {
-            const isEmployees = tabName === 'employees';
-            $('tabEmployees').classList.toggle('active', isEmployees);
-            $('tabTasks').classList.toggle('active', !isEmployees);
-            $('paneEmployees').classList.toggle('active', isEmployees);
-            $('paneTasks').classList.toggle('active', !isEmployees);
+            for (const [name, tab, pane] of [['employees', 'tabEmployees', 'paneEmployees'], ['tasks', 'tabTasks', 'paneTasks'], ['reports', 'tabReports', 'paneReports']]) {
+                $(tab).classList.toggle('active', name === tabName);
+                $(pane).classList.toggle('active', name === tabName);
+            }
+            if (tabName === 'reports') renderReports();
         }
         $('tabEmployees').addEventListener('click', () => switchTab('employees'));
         $('tabTasks').addEventListener('click', () => switchTab('tasks'));
+        $('tabReports').addEventListener('click', () => switchTab('reports'));
 
-        // Building device (DeviceView): the roster, wages, time off and labour reports are office work (saved in
+        // Building device (DeviceView): the roster, wages, time off and reports are office work (saved in
         // Main.json / Wages.json) — only the Tasks tab is offered, where labour recorded on this building's tasks
         // is saved in the building's own file.
         function applyDeviceView() {
             const onBuilding = !!DeviceView.building;
             $('tabEmployees').style.display = onBuilding ? 'none' : '';
+            $('tabReports').style.display = onBuilding ? 'none' : '';
             document.querySelector('.report-section').style.display = onBuilding ? 'none' : '';
-            if (onBuilding && $('tabEmployees').classList.contains('active')) switchTab('tasks');
+            if (onBuilding && !$('tabTasks').classList.contains('active')) switchTab('tasks');
         }
 
         // ---- Close Tool ----

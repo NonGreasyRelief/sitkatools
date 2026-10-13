@@ -5239,6 +5239,47 @@
         // lot.plantCount, a phase question writes lot.stage, a room question writes
         // lot.currentRoom. There is no per-question write-back setting to configure.
 
+        // Report metrics (question.metric, unit in question.metricUnit): tag a question so EmployeeWizard's
+        // Reports tab can find its answers. Display-only for PaperWizard — nothing here reads it. The same
+        // keys live in EmployeeWizard (REPORT_METRICS) — keep the two lists in step (EmployeeWizard/REPORTS.md).
+        const REPORT_METRIC_GROUPS = [
+            ['Harvest & lab — once per lot', [
+                ['harvest.wetWeight', 'Wet weight (drying room, harvest day)', 'weight'],
+                ['harvest.dryWeight', 'Dry weight (whole lot after drying)', 'weight'],
+                ['harvest.bigs', 'Flower — bigs', 'weight'],
+                ['harvest.mids', 'Flower — mids', 'weight'],
+                ['harvest.smalls', 'Flower — smalls', 'weight'],
+                ['harvest.popcorn', 'Flower — popcorn', 'weight'],
+                ['harvest.flowerTotal', 'Flower — total of all grades (only if grades aren’t weighed)', 'weight'],
+                ['harvest.trim', 'Trim weight', 'weight'],
+                ['harvest.potency', 'Potency — total THC %', 'pct'],
+                ['harvest.terpenes', 'Terpenes — total %', 'pct'],
+                ['harvest.plantsHarvested', 'Plants harvested', 'count']]],
+            ['Grow log — daily', [
+                ['env.temp', 'Room temperature', 'temp'], ['env.rh', 'Relative humidity %', 'number'],
+                ['env.co2', 'CO₂ (ppm)', 'number'], ['env.par', 'PAR', 'number'],
+                ['feed.ph', 'Feed pH', 'number'], ['feed.ec', 'Feed EC', 'number'],
+                ['feed.nutrient', 'Nutrient used (mL) — several questions add up', 'number'],
+                ['water.total', 'Water used (L)', 'number'], ['water.perPlant', 'Irrigation per plant (L)', 'number'],
+                ['water.runoff', 'Runoff volume (mL)', 'number'],
+                ['runoff.ec', 'Runoff EC — several tests are averaged', 'number'], ['runoff.ph', 'Runoff pH — several tests are averaged', 'number'],
+                ['ipm.pests', 'New pests found (YES/NO)', 'yesno'], ['ipm.disease', 'Diseased plants found (YES/NO)', 'yesno'],
+                ['ipm.herm', 'Hermaphrodites / males found (YES/NO)', 'yesno'], ['ipm.issue', 'Other issues observed (YES/NO)', 'yesno']]]
+        ];
+        const REPORT_METRIC_KIND = Object.fromEntries(REPORT_METRIC_GROUPS.flatMap(([, list]) => list.map(([k, , kind]) => [k, kind])));
+        const REPORT_METRIC_UNITS = { weight: [['g', 'grams'], ['kg', 'kilograms'], ['lb', 'pounds']], temp: [['F', '°F'], ['C', '°C']] };
+
+        function metricControlsHtml(q) {
+            if (q.type === 'plant-count') return `<div class="form-group"><label>Report metric</label><div class="q-bind-indicator">🌱 Plant counts feed the reports automatically</div></div>`;
+            if (!['text', 'number', 'select'].includes(q.type)) return '';
+            const opts = `<option value="">— none —</option>` + REPORT_METRIC_GROUPS.map(([group, list]) =>
+                `<optgroup label="${escapeHtml(group)}">${list.map(([k, l]) => `<option value="${k}"${q.metric === k ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}</optgroup>`).join('');
+            const units = REPORT_METRIC_UNITS[REPORT_METRIC_KIND[q.metric]];
+            const unitSel = units ? `<div class="form-group"><label>Answered in</label><select class="q-metric-unit">${units.map(([v, l]) => `<option value="${v}"${(q.metricUnit || units[0][0]) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>` : '';
+            const stale = q.metric && !REPORT_METRIC_KIND[q.metric] ? `<option value="${escapeHtml(q.metric)}" selected>${escapeHtml(q.metric)} (unknown)</option>` : '';
+            return `<div class="form-group" title="Tag this question so EmployeeWizard's Reports tab can chart its answers"><label>Report metric</label><select class="q-metric">${opts}${stale}</select></div>${unitSel}`;
+        }
+
         function questionCardHtml(q, i) {
             const n = cfgWizard.questions.length;
             // Read-only binding indicator — the assignment itself lives on the field side
@@ -5285,6 +5326,7 @@
                         ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">The runner shows a drop-down of the phases the lot can change TO (the fixed vocabulary minus its current phase). Picking a different phase writes it back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         ${q.type === 'room' ? `<p class="cfg-hint" style="margin:6px 0 0;">Options are the rooms known to the DB (no custom list). Picking a different room writes lot.currentRoom back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
+                        ${metricControlsHtml(q)}
                     </div>
                     <div class="q-checks">
                         <label class="q-check"><input type="checkbox" class="q-row"${q.rowScoped ? ' checked' : ''}> Row-scoped (per day)</label>
@@ -5314,6 +5356,7 @@
                 card.querySelector('.q-label').addEventListener('change', () => { q.label = card.querySelector('.q-label').value.trim(); refreshCfgOverlays(); });
                 card.querySelector('.q-type').addEventListener('change', () => {
                     q.type = card.querySelector('.q-type').value;
+                    if (!['text', 'number', 'select'].includes(q.type)) { delete q.metric; delete q.metricUnit; }   // only typed answers feed report metrics
                     refreshWizardBuilder();
                 });
                 const optsEl = card.querySelector('.q-options');
@@ -5324,6 +5367,16 @@
                 // No "Fills field" control here — the binding is assigned from the field's
                 // properties panel (field.questionId is the single source of truth).
                 card.querySelector('.q-prefill').addEventListener('change', () => { q.prefillFrom = card.querySelector('.q-prefill').value || null; refreshCfgOverlays(); });
+                // Report metric: saved with the sheet (💾 Save), like every other question setting
+                const metricEl = card.querySelector('.q-metric');
+                if (metricEl) metricEl.addEventListener('change', () => {
+                    if (metricEl.value) q.metric = metricEl.value; else delete q.metric;
+                    const units = REPORT_METRIC_UNITS[REPORT_METRIC_KIND[q.metric]];
+                    if (units) { if (!units.some(([v]) => v === q.metricUnit)) q.metricUnit = units[0][0]; } else delete q.metricUnit;
+                    refreshWizardBuilder();   // shows or hides the unit picker
+                });
+                const unitEl = card.querySelector('.q-metric-unit');
+                if (unitEl) unitEl.addEventListener('change', () => { q.metricUnit = unitEl.value; });
                 // Write-back is implicit for plant-count / phase / room types — no control here.
                 card.querySelector('.q-row').addEventListener('change', () => { q.rowScoped = card.querySelector('.q-row').checked; refreshCfgOverlays(); });
                 card.querySelector('.q-same').addEventListener('change', () => { q.sameAsLast = card.querySelector('.q-same').checked; refreshCfgOverlays(); });
