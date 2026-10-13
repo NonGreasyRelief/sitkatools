@@ -6,6 +6,8 @@ EmployeeWizard's **📊 Reports** tab holds the labour, yield, quality, room and
 
 **Mock-up** (made before the build; it shows the same charts with invented numbers): https://claude.ai/artifact/T6BTSHTmh641GbKdBkzMwN
 
+**Example database for demos:** `node examples/make-example-db.js` builds `examples/Example-Reports-DB.json` (git-ignored; it holds real staff and lot names). Load it with SitkaTools' 📂 Load DB. It starts from `PaperWizard/Current.json` and adds about 2½ years of past crops (1000 g wet per plant), labour, grow logs, harvest logs, chore and equipment hours, time off, canopy and light counts, dated relative to the day it runs. Rerun it on the day of a demo.
+
 ---
 
 ## 1. What's built
