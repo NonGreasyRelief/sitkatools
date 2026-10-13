@@ -451,7 +451,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 | File | Saved by | Holds |
 |---|---|---|
 | `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries and report settings (`_EmployeeWizard.crops` / `.settings`), recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
-| `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h } }` |
+| `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }`. `cropCosts` is the labour cost frozen with EmployeeWizard's crop summaries: money, so it stays out of Main. |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]`, the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
 

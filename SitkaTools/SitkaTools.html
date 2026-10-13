@@ -4116,6 +4116,11 @@
                         if (db._EmployeeWizard.employees[name]) db._EmployeeWizard.employees[name].wage = wage;
                     }
                 }
+                // Labour costs frozen with EmployeeWizard's crop summaries are money too: they live in Wages.json
+                if (wages?.cropCosts && typeof wages.cropCosts === 'object') {
+                    if (!db._EmployeeWizard) db._EmployeeWizard = { employees: {} };
+                    db._EmployeeWizard.cropCosts = JSON.parse(JSON.stringify(wages.cropCosts));
+                }
 
                 for (const bf of buildingFiles) {
                     const id = bf._building;
@@ -4294,6 +4299,7 @@
                 const main = JSON.parse(JSON.stringify(db));
                 delete main._meta;
                 for (const emp of Object.values(main._EmployeeWizard?.employees || {})) delete emp.wage;
+                if (main._EmployeeWizard) delete main._EmployeeWizard.cropCosts;   // money → Wages.json
                 const dailyAll = main._DailyWizard?.buildings || {};
                 if (main._DailyWizard) {
                     const orphans = {};
@@ -4314,6 +4320,8 @@
                     if (emp && emp.wage !== undefined) wages[name] = emp.wage;
                 }
                 parts[SPLIT_WAGES] = { wages };
+                const cropCosts = db._EmployeeWizard?.cropCosts;
+                if (cropCosts && Object.keys(cropCosts).length) parts[SPLIT_WAGES].cropCosts = JSON.parse(JSON.stringify(cropCosts));
 
                 const bparts = {};
                 const partFor = (id) => bparts[id] || (bparts[id] = {

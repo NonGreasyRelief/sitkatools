@@ -1012,6 +1012,7 @@
         .rpt-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 12px; }
         .rpt-filters .form-group select { padding: 7px 10px; font-size: 0.85rem; }
         .rpt-expand { margin-left: auto; padding: 7px 14px; font-size: 0.82rem; }
+        .rpt-pack { padding: 7px 14px; font-size: 0.82rem; }
         .rpt-pages { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
         .rpt-pages button { background: none; border: 1px solid transparent; color: var(--text-secondary); font-size: 0.85rem; padding: 6px 12px; border-radius: 99px; cursor: pointer; }
         .rpt-pages button:hover { color: var(--text-primary); background: var(--bg-secondary); }
@@ -1333,7 +1334,17 @@
                 <div class="form-group"><label for="rptBuilding">Building</label><select id="rptBuilding"></select></div>
                 <div class="form-group"><label for="rptRoom">Flower room</label><select id="rptRoom"></select></div>
                 <div class="form-group"><label for="rptStrain">Strain</label><select id="rptStrain"></select></div>
+                <div class="form-group" title="What labour, cost and yield are divided by, on the charts that can be">
+                    <label for="rptPer">Per</label>
+                    <select id="rptPer">
+                        <option value="plant" selected>Per plant</option>
+                        <option value="sqft">Per sq ft of canopy</option>
+                        <option value="g">Per gram of flower</option>
+                        <option value="total">Total</option>
+                    </select>
+                </div>
                 <button type="button" class="btn btn-secondary rpt-expand" id="rptExpandBtn" title="Fill the screen with this window">⤢ Expand</button>
+                <button type="button" class="btn btn-secondary rpt-pack" id="rptPackBtn" title="Open the report pages, with these filters, as pages to print or save as PDF">🖨️ Board pack</button>
             </div>
             <nav class="rpt-pages" id="rptPages" aria-label="Report pages">
                 <button type="button" data-page="overview" class="active">Overview</button>
@@ -1349,7 +1360,7 @@
         </div>
         <div class="rpt-tip" id="rptTip" hidden></div>
         <!-- Report chart hatches: projected lots (the suite draws projections muted/dashed) and weight lost -->
-        <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="rvh-blue" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-blue);fill-opacity:.16"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-blue);stroke-width:2"/></pattern><pattern id="rvh-clone" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-clone);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-clone);stroke-width:2"/></pattern><pattern id="rvh-veg" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-veg);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-veg);stroke-width:2"/></pattern><pattern id="rvh-flower" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-flower);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-flower);stroke-width:2"/></pattern><pattern id="rvh-post" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-post);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-post);stroke-width:2"/></pattern><pattern id="rvh-neutral" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-neutral);fill-opacity:.25"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-neutral);stroke-width:2"/></pattern></defs></svg>
+        <svg id="rvDefs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="rvh-blue" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-blue);fill-opacity:.16"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-blue);stroke-width:2"/></pattern><pattern id="rvh-clone" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-clone);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-clone);stroke-width:2"/></pattern><pattern id="rvh-veg" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-veg);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-veg);stroke-width:2"/></pattern><pattern id="rvh-flower" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-flower);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-flower);stroke-width:2"/></pattern><pattern id="rvh-post" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-post);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-post);stroke-width:2"/></pattern><pattern id="rvh-neutral" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-neutral);fill-opacity:.25"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-neutral);stroke-width:2"/></pattern></defs></svg>
 
         <!-- Labour Report — estimated vs. actual hours on crop tasks (office only) -->
         <section class="report-section">
@@ -3209,7 +3220,7 @@
         const RPT_MIN_PEOPLE = 3;                          // a $ figure from fewer paid people would reveal a wage
         const RPT_TARGETS = { 'env.temp': [70, 82], 'env.rh': [40, 65], vpd: [0.8, 1.6] };   // default bands
 
-        const RPT = { page: 'overview', period: '12m', building: '', room: '', strain: '', ganttLot: '', envLot: '' };
+        const RPT = { page: 'overview', period: '12m', building: '', room: '', strain: '', per: 'plant', ganttLot: '', envLot: '', exX: 'labour', exY: 'gpp' };
 
         // ---- small helpers ----
         const rEsc = s => escapeHtml(s == null ? '' : s);
@@ -3231,6 +3242,7 @@
         const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
         const inRange = (d, a, b) => isDay(d) && d >= a && d <= b;
         const rptEmployees = () => DB.data._EmployeeWizard?.employees || {};
+        const rSavedDay = iso => { const d = new Date(iso || ''); return isNaN(d) ? '' : localDateStr(d); };   // savedAt is UTC; show the local day
         const rptSettings = () => DB.data._EmployeeWizard?.settings || {};
 
         function rptRoomIdByName(name) {
@@ -3503,12 +3515,16 @@
         // Labour cost of a crop with today's wages: null while Wages.json isn't open
         function rptCropCost(c) {
             if (!wagesLoaded()) return null;
+            const people = Object.keys(c.labour?.byPerson || {});
+            // A closed-out lot uses the cost frozen when its summary was saved (kept in Wages.json), so a later raise
+            // doesn't restate it. Live lots always use today's wages.
+            const frozen = c.closed ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId] : null;
+            if (frozen && Number.isFinite(Number(frozen.cost))) return { cost: Number(frozen.cost), missing: Number(frozen.missingHours) || 0, people, frozen: true };
             let cost = c.labour.tempCost || 0, missing = c.labour.tempNoWage || 0;
-            const people = Object.keys(c.labour.byPerson || {});
             for (const k of people) {
                 if (k.startsWith('temp:')) continue;
-                const w = Number(rptEmployees()[k]?.wage);
-                if (rptEmployees()[k]?.wage == null || !Number.isFinite(w)) missing += c.labour.byPerson[k];
+                const raw = rptEmployees()[k]?.wage, w = Number(raw);
+                if (raw == null || !Number.isFinite(w)) missing += c.labour.byPerson[k];
                 else cost += c.labour.byPerson[k] * w;
             }
             return { cost, missing, people };
@@ -3741,7 +3757,7 @@
             const out = [];
             const over = rptOverrunRows(M).filter(r => r.crops >= 3 && r.med >= 1.1).sort((a, b) => b.med - a.med)[0];
             if (over) out.push({ sev: 'warn', page: 'labour', where: 'Labour', text: `${rptTaskLabel(over.tt)} runs ${rPct(over.med - 1)} over its estimate (median of ${over.crops} crops).` });
-            const trend = rptRoomTrendData(M);
+            const trend = rptRoomTrendData(M, M.crops.some(c => c.derived?.gsf != null) ? 'sqft' : 'plant');
             for (const r of trend.rooms) {
                 const l = r.points;
                 if (l.length < 6) continue;
@@ -3857,7 +3873,7 @@
             const totEst = rSum(rows.filter(r => r.est != null), r => r.est), totAct = rSum(rows, r => r.act);
             return {
                 svg: rSvg(W, H, s, `Labour Gantt for lot ${lotId}`),
-                sub: `${rEsc(lot.strain || '?')} · ${lot.plantCount ? rEsc(lot.plantCount) + ' plants · ' : ''}${rEsc([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean).join(' → '))}. Logged so far: <b>${rN(totAct, 0)} h</b>${totEst > 0 ? ` of <b>${rN(totEst, 0)} h</b> estimated for the whole crop` : ' (this schedule has no estimates)'}.`,
+                sub: `<b>Lot ${rEsc(lotId)}</b> · ${rEsc(lot.strain || '?')} · ${lot.plantCount ? rEsc(lot.plantCount) + ' plants · ' : ''}${rEsc([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean).join(' → '))}. Logged so far: <b>${rN(totAct, 0)} h</b>${totEst > 0 ? ` of <b>${rN(totEst, 0)} h</b> estimated for the whole crop` : ' (this schedule has no estimates)'}.`,
                 table: { cols: [{ h: 'Task' }, { h: 'Planned' }, { h: 'Est. h', n: 1 }, { h: 'Logged h', n: 1 }, { h: 'Days logged', n: 1 }, { h: 'Status' }],
                     rows: rows.map(t => [t.name, t.end !== t.date ? `${t.date} – ${t.end}` : t.date, t.est != null ? rN(t.est, 1) : '—', t.work.length ? rN(t.act, 1) : '—', String(t.work.length), t.completed ? 'Completed' : t.overdue ? 'Past due' : t.date > M.today ? 'Planned' : 'In progress']) }
             };
@@ -3993,32 +4009,66 @@
                 return { tt, list: recent, crops: recent.length, med: rMedian(recent.map(r => r.ratio)), hours: rSum(recent, r => r.t.act), staff: recent[recent.length - 1].t.estStaff, minutes: recent[recent.length - 1].t.estMinutes };
             });
         }
+        // ---- "Per" switch: what labour, cost and yield are divided by ----
+        // Charts that can be normalized follow it (hours by task, $ by phase, strain scorecard, weight cascade, room
+        // trend); the rest say what they show. "Per gram" shows hours per kg (hours per gram are too small to read).
+        const RPT_PER = {
+            plant: { label: 'per plant', hours: 'min per plant', money: '$ per plant', yieldUnit: 'g per plant' },
+            sqft: { label: 'per sq ft of canopy', hours: 'min per sq ft', money: '$ per sq ft of canopy', yieldUnit: 'g per sq ft' },
+            g: { label: 'per gram of flower', hours: 'h per kg of flower', money: '$ per gram of flower', yieldUnit: 'g per plant' },
+            total: { label: 'in total', hours: 'hours', money: 'labour $', yieldUnit: 'kg of flower' }
+        };
+        // A crop's divisor: plants harvested, canopy sq ft or grams of flower (1 for totals); null when unknown
+        function rptPerDenom(c, per) {
+            const v = per === 'plant' ? c.plants?.harvested : per === 'sqft' ? c.canopySqFt : per === 'g' ? c.weights?.flower : 1;
+            return Number(v) > 0 ? Number(v) : null;
+        }
+        const rptPerHours = (h, denom, per) => per === 'total' ? h : per === 'g' ? h * 1000 / denom : h * 60 / denom;
+        // A crop's flower yield in the "Per" unit: kg (total), g per sq ft (needs the room's canopy) or g per plant
+        function rptYieldOf(c, per) {
+            if (c.weights?.flower == null) return null;
+            if (per === 'total') return c.weights.flower / 1000;
+            if (per === 'sqft') return c.derived?.gsf ?? null;
+            return c.derived?.gpp ?? null;
+        }
+        const rptFmtSmart = v => rN(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0);
+
         function rptPareto(M) {
-            const h = rptHours(M, M.per.from, M.per.to);
-            const est = {};
-            for (const c of M.crops) if (rptCropMatch(c)) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) if (inRange(t.date, M.per.from, M.per.to) && t.est > 0) est[tt] = (est[tt] || 0) + t.est;
-            const all = rSum(Object.values(h.byTask));
-            if (all <= 0) return null;
-            const sorted = Object.entries(h.byTask).map(([tt, act]) => ({ tt, act, est: est[tt] || 0 })).sort((a, b) => b.act - a.act);
+            const per = RPT.per, act = {}, est = {};
+            let denom = 1, nCrops = 0;
+            if (per === 'total') {
+                Object.assign(act, rptHours(M, M.per.from, M.per.to).byTask);
+                for (const c of M.crops) if (rptCropMatch(c)) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) if (inRange(t.date, M.per.from, M.per.to) && t.est > 0) est[tt] = (est[tt] || 0) + t.est;
+            } else {
+                // Every hour of the crops harvested in the period, over those crops' plants, canopy or flower
+                const crops = rptHarvested(M, M.per.from, M.per.to).filter(c => rptPerDenom(c, per));
+                nCrops = crops.length;
+                denom = rSum(crops, c => rptPerDenom(c, per));
+                for (const c of crops) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) { act[tt] = (act[tt] || 0) + t.act; if (t.est > 0) est[tt] = (est[tt] || 0) + t.est; }
+            }
+            const all = rSum(Object.values(act));
+            if (all <= 0 || !(denom > 0)) return null;
+            const conv = h => rptPerHours(h, denom, per), unit = RPT_PER[per].hours;
+            const sorted = Object.entries(act).map(([tt, a]) => ({ tt, raw: a, act: conv(a), est: est[tt] ? conv(est[tt]) : 0 })).sort((a, b) => b.raw - a.raw);
             const top = sorted.slice(0, 10), rest = sorted.slice(10);
-            const rows = rest.length ? [...top, { tt: null, act: rSum(rest, r => r.act), est: rSum(rest, r => r.est), other: rest.length }] : top;
+            const rows = rest.length ? [...top, { tt: null, raw: rSum(rest, r => r.raw), act: rSum(rest, r => r.act), est: rSum(rest, r => r.est), other: rest.length }] : top;
             let cum = 0;
-            rows.forEach(r => { cum += r.act; r.cum = cum / all; });
+            rows.forEach(r => { cum += r.raw; r.cum = cum / all; });
             const k = Math.max(1, rows.findIndex(r => r.cum >= 0.75) + 1);
             const W = 640, X0 = 210, X1 = 520, top0 = 30, RH = 24, H = top0 + rows.length * RH + 26;
             const xn = rNice(0, Math.max(...rows.map(r => Math.max(r.act, r.est))), 4), xs = rLin(0, xn.hi, X0, X1);
-            let s = rT(W - 8, 16, 'Running share', 'rv-ax', 'end');
-            xn.t.forEach(v => { s += rVl(xs(v), top0 - 6, top0 + rows.length * RH) + rT(xs(v), H - 8, rN(v, 0), 'rv-ax', 'middle'); });
+            let s = rT(W - 8, 16, 'Running share', 'rv-ax', 'end') + rT(X0, 16, unit, 'rv-ax');
+            xn.t.forEach(v => { s += rVl(xs(v), top0 - 6, top0 + rows.length * RH) + rT(xs(v), H - 8, rN(v, xn.step < 0.1 ? 2 : xn.step < 1 ? 1 : 0), 'rv-ax', 'middle'); });
             rows.forEach((r, i) => {
                 const y = top0 + i * RH, name = r.tt == null ? `${r.other} other tasks` : rShort(rptTaskLabel(r.tt), 30), strong = i < k && r.tt != null;
                 s += rT(X0 - 8, y + 16, name, strong ? 'rv-lblp' : 'rv-lbl', 'end');
-                s += rRect(X0, y + 5, xs(r.act) - X0, 14, `fill:var(--rv-blue);fill-opacity:${strong ? 1 : 0.45}`, rTip(`${name}\n${rN(r.act, 0)} h logged${r.est ? ` · ${rN(r.est, 0)} h estimated` : ''}\n${rPct(r.act / all, 1)} of crop-task hours`), 3);
+                s += rRect(X0, y + 5, xs(r.act) - X0, 14, `fill:var(--rv-blue);fill-opacity:${strong ? 1 : 0.45}`, rTip(`${name}\n${rptFmtSmart(r.act)} ${unit} logged${r.est ? ` · ${rptFmtSmart(r.est)} estimated` : ''}\n${rPct(r.raw / all, 1)} of crop-task hours`), 3);
                 if (r.est > 0) s += rRect(X0, y + 2, xs(r.est) - X0, 20, 'fill:none;stroke:var(--text-secondary);stroke-width:1.2', '', 3);
                 s += rT(W - 8, y + 16, rPct(r.cum), strong ? 'rv-val' : 'rv-ax', 'end');
             });
             s += rVl(X0, top0 - 6, top0 + rows.length * RH, 'rv-base');
-            return { k, share: rows[k - 1].cum, svg: rSvg(W, H, s, 'Hours by task'),
-                table: { cols: [{ h: 'Task' }, { h: 'Logged h', n: 1 }, { h: 'Estimated h', n: 1 }, { h: 'Share', n: 1 }, { h: 'Running share', n: 1 }], rows: rows.map(r => [r.tt == null ? `${r.other} other tasks` : rptTaskLabel(r.tt), rN(r.act, 1), r.est ? rN(r.est, 1) : '—', rPct(r.act / all, 1), rPct(r.cum, 1)]) } };
+            return { k, share: rows[k - 1].cum, nCrops, unit, svg: rSvg(W, H, s, 'Hours by task'),
+                table: { cols: [{ h: 'Task' }, { h: `Logged (${unit})`, n: 1 }, { h: 'Estimated', n: 1 }, { h: 'Share', n: 1 }, { h: 'Running share', n: 1 }], rows: rows.map(r => [r.tt == null ? `${r.other} other tasks` : rptTaskLabel(r.tt), rptFmtSmart(r.act), r.est ? rptFmtSmart(r.est) : '—', rPct(r.raw / all, 1), rPct(r.cum, 1)]) } };
         }
         function rptOverrun(M) {
             const rows = rptOverrunRows(M).sort((a, b) => b.hours - a.hours).slice(0, 10);
@@ -4100,29 +4150,31 @@
             return { svg: rSvg(W, H, s, 'Labour mix'), table: { cols: [{ h: 'Work type' }, { h: 'Hours', n: 1 }, { h: 'Share', n: 1 }], rows: segs.map(g => [g.k, rN(g.v, 1), rPct(g.v / total, 1)]).concat([['Staff shift hours scheduled', rN(sched, 0), ''], ['Staff hours logged', rN(staffLogged, 1), sched > 0 ? rPct(staffLogged / sched, 1) : '']]) } };
         }
         function rptWaterfall(M) {
-            if (!wagesLoaded()) return { empty: rEmpty('Open Wages.json in SitkaTools to see labour cost.', 'Costs use today’s wages. No figure is shown per person, or for groups of fewer than 3 people.') };
-            const crops = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.flower > 0);
-            const costed = crops.map(c => ({ c, k: rptCropCost(c) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0 && x.c.labour.act > 0);
+            if (!wagesLoaded()) return { empty: rEmpty('Open Wages.json in SitkaTools to see labour cost.', 'Costs use today’s wages (closed-out lots keep the cost saved with their summary). No figure is shown per person, or for groups of fewer than 3 people.') };
+            const per = RPT.per;
+            const costed = rptHarvested(M, M.per.from, M.per.to).map(c => ({ c, k: rptCropCost(c), d: rptPerDenom(c, per) }))
+                .filter(x => x.k && x.k.missing === 0 && x.k.cost > 0 && x.c.labour.act > 0 && x.d);
             const people = new Set(costed.flatMap(x => x.k.people));
-            if (!costed.length) return { empty: rEmpty('No harvested crops with both a flower weight and fully-costed hours in this period.', 'Needs harvest numbers, and a wage for everyone who logged hours on the crop.') };
+            if (!costed.length) return { empty: rEmpty(`No harvested crops with fully-costed hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'plant' ? ' and a plant count' : ''} in this period.`, 'Needs a wage for everyone who logged hours on the crop' + (per === 'g' ? ', and harvest numbers.' : '.')) };
             if (people.size < RPT_MIN_PEOPLE) return { empty: rEmpty('Hidden: fewer than 3 people logged hours on these crops.', 'A cost from so few people would show their wage.') };
-            const g = rSum(costed, x => x.c.weights.flower), by = { clone: 0, veg: 0, flower: 0, post: 0 };
+            const denom = rSum(costed, x => x.d), by = { clone: 0, veg: 0, flower: 0, post: 0 };
             for (const { c, k } of costed) {
                 const rate = k.cost / c.labour.act;   // the crop's average $/h, spread over its tasks
                 for (const [tt, t] of Object.entries(c.labour.byTask || {})) by[rptPhaseOf(tt)] += t.act * rate;
             }
             const other = rptOtherCost(M, M.per.from, M.per.to);
-            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / g, c: `var(--rv-ph-${k})` })), { k: 'Chores & equipment', v: (other?.cost || 0) / g, c: 'var(--rv-neutral)' }];
+            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
             const total = rSum(steps, x => x.v);
-            const W = 640, H = 270, X0 = 56, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
+            const dp = per === 'g' ? 3 : per === 'total' ? 0 : 2, money = v => rMoney(v, dp);
+            const W = 640, H = 270, X0 = 62, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
             const yn = rNice(0, total, 4), ys = rLin(0, yn.hi, base, top0);
-            let s = '';
-            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rMoney(v, v < 1 ? 2 : 0), 'rv-ax', 'end'); });
+            let s = rT(X0, 14, RPT_PER[per].money, 'rv-ax');
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rMoney(v, yn.step < 0.1 ? 2 : yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
             let run = 0;
             steps.forEach((st, i) => {
                 const x0 = X0 + i * bw + 10, w = bw - 20;
-                s += rRect(x0, ys(run + st.v), w, ys(run) - ys(run + st.v), `fill:${st.c}`, rTip(`${st.k}\n${rMoney(st.v, 3)} per gram · ${total > 0 ? rPct(st.v / total) : '—'} of the total`), 3);
-                s += rT(x0 + w / 2, ys(run + st.v) - 6, rMoney(st.v, 3), 'rv-val', 'middle');
+                s += rRect(x0, ys(run + st.v), w, ys(run) - ys(run + st.v), `fill:${st.c}`, rTip(`${st.k}\n${money(st.v)} ${RPT_PER[per].label === 'in total' ? '' : RPT_PER[per].label} · ${total > 0 ? rPct(st.v / total) : '—'} of the total`), 3);
+                s += rT(x0 + w / 2, ys(run + st.v) - 6, money(st.v), 'rv-val', 'middle');
                 s += `<line x1="${rF(x0 + w)}" x2="${rF(x0 + bw)}" y1="${rF(ys(run + st.v))}" y2="${rF(ys(run + st.v))}" style="stroke:var(--rv-axis)"/>`;
                 const words = st.k.split(' ');
                 s += rT(x0 + w / 2, base + 18, words.length > 2 ? words.slice(0, 2).join(' ') : st.k, 'rv-lbl', 'middle');
@@ -4130,47 +4182,57 @@
                 run += st.v;
             });
             const tx = X0 + steps.length * bw + 10, tw = bw - 20;
-            s += rRect(tx, ys(total), tw, base - ys(total), 'fill:var(--rv-total)', rTip(`Fully loaded labour cost\n${rMoney(total, 3)} per gram of flower`), 3) + rT(tx + tw / 2, ys(total) - 6, rMoney(total), 'rv-val', 'middle') + rT(tx + tw / 2, base + 18, 'Total', 'rv-lblp', 'middle');
+            s += rRect(tx, ys(total), tw, base - ys(total), 'fill:var(--rv-total)', rTip(`Fully loaded labour cost\n${money(total)} ${RPT_PER[per].label === 'in total' ? '' : RPT_PER[per].label}`), 3) + rT(tx + tw / 2, ys(total) - 6, money(total), 'rv-val', 'middle') + rT(tx + tw / 2, base + 18, 'Total', 'rv-lblp', 'middle');
             s += rHl(X0, X1, base, 'rv-base');
-            return { total, n: costed.length, svg: rSvg(W, H, s, 'Labour cost per gram by phase'),
-                table: { cols: [{ h: 'Step' }, { h: '$ per gram', n: 1 }, { h: 'Share', n: 1 }], rows: [...steps.map(st => [st.k, rMoney(st.v, 3), total > 0 ? rPct(st.v / total, 1) : '—']), ['Total', rMoney(total, 3), '100 %']] } };
+            return { total, money, n: costed.length, frozen: costed.filter(x => x.k.frozen).length, svg: rSvg(W, H, s, 'Labour cost by phase'),
+                table: { cols: [{ h: 'Step' }, { h: RPT_PER[per].money, n: 1 }, { h: 'Share', n: 1 }], rows: [...steps.map(st => [st.k, money(st.v), total > 0 ? rPct(st.v / total, 1) : '—']), ['Total', money(total), '100 %']] } };
         }
         function rptLabour(M) {
             const par = rptPareto(M), ovr = rptOverrun(M), mix = rptMix(M), wf = rptWaterfall(M);
-            const noHours = rEmpty('No crop-task hours logged in this period.', 'Hours come from the Tasks tab (labour_map on each crop task).');
+            const per = RPT.per;
+            const noHours = per === 'total' ? rEmpty('No crop-task hours logged in this period.', 'Hours come from the Tasks tab (labour_map on each crop task).')
+                : rEmpty(`No harvested crops with hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : ''} in this period.`, `Per ${per === 'sqft' ? 'sq ft' : per === 'g' ? 'gram' : 'plant'} uses every hour of the crops harvested in the period. Switch Per to Total to see hours as they were logged.`);
             const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
+            const parSub = !par ? '' : per === 'total'
+                ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of crop-task hours logged in this period. Bars are hours logged; outlines are the estimate.`
+                : `In <b>${rEsc(par.unit)}</b>, across the ${par.nCrops} crop${par.nCrops > 1 ? 's' : ''} harvested in this period. ${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of their hours. Outlines are the estimate.`;
+            const wfSub = !wf.svg ? '' : `${per === 'total' ? 'Labour cost' : `Labour $ ${RPT_PER[per].label}`}, built up phase by phase across ${wf.n} crop${wf.n > 1 ? 's' : ''}: <b>${wf.money(wf.total)}</b> fully loaded.${wf.frozen ? ` ${wf.frozen} closed-out crop${wf.frozen > 1 ? 's use their' : ' uses its'} saved cost.` : ''}`;
             return `<div class="rpt-grid">` +
-                rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: par ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of crop-task hours in this period. Bars are hours logged; outlines are the estimate.` : '', body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: 'labour_map on crop tasks, by the day the work was done' }) +
-                rCard({ title: 'Which tasks run over their estimate?', chips: ['now'], sub: ovr ? 'Each dot is one crop (up to the 8 most recent): hours logged as a share of the estimate. The white tick is the median.' : '', body: ovr ? ovr.svg : rEmpty('No completed tasks with both an estimate and hours in this period.', 'Estimates come from CropLabourWizard recipes (minutes × staff per task).'), after: ovr?.after, table: ovr?.table, source: 'Completed crop tasks with an estimate and logged hours, planned in this period' }) +
-                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type. Daily chores join this chart once DailyWizard records hours.', body: mix ? mix.svg : noHours, table: mix?.table, source: 'Crop and equipment events · DailyWizard chores · roster shifts' }) +
-                rCard({ title: 'Where does the labour cost of a gram come from?', chips: ['harvest', 'wages'], sub: wf.svg ? `Labour $ per gram of flower, built up phase by phase across ${wf.n} crop${wf.n > 1 ? 's' : ''}: <b>${rMoney(wf.total)}/g</b> fully loaded.` : '', body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'chores & equipment share') : '', source: 'Hours × today’s wages ÷ flower weight · chores and equipment spread over the flower harvested in the period' }) +
+                rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: parSub, body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: per === 'total' ? 'labour_map on crop tasks, by the day the work was done' : 'labour_map on the crops harvested in the period ÷ their plants, canopy or flower' }) +
+                rCard({ title: 'Which tasks run over their estimate?', chips: ['now'], sub: ovr ? 'Each dot is one crop (up to the 8 most recent): hours logged as a share of the estimate. The white tick is the median. Not affected by Per.' : '', body: ovr ? ovr.svg : rEmpty('No completed tasks with both an estimate and hours in this period.', 'Estimates come from CropLabourWizard recipes (minutes × staff per task).'), after: ovr?.after, table: ovr?.table, source: 'Completed crop tasks with an estimate and logged hours, planned in this period' }) +
+                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type: crop tasks, DailyWizard chores, equipment and anything else. Not affected by Per.', body: mix ? mix.svg : rEmpty('No hours logged in this period.', ''), table: mix?.table, source: 'Crop and equipment events · DailyWizard chore hours · roster shifts' }) +
+                rCard({ title: per === 'g' ? 'Where does the labour cost of a gram come from?' : 'Where does the labour cost come from?', chips: ['harvest', 'wages'], sub: wfSub, body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'chores & equipment share') : '', source: 'Hours × wages (today’s, or frozen with a closed lot’s summary) ÷ the Per divisor · chores and equipment spread over the same crops' }) +
                 `</div>`;
         }
 
         // ---- Yield & Quality ----
         function rptScatter(M) {
-            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.derived?.gpp != null && c.lab?.potency != null);
+            const per = RPT.per === 'g' ? 'plant' : RPT.per;
+            const xOf = c => rptYieldOf(c, per);
+            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => xOf(c) != null && c.lab?.potency != null);
             if (list.length < 2) return null;
+            const unit = per === 'total' ? 'kg' : per === 'sqft' ? 'g/sq ft' : 'g/plant';
             const W = 640, H = 380, X0 = 56, X1 = 600, Y0 = 330, Y1 = 30;
-            const xn = rNice(Math.min(...list.map(c => c.derived.gpp)) * 0.95, Math.max(...list.map(c => c.derived.gpp)) * 1.05, 5), yn = rNice(Math.min(...list.map(c => c.lab.potency)) - 0.5, Math.max(...list.map(c => c.lab.potency)) + 0.5, 5);
+            const xn = rNice(Math.min(...list.map(xOf)) * 0.95, Math.max(...list.map(xOf)) * 1.05, 5), yn = rNice(Math.min(...list.map(c => c.lab.potency)) - 0.5, Math.max(...list.map(c => c.lab.potency)) + 0.5, 5);
             const xs = rLin(xn.lo, xn.hi, X0, X1), ys = rLin(yn.lo, yn.hi, Y0, Y1);
-            const mx = rMedian(list.map(c => c.derived.gpp)), my = rMedian(list.map(c => c.lab.potency));
+            const mx = rMedian(list.map(xOf)), my = rMedian(list.map(c => c.lab.potency));
             let s = '';
-            xn.t.forEach(v => { s += rVl(xs(v), Y1, Y0) + rT(xs(v), Y0 + 18, rN(v, 0), 'rv-ax', 'middle'); });
+            xn.t.forEach(v => { s += rVl(xs(v), Y1, Y0) + rT(xs(v), Y0 + 18, rN(v, xn.step < 1 ? 1 : 0), 'rv-ax', 'middle'); });
             yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 8, ys(v) + 4, rN(v, yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
-            s += rT((X0 + X1) / 2, H - 6, 'Grams of flower per plant →', 'rv-lbl', 'middle') + `<text x="14" y="${(Y0 + Y1) / 2}" class="rv-lbl" text-anchor="middle" transform="rotate(-90 14 ${(Y0 + Y1) / 2})">Total THC % →</text>`;
+            const xLabel = per === 'total' ? 'Flower per crop (kg) →' : per === 'sqft' ? 'Grams of flower per sq ft of canopy →' : 'Grams of flower per plant →';
+            s += rT((X0 + X1) / 2, H - 6, xLabel, 'rv-lbl', 'middle') + `<text x="14" y="${(Y0 + Y1) / 2}" class="rv-lbl" text-anchor="middle" transform="rotate(-90 14 ${(Y0 + Y1) / 2})">Total THC % →</text>`;
             s += rVl(xs(mx), Y1, Y0, 'rv-base') + rHl(X0, X1, ys(my), 'rv-base');
             s += rT(X1 - 6, Y1 + 16, 'KEEP', 'rv-quad', 'end') + rT(X0 + 8, Y1 + 16, 'POTENCY PLAY', 'rv-quad') + rT(X1 - 6, Y0 - 8, 'VOLUME PLAY', 'rv-quad', 'end') + rT(X0 + 8, Y0 - 8, 'REVIEW', 'rv-quad');
-            s += rT(xs(mx) + 4, Y0 - 24, `median ${rN(mx, 0)} g`, 'rv-axs') + rT(X1 - 6, ys(my) - 5, `median ${rN(my, 1)} %`, 'rv-axs', 'end');
-            for (const c of list) s += rDot(xs(c.derived.gpp), ys(c.lab.potency), 5.5, `fill:${M.strainColor(c.strain)};stroke:var(--bg-secondary);stroke-width:2`, `Lot ${c.lotId} · ${c.strain}\n${rptRoomName(c.flowerRoomId)} · harvested ${dFmtY(c.dates.harvestStart)}\n${rN(c.derived.gpp, 0)} g/plant · ${rN(c.lab.potency, 1)} % THC${c.lab.terpenes != null ? ` · ${rN(c.lab.terpenes, 2)} % terpenes` : ''}`);
+            s += rT(xs(mx) + 4, Y0 - 24, `median ${rN(mx, mx < 10 ? 1 : 0)} ${unit}`, 'rv-axs') + rT(X1 - 6, ys(my) - 5, `median ${rN(my, 1)} %`, 'rv-axs', 'end');
+            for (const c of list) s += rDot(xs(xOf(c)), ys(c.lab.potency), 5.5, `fill:${M.strainColor(c.strain)};stroke:var(--bg-secondary);stroke-width:2`, `Lot ${c.lotId} · ${c.strain}\n${rptRoomName(c.flowerRoomId)} · harvested ${dFmtY(c.dates.harvestStart)}\n${rN(xOf(c), xOf(c) < 10 ? 2 : 0)} ${unit} · ${rN(c.lab.potency, 1)} % THC${c.lab.terpenes != null ? ` · ${rN(c.lab.terpenes, 2)} % terpenes` : ''}`);
             const strains = [...new Set(list.map(c => c.strain))].filter(st => M.topStrains.includes(st));
             for (const st of strains) {
-                const l = list.filter(c => c.strain === st), cx = xs(rMean(l, c => c.derived.gpp)), cy = ys(rMean(l, c => c.lab.potency));
+                const l = list.filter(c => c.strain === st), cx = xs(rMean(l, xOf)), cy = ys(rMean(l, c => c.lab.potency));
                 s += `<circle cx="${rF(cx)}" cy="${rF(cy)}" r="12" style="fill:none;stroke:${M.strainColor(st)};stroke-width:2.5"/>` + rT(cx + 17, cy + 4, `${rShort(st, 24)} (${l.length})`, 'rv-val');
             }
             const legend = [...new Set(list.map(c => c.strain))].map(st => M.topStrains.includes(st) ? rSw(M.strainColor(st), st) : null).filter(Boolean).join('') + (list.some(c => !M.topStrains.includes(c.strain)) ? rSw('var(--rv-neutral)', 'Other strains') : '');
-            return { svg: rSvg(W, H, s, 'Strain scorecard: grams per plant against potency'), legend,
-                table: { cols: [{ h: 'Lot' }, { h: 'Strain' }, { h: 'Room' }, { h: 'Harvested' }, { h: 'g/plant', n: 1 }, { h: 'THC %', n: 1 }], rows: list.map(c => [c.lotId, c.strain, rptRoomName(c.flowerRoomId), c.dates.harvestStart, rN(c.derived.gpp, 0), rN(c.lab.potency, 1)]) } };
+            return { unit, svg: rSvg(W, H, s, 'Strain scorecard: yield against potency'), legend,
+                table: { cols: [{ h: 'Lot' }, { h: 'Strain' }, { h: 'Room' }, { h: 'Harvested' }, { h: unit, n: 1 }, { h: 'THC %', n: 1 }], rows: list.map(c => [c.lotId, c.strain, rptRoomName(c.flowerRoomId), c.dates.harvestStart, rN(xOf(c), xOf(c) < 10 ? 2 : 0), rN(c.lab.potency, 1)]) } };
         }
         function rptStrips(M) {
             const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.lab?.potency != null || c.lab?.terpenes != null);
@@ -4202,8 +4264,11 @@
                 table: { cols: [{ h: 'Strain' }, { h: 'Crops', n: 1 }, { h: 'THC median', n: 1 }, { h: 'THC range', n: 1 }, { h: 'Terp median', n: 1 }, { h: 'Terp range', n: 1 }], rows: strains.map(st => [st, String(counts[st]), ...stat(st, 'potency', 1), ...stat(st, 'terpenes', 2)]) } };
         }
         function rptCascade(M) {
-            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.wet > 0 && c.weights?.dry > 0 && c.weights?.flower > 0);
+            const per = RPT.per === 'g' ? 'total' : RPT.per;
+            const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.wet > 0 && c.weights?.dry > 0 && c.weights?.flower > 0 && (per === 'total' || rptPerDenom(c, per)));
             if (!list.length) return null;
+            const d = per === 'total' ? 1000 : rSum(list, c => rptPerDenom(c, per));   // grams → kg, g per plant or g per sq ft
+            const unit = per === 'total' ? 'kg' : per === 'plant' ? 'g/plant' : 'g/sq ft';
             const wet = rSum(list, c => c.weights.wet), dry = rSum(list, c => c.weights.dry), flower = rSum(list, c => c.weights.flower);
             const trim = rSum(list, c => c.weights.trim || 0), total = flower + trim;
             const grades = {};
@@ -4212,37 +4277,38 @@
             const steps = [{ k: 'Wet weight', a: 0, b: wet, tot: true }, { k: 'Water lost drying', a: dry, b: wet }, { k: 'Dry weight', a: 0, b: dry, tot: true }, { k: 'Stems & waste', a: total, b: dry }];
             if (trim > 0) steps.push({ k: 'Total yield', a: 0, b: total, tot: true }, { k: 'Trim', a: flower, b: total });
             steps.push({ k: 'Flower yield', a: 0, b: flower, tot: true, flower: true });
-            const W = 640, H = 280, X0 = 60, X1 = 628, top0 = 34, base = 226, bw = (X1 - X0) / steps.length;
-            const yn = rNice(0, wet / 1000, 4), ys = rLin(0, yn.hi * 1000, base, top0);
+            const W = 640, H = 280, X0 = 64, X1 = 628, top0 = 34, base = 226, bw = (X1 - X0) / steps.length;
+            const yn = rNice(0, wet / d, 4), ys = g => rLin(0, yn.hi, base, top0)(g / d);
+            const fv = g => rN(g / d, g / d < 10 ? 1 : 0);
             let s = '';
-            yn.t.forEach(v => { s += rHl(X0, X1, ys(v * 1000)) + rT(X0 - 6, ys(v * 1000) + 4, `${rN(v, 0)} kg`, 'rv-ax', 'end'); });
+            yn.t.forEach(v => { s += rHl(X0, X1, rLin(0, yn.hi, base, top0)(v)) + rT(X0 - 6, rLin(0, yn.hi, base, top0)(v) + 4, `${rN(v, yn.step < 1 ? 1 : 0)} ${unit}`, 'rv-ax', 'end'); });
             const gradeFill = { bigs: 'var(--rv-seq-6)', mids: 'var(--rv-seq-5)', smalls: 'var(--rv-seq-3)', popcorn: 'var(--rv-seq-2)' };
             steps.forEach((st, i) => {
                 const x0 = X0 + i * bw + 8, w = bw - 16, v = st.b - st.a;
-                const t = `${st.k}\n${st.tot ? '' : '−'}${rN(v / 1000, 1)} kg · ${rPct(v / wet, 1)} of wet weight`;
+                const t = `${st.k}\n${st.tot ? '' : '−'}${fv(v)} ${unit} · ${rPct(v / wet, 1)} of wet weight`;
                 if (st.flower && graded) {
                     let y0 = st.a;
-                    for (const g of RPT_GRADES) { if (!grades[g]) continue; s += rRect(x0, ys(y0 + grades[g]), w, ys(y0) - ys(y0 + grades[g]) - 1, `fill:${gradeFill[g]}`, rTip(`${g[0].toUpperCase() + g.slice(1)}\n${rN(grades[g] / 1000, 1)} kg · ${rPct(grades[g] / flower, 1)} of flower`), 2); y0 += grades[g]; }
+                    for (const g of RPT_GRADES) { if (!grades[g]) continue; s += rRect(x0, ys(y0 + grades[g]), w, ys(y0) - ys(y0 + grades[g]) - 1, `fill:${gradeFill[g]}`, rTip(`${g[0].toUpperCase() + g.slice(1)}\n${fv(grades[g])} ${unit} · ${rPct(grades[g] / flower, 1)} of flower`), 2); y0 += grades[g]; }
                 } else {
                     s += st.tot ? rRect(x0, ys(st.b), w, ys(st.a) - ys(st.b), 'fill:var(--rv-blue)', rTip(t), 3) : rRect(x0, ys(st.b), w, ys(st.a) - ys(st.b), 'fill:url(#rvh-neutral);stroke:var(--rv-neutral);stroke-width:1', rTip(t), 3);
                 }
-                s += rT(x0 + w / 2, ys(st.b) - 20, `${st.tot ? '' : '−'}${rN(v / 1000, 1)} kg`, 'rv-val', 'middle') + rT(x0 + w / 2, ys(st.b) - 6, rPct(v / wet, 1), 'rv-ax', 'middle');
+                s += rT(x0 + w / 2, ys(st.b) - 20, `${st.tot ? '' : '−'}${fv(v)} ${unit}`, 'rv-val', 'middle') + rT(x0 + w / 2, ys(st.b) - 6, rPct(v / wet, 1), 'rv-ax', 'middle');
                 const words = st.k.split(' ');
                 s += rT(x0 + w / 2, base + 18, words[0], st.tot ? 'rv-lblp' : 'rv-lbl', 'middle') + (words.length > 1 ? rT(x0 + w / 2, base + 32, words.slice(1).join(' '), st.tot ? 'rv-lblp' : 'rv-lbl', 'middle') : '');
                 if (i < steps.length - 1) { const yy = ys(st.tot ? st.b : st.a); s += `<line x1="${rF(x0 + w)}" x2="${rF(x0 + bw)}" y1="${rF(yy)}" y2="${rF(yy)}" style="stroke:var(--rv-axis)"/>`; }
             });
             s += rHl(X0, X1, base, 'rv-base');
             const legend = rSw('var(--rv-blue)', 'weight on hand') + '<span><i class="rv-hatch-n"></i>weight lost</span>' + (graded ? RPT_GRADES.filter(g => grades[g]).map(g => rSw(gradeFill[g], g[0].toUpperCase() + g.slice(1))).join('') : '');
-            return { n: list.length, dryDown: dry / wet, trimOut: flower / dry, svg: rSvg(W, H, s, 'Weight from wet weight to flower yield'), legend,
-                table: { cols: [{ h: 'Step' }, { h: 'kg', n: 1 }, { h: '% of wet', n: 1 }], rows: steps.map(st => [st.k, (st.tot ? '' : '−') + rN((st.b - st.a) / 1000, 2), rPct((st.b - st.a) / wet, 1)]).concat(graded ? RPT_GRADES.map(g => [`  ${g}`, rN(grades[g] / 1000, 2), rPct(grades[g] / wet, 1)]) : []) } };
+            return { n: list.length, unit, dryDown: dry / wet, trimOut: flower / dry, svg: rSvg(W, H, s, 'Weight from wet weight to flower yield'), legend,
+                table: { cols: [{ h: 'Step' }, { h: unit, n: 1 }, { h: '% of wet', n: 1 }], rows: steps.map(st => [st.k, (st.tot ? '' : '−') + rN((st.b - st.a) / d, 2), rPct((st.b - st.a) / wet, 1)]).concat(graded ? RPT_GRADES.map(g => [`  ${g}`, rN(grades[g] / d, 2), rPct(grades[g] / wet, 1)]) : []) } };
         }
-        function rptRoomTrendData(M) {
+        function rptRoomTrendData(M, per = RPT.per) {
             const list = M.crops.filter(c => rptCropMatch(c) && c.dates?.harvestStart && c.dates.harvestStart <= M.today && c.flowerRoomId && c.weights?.flower != null)
                 .sort((a, b) => a.dates.harvestStart.localeCompare(b.dates.harvestStart));
-            const useSf = list.length > 0 && list.every(c => c.derived?.gsf != null);
-            const val = c => useSf ? c.derived.gsf : c.derived?.gpp;
-            const rooms = [...new Set(list.map(c => c.flowerRoomId))].map(id => ({ id, points: list.filter(c => c.flowerRoomId === id && val(c) != null).map(c => ({ c, d: c.dates.harvestStart, v: val(c) })) })).filter(r => r.points.length);
-            return { rooms, unit: useSf ? 'g/sq ft' : 'g/plant', useSf };
+            if (per === 'g') per = 'plant';
+            if (per === 'sqft' && !list.some(c => c.derived?.gsf != null)) per = 'plant';   // no canopy set yet
+            const rooms = [...new Set(list.map(c => c.flowerRoomId))].map(id => ({ id, points: list.filter(c => c.flowerRoomId === id && rptYieldOf(c, per) != null).map(c => ({ c, d: c.dates.harvestStart, v: rptYieldOf(c, per) })) })).filter(r => r.points.length);
+            return { rooms, per, unit: per === 'total' ? 'kg of flower' : per === 'sqft' ? 'g/sq ft' : 'g/plant', useSf: per === 'sqft' };
         }
         function rptRoomTrend(M) {
             const T = rptRoomTrendData(M);
@@ -4255,27 +4321,97 @@
             yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rN(v, 0), 'rv-ax', 'end'); });
             const span = dDiff(t0, t1), stepM = span > 500 ? 6 : span > 200 ? 3 : 1;
             for (let d = t0.slice(0, 8) + '01'; d <= t1; d = dMonths(d, 1)) { const dt = parseISO(d); if (d >= t0 && dt.getMonth() % stepM === 0) s += rVl(xs(d), Y1, Y0) + rT(xs(d), Y0 + 18, `${R_MON[dt.getMonth()]}${dt.getMonth() === 0 || stepM >= 6 ? ' ' + dt.getFullYear() : ''}`, 'rv-ax', 'middle'); }
-            s += rT(X0, 12, `${T.unit} per crop`, 'rv-ax');
+            s += rT(X0, 12, `${T.unit}${T.per === 'total' ? '' : ' per crop'}`, 'rv-ax');
             for (const r of T.rooms) {
                 const l = r.points.filter(p => p.d >= M.per.from), col = M.roomColors[r.id] || 'var(--rv-neutral)';
                 if (!l.length) continue;
                 if (l.length > 1) s += `<path d="M${l.map(p => `${rF(xs(p.d))} ${rF(ys(p.v))}`).join(' L')}" style="fill:none;stroke:${col};stroke-width:2"/>`;
-                for (const p of l) s += rDot(xs(p.d), ys(p.v), 3.5, `fill:${col};stroke:var(--bg-secondary);stroke-width:1.5`, `${rptRoomName(r.id)} · lot ${p.c.lotId}\n${p.c.strain} · harvested ${dFmtY(p.d)}\n${rN(p.v, 1)} ${T.unit}`);
+                for (const p of l) s += rDot(xs(p.d), ys(p.v), 3.5, `fill:${col};stroke:var(--bg-secondary);stroke-width:1.5`, `${rptRoomName(r.id)} · lot ${p.c.lotId}\n${p.c.strain} · harvested ${dFmtY(p.d)}\n${rN(p.v, p.v < 10 ? 2 : 1)} ${T.unit}`);
                 const lp = l[l.length - 1];
                 s += rT(xs(lp.d) + 9, ys(lp.v) + 4, rShort(rptRoomName(r.id), 14), 'rv-val');
             }
             s += rHl(X0, X1, Y0, 'rv-base');
-            return { unit: T.unit, useSf: T.useSf, svg: rSvg(W, H, s, 'Yield by room over time'), legend: T.rooms.map(r => rSw(M.roomColors[r.id] || 'var(--rv-neutral)', rptRoomName(r.id))).join(''),
+            return { unit: T.unit, per: T.per, useSf: T.useSf, svg: rSvg(W, H, s, 'Yield by room over time'), legend: T.rooms.map(r => rSw(M.roomColors[r.id] || 'var(--rv-neutral)', rptRoomName(r.id))).join(''),
                 table: { cols: [{ h: 'Room' }, { h: 'Lot' }, { h: 'Harvested' }, { h: 'Strain' }, { h: T.unit, n: 1 }], rows: T.rooms.flatMap(r => r.points.filter(p => p.d >= M.per.from).map(p => [rptRoomName(r.id), p.c.lotId, p.d, p.c.strain, rN(p.v, 1)])) } };
         }
+        // ---- What drives yield? Any per-crop measure against an outcome, with a fitted line and r ----
+        function rptExploreMeasures(M) {
+            const perPlant = (c, v) => v != null && c.plants?.harvested > 0 ? v / c.plants.harvested : null;
+            const fl = key => c => c.env?.flower?.[key] ?? null;
+            const list = [
+                ['labour', 'Labour per plant (min)', c => perPlant(c, c.labour?.act > 0 ? c.labour.act * 60 : null)],
+                ['flowerDays', 'Flower days (flip → harvest)', c => c.dates?.flip && c.dates?.harvestStart ? dDiff(c.dates.flip, c.dates.harvestStart) : null],
+                ['plants', 'Plants harvested', c => c.plants?.harvested ?? null],
+                ['density', 'Plants per sq ft of canopy', c => c.plants?.harvested > 0 && c.canopySqFt ? c.plants.harvested / c.canopySqFt : null],
+                ['survival', 'Plant survival (%)', c => c.plants?.started > 0 && c.plants?.harvested != null ? c.plants.harvested / c.plants.started * 100 : null],
+                ['temp', 'Flower temperature (°F, average)', fl('temp')], ['rh', 'Flower humidity (% RH, average)', fl('rh')],
+                ['vpd', 'Flower VPD (kPa, average)', fl('vpd')], ['co2', 'Flower CO₂ (ppm, average)', fl('co2')], ['par', 'Flower PAR (average)', fl('par')],
+                ['feedEc', 'Flower feed EC (average)', fl('feedEc')], ['feedPh', 'Flower feed pH (average)', fl('feedPh')],
+                ['runoffEc', 'Flower runoff EC (average)', fl('runoffEc')], ['runoffPh', 'Flower runoff pH (average)', fl('runoffPh')],
+                ['water', 'Water per plant (L)', c => perPlant(c, c.env?.waterL)],
+                ['nutrient', 'Nutrient per plant (mL)', c => perPlant(c, c.env?.nutrientMl)],
+                ['ipm', 'IPM flag days', c => c.ipm?.flagDays ?? null]
+            ];
+            const tts = new Set();
+            for (const c of M.crops) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) if (t.act > 0) tts.add(tt);
+            const order = rptTaskOrder();
+            for (const tt of [...tts].sort((a, b) => order(a) - order(b))) list.push(['task:' + tt, `Labour on ${rptTaskLabel(tt).replace(/^\S+\s/, '')} (min per plant)`, c => perPlant(c, c.labour?.byTask?.[tt]?.act > 0 ? c.labour.byTask[tt].act * 60 : null)]);
+            return list;
+        }
+        const RPT_OUTCOMES = [
+            ['gpp', 'Grams of flower per plant', c => c.derived?.gpp ?? null],
+            ['gsf', 'Grams of flower per sq ft', c => c.derived?.gsf ?? null],
+            ['gsfy', 'Grams per sq ft per year', c => c.derived?.gsfy ?? null],
+            ['flower', 'Flower yield (kg)', c => c.weights?.flower != null ? c.weights.flower / 1000 : null],
+            ['potency', 'Potency (total THC %)', c => c.lab?.potency ?? null],
+            ['terpenes', 'Terpenes (total %)', c => c.lab?.terpenes ?? null],
+            ['dryDown', 'Dry weight as % of wet', c => c.derived?.dryDown != null ? c.derived.dryDown * 100 : null],
+            ['trimOut', 'Flower as % of dry weight', c => c.derived?.trimOut != null ? c.derived.trimOut * 100 : null]
+        ];
+        function rptExplorer(M) {
+            const measures = rptExploreMeasures(M);
+            if (!measures.some(m => m[0] === RPT.exX)) RPT.exX = 'labour';
+            if (!RPT_OUTCOMES.some(o => o[0] === RPT.exY)) RPT.exY = 'gpp';
+            const mx = measures.find(m => m[0] === RPT.exX), oy = RPT_OUTCOMES.find(o => o[0] === RPT.exY);
+            const control = `<select id="rptExX" class="rpt-inline-sel" aria-label="Measure">${measures.map(m => `<option value="${rEsc(m[0])}"${m[0] === RPT.exX ? ' selected' : ''}>${rEsc(m[1])}</option>`).join('')}</select><span class="rpt-muted">against</span><select id="rptExY" class="rpt-inline-sel" aria-label="Outcome">${RPT_OUTCOMES.map(o => `<option value="${o[0]}"${o[0] === RPT.exY ? ' selected' : ''}>${rEsc(o[1])}</option>`).join('')}</select>`;
+            const pts = rptHarvested(M, M.per.from, M.per.to).map(c => ({ c, x: mx[2](c), y: oy[2](c) })).filter(p => p.x != null && p.y != null && Number.isFinite(p.x) && Number.isFinite(p.y));
+            if (pts.length < 2) return { control, sub: '', body: rEmpty('Not enough harvested crops with both numbers in this period.', 'Each dot is one harvested crop with a value for both. Try a longer period, or a measure the logs record.') };
+            const n = pts.length, mxv = rMean(pts, p => p.x), myv = rMean(pts, p => p.y);
+            let sxy = 0, sxx = 0, syy = 0;
+            for (const p of pts) { sxy += (p.x - mxv) * (p.y - myv); sxx += (p.x - mxv) ** 2; syy += (p.y - myv) ** 2; }
+            const slope = sxx > 0 ? sxy / sxx : 0, icpt = myv - slope * mxv, r = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+            const ar = Math.abs(r), strength = ar < 0.2 ? '' : ar < 0.4 ? 'A weak' : ar < 0.6 ? 'A moderate' : 'A strong';
+            const verdict = n < 8 ? `Only ${n} crops so far — too few to tell (aim for 8 or more). r = ${rN(r, 2)}.`
+                : ar < 0.2 ? `No clear link across ${n} crops (r = ${rN(r, 2)}).`
+                : `${strength} ${r > 0 ? 'positive' : 'negative'} link across ${n} crops (r = ${rN(r, 2)}): where ${mx[1].replace(/ \(.*\)$/, '').toLowerCase()} is higher, ${oy[1].replace(/ \(.*\)$/, '').toLowerCase()} tends to be ${r > 0 ? 'higher' : 'lower'}.`;
+            const W = 1200, H = 380, X0 = 70, X1 = 1150, Y0 = 330, Y1 = 24;
+            const xn = rNice(Math.min(...pts.map(p => p.x)), Math.max(...pts.map(p => p.x)), 6), yn = rNice(Math.min(...pts.map(p => p.y)), Math.max(...pts.map(p => p.y)), 5);
+            const xs = rLin(xn.lo, xn.hi, X0, X1), ys = rLin(yn.lo, yn.hi, Y0, Y1), dpx = xn.step < 1 ? (xn.step < 0.1 ? 2 : 1) : 0, dpy = yn.step < 1 ? (yn.step < 0.1 ? 2 : 1) : 0;
+            let s = '';
+            xn.t.forEach(v => { s += rVl(xs(v), Y1, Y0) + rT(xs(v), Y0 + 18, rN(v, dpx), 'rv-ax', 'middle'); });
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 8, ys(v) + 4, rN(v, dpy), 'rv-ax', 'end'); });
+            s += rT((X0 + X1) / 2, H - 6, mx[1] + ' →', 'rv-lbl', 'middle') + `<text x="16" y="${(Y0 + Y1) / 2}" class="rv-lbl" text-anchor="middle" transform="rotate(-90 16 ${(Y0 + Y1) / 2})">${rEsc(oy[1])} →</text>`;
+            if (n >= 3 && sxx > 0) {
+                const clampY = v => Math.min(yn.hi, Math.max(yn.lo, v));
+                s += `<line x1="${rF(xs(xn.lo))}" x2="${rF(xs(xn.hi))}" y1="${rF(ys(clampY(icpt + slope * xn.lo)))}" y2="${rF(ys(clampY(icpt + slope * xn.hi)))}" style="stroke:var(--text-secondary);stroke-width:1.5;stroke-opacity:.8"/>`;
+            }
+            for (const p of pts) s += rDot(xs(p.x), ys(p.y), 6, `fill:${M.strainColor(p.c.strain)};stroke:var(--bg-secondary);stroke-width:2`, `Lot ${p.c.lotId} · ${p.c.strain}\n${rptRoomName(p.c.flowerRoomId)} · harvested ${dFmtY(p.c.dates.harvestStart)}\n${mx[1]}: ${rN(p.x, Math.max(dpx, 1))}\n${oy[1]}: ${rN(p.y, Math.max(dpy, 1))}`);
+            const legend = [...new Set(pts.map(p => p.c.strain))].map(st => M.topStrains.includes(st) ? rSw(M.strainColor(st), st) : null).filter(Boolean).join('') + (pts.some(p => !M.topStrains.includes(p.c.strain)) ? rSw('var(--rv-neutral)', 'Other strains') : '') + (n >= 3 ? '<span>━ fitted line</span>' : '');
+            return { control, sub: `${verdict} A link is not proof of cause — other things change between crops too.`, legend, body: rSvg(W, H, s, `${mx[1]} against ${oy[1]}`),
+                table: { cols: [{ h: 'Lot' }, { h: 'Strain' }, { h: 'Room' }, { h: 'Harvested' }, { h: mx[1], n: 1 }, { h: oy[1], n: 1 }], rows: pts.map(p => [p.c.lotId, p.c.strain, rptRoomName(p.c.flowerRoomId), p.c.dates.harvestStart, rN(p.x, Math.max(dpx, 1)), rN(p.y, Math.max(dpy, 1))]) } };
+        }
         function rptYield(M) {
-            const sc = rptScatter(M), st = rptStrips(M), ca = rptCascade(M), tr = rptRoomTrend(M);
+            const sc = rptScatter(M), st = rptStrips(M), ca = rptCascade(M), tr = rptRoomTrend(M), ex = rptExplorer(M);
             const need = rEmpty('Needs harvest numbers.', 'Tag the harvest-log questions with report metrics in PaperWizard → Configure Sheets (see Setup &amp; data).');
+            const trSub = !tr ? '' : tr.per === 'sqft' ? 'Flower yield per square foot of canopy, crop by crop.'
+                : tr.per === 'total' ? 'Flower yield per crop, in kg.'
+                : 'Flower yield per plant, crop by crop.' + (RPT.per === 'sqft' ? ' Set canopy sq ft in Setup &amp; data to see it per sq ft.' : '');
             return `<div class="rpt-grid">` +
-                rCard({ title: 'Which strains should we keep growing?', chips: ['harvest'], sub: sc ? 'Each dot is a harvested crop in this period. Rings mark the three most-grown strains’ averages; the median lines split the field into four calls.' : '', body: sc ? sc.svg : need, table: sc?.table, legend: sc?.legend, source: 'Flower yield ÷ plants harvested · harvest.potency' }) +
-                rCard({ title: 'How consistent is each strain?', chips: ['harvest'], sub: st ? 'Every crop’s potency and terpene result, with the range and the median (white tick).' : '', body: st ? st.svg : need, table: st?.table, source: 'harvest.potency · harvest.terpenes' }) +
-                rCard({ title: 'Where does the weight go between harvest and processing?', chips: ['harvest'], sub: ca ? `${ca.n} crop${ca.n > 1 ? 's' : ''} harvested in this period. Dry weight is <b>${rPct(ca.dryDown, 1)}</b> of wet weight; flower is <b>${rPct(ca.trimOut, 1)}</b> of dry weight.` : '', body: ca ? ca.svg : need, table: ca?.table, legend: ca?.legend, source: 'harvest.wetWeight → harvest.dryWeight → bigs + mids + smalls + popcorn (+ trim = total yield)' }) +
-                rCard({ title: 'Is any room slipping?', chips: ['harvest'], sub: tr ? (tr.useSf ? 'Flower yield per square foot of canopy, crop by crop.' : 'Flower yield per plant, crop by crop. Set canopy sq ft in Setup &amp; data to compare rooms of different sizes per sq ft.') : '', body: tr ? tr.svg : need, table: tr?.table, legend: tr?.legend, source: tr?.useSf ? 'Flower yield ÷ canopy sq ft (Setup & data)' : 'Flower yield ÷ plants harvested' }) +
+                rCard({ title: 'Which strains should we keep growing?', chips: ['harvest'], sub: sc ? `Each dot is a harvested crop in this period, ${rEsc(sc.unit)} against potency. Rings mark the three most-grown strains’ averages; the median lines split the field into four calls.` : '', body: sc ? sc.svg : need, table: sc?.table, legend: sc?.legend, source: 'Flower yield (follows Per) · harvest.potency' }) +
+                rCard({ title: 'How consistent is each strain?', chips: ['harvest'], sub: st ? 'Every crop’s potency and terpene result, with the range and the median (white tick). Not affected by Per.' : '', body: st ? st.svg : need, table: st?.table, source: 'harvest.potency · harvest.terpenes' }) +
+                rCard({ title: 'Where does the weight go between harvest and processing?', chips: ['harvest'], sub: ca ? `${ca.n} crop${ca.n > 1 ? 's' : ''} harvested in this period, in ${rEsc(ca.unit)}. Dry weight is <b>${rPct(ca.dryDown, 1)}</b> of wet weight; flower is <b>${rPct(ca.trimOut, 1)}</b> of dry weight.` : '', body: ca ? ca.svg : need, table: ca?.table, legend: ca?.legend, source: 'harvest.wetWeight → harvest.dryWeight → bigs + mids + smalls + popcorn (+ trim = total yield)' }) +
+                rCard({ title: 'Is any room slipping?', chips: ['harvest'], sub: trSub, body: tr ? tr.svg : need, table: tr?.table, legend: tr?.legend, source: tr?.useSf ? 'Flower yield ÷ canopy sq ft (Setup & data)' : tr?.per === 'total' ? 'Flower yield per crop' : 'Flower yield ÷ plants harvested' }) +
+                rCard({ wide: true, title: 'What drives yield?', chips: ['harvest', 'tags'], control: ex.control, sub: ex.sub, body: ex.body, table: ex.table, legend: ex.legend, source: 'Harvested crops in the period · grow-log averages are over the flower phase (flip → harvest)' }) +
                 `</div>`;
         }
 
@@ -4515,11 +4651,18 @@
         // Save summaries (and drop any older than RPT_KEEP_MONTHS), then sync
         function rptSaveSummaries(list) {
             const ew = rptEnsureOwnKeys(), cutoff = dMonths(rToday(), -RPT_KEEP_MONTHS);
-            for (const c of list) ew.crops[c.lotId] = rptSummaryOf(c);
+            // The labour cost is frozen with the summary, but only while wages are open; SitkaTools keeps
+            // _EmployeeWizard.cropCosts in Wages.json, never in Main.json
+            const costs = wagesLoaded() ? (ew.cropCosts || (ew.cropCosts = {})) : null;
+            for (const c of list) {
+                ew.crops[c.lotId] = rptSummaryOf(c);
+                const k = costs ? rptCropCost(c) : null;
+                if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt };
+            }
             let dropped = 0;
             for (const [id, s] of Object.entries(ew.crops)) {
-                const when = s?.dates?.harvestStart || String(s?.savedAt || '').slice(0, 10);
-                if (when && when < cutoff) { delete ew.crops[id]; dropped++; }
+                const when = s?.dates?.harvestStart || rSavedDay(s?.savedAt);
+                if (when && when < cutoff) { delete ew.crops[id]; if (ew.cropCosts) delete ew.cropCosts[id]; dropped++; }
             }
             notifySitkaTools();
             return dropped;
@@ -4532,11 +4675,12 @@
             const status = c => {
                 const s = saved[c.lotId];
                 if (!s) return c.dates.ship && c.dates.ship < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
-                return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(String(s.savedAt).slice(0, 10))}</span>` : `<span class="rpt-warn">Saved ${rEsc(String(s.savedAt).slice(0, 10))} — out of date</span>`;
+                const cost = wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : '';
+                return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(rSavedDay(s.savedAt))}${cost}</span>` : `<span class="rpt-warn">Saved ${rEsc(rSavedDay(s.savedAt))}${cost} — out of date</span>`;
             };
             const fmtW = g => g != null ? rKg(g) : '—';
             const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
-                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(String(c.savedAt || '').slice(0, 10))}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
+                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : ''}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
             // Metric hook-up: which questions feed each metric, and how many answers they hold
             const tagged = {};
             for (const [wid, w] of Object.entries(DB.data._PaperWizard?.wizards || {})) for (const q of w?.questions || []) if (q?.metric && REPORT_METRICS[q.metric]) (tagged[q.metric] || (tagged[q.metric] = [])).push({ sheet: DB.data._PaperWizard?.sheets?.[w.sheetId]?.name || w.sheetId, label: q.label, unit: q.metricUnit, sheetId: w.sheetId, qid: q.id, wid });
@@ -4562,7 +4706,7 @@
             return `<div class="rpt-grid">` +
                 rCard({ title: 'Canopy area of each flower room', sub: 'Used for grams per square foot. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: '_EmployeeWizard.settings.canopySqFt' }) +
                 rCard({ title: 'Shift length', sub: 'Roster capacity = work days × this many hours, less booked time off and BC holidays.', body: `<label class="rpt-inline">Hours per shift <input type="number" min="1" max="16" step="0.5" class="rpt-num" id="rptShiftInput" value="${rptShiftHours()}"></label>`, source: '_EmployeeWizard.settings.shiftHours' }) +
-                rCard({ wide: true, title: 'Crop summaries — keep closed-out lots in the charts', sub: `Close-out moves a lot’s events and paperwork to its archive file. A saved summary (dates, rooms, plants, hours by task and person, the harvest numbers and grow-log averages — never wages) stays in Main.json for ${RPT_KEEP_MONTHS} months so the trends keep that crop. Save a lot once it has shipped, and update it if numbers change before close-out. A lot closed without one can be brought back from its archive file.`,
+                rCard({ wide: true, title: 'Crop summaries — keep closed-out lots in the charts', sub: `Close-out moves a lot’s events and paperwork to its archive file. A saved summary (dates, rooms, plants, hours by task and person, the harvest numbers and grow-log averages — never wages) stays in Main.json for ${RPT_KEEP_MONTHS} months so the trends keep that crop. While Wages.json is open, saving also freezes the crop’s labour cost (kept in Wages.json), so later raises don’t change it. Save a lot once it has shipped, and update it if numbers change before close-out. A lot closed without one can be brought back from its archive file.`,
                     control: `<button type="button" class="rpt-tbtn" id="rptSaveAll"${ready.length ? '' : ' disabled'}>💾 Save ${ready.length} shipped</button><button type="button" class="rpt-tbtn" id="rptImportBtn">📂 Import archived lots</button>`,
                     body: live.length || closed.length ? `<div class="rpt-tbl"><table><thead><tr><th>Lot</th><th>Strain</th><th>Harvest</th><th class="n">Flower</th><th class="n">THC</th><th>Summary</th><th></th></tr></thead><tbody>${sumRows}</tbody></table></div>` : rEmpty('No lots with a harvest scheduled yet.', ''),
                     source: '_EmployeeWizard.crops · Archive/Lot-<id>-<date>.json files from SitkaTools close-out' }) +
@@ -4592,6 +4736,68 @@
             renderReports();
         }
 
+        // ---- 🖨️ Board pack: the report pages, with the current filters, laid out for paper ----
+        // Opens a print-ready window (light theme, Letter landscape, one report page per sheet) with a tick box
+        // per page and an optional "Data tables" toggle. Printing / "Save as PDF" is the browser's own dialog.
+        // Same numbers and privacy rules as the tab: the pages are built by the same functions.
+        const RPT_PRINT_CSS = `
+            :root { --bg-primary: #fff; --bg-secondary: #fff; --bg-card: #f3f4f8; --accent: #0a7f58; --text-primary: #15171f; --text-secondary: #474b5c;
+                --border: #d9dbe3; --warning: #b86e00; --danger: #c0392b; --input-bg: #fff;
+                --rv-blue: #2a78d6; --rv-orange: #eb6834; --rv-aqua: #1baf7a; --rv-yellow: #eda100; --rv-magenta: #e87ba4; --rv-green: #008300; --rv-violet: #6250d6; --rv-red: #e34948;
+                --rv-neutral: #9aa0b5; --rv-total: #3b3f52;
+                --rv-seq-0: #f0f2f7; --rv-seq-1: #cde2fb; --rv-seq-2: #b7d3f6; --rv-seq-3: #9ec5f4; --rv-seq-4: #86b6ef; --rv-seq-5: #6da7ec; --rv-seq-6: #5598e7; --rv-seq-7: #3987e5;
+                --rv-grid: #e6e8ef; --rv-axis: #c3c6d1; --rv-zebra: #f6f7fa; --rv-muted: #6b6f80; }
+            html, body { background: #fff; }
+            body { display: block; min-height: 0; padding: 20px 26px; color: var(--text-primary); }
+            .bp-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 14px; margin-bottom: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; }
+            .bp-bar label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+            .bp-bar button { margin-left: auto; padding: 8px 18px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
+            .bp-head h1 { margin: 0; font-size: 1.35rem; }
+            .bp-head p { margin: 3px 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+            .bp-page { margin-top: 18px; }
+            .bp-page h2 { margin: 0 0 10px; padding-bottom: 4px; font-size: 1.1rem; border-bottom: 2px solid var(--text-primary); }
+            .bp-page:not([hidden]) ~ .bp-page { break-before: page; }
+            .rpt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .rpt-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .rpt-card, .rpt-kpi, .rpt-attn li { break-inside: avoid; }
+            .rpt-chart { overflow: visible; }
+            .rpt-chart svg, .rpt-card.wide .rpt-chart svg { min-width: 0 !important; }
+            .rpt-tbtn, .rpt-go, .rpt-inline-sel, .rpt-chips .rpt-muted, .rpt-card-foot button { display: none !important; }
+            [data-table] { display: none !important; }
+            body.with-tables [data-table] { display: block !important; max-height: none; overflow: visible; }
+            .rv-barlbl { stroke: rgba(0, 0, 0, 0.45); }
+            @page { size: letter landscape; margin: 0.4in; }
+            @media print { .bp-bar { display: none; } body { padding: 0; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`;
+
+        function rptBoardPack() {
+            if (!DB.data) return;
+            const pages = [['overview', 'Overview', rptOverview], ['timeline', 'Crop Timeline', rptTimeline], ['labour', 'Labour', rptLabour],
+                ['yield', 'Yield & Quality', rptYield], ['rooms', 'Rooms & Environment', rptRooms], ['forecast', 'Forecast', rptForecast]];
+            const M = rptModel();
+            const body = pages.map(([id, title, fn]) => {
+                let html;
+                try { html = fn(M); } catch (err) { html = rEmpty('This page hit a problem.', rEsc(err?.message || err)); }
+                return `<section class="bp-page" data-page="${id}"><h2>${rEsc(title)}</h2>${html}</section>`;
+            }).join('');
+            const sel = id => $(id).selectedOptions[0]?.textContent || '';
+            const scope = [`${sel('rptPeriod')} (${dFmtY(M.per.from)} – ${dFmtY(M.per.to)})`, sel('rptBuilding'), sel('rptRoom'), sel('rptStrain'), sel('rptPer')].filter(Boolean).join(' · ');
+            const checks = pages.map(([id, title]) => `<label><input type="checkbox" data-page="${id}" checked> ${rEsc(title)}</label>`).join('');
+            const css = [...document.querySelectorAll('style')].map(st => st.textContent).join('\n');
+            const win = window.open('', '_blank', 'width=1180,height=900');
+            if (!win) { alert('The board pack opens in a new window — allow pop-ups for this page and try again.'); return; }
+            win.document.open();
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Board pack — ${rEsc(dFmtY(M.today))}</title><style>${css}\n${RPT_PRINT_CSS}</style></head><body>
+<div class="bp-bar">${checks}<label><input type="checkbox" id="bpTables"> Data tables</label><button type="button" id="bpPrint">🖨️ Print / Save as PDF</button></div>
+<header class="bp-head"><h1>SitkaTools — labour, yield &amp; quality report</h1><p>${rEsc(scope)}</p><p>Printed ${rEsc(dFmtY(M.today))}${wagesLoaded() ? '' : ' · costs not shown (Wages.json is not open)'}</p></header>
+${$('rvDefs').outerHTML}${body}
+<script>
+document.querySelectorAll('.bp-bar input[data-page]').forEach(cb => cb.addEventListener('change', () => { document.querySelector('.bp-page[data-page="' + cb.dataset.page + '"]').hidden = !cb.checked; }));
+document.getElementById('bpTables').addEventListener('change', e => document.body.classList.toggle('with-tables', e.target.checked));
+document.getElementById('bpPrint').addEventListener('click', () => window.print());
+<\/script></body></html>`);
+            win.document.close();
+        }
+
         // ---- Render + wiring ----
         function rptFillFilters() {
             const fill = (id, opts, val, all) => {
@@ -4607,6 +4813,7 @@
             for (const s of Object.values(DB.data._EmployeeWizard?.crops || {})) if (s?.strain) strains.add(s.strain);
             RPT.strain = fill('rptStrain', [...strains].sort().map(s => [s, s]), RPT.strain, 'All strains');
             $('rptPeriod').value = RPT.period;
+            $('rptPer').value = RPT.per;
         }
         function renderReports() {
             const body = $('rptBody');
@@ -4623,6 +4830,9 @@
             }
             const gl = $('rptGanttLot'); if (gl) gl.addEventListener('change', () => { RPT.ganttLot = gl.value; renderReports(); });
             const el = $('rptEnvLot'); if (el) el.addEventListener('change', () => { RPT.envLot = el.value; renderReports(); });
+            const ex = $('rptExX'), ey = $('rptExY');
+            if (ex) ex.addEventListener('change', () => { RPT.exX = ex.value; renderReports(); });
+            if (ey) ey.addEventListener('change', () => { RPT.exY = ey.value; renderReports(); });
             const shift = $('rptShiftInput');
             if (shift) shift.addEventListener('change', () => {
                 const v = Number(shift.value);
@@ -4646,13 +4856,14 @@
             RPT.page = b.dataset.page;
             renderReports();
         });
-        ['rptPeriod', 'rptBuilding', 'rptRoom', 'rptStrain'].forEach(id => $(id).addEventListener('change', () => {
-            RPT[{ rptPeriod: 'period', rptBuilding: 'building', rptRoom: 'room', rptStrain: 'strain' }[id]] = $(id).value;
+        ['rptPeriod', 'rptBuilding', 'rptRoom', 'rptStrain', 'rptPer'].forEach(id => $(id).addEventListener('change', () => {
+            RPT[{ rptPeriod: 'period', rptBuilding: 'building', rptRoom: 'room', rptStrain: 'strain', rptPer: 'per' }[id]] = $(id).value;
             renderReports();
         }));
         $('rptExpandBtn').addEventListener('click', () => {
             try { window.moveTo(0, 0); window.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { /* not a script-opened popup */ }
         });
+        $('rptPackBtn').addEventListener('click', () => rptBoardPack());
         $('rptArchiveInput').addEventListener('change', e => { const files = [...e.target.files]; e.target.value = ''; if (files.length) rptImportArchives(files); });
         $('paneReports').addEventListener('click', e => {
             const t = e.target;
@@ -4690,6 +4901,7 @@
                 const id = unsave.dataset.unsave;
                 if (!confirm(`Remove the saved summary of closed lot ${id}? Its numbers drop out of every chart. Importing its archive file brings it back.`)) return;
                 delete DB.data._EmployeeWizard.crops[id];
+                if (DB.data._EmployeeWizard.cropCosts) delete DB.data._EmployeeWizard.cropCosts[id];
                 notifySitkaTools();
                 showToast(`Summary of lot ${id} removed`);
                 renderReports();

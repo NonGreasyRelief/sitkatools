@@ -100,14 +100,16 @@ The full spec, the metric list, the definitions and the **harvest-log hook-up st
   - **Rooms & Environment:** climate per lot and the pest heat map.
   - **Forecast:** labour demand vs roster capacity, and the 6-month harvest forecast.
   - **⚙️ Setup & data:** canopy sq ft, shift length, crop summaries with archive import, and the metric hook-up table.
-- **Filters:** a filter row (period, building, flower room, strain) scopes every page. Comparisons are always against the previous period of the same length.
+- **Filters:** a filter row (period, building, flower room, strain, **Per** plant / sq ft / gram / total) scopes every page. Comparisons are always against the previous period of the same length.
+- **🖨️ Board pack:** opens the report pages in a print-ready window (light theme, Letter landscape, a tick box per page).
+- **What drives yield?** (Yield & Quality page): any per-crop measure against an outcome, with a fitted line and r.
 - **Reads every tool's data, read-only** (user decision 2026-10-12): calendar events and `labour_map`, the roster, CropLabourWizard / CropProjection schedules and estimates, PaperWizard answers to questions tagged with a report metric (`question.metric`), DailyWizard chore lists. It writes only `_EmployeeWizard.crops` and `_EmployeeWizard.settings`.
 - **Crop summaries** (`_EmployeeWizard.crops[lotId]`, saved from Setup & data or imported from `Archive/Lot-*.json`) keep closed-out lots in the trends for 36 months. A lot still in the DB always uses its live numbers.
-- **Privacy:** no $ per person; $ only while Wages.json is open; $ hidden for groups of fewer than 3 people. Costs use today's wages.
+- **Privacy:** no $ per person; $ only while Wages.json is open; $ hidden for groups of fewer than 3 people. Live lots use today's wages; closed lots use the cost frozen with their summary.
 - **Redraws:** only while the tab is open — on tab switch, DB load, live update (not while a Setup input is being typed in) and Active Lot change. The Active Lot picks the lot for the Gantt and climate charts.
 - **Charts:** hand-rolled SVG with one shared tooltip and a ⊞ Table twin on every card.
 
-Still to come (REPORTS.md §9): board pack, a "per" normalization switch, the what-drives-yield explorer, chore hours once DailyWizard records them, and frozen costs.
+Still to come (REPORTS.md §9): a lab-results card if potency isn't on a controlled form, and a fuller data-health page.
 
 ## Data Model — Database Keys
 
@@ -124,13 +126,15 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
     }
   },
   "crops": { "<lotId>": { "version": 1, "savedAt": "…", "…": "crop summary — schema in REPORTS.md §4" } },
-  "settings": { "canopySqFt": { "<roomId>": 1150 }, "shiftHours": 8 }
+  "settings": { "canopySqFt": { "<roomId>": 1150 }, "shiftHours": 8 },
+  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } }
 }
 ```
 
 - `crops` — saved crop summaries (Reports → Setup & data). They keep a closed-out lot in the report trends, hold hours per person but never wages, and are dropped after 36 months. Created on the first save.
 - `settings` — report settings: canopy area per flower room, and the shift length used for roster capacity (default 8 h). Created on the first change.
-- Both live in Main.json with the roster (the split keeps everything in `_EmployeeWizard` except wages).
+- `cropCosts` — the labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. It's money, so SitkaTools' split keeps it in **Wages.json** (office only), not Main.json.
+- `crops` and `settings` live in Main.json with the roster (the split keeps everything in `_EmployeeWizard` there except wages and `cropCosts`).
 
 - `wage` — $/hour. **Secret wage:** stored in the main JSON DB but **not visible on any dash or report** as a per-person figure; used only for cost math. Wage can be changed at any time. **Optional, no default:** new employees get no `wage` key, and an employee whose wage is blank (e.g. split DB with `Wages.json` not opened) keeps none — the tool never invents one, so a missing wage never turns into a $ figure or a wage change SitkaTools can't save.
 - `workDays` — ongoing work days of the week (weekday numbers follow `Date.getDay()`: `0`=Sun … `6`=Sat). The UI displays them Monday-first. **New employees default to Mon–Fri** (`[1, 2, 3, 4, 5]`).
