@@ -3930,6 +3930,13 @@
             // Clear stored config (projected lots keep their map entry → flagged stale)
             clearScheduleConfig(lotId);
 
+            // Remove generation record (as ✕ Delete Schedule does)
+            if (DB.data._CropLabourWizard?.generations) {
+                DB.data._CropLabourWizard.generations = DB.data._CropLabourWizard.generations.filter(
+                    g => g.lotId !== lotId
+                );
+            }
+
             // Notify SitkaTools so the calendar refreshes
             notifySitkaTools();
 

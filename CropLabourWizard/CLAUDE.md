@@ -384,7 +384,7 @@ _CropLabourWizard: {
     taskTypes: { /* taskType → { name, emoji, roomPhase? } registry — backfilled + merged on save/import */ }
 }
 ```
-Tool-wide metadata. `generations[]` is a log of schedule generations for audit purposes (real lots only). `projectedLots` is the **source of truth** for projected lots (owned by this tool; SitkaTools never reads or modifies it, with the sole exception of deleting the `{roomId}-TBA-01` entry in its deletion hook — see "Crop Projection" section below). `recipes` and `taskTypes` are documented in "Task Recipes (Recipe Manager)" above.
+Tool-wide metadata. `generations[]` is a log of schedule generations for audit purposes (real lots only); Clear Schedule and ✕ Delete Schedule both drop the lot's entries along with its schedule, and SitkaTools' lot close-out copies the rest into the lot's archive. `projectedLots` is the **source of truth** for projected lots (owned by this tool; SitkaTools never reads or modifies it, with the sole exception of deleting the `{roomId}-TBA-01` entry in its deletion hook — see "Crop Projection" section below). `recipes` and `taskTypes` are documented in "Task Recipes (Recipe Manager)" above.
 
 **Calendar events:**
 When the user generates a schedule, CropLabourWizard first purges all existing `CropLabourWizard` events for that lot from `calendarEvents`, then appends the new batch — carrying each task's `id`, completion and labour hours over to its replacement (see "Schedule Reconciliation"). Each event records `id`, `sourceTool: "CropLabourWizard"` and `lotId`. The main SitkaTools calendar view will render these alongside events from all other tools.
