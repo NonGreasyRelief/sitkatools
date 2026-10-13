@@ -185,7 +185,7 @@ Opened by itself (no SitkaTools on the device), it shows "Open this tool from Si
 
 ### Standard postMessage Pattern
 
-DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor. An open task detail view refreshes too, except while a step's text is being typed: it refreshes when that edit ends, and the edit is written into the fresh DB.
+DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor. An open task detail view refreshes too, except while a step's text is being typed: it refreshes when that edit ends, and the edit is written into the fresh DB. The step buttons (▲ ▼ 🗑, + Add Step) likewise look their task up again by building + code when tapped, so they change the fresh DB too; if the task is gone they only re-render (the view closes).
 
 ## UI Convention
 

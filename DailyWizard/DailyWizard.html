@@ -1937,9 +1937,10 @@
                 b.addEventListener('click', fn);
                 actions.appendChild(b);
             };
-            mkBtn('▲', 'Move step up', index === 0, false, () => moveStep(task, index, -1));
-            mkBtn('▼', 'Move step down', index === steps.length - 1, false, () => moveStep(task, index, +1));
-            mkBtn('🗑', 'Delete step', false, true, () => deleteStep(task, index));
+            const bid = detailBuildingId, code = task.code;
+            mkBtn('▲', 'Move step up', index === 0, false, () => moveStep(bid, code, index, -1));
+            mkBtn('▼', 'Move step down', index === steps.length - 1, false, () => moveStep(bid, code, index, +1));
+            mkBtn('🗑', 'Delete step', false, true, () => deleteStep(bid, code, index));
             top.appendChild(actions);
 
             row.appendChild(top);
@@ -1999,28 +2000,40 @@
             addBtn.className = 'btn btn-secondary';
             addBtn.style.minHeight = '48px';
             addBtn.textContent = '+ Add Step';
+            const bid = detailBuildingId, code = task.code;
             addBtn.addEventListener('click', () => {
-                task.steps = task.steps || [];
-                task.steps.push({ text: '' });
+                const cur = findStepTask(bid, code);
+                if (!cur) { renderDetail(); return; } // task gone (changed elsewhere) — the view closes
+                cur.steps = cur.steps || [];
+                cur.steps.push({ text: '' });
                 notifySitkaTools();
                 renderDetail();
                 const rows = document.querySelectorAll('#stepsList .step-row');
                 const last = rows[rows.length - 1];
-                if (last) beginStepEdit(last, task, task.steps.length - 1);
+                if (last) beginStepEdit(last, cur, cur.steps.length - 1);
             });
             list.appendChild(addBtn);
         }
 
-        function moveStep(task, index, dir) {
-            const steps = task.steps || [];
+        // Step buttons look their task up again by building + code when tapped: while a step's text
+        // is being typed, a live DB update doesn't re-render this view (syncOpenDetail), so the task
+        // it was drawn from may no longer be the one in DB.data.
+        function findStepTask(bid, code) {
+            return (DB.dailyBuildings[bid]?.tasks || []).find(t => t.code === code) || null;
+        }
+
+        function moveStep(bid, code, index, dir) {
+            const steps = findStepTask(bid, code)?.steps || [];
             const j = index + dir;
-            if (j < 0 || j >= steps.length) return;
+            if (index >= steps.length || j < 0 || j >= steps.length) { renderDetail(); return; }
             [steps[index], steps[j]] = [steps[j], steps[index]];
             notifySitkaTools(); // pictures are positionally bound — they follow the step
             renderDetail();
         }
 
-        function deleteStep(task, index) {
+        function deleteStep(bid, code, index) {
+            const task = findStepTask(bid, code);
+            if (!task?.steps?.[index]) { renderDetail(); return; } // task or step gone (changed elsewhere)
             task.steps.splice(index, 1);
             notifySitkaTools();
             renderDetail();
