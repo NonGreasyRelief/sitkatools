@@ -472,7 +472,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 |---|---|---|
 | `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries and report settings (`_EmployeeWizard.crops` / `.settings`), recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
 | `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }`. `cropCosts` is the labour cost frozen with EmployeeWizard's crop summaries: money, so it stays out of Main. |
-| `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list, the chore hours logged there, and the office's adjustments log), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
+| `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list, the chore hours logged there, its saved check-offs per day, and the office's adjustments log), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
 
 **Every device opens all the files and saves only its own.** SitkaTools merges them into the usual single-DB shape (`DbSplit.merge`), so every tool works unchanged, and splits it back on save (`DbSplit.split`). The device's role — `office` or a building id — comes from the **page link**: each device bookmarks / adds to its home screen `SitkaTools.html?device=office` or `?device=<building id>` (matched case-insensitively; 🏢 Building Files → **Set this device…** shows the link). Without it, opening the files asks "Which device is this?" and the answer lasts only for that page session. The role is **never stored in the browser** (an older build's stored role is deleted on start).
@@ -913,7 +913,7 @@ Any implementation must reproduce this table exactly:
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
-| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs, ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done) |
+| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs (saved per day), ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done) |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
@@ -1253,7 +1253,7 @@ function populateRoomSelector() {
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in a headless Firefox. It serves this folder on 127.0.0.1 and drives the browser over WebDriver BiDi, with real clicks, real pen strokes on the initials pad and real right-click save links.
 - Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - The tests use a made-up database (`tests/lib/helpers.mjs` → `fixtureDb()`) and never touch real DB files.
-- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open and ✅ Mark done; and every tool opening without page errors.
+- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open, ✅ Mark done and saved check-offs; and every tool opening without page errors.
 - Run them before a change to saving, merging or the postMessage protocol goes out.
 
 ### JSON Database

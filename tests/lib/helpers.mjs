@@ -33,7 +33,8 @@ export function fixtureDb() {
             { id: 'ev_oldb1', date: Y, title: '🧹 R1G1-Test Kush#L100, Room Tidy', sourceTool: 'CropLabourWizard', lotId: 'L100', taskType: 'room_tidy',
               labour_map: { [Y]: [{ employee: 'Drew', hours: 3 }] } },
             { id: 'ev_doneb1', date: Y2, title: '🪴 R1G1-Test Kush#L100, Top Dress', sourceTool: 'CropLabourWizard', lotId: 'L100', taskType: 'top_dress', completed: true },
-            { id: 'ev_oldb2', date: Y2, endDate: Y, title: '🌾 R2G1-Blue Test#L200, Strip Fans', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'strip_fans' }
+            { id: 'ev_oldb2', date: Y2, endDate: Y, title: '🌾 R2G1-Blue Test#L200, Strip Fans', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'strip_fans' },
+            { id: 'ev_general', date: T, title: '📣 Staff meeting', sourceTool: 'GeneralEvent' }
         ],
         _EmployeeWizard: {
             employees: {
@@ -278,3 +279,15 @@ export const dwStillOpen = (b, dw) => b.run(dw, `
 export const dwDoneButton = (b, dw, rowMatch) => b.run(dw, `
     const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .done-btn'));
     return rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)}))?.querySelector(':scope > .done-btn')?.textContent || null;`);
+
+// In DailyWizard: tap the tick box on the row whose text includes `rowMatch`; returns whether it's now ticked
+export const dwTick = (b, dw, rowMatch) => b.run(dw, `
+    const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes(${JSON.stringify(rowMatch)}));
+    const cb = row?.querySelector('.task-check input');
+    if (!cb) return null;
+    cb.click();
+    const again = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes(${JSON.stringify(rowMatch)}));
+    return again.querySelector('.task-check input').checked;`, { user: true });
+export const dwTicked = (b, dw, rowMatch) => b.run(dw, `
+    const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes(${JSON.stringify(rowMatch)}));
+    return row ? row.querySelector('.task-check input')?.checked === true && row.classList.contains('done') : null;`);

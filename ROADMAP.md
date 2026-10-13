@@ -180,7 +180,7 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
     - Hours on one task from the office and a building between saves now merge entry by entry (entry ids, recorded removals). Before, the newest save's list replaced the other's.
     - A tool window that outlived SitkaTools (reload or close) now says so, instead of looking as if its changes were kept.
   - [x] **Floor-manager completion** (2026-10-13): DailyWizard's ✍️ Mark done on crop and equipment tasks asks for the floor manager's name and drawn initials (`completedBy`, a floor field). Floor managers are ticked in EmployeeWizard. Past tasks that aren't done stay under ⏰ Still open, and hours logged there go on the day they're logged.
-  - [ ] Saved check-offs for daily chores (the row checkboxes are still session-only).
+  - [x] **Saved check-offs** (2026-10-13): every DailyWizard tick box is saved per building and day in the building's file (`checks`), one tap by anyone, with time and device. Each new day starts blank. On crop and equipment rows a tick means today's part is done.
   - [ ] Deleting an entry in EmployeeWizard's Tasks tab leaves no record (DailyWizard's office removals do).
 - [ ] **Drawn initials** for lot Accept (typed for now) and labour entries, reusing PaperWizard's draw pad.
 

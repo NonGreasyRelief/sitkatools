@@ -944,16 +944,52 @@
         // Needed because ensureStructure() makes DB.data truthy from load time.
         let dbLoaded = false;
 
-        // ---- Completion state — session-only (never persisted, never synced) ----
-        // Key: `${dateStr}:${itemKey}` → true. itemKey is the task code for daily
-        // tasks and a composite of sourceTool + lotId/roomId + date + title for events.
-        const checkoffs = {};
+        // ---- Check-offs — saved per building and day; each new day starts blank ----
+        //   _DailyWizard.buildings[<id>].checks[<YYYY-MM-DD>][<item>] = { at, by }
+        //   item: a daily task's code, or 'ev:<event id>' for a calendar row ("today's part is done" — ✅ Mark done
+        //   is what finishes a crop / equipment task)
+        // Saved in the building's own file with its chore hours. Anyone may tick or untick with one tap; the tick
+        // records when and on which device. Rows of events that belong to no building (All Buildings → Unassigned)
+        // have no file to go in, so their ticks stay in this page only (sessionChecks).
+        const sessionChecks = {};   // `${dateStr}:${eventItemKey}` → true
 
-        function checkoffCountForDate(dateStr) {
-            let n = 0;
-            for (const k of Object.keys(checkoffs)) if (k.startsWith(dateStr + ':')) n++;
+        // Where a row's tick is kept: { buildingId, item } (saved) or { session } (page only)
+        function checkSpotForTask(buildingId, code) { return { buildingId, item: code }; }
+        function checkSpotForEvent(ev, dateStr) {
+            const buildingId = ev.id ? buildingForEvent(ev) : null;
+            return buildingId ? { buildingId, item: `ev:${ev.id}` } : { session: `${dateStr}:${eventItemKey(ev, dateStr)}` };
+        }
+        function isChecked(spot, dateStr) {
+            if (spot.session) return !!sessionChecks[spot.session];
+            return !!DB.dailyBuildings[spot.buildingId]?.checks?.[dateStr]?.[spot.item];
+        }
+        function setChecked(spot, dateStr, on) {
+            if (spot.session) {
+                if (on) sessionChecks[spot.session] = true;
+                else delete sessionChecks[spot.session];
+                return;
+            }
+            const buildings = DB.ensureStructure()._DailyWizard.buildings;
+            const b = buildings[spot.buildingId] || (buildings[spot.buildingId] = { tasks: [] });
+            if (on) {
+                const day = (b.checks || (b.checks = {}))[dateStr] || (b.checks[dateStr] = {});
+                day[spot.item] = { at: new Date().toISOString(), by: DeviceView.building || 'office' };
+            } else if (b.checks?.[dateStr]) {
+                delete b.checks[dateStr][spot.item];
+                if (!Object.keys(b.checks[dateStr]).length) delete b.checks[dateStr];
+                if (!Object.keys(b.checks).length) delete b.checks;
+            }
+            notifySitkaTools();
+        }
+        // Ticks on a day, in the buildings shown (null = every building) plus this page's unsaved ones
+        function checkoffCountForDate(dateStr, bids = null) {
+            let n = Object.keys(sessionChecks).filter(k => k.startsWith(dateStr + ':')).length;
+            for (const [bid, b] of Object.entries(DB.dailyBuildings)) {
+                if (!bids || bids.includes(bid)) n += Object.keys(b?.checks?.[dateStr] || {}).length;
+            }
             return n;
         }
+        const shownBuildings = () => { const sel = $('buildingSelect').value; return sel === 'ALL' ? null : [sel]; };
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
@@ -1270,15 +1306,23 @@
             }
         });
 
-        // ---- Reset Day — clear check-offs for the selected date (session-only) ----
+        // ---- Reset Day — clear the selected date's check-offs in the buildings shown ----
         function resetDay() {
-            const date = selectedDateStr();
-            const count = checkoffCountForDate(date);
+            const date = selectedDateStr(), bids = shownBuildings();
+            const count = checkoffCountForDate(date, bids);
             if (!count) return;
             if (!confirm(`Clear all ${count} check-off(s) for ${date}?`)) return;
-            for (const k of Object.keys(checkoffs)) {
-                if (k.startsWith(date + ':')) delete checkoffs[k];
+            for (const k of Object.keys(sessionChecks)) {
+                if (k.startsWith(date + ':')) delete sessionChecks[k];
             }
+            let saved = false;
+            for (const [bid, b] of Object.entries(DB.dailyBuildings)) {
+                if ((bids && !bids.includes(bid)) || !b?.checks?.[date]) continue;
+                delete b.checks[date];
+                if (!Object.keys(b.checks).length) delete b.checks;
+                saved = true;
+            }
+            if (saved) notifySitkaTools();
             renderAll();
         }
 
@@ -1354,14 +1398,14 @@
                 for (const bid of bids) {
                     const tasks = tasksForBuilding(bid, dateStr);
                     taskCount += tasks.length;
-                    doneCount += tasks.filter(t => checkoffs[`${dateStr}:${t.code}`]).length;
+                    doneCount += tasks.filter(t => isChecked(checkSpotForTask(bid, t.code), dateStr)).length;
                 }
 
                 text.textContent = `🏢 ${n} building${n === 1 ? '' : 's'} · 📝 ${taskCount} today · ✅ ${doneCount}/${taskCount} done`;
             }
 
             // Reset Day is disabled when nothing is checked for the selected date
-            $('resetDayBtn').disabled = checkoffCountForDate(selectedDateStr()) === 0;
+            $('resetDayBtn').disabled = checkoffCountForDate(selectedDateStr(), shownBuildings()) === 0;
         }
 
         // ---- Recurrence & event attribution (CLAUDE.md "Recurrence Rules" /
@@ -1478,16 +1522,15 @@
 
         // ---- Row builders ----
 
-        function makeCheck(key, checked) {
+        function makeCheck(spot, dateStr) {
             const wrap = document.createElement('label');
             wrap.className = 'task-check';
             const cb = document.createElement('input');
             cb.type = 'checkbox';
-            cb.checked = checked;
+            cb.checked = isChecked(spot, dateStr);
             cb.addEventListener('change', () => {
-                if (cb.checked) checkoffs[key] = true;
-                else delete checkoffs[key];
-                renderAll(); // session-only — never touches DB.data or SitkaTools
+                setChecked(spot, dateStr, cb.checked);   // saved in the building's file (see "Check-offs")
+                renderAll();
             });
             wrap.appendChild(cb);
             return wrap;
@@ -1496,11 +1539,11 @@
         // prevCode / nextCode: the codes of the rows shown just above / below this one (null at the ends)
         function makeTaskRow(buildingId, task, prevCode, nextCode, allowMove) {
             const dateStr = selectedDateStr();
-            const key = `${dateStr}:${task.code}`;
+            const spot = checkSpotForTask(buildingId, task.code);
             const row = document.createElement('div');
-            row.className = 'task-row' + (checkoffs[key] ? ' done' : '');
+            row.className = 'task-row' + (isChecked(spot, dateStr) ? ' done' : '');
 
-            row.appendChild(makeCheck(key, !!checkoffs[key]));
+            row.appendChild(makeCheck(spot, dateStr));
 
             const emoji = document.createElement('span');
             emoji.className = 'task-emoji';
@@ -1588,9 +1631,9 @@
                 row.appendChild(spacer);
             } else {
                 const dateStr = selectedDateStr();
-                const key = `${dateStr}:${eventItemKey(ev, dateStr)}`;
-                row.className = 'task-row' + (checkoffs[key] ? ' done' : '');
-                row.appendChild(makeCheck(key, !!checkoffs[key]));
+                const spot = checkSpotForEvent(ev, dateStr);
+                row.className = 'task-row' + (isChecked(spot, dateStr) ? ' done' : '');
+                row.appendChild(makeCheck(spot, dateStr));
             }
 
             const em = document.createElement('span');
@@ -2818,7 +2861,7 @@
                 section.className = 'building-section';
 
                 const tasks = tasksForBuilding(bid, dateStr);
-                const done = tasks.filter(t => checkoffs[`${dateStr}:${t.code}`]).length;
+                const done = tasks.filter(t => isChecked(checkSpotForTask(bid, t.code), dateStr)).length;
                 const events = dayEvents.filter(ev => buildingForEvent(ev) === bid);
 
                 const header = document.createElement('div');
