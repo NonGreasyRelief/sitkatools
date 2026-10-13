@@ -4305,7 +4305,8 @@
             const yn = rNice(0, wet / d, 4), ys = g => rLin(0, yn.hi, base, top0)(g / d);
             const fv = g => rN(g / d, g / d < 10 ? 1 : 0);
             let s = '';
-            yn.t.forEach(v => { s += rHl(X0, X1, rLin(0, yn.hi, base, top0)(v)) + rT(X0 - 6, rLin(0, yn.hi, base, top0)(v) + 4, `${rN(v, yn.step < 1 ? 1 : 0)} ${unit}`, 'rv-ax', 'end'); });
+            yn.t.forEach(v => { s += rHl(X0, X1, rLin(0, yn.hi, base, top0)(v)) + rT(X0 - 6, rLin(0, yn.hi, base, top0)(v) + 4, rN(v, yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
+            s += `<text x="12" y="${(base + top0) / 2}" class="rv-ax" text-anchor="middle" transform="rotate(-90 12 ${(base + top0) / 2})">${rEsc(unit)}</text>`;
             const gradeFill = { bigs: 'var(--rv-seq-6)', mids: 'var(--rv-seq-5)', smalls: 'var(--rv-seq-3)', popcorn: 'var(--rv-seq-2)' };
             steps.forEach((st, i) => {
                 const x0 = X0 + i * bw + 8, w = bw - 16, v = st.b - st.a;
@@ -4347,14 +4348,19 @@
             const span = dDiff(t0, t1), stepM = span > 500 ? 6 : span > 200 ? 3 : 1;
             for (let d = t0.slice(0, 8) + '01'; d <= t1; d = dMonths(d, 1)) { const dt = parseISO(d); if (d >= t0 && dt.getMonth() % stepM === 0) s += rVl(xs(d), Y1, Y0) + rT(xs(d), Y0 + 18, `${R_MON[dt.getMonth()]}${dt.getMonth() === 0 || stepM >= 6 ? ' ' + dt.getFullYear() : ''}`, 'rv-ax', 'middle'); }
             s += rT(X0, 12, `${T.unit}${T.per === 'total' ? '' : ' per crop'}`, 'rv-ax');
+            const ends = [];
             for (const r of T.rooms) {
                 const l = r.points.filter(p => p.d >= M.per.from), col = M.roomColors[r.id] || 'var(--rv-neutral)';
                 if (!l.length) continue;
                 if (l.length > 1) s += `<path d="M${l.map(p => `${rF(xs(p.d))} ${rF(ys(p.v))}`).join(' L')}" style="fill:none;stroke:${col};stroke-width:2"/>`;
                 for (const p of l) s += rDot(xs(p.d), ys(p.v), 3.5, `fill:${col};stroke:var(--bg-secondary);stroke-width:1.5`, `${rptRoomName(r.id)} · lot ${p.c.lotId}\n${p.c.strain} · harvested ${dFmtY(p.d)}\n${rN(p.v, p.v < 10 ? 2 : 1)} ${T.unit}`);
                 const lp = l[l.length - 1];
-                s += rT(xs(lp.d) + 9, ys(lp.v) + 4, rShort(rptRoomName(r.id), 14), 'rv-val');
+                ends.push({ x: xs(lp.d) + 9, y: ys(lp.v) + 4, t: rShort(rptRoomName(r.id), 14) });
             }
+            // End labels: keep at least 13 px apart so rooms that finish close together stay readable
+            ends.sort((a, b) => a.y - b.y);
+            for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+            for (const e of ends) s += rT(e.x, e.y, e.t, 'rv-val');
             s += rHl(X0, X1, Y0, 'rv-base');
             return { unit: T.unit, per: T.per, useSf: T.useSf, svg: rSvg(W, H, s, 'Yield by room over time'), legend: T.rooms.map(r => rSw(M.roomColors[r.id] || 'var(--rv-neutral)', rptRoomName(r.id))).join(''),
                 table: { cols: [{ h: 'Room' }, { h: 'Lot' }, { h: 'Harvested' }, { h: 'Strain' }, { h: T.unit, n: 1 }], rows: T.rooms.flatMap(r => r.points.filter(p => p.d >= M.per.from).map(p => [rptRoomName(r.id), p.c.lotId, p.d, p.c.strain, rN(p.v, 1)])) } };
