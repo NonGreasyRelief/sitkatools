@@ -2437,6 +2437,7 @@
                         </div>
                     </div>`;
                 document.body.appendChild(ov);
+                const dataAtOpen = DB.data; // a live update from SitkaTools replaces DB.data
                 const strokes = [];
                 // aspectRatio matches the strike-out box's on-paper pixel ratio (no skew).
                 const pad = initDrawPad('strikePad', aspectRatio || 3, strokes);
@@ -2448,6 +2449,13 @@
                     if (!strokes.length) { showToast('Draw your initials first'); return; }
                     const name = (nameEl.value || '').trim();
                     ov.remove();
+                    // The DB was replaced while the pad was open: the save waiting on these initials
+                    // still holds the old copy, so it is cancelled like Cancel (nothing saved).
+                    if (DB.data !== dataAtOpen) {
+                        alert('SitkaTools updated the database while this was open, so nothing was recorded. Please try again.');
+                        resolve(null);
+                        return;
+                    }
                     resolve({ name, strokes });
                 });
             });
@@ -2754,6 +2762,9 @@
             const curPhase = currentLotPhase(lotId);
             const curRoom = currentLotRoom(lotId);
             const rooms = pickableRoomNames(curRoom).sort((a, b) => a.localeCompare(b));
+            // A stage outside the form's phase list (drying / curing) is offered too, preselected —
+            // otherwise the first option would be picked and overwrite the lot's stage.
+            const phases = curPhase && !PHASE_OPTIONS.includes(curPhase) ? [...PHASE_OPTIONS, curPhase] : PHASE_OPTIONS;
             const ov = document.createElement('div');
             ov.className = 'wiz-overlay';
             ov.id = 'startLogOverlay';
@@ -2764,7 +2775,7 @@
                         <div class="startlog-grid">
                             <label>First day of the log<input type="date" class="sig-name" id="startLogDate" max="${today}" value="${today}"></label>
                             <label>Phase<select class="sig-name" id="startLogPhase">
-                                ${PHASE_OPTIONS.map(p => `<option${p === curPhase ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+                                ${phases.map(p => `<option value="${escapeHtml(p)}"${p === curPhase ? ' selected' : ''}>${escapeHtml(p.charAt(0).toUpperCase() + p.slice(1))}</option>`).join('')}
                             </select></label>
                             <label>Plant count<input type="number" min="0" step="1" class="sig-name" id="startLogCount" value="${hasValue(lot.plantCount) ? escapeHtml(String(lot.plantCount)) : ''}"></label>
                             <label>Room<select class="sig-name" id="startLogRoom">
@@ -2783,6 +2794,11 @@
             document.body.appendChild(ov);
             $('startLogCancel').addEventListener('click', () => ov.remove());
             $('startLogOk').addEventListener('click', () => {
+                if (readOnlyHere(lotId)) { ov.remove(); return; }
+                // Look the lot up again — a live update from SitkaTools may have replaced the DB
+                // while this dialog was open.
+                const lot = DB.lots[lotId];
+                if (!lot) { ov.remove(); showToast('This lot is no longer in the database'); return; }
                 const date = $('startLogDate').value;
                 const phase = $('startLogPhase').value;
                 const countRaw = $('startLogCount').value.trim();
@@ -2790,8 +2806,9 @@
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) { showToast('Pick a start date on or before today'); return; }
                 if (countRaw !== '' && !(Number.isInteger(Number(countRaw)) && Number(countRaw) >= 0)) { showToast('Plant count must be a whole number'); return; }
                 if (dailyChain(lotId, sheetId).length) { showToast('This lot already has a log — use Fill instead'); ov.remove(); return; }
-                // Live lot values (PaperWizard's write-back permission: stage / currentRoom / plantCount)
-                lot.stage = stageFromForm(phase);
+                // Live lot values (PaperWizard's write-back permission: stage / currentRoom / plantCount).
+                // The stage is only written when the pick differs from the lot's current one.
+                if (phase !== curPhase) lot.stage = stageFromForm(phase);
                 lot.currentRoom = room;
                 if (countRaw !== '') lot.plantCount = Number(countRaw);
                 const pw = DB.paperWizard;
@@ -3050,6 +3067,9 @@
             const lot = DB.lots[lotId];
             // Compare in the form's vocabulary — 'flower' and 'Bloom' are the same phase.
             if (!lot || !inst.phase || !lot.stage || normalizeStage(inst.phase) === normalizeStage(lot.stage)) return false;
+            // If the runner opens normally after all (declined / cancelled), the Phase question
+            // prefills the lot's live phase, not this page's (see resetRunnerDraft).
+            if (runnerCtx) runnerCtx.phaseFromLot = true;
             const ok = confirm(`Lot is now in ${normalizeStage(lot.stage)} — close this grow-log?\n\n` +
                 `The open log was started in ${inst.phase}. Confirming records the phase change (rows after today are struck through) and starts a fresh log for ${lot.stage}.`);
             if (!ok) return false; // proceed to open the runner normally
@@ -3587,6 +3607,9 @@
             // Constant questions are set once per lot via the Initialize quiz — never drafted
             // here (they don't live in an instance at all).
             const cids = new Set(constantQuestionIds(sheetId));
+            // A backfill day (later days on file) is compared with what its page said, not with
+            // the live lot (applyBackfill) — so its plant count / phase / room prefill from the page.
+            const backfill = !!day && isBackfillDay(runnerCtx.lotId, sheetId, runnerCtx.key, day);
             const draft = {};
             for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (q.type === 'initials') {
@@ -3602,6 +3625,19 @@
                 if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom) {
                     // day.date prefills from the current day (row-scoped only).
                     v = resolveBinding(q.prefillFrom, { lotId: runnerCtx.lotId, sheetId: runnerCtx.sheetId, key: runnerCtx.key, inst, dayDate: q.rowScoped ? day : null });
+                    if (backfill) {
+                        // Live values would read as a change on save: a false "shift later days?"
+                        // prompt (plant count) or a false strike-out + re-page (phase / room).
+                        if (q.type === 'plant-count' && q.rowScoped) {
+                            const prev = lastRecordedPlantCount(runnerCtx.lotId, sheetId, runnerCtx.key, addDaysStr(day, -1));
+                            if (prev !== null) v = prev;
+                        } else if (q.type === 'phase' && inst.phase) v = normalizeStage(inst.phase);
+                        else if (q.type === 'room' && inst.room) v = inst.room;
+                    } else if (q.type === 'phase' && runnerCtx.phaseFromLot) {
+                        // "Lot is now in X — close this log?" was declined: the day records the lot's
+                        // live phase, so a plain save isn't read as a change back (checkStageMismatch).
+                        v = currentLotPhase(runnerCtx.lotId) ?? v;
+                    }
                 }
                 draft[q.id] = (v === null || v === undefined) ? '' : String(v);
             }
@@ -3731,6 +3767,7 @@
 
         function saveInitConstants() {
             const ctx = runnerCtx;
+            if (readOnlyHere(ctx.lotId)) return; // a live update may have made the lot read-only here
             // Mandatory questions must be answered before the quiz can save — same rule as
             // the daily runner's Save button.
             for (const s of ctx.steps) {
@@ -3902,6 +3939,11 @@
                 }
             });
             $('sigModalSaveBtn').addEventListener('click', () => {
+                if (readOnlyHere(lotId)) return; // a live update may have made the lot read-only here
+                // Look the page up again — a live update from SitkaTools may have replaced the DB
+                // while the pad was open.
+                const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key];
+                if (!inst) { closeSignatureModal(); renderAll(); showToast('This log is no longer on file — nothing saved'); return; }
                 const nameEl = $('sigName2');
                 const strokes = sigModalCtx.strokes;
                 // Stamp the signature date (local YYYY-MM-DD) on every save — re-signing
@@ -4179,6 +4221,9 @@
         // previous value), one to be filled in under the new value (the fresh page).
         async function saveRunnerEntry() {
             const ctx = runnerCtx;
+            // A live update may have made the lot read-only here since the runner opened (e.g. sent
+            // to another building) — refuse like the open did; the draft stays.
+            if (readOnlyHere(ctx.lotId)) return;
             const sheet = DB.paperWizard.sheets[ctx.sheetId];
             const wiz = wizardForSheet(ctx.sheetId);
             // Constant questions are never saved from the daily runner — their values live at
@@ -4216,20 +4261,24 @@
             // Backup of everything this save may touch — if the user cancels at the strike-out
             // initials prompt, the whole save is rolled back (nothing saved, no write-backs,
             // runner stays open with its draft intact). Captured BEFORE any mutation below.
+            // The lot record is kept by reference: a rollback restores the object this save wrote to,
+            // even if a live update from SitkaTools replaced DB.data meanwhile.
+            const lotRec = DB.lots[ctx.lotId] || null;
             const backup = {
                 day: inst.days?.[ctx.day] ? { ...inst.days[ctx.day] } : null,
                 header: { ...inst.header },
                 signature: inst.signature,
-                lot: DB.lots[ctx.lotId]
-                    ? { stage: DB.lots[ctx.lotId].stage, currentRoom: DB.lots[ctx.lotId].currentRoom, plantCount: DB.lots[ctx.lotId].plantCount }
+                lot: lotRec
+                    ? { stage: lotRec.stage, currentRoom: lotRec.currentRoom, plantCount: lotRec.plantCount }
                     : null
             };
             const restoreBackup = () => {
+                // Lot write-backs first — a brand-new page has them too ("Cancel = no write-backs")
+                if (backup.lot && lotRec) Object.assign(lotRec, backup.lot);
                 if (instIsNew) { delete sheetData.instances[ctx.key]; return; } // nothing persisted yet
                 if (backup.day) inst.days[ctx.day] = backup.day; else delete inst.days?.[ctx.day];
                 inst.header = backup.header;
                 inst.signature = backup.signature;
-                if (backup.lot && DB.lots[ctx.lotId]) Object.assign(DB.lots[ctx.lotId], backup.lot);
             };
 
             // Write-back is a property of the question TYPE (implicit — no writesTo field).
@@ -4345,6 +4394,9 @@
             if (rolled && !rolled.reused) {
                 if (phaseQ && !phaseQ.rowScoped && prevPhase) inst.header[phaseQ.id] = prevPhase;
                 if (roomQ && !roomQ.rowScoped && prevRoom) inst.header[roomQ.id] = prevRoom;
+                // Same-save double change: the phase rollover stamped only the phase back on the
+                // move-day row — that day was also kept in the previous room.
+                if (phaseChanged && roomChanged && roomQ?.rowScoped && prevRoom && inst.days?.[moveDay]) inst.days[moveDay][roomQ.id] = prevRoom;
             }
 
             captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
@@ -4756,8 +4808,9 @@
                 // Rollover: when today is outside every existing window (or no instances
                 // exist yet), offer a fresh 7-day window starting today — the first entry
                 // saved in it creates the new instance. With a planting date on file the
-                // coverage leaves below already surface today when it's uncovered, so skip
-                // the generic leaf to avoid a duplicate.
+                // grow-log coverage leaves below already surface today when it's uncovered, so
+                // skip the generic leaf there to avoid a duplicate (drying / trim logs have no
+                // coverage leaves, so they always keep it).
                 // No log yet (earlier paperwork on paper): start the first one on a chosen day,
                 // with a chosen starting phase / plant count / room.
                 if (keys.length === 0 && lot) {
@@ -4768,7 +4821,7 @@
                     </div>` });
                 }
                 const inWindow = keys.some(k => k <= todayStr() && todayStr() <= addDaysStr(k, 6));
-                if (!inWindow && !plantingDate) {
+                if (!inWindow && !(plantingDate && sec === 'grow-log')) {
                     pushGrow(sec, { key: 'new', sort: todayStr(), html: cabLeafFill(
                         `📅 Start new week · ${escapeHtml(sheet.name || sheetId)}`,
                         { text: '⏳ due', cls: 'due' }, sheetId, todayStr()) });
@@ -4809,14 +4862,20 @@
                 sections[sec] = (sections[sec] || []).concat(leaves.map(g => ({ html: g.html, missing: !!g.coverage })));
             }
 
-            // IPM / Harvest / Other — event instances (room cleans handled above).
-            for (const [sheetId, sd] of Object.entries(entries)) {
-                const sheet = pw.sheets[sheetId];
-                if (!sheet || sheet.cadence !== 'event') continue;
+            const elsewhere = lot ? lotElsewhere(activeLotId) : null; // read-only on this building device
+
+            // IPM / Harvest / Other — event instances (room cleans handled above), plus a
+            // "New entry" leaf to start today's (like "New clean"; not on a read-only lot).
+            for (const [sheetId, sheet] of Object.entries(pw.sheets || {})) {
+                if (sheet.cadence !== 'event') continue;
                 const sec = sheetSection(sheetId);
                 if (sec === 'room-clean' || !sections[sec]) continue;
-                for (const [key, inst] of Object.entries(sd.instances || {})) {
+                const insts = entries[sheetId]?.instances || {};
+                for (const [key, inst] of Object.entries(insts)) {
                     sections[sec].push({ html: cabLeafFill(`${escapeHtml(sheet.name || sheetId)} · ${fmtShort(key)}`, instanceStatus(sheetId, key, inst), sheetId, key), missing: false });
+                }
+                if (!elsewhere && !Object.keys(insts).includes(todayStr())) {
+                    sections[sec].push({ html: cabLeafFill(`📅 New entry · ${escapeHtml(sheet.name || sheetId)}`, { text: '— not started', cls: '' }, sheetId, todayStr()), missing: false });
                 }
             }
 
@@ -4849,7 +4908,6 @@
             // Initialize paperwork button — shown when any daily-weekly sheet for this lot has
             // constant fields (set once per lot, printed on every page of the chain). A ⚠️ marks
             // that some values are still unset.
-            const elsewhere = lot ? lotElsewhere(activeLotId) : null; // read-only on this building device
             const initSteps = activeLotId && !elsewhere ? initQuizSteps(activeLotId) : [];
             let initBtnHtml = '';
             if (initSteps.length) {
@@ -5698,15 +5756,24 @@
                 showToast('Database loaded from SitkaTools');
             }
 
-            // Live DB updates pushed by SitkaTools — refresh non-disruptively.
-            // (Later steps: an open wizard runner keeps its in-progress answers.)
+            // Live DB updates pushed by SitkaTools whenever its DB changes — refresh non-disruptively.
+            // Never notifySitkaTools() from here (that would ping-pong) and no toast.
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
                 DeviceView.take(e.data);
                 dbLoaded = true;
+                // An open runner keeps its draft and stays on screen (it isn't re-rendered, so a
+                // half-typed answer keeps its caret); only its page is looked up again in the new DB.
+                // A draft page that was never saved isn't there — it stays a draft. Saves re-read
+                // the DB anyway, and the dialogs (signature, start log, strike initials) check for
+                // the swap themselves.
+                if (runnerCtx && runnerCtx.mode !== 'init') {
+                    const fresh = DB.paperWizard.entries[runnerCtx.lotId]?.[runnerCtx.sheetId]?.instances?.[runnerCtx.key];
+                    if (fresh) runnerCtx.inst = fresh;
+                }
                 applyDeviceView();
-                renderAll();
+                renderAll(); // the cabinet behind any open dialog — dialogs are separate overlays
             }
         });
 
