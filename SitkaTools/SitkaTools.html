@@ -3986,7 +3986,7 @@
         const SPLIT_WAGES = 'Wages.json';
         const SPLIT_BUILDING_RE = /^Building-(.+)\.json$/;
         const LOT_FLOOR_FIELDS = ['plantCount', 'stage', 'currentRoom'];
-        const EVENT_FLOOR_FIELDS = ['completed', 'labour_map'];
+        const EVENT_FLOOR_FIELDS = ['completed', 'completedBy', 'labour_map'];   // completedBy: DailyWizard's floor-manager sign-off
         const MAIN_KEY_LABELS = {
             lots: 'lots', rooms: 'rooms', buildings: 'buildings', calendarEvents: 'calendar events',
             _CropLabourWizard: 'crop schedules & recipes', _EquipmentWizard: 'equipment plans',
@@ -8758,7 +8758,7 @@
                 // everything else about an event is office work it couldn't save.
                 const readOnly = !!DeviceView.building;
                 const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
-                const HIDDEN_FIELDS = ['type', 'id'];
+                const HIDDEN_FIELDS = ['type', 'id', 'completedBy'];   // the sign-off shows in the Completed row
                 const READONLY_FIELDS = [];
 
                 // Build field list from the event, ensuring all modifiable fields are always present
@@ -8770,7 +8770,7 @@
                 let html = `
                     <div class="completed-toggle-row ${isCompleted ? 'completed' : ''}" id="completedToggleRow">
                         <div class="completed-checkbox ${isCompleted ? 'checked' : ''}" id="completedCheckbox" title="Toggle completed status">${isCompleted ? '✓' : ''}</div>
-                        <span class="completed-label" id="completedLabel">${isCompleted ? 'Completed' : 'Not Completed'}</span>
+                        <span class="completed-label" id="completedLabel">${isCompleted ? 'Completed' : 'Not Completed'}${isCompleted && event.completedBy?.name ? escapeHtml(` — signed off by ${event.completedBy.name}${event.completedBy.at ? ', ' + new Date(event.completedBy.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}`) : ''}</span>
                     </div>
                 `;
 
@@ -8827,6 +8827,7 @@
                 const toggleCompleted = () => {
                     if (!this.selectedEvent) return;
                     this.selectedEvent.completed = !this.selectedEvent.completed;
+                    if (!this.selectedEvent.completed) delete this.selectedEvent.completedBy;   // reopened: the floor manager's sign-off no longer applies
                     markUnsaved();
                     this.renderEventPanel(this.selectedEvent);
                     this.render();
@@ -9028,6 +9029,7 @@
                         const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
                         event.completed = !event.completed;
+                        if (!event.completed) delete event.completedBy;   // reopened: the sign-off no longer applies
                         markUnsaved();
                         this.render();
                     });

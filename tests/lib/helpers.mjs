@@ -31,7 +31,9 @@ export function fixtureDb() {
             { id: 'ev_cropb1', date: T, title: '🍂 R1G1-Test Kush#L100, Leaf Pick', sourceTool: 'CropLabourWizard', lotId: 'L100', taskType: 'late_leaf_pick', estStaff: 1, estMinutes: 60 },
             { id: 'ev_cropb2', date: T, title: '🌿 R2G1-Blue Test#L200, Defoliate', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'defoliation' },
             { id: 'ev_oldb1', date: Y, title: '🧹 R1G1-Test Kush#L100, Room Tidy', sourceTool: 'CropLabourWizard', lotId: 'L100', taskType: 'room_tidy',
-              labour_map: { [Y]: [{ employee: 'Drew', hours: 3 }] } }
+              labour_map: { [Y]: [{ employee: 'Drew', hours: 3 }] } },
+            { id: 'ev_doneb1', date: Y2, title: '🪴 R1G1-Test Kush#L100, Top Dress', sourceTool: 'CropLabourWizard', lotId: 'L100', taskType: 'top_dress', completed: true },
+            { id: 'ev_oldb2', date: Y2, endDate: Y, title: '🌾 R2G1-Blue Test#L200, Strip Fans', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'strip_fans' }
         ],
         _EmployeeWizard: {
             employees: {
@@ -243,3 +245,36 @@ export async function ewSetHours(b, ew, lotId, evId, day, name, h, m) {
         document.getElementById('lfAddBtn').click();
         return document.querySelector('.toast, #toast')?.textContent || '';`, { user: true });
 }
+
+// In DailyWizard: press ✍️ Mark done on a row, pick the floor manager, draw initials (unless `sign` is false), confirm
+export async function markDone(b, dw, rowMatch, name, { sign = true } = {}) {
+    const opened = await b.run(dw, `
+        const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .done-btn'));
+        const btn = rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)}))?.querySelector(':scope > .done-btn');
+        if (!btn) return 'no row';
+        if (btn.disabled) return 'disabled';
+        btn.click();
+        return document.getElementById('doneOverlay').classList.contains('open') ? 'open' : 'not open';`, { user: true });
+    if (opened !== 'open') return { ok: false, toast: opened };
+    const options = await b.run(dw, `const w = document.getElementById('doneWho'); w.value = ${JSON.stringify(name || '')}; return [...w.options].map(o => o.value).filter(Boolean);`);
+    if (sign) await b.drag(dw, '#donePad', [[0.2, 0.3], [0.3, 0.7], [0.4, 0.3]]);
+    await b.run(dw, `document.getElementById('doneBtn').click();`, { user: true });
+    const toast = await b.run(dw, `return document.querySelector('.toast, #toast')?.textContent || '';`);
+    const stillOpen = await b.run(dw, `return document.getElementById('doneOverlay').classList.contains('open');`);
+    if (stillOpen) await b.run(dw, 'closeDone();');
+    return { ok: toast.startsWith('Marked done'), toast, options };
+}
+
+// DailyWizard rows: the text of each row in the "⏰ Still open" section
+export const dwStillOpen = (b, dw) => b.run(dw, `
+    const out = []; let inOpen = false;
+    for (const el of document.getElementById('listContainer').children) {
+        if (el.classList.contains('section-divider')) { inOpen = el.classList.contains('overdue'); continue; }
+        if (inOpen && el.classList.contains('task-row')) out.push(el.textContent);
+    }
+    return out;`);
+
+// The ✅ / ✍️ button text on a DailyWizard row
+export const dwDoneButton = (b, dw, rowMatch) => b.run(dw, `
+    const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .done-btn'));
+    return rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)}))?.querySelector(':scope > .done-btn')?.textContent || null;`);

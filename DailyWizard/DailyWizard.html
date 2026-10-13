@@ -572,6 +572,18 @@
         .hours-card input, .hours-card select { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
         .hours-note { font-size: 0.82rem; color: var(--text-secondary); max-width: 60%; }
 
+        /* ---- ✅ Mark done + ⏰ Still open ---- */
+        .done-btn { min-height: 48px; min-width: 48px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+        .done-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+        .done-btn.done { color: var(--accent); border-color: var(--accent); }
+        .done-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .chip.chip-overdue { color: var(--warning); border-color: rgba(243, 156, 18, 0.5); }
+        .section-divider.overdue { color: var(--warning); }
+        .task-row.still-open { box-shadow: inset 3px 0 0 var(--warning); }
+        .open-more { align-self: flex-start; margin: 4px 0 10px; }
+        .done-who-note { max-width: none; }
+        #doneStatus .hours-entry .btn { margin-left: auto; }
+
         /* ---- Empty state ---- */
         .empty-state {
             text-align: center;
@@ -807,6 +819,39 @@
         <footer class="overlay-footer spread">
             <span class="hours-note" id="hoursNote"></span>
             <button class="btn btn-primary" id="hoursAddBtn">Add hours</button>
+        </footer>
+    </div>
+
+    <!-- ✅ Mark done — the floor manager signs a crop / equipment task off as done (name + drawn initials) -->
+    <div class="overlay" id="doneOverlay">
+        <header class="overlay-header">
+            <button type="button" class="btn btn-secondary" id="doneBackBtn">←</button>
+            <span class="overlay-title" id="doneTitle">Mark done</span>
+            <span style="width:44px;"></span>
+        </header>
+        <div class="overlay-body">
+            <div class="hours-wrap">
+                <div class="hours-card">
+                    <div class="hours-sub" id="doneSub"></div>
+                    <div id="doneStatus"></div>
+                </div>
+                <div class="hours-card" id="doneForm">
+                    <div class="form-group">
+                        <label for="doneWho">Floor manager</label>
+                        <select id="doneWho"></select>
+                        <span class="hours-note done-who-note" id="doneWhoNote"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="donePad">Floor manager’s initials — draw them with your finger</label>
+                        <canvas id="donePad" class="hours-pad"></canvas>
+                        <button type="button" class="btn btn-secondary" id="donePadClear">Clear initials</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <footer class="overlay-footer spread">
+            <span class="hours-note" id="doneNote"></span>
+            <button class="btn btn-primary" id="doneBtn">✅ Mark done</button>
         </footer>
     </div>
 
@@ -1207,6 +1252,7 @@
                 renderAll();
                 syncOpenDetail();
                 if (hoursCtx) renderHours();
+                if (doneCtx) renderDone();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -1220,6 +1266,7 @@
                 renderAll();
                 syncOpenDetail(); // keep an open detail view consistent (non-disruptive)
                 if (hoursCtx) renderHours();
+                if (doneCtx) renderDone();   // the floor manager's name and initials being drawn are left alone
             }
         });
 
@@ -1533,8 +1580,8 @@
 
             const row = document.createElement('div');
 
-            if (mode === 'upcoming') {
-                row.className = 'task-row upcoming';
+            if (mode === 'upcoming' || mode === 'open') {
+                row.className = 'task-row' + (mode === 'upcoming' ? ' upcoming' : ' still-open');
                 const spacer = document.createElement('span');
                 spacer.className = 'task-check';
                 spacer.setAttribute('aria-hidden', 'true');
@@ -1578,9 +1625,21 @@
                 chip.textContent = shortDate(ev.date);
                 row.appendChild(chip);
             } else if (HOURS_TOOLS.includes(ev.sourceTool) && ev.id) {
-                // Crop and equipment tasks: hours go on the event's labour_map (see "⏱ Hours")
+                if (mode === 'open') {
+                    const due = ev.endDate || ev.date;
+                    const late = Math.round((parseDate(selectedDateStr()) - parseDate(due)) / 86400000);
+                    const chip = document.createElement('span');
+                    chip.className = 'chip chip-overdue';
+                    chip.textContent = `due ${shortDate(due)} · ${late} day${late === 1 ? '' : 's'} overdue`;
+                    row.appendChild(chip);
+                }
+                // Crop and equipment tasks: hours go on the event's labour_map (see "⏱ Hours"), and the floor
+                // manager signs them off as done (see "✅ Mark done")
                 const buildingId = buildingForEvent(ev);
-                if (buildingId) row.appendChild(makeHoursButton({ kind: 'event', buildingId, eventId: ev.id, date: selectedDateStr() }));
+                if (buildingId) {
+                    row.appendChild(makeHoursButton({ kind: 'event', buildingId, eventId: ev.id, date: selectedDateStr() }));
+                    row.appendChild(makeDoneButton(ev, buildingId));
+                }
             }
 
             return row;
@@ -1608,6 +1667,36 @@
             div.textContent = `Scheduled today (${events.length})`;
             parent.appendChild(div);
             for (const ev of events) parent.appendChild(makeEventRow(ev));
+        }
+
+        // "⏰ Still open" divider + this building's crop and equipment tasks that ended before the selected date and
+        // aren't done yet, oldest first, so hours can still be logged on them (on the selected day) until the floor
+        // manager marks them done. Single-building view only. The 10 oldest show; the rest fold under "+ N more".
+        let showAllOpen = false;
+        const OPEN_SHOWN = 10;
+        function stillOpenEvents(dateStr, buildingId) {
+            return DB.calendarEvents
+                .filter(ev => HOURS_TOOLS.includes(ev.sourceTool) && ev.id && ev.date && ev.completed !== true &&
+                    (ev.endDate || ev.date) < dateStr && buildingForEvent(ev) === buildingId)
+                .sort((a, b) => (a.endDate || a.date).localeCompare(b.endDate || b.date) || (a.title || '').localeCompare(b.title || ''));
+        }
+        function appendStillOpenSection(parent, dateStr, buildingId) {
+            const evs = stillOpenEvents(dateStr, buildingId);
+            if (!evs.length) return;
+            const div = document.createElement('div');
+            div.className = 'section-divider overdue';
+            div.textContent = `⏰ Still open (${evs.length})`;
+            div.title = 'Tasks whose day has passed and that the floor manager hasn’t marked done yet';
+            parent.appendChild(div);
+            for (const ev of showAllOpen ? evs : evs.slice(0, OPEN_SHOWN)) parent.appendChild(makeEventRow(ev, 'open'));
+            if (evs.length > OPEN_SHOWN) {
+                const more = document.createElement('button');
+                more.type = 'button';
+                more.className = 'btn btn-secondary open-more';
+                more.textContent = showAllOpen ? 'Show fewer' : `+ ${evs.length - OPEN_SHOWN} more`;
+                more.addEventListener('click', () => { showAllOpen = !showAllOpen; renderAll(); });
+                parent.appendChild(more);
+            }
         }
 
         // "Upcoming" divider + the next calendar events after the selected date
@@ -2290,7 +2379,7 @@
         }
         // Office removals on record for this row and day
         const ctxRemoved = ctx => (DB.dailyBuildings[ctx.buildingId]?.adjustments || [])
-            .filter(a => a.date === ctx.date && (ctx.kind === 'event' ? a.eventId === ctx.eventId : a.code === ctx.code));
+            .filter(a => a.entry && a.date === ctx.date && (ctx.kind === 'event' ? a.eventId === ctx.eventId : a.code === ctx.code));
         const liveHours = list => list.filter(e => e && !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0);
         function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? `${hh}h ${mm}m` : `${hh}h`) : `${mm}m`; }
         // Every entry carries an id, so the office's and a building's hours merge entry by entry (SitkaTools)
@@ -2430,15 +2519,17 @@
             return svg;
         }
 
-        // Initials pad: pointer strokes, stored normalized (0–1) so they draw at any size
-        function sizePad() {
-            const c = $('hoursPad'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        // Initials pads: pointer strokes, stored normalized (0–1) so they draw at any size. Two pads — the hours
+        // view's ('hoursPad' → padStrokes) and the Mark done sign-off's ('donePad' → doneStrokes).
+        const padStrokesOf = id => id === 'donePad' ? doneStrokes : padStrokes;
+        function sizePad(id = 'hoursPad') {
+            const c = $(id), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
             c.width = Math.max(1, Math.round(r.width * dpr));
             c.height = Math.max(1, Math.round(r.height * dpr));
-            drawPad();
+            drawPad(id);
         }
-        function drawPad() {
-            const c = $('hoursPad'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+        function drawPad(id = 'hoursPad') {
+            const c = $(id), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
             ctx.clearRect(0, 0, c.width, c.height);
             ctx.strokeStyle = '#d0d4de';
             ctx.lineWidth = dpr;
@@ -2450,7 +2541,7 @@
             ctx.lineWidth = 2.5 * dpr;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            for (const st of padStrokes) {
+            for (const st of padStrokesOf(id)) {
                 if (st.length < 2) continue;
                 ctx.beginPath();
                 ctx.moveTo(st[0] * c.width, st[1] * c.height);
@@ -2459,8 +2550,8 @@
                 ctx.stroke();
             }
         }
-        function wirePad() {
-            const c = $('hoursPad');
+        function wirePad(id = 'hoursPad') {
+            const c = $(id);
             let stroke = null;
             const at = (e) => {
                 const r = c.getBoundingClientRect();
@@ -2471,15 +2562,15 @@
                 try { c.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
                 const [x, y] = at(e);
                 stroke = [+x.toFixed(3), +y.toFixed(3)];
-                padStrokes.push(stroke);
-                drawPad();
+                padStrokesOf(id).push(stroke);
+                drawPad(id);
             });
             c.addEventListener('pointermove', (e) => {
                 if (!stroke) return;
                 const [x, y] = at(e);
                 if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;   // keep strokes small
                 stroke.push(+x.toFixed(3), +y.toFixed(3));
-                drawPad();
+                drawPad(id);
             });
             const end = () => { stroke = null; };
             c.addEventListener('pointerup', end);
@@ -2545,6 +2636,148 @@
             showToast(sameDay ? 'Entry removed' : 'Entry removed — kept on record as an office adjustment');
         }
 
+        // ---- ✅ Mark done — the floor manager signs a crop / equipment task off as done ----
+        // Sets the event's `completed` (the field SitkaTools' event panel and EmployeeWizard's Tasks tab also set)
+        // and records the sign-off next to it:
+        //   completedBy = { name, initials: { name, strokes }, at, by, day }
+        // Both are floor fields, so a building device saves them in its own file (SitkaTools DbSplit). The floor
+        // managers are the roster employees ticked "Floor manager" in EmployeeWizard (everyone when none is).
+        // Reopening follows the hours rules: a building device may reopen a sign-off it made today; the office any,
+        // and one reopened after its day is kept on record in the building's adjustments log.
+        let doneCtx = null;     // { eventId, buildingId } while the Mark done view is open
+        let doneStrokes = [];   // the floor manager's initials being drawn
+        const doneEvent = () => doneCtx ? DB.calendarEvents.find(e => e.id === doneCtx.eventId) || null : null;
+        const deviceName = by => by === 'office' ? 'the office' : `the ${DB.buildings[by]?.name || by} device`;
+        const doneStamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+        function floorManagers() {
+            const emps = DB.data?._EmployeeWizard?.employees || {};
+            const flagged = Object.keys(emps).filter(n => emps[n]?.floorManager === true).sort((a, b) => a.localeCompare(b));
+            return flagged.length ? { names: flagged, everyone: false } : { names: rosterNames(), everyone: true };
+        }
+        const canReopen = ev => !DeviceView.building ||
+            (!!ev.completedBy?.at && dateToStr(new Date(ev.completedBy.at)) === todayStr() && ev.completedBy.by === DeviceView.building);
+
+        function makeDoneButton(ev, buildingId) {
+            const done = ev.completed === true, sign = ev.completedBy;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'done-btn' + (done ? ' done' : '');
+            btn.textContent = done ? '✅ Done' : '✍️ Mark done';
+            btn.title = done ? (sign?.name ? `Signed off by ${sign.name}${sign.at ? ', ' + doneStamp(sign.at) : ''}` : 'Marked done in SitkaTools or EmployeeWizard (not signed)')
+                : 'Floor manager: sign this task off as done';
+            btn.disabled = !done && selectedDateStr() > todayStr();
+            btn.addEventListener('click', (e) => { e.stopPropagation(); openDone(ev.id, buildingId); });
+            return btn;
+        }
+
+        function openDone(eventId, buildingId) {
+            if (!DB.calendarEvents.some(e => e.id === eventId)) return;
+            doneCtx = { eventId, buildingId };
+            doneStrokes = [];
+            const fm = floorManagers();
+            const who = $('doneWho');
+            who.innerHTML = '';
+            const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
+            add('', '— Pick the floor manager —');
+            for (const n of fm.names) add(n, n);
+            $('doneWhoNote').textContent = fm.everyone ? 'No floor managers are set yet (EmployeeWizard → employee → Floor manager), so everyone on the roster is listed.' : '';
+            renderDone();
+            $('doneOverlay').classList.add('open');
+            sizePad('donePad');
+        }
+
+        function closeDone() {
+            $('doneOverlay').classList.remove('open');
+            doneCtx = null;
+            doneStrokes = [];
+        }
+
+        function renderDone() {
+            const ev = doneEvent();
+            if (!ev) { if (doneCtx) closeDone(); return; }
+            const { emoji, text } = eventEmojiAndText(ev.title);
+            $('doneTitle').textContent = `✅ ${emoji} ${text || ev.title || 'Task'}`;
+            const due = ev.endDate && ev.endDate !== ev.date ? `${shortDate(ev.date)} – ${shortDate(ev.endDate)}` : shortDate(ev.date);
+            $('doneSub').textContent = `${DB.buildings[doneCtx.buildingId]?.name || doneCtx.buildingId} · due ${due}`;
+            const status = $('doneStatus');
+            status.innerHTML = '';
+            const done = ev.completed === true;
+            $('doneForm').hidden = done;
+            $('doneBtn').hidden = done;
+            if (!done) {
+                status.appendChild(mutedLine('Not done yet. The floor manager picks their name and draws their initials to sign it off.'));
+                $('doneNote').textContent = 'Signing it off takes it off ⏰ Still open. Hours can still be logged on it.';
+                return;
+            }
+            const sign = ev.completedBy;
+            const row = document.createElement('div');
+            row.className = 'hours-entry';
+            const who = document.createElement('span');
+            who.className = 'who';
+            who.textContent = sign?.name ? `✅ Signed off by ${sign.name}` : '✅ Marked done in SitkaTools or EmployeeWizard';
+            row.appendChild(who);
+            if (sign?.initials?.strokes?.length) row.appendChild(initialsSvg(sign.initials));
+            if (canReopen(ev)) {
+                const reopen = document.createElement('button');
+                reopen.type = 'button';
+                reopen.className = 'btn btn-secondary';
+                reopen.id = 'doneReopenBtn';
+                reopen.textContent = 'Reopen';
+                reopen.addEventListener('click', reopenDone);
+                row.appendChild(reopen);
+            }
+            const when = document.createElement('span');
+            when.className = 'when';
+            when.textContent = sign?.at ? `${doneStamp(sign.at)} on ${deviceName(sign.by)}` : 'Not signed';
+            row.appendChild(when);
+            status.appendChild(row);
+            $('doneNote').textContent = DeviceView.building
+                ? 'You can reopen a sign-off on the day it was made. After that, ask the office.'
+                : 'Office: a sign-off reopened after its day is kept on record.';
+        }
+
+        function markDone() {
+            const ev = doneEvent();
+            if (!ev || ev.completed === true || selectedDateStr() > todayStr()) return;
+            const name = $('doneWho').value;
+            if (!name) { showToast('Pick the floor manager'); return; }
+            if (!doneStrokes.length) { showToast('The floor manager draws their initials to sign it off'); return; }
+            ev.completed = true;
+            ev.completedBy = {
+                name, initials: { name, strokes: doneStrokes.map(st => st.slice()) },
+                at: new Date().toISOString(), by: DeviceView.building || 'office', day: selectedDateStr()
+            };
+            notifySitkaTools();
+            closeDone();
+            renderAll();
+            showToast(`Marked done — signed off by ${name}`);
+        }
+
+        function reopenDone() {
+            const ev = doneEvent();
+            if (!ev || ev.completed !== true || !canReopen(ev)) return;
+            const sign = ev.completedBy;
+            const { text } = eventEmojiAndText(ev.title);
+            if (!confirm(`Reopen “${text || ev.title || 'this task'}”?${sign?.name ? ` The sign-off by ${sign.name} is removed.` : ''}`)) return;
+            const sameDay = !!sign?.at && dateToStr(new Date(sign.at)) === todayStr();
+            ev.completed = false;
+            delete ev.completedBy;
+            if (!sameDay) {
+                // A later office correction stays on record (with the building, in its own file)
+                const buildings = DB.ensureStructure()._DailyWizard.buildings;
+                const b = buildings[doneCtx.buildingId] || (buildings[doneCtx.buildingId] = { tasks: [] });
+                (b.adjustments || (b.adjustments = [])).push({
+                    at: new Date().toISOString(), by: DeviceView.building || 'office', date: sign?.day || selectedDateStr(),
+                    eventId: ev.id, title: ev.title || '', reopened: sign || null
+                });
+            }
+            notifySitkaTools();
+            renderDone();
+            renderAll();
+            showToast(sameDay ? 'Reopened' : 'Reopened — the sign-off is kept on record as an office adjustment');
+        }
+
         // ---- Views ----
 
         function renderBuildingView(container, buildingId, dateStr) {
@@ -2572,6 +2805,7 @@
                 tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true)));
             }
 
+            appendStillOpenSection(container, dateStr, buildingId);
             appendEventsSection(container, events);
             appendUpcomingSection(container, dateStr, buildingId);
         }
@@ -2709,6 +2943,13 @@
                 if (other) $('hoursOther').focus();
             });
             window.addEventListener('resize', () => { if (hoursCtx) sizePad(); });
+
+            // ✅ Mark done
+            wirePad('donePad');
+            $('doneBackBtn').addEventListener('click', closeDone);
+            $('doneBtn').addEventListener('click', markDone);
+            $('donePadClear').addEventListener('click', () => { doneStrokes = []; drawPad('donePad'); });
+            window.addEventListener('resize', () => { if (doneCtx) sizePad('donePad'); });
 
             renderAll();
         }

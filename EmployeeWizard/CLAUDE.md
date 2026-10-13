@@ -43,7 +43,7 @@ The tool has **four main tabs — Employees, Tasks, 📜 Labour Log and 📊 Rep
 1. **No employee highlighted → Work Week calendar.** A 7-day work-week view showing, for each day of the week, the names of the employees working that specific day (based on their ongoing schedules). The week starts **Monday** (Mon–Sun columns) and shows the **current week only** — no week navigation.
 2. **Employee highlighted → Employee editor:**
    - **Top:** 7 buttons in a row (one for each day of the week) that toggle **green** (works) / **red** (off) to set the days that employee is working, ongoing.
-   - **Middle:** 2 fields — **Name** and **Wage** ($/hour; blank — placeholder "not set" — when the employee has no wage, and saving it blank leaves the wage unset or clears it). Wages are open information — no confirmation step.
+   - **Middle:** 2 fields — **Name** and **Wage** ($/hour; blank — placeholder "not set" — when the employee has no wage, and saving it blank leaves the wage unset or clears it). Wages are open information — no confirmation step. Below them, a **Floor manager** checkbox: floor managers sign crop and equipment tasks off as done in DailyWizard (✅ Mark done).
    - **Bottom:** two buttons — **Save Changes** (to employee) and **Request Time Off**.
 
 **Time-off view** (entered via "Request Time Off"):
@@ -150,6 +150,7 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
     "<name>": {
       "wage": 20,
       "workDays": [1, 3, 5],
+      "floorManager": true,
       "timeOff": []
     }
   },
@@ -165,6 +166,7 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
 - `crops` and `settings` live in Main.json with the roster (the split keeps everything in `_EmployeeWizard` there except wages and `cropCosts`).
 
 - `wage` — $/hour. **Secret wage:** stored in the main JSON DB but **not visible on any dash or report** as a per-person figure; used only for cost math. Wage can be changed at any time. **Optional, no default:** new employees get no `wage` key, and an employee whose wage is blank (e.g. split DB with `Wages.json` not opened) keeps none — the tool never invents one, so a missing wage never turns into a $ figure or a wage change SitkaTools can't save.
+- `floorManager` — `true` for the people who sign tasks off as done in DailyWizard (absent otherwise). DailyWizard's Mark done lists only them; when nobody is ticked, it lists everyone on the roster.
 - `workDays` — ongoing work days of the week (weekday numbers follow `Date.getDay()`: `0`=Sun … `6`=Sat). The UI displays them Monday-first. **New employees default to Mon–Fri** (`[1, 2, 3, 4, 5]`).
 - Employees are keyed by name in this map. **Duplicate names are prevented** — adding an employee whose name already exists is rejected (the name *is* the identity, and labour maps reference it).
 
@@ -203,7 +205,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 - **Entry ids:** every entry has an `id` (`le_` + 10 characters, `newLabourId()`). New entries get one here and in DailyWizard. Older entries get one derived from their content when SitkaTools opens the file. SitkaTools uses them to merge the office's and a building's hours entry by entry (root `CLAUDE.md` → "Split Database").
 - **Changing a signed entry:** when "Add (or update)" changes the hours of an entry that was signed in DailyWizard, the entry keeps a record: `signedHours` (the hours as signed, set the first time), `editedAt` (ISO time) and `editedBy` (`office` or the building id). The tag reads "✍️ signed · changed", and the Labour Log and DailyWizard's hours view show the change. Deleting an entry in the Tasks tab leaves no record.
 - Keys may fall **outside** the event's `[date, endDate]` range: when a single-day event turns into multi-day work, the task editor's "+ Add day" picker records extra days in `labour_map` without touching the event's dates (the task keeps sitting in its original due state until completed). Task hour/cost totals span **all** recorded days, not just the event range.
-- `completed` is set when the task is marked finished from the task editor panel.
+- `completed` is set when the task is marked finished from the task editor panel. DailyWizard's ✅ Mark done also sets it, together with the floor manager's sign-off `completedBy`. Reopening a task here deletes `completedBy`.
 
 ## Man-Hour Tracking
 

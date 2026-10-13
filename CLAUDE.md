@@ -126,7 +126,7 @@ Every calendar event carries a unique, stable `id`, so tools can refer to an eve
 
 Tools that regenerate their events (CropLabourWizard on **Generate**, EquipmentWizard on every resync) rebuild them from scratch. Anything added on top of a generated event is copied onto its replacement with `carryOverAnnotations(previous, fresh, keyOf)`:
 
-- **Annotation fields:** `id`, `completed`, `labour_map` (EmployeeWizard), and the SitkaTools event-panel fields `startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`.
+- **Annotation fields:** `id`, `completed`, `completedBy` (DailyWizard's floor-manager sign-off), `labour_map` (EmployeeWizard), and the SitkaTools event-panel fields `startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`.
 - **Matching:** CropLabourWizard by `taskType` within the lot; EquipmentWizard by `equipmentId + taskId + date` (events saved before `taskId` existed fall back to `equipmentId + title + date`).
 - **Unmatched work records** (`completed` or a non-empty `labour_map`) are never dropped silently: CropLabourWizard asks before a Generate, Clear Schedule or Delete Schedule would delete them (cancel = no changes); EquipmentWizard keeps them on the calendar as maintenance history while their equipment and room still exist.
 
@@ -477,7 +477,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 **Every device opens all the files and saves only its own.** SitkaTools merges them into the usual single-DB shape (`DbSplit.merge`), so every tool works unchanged, and splits it back on save (`DbSplit.split`). The device's role — `office` or a building id — comes from the **page link**: each device bookmarks / adds to its home screen `SitkaTools.html?device=office` or `?device=<building id>` (matched case-insensitively; 🏢 Building Files → **Set this device…** shows the link). Without it, opening the files asks "Which device is this?" and the answer lasts only for that page session. The role is **never stored in the browser** (an older build's stored role is deleted on start).
 
-- **Overlays (building → office records):** a building device can't save Main, so its edits to the floor fields `lots.plantCount / stage / currentRoom` and `calendarEvents[].completed / labour_map` are saved in its own file as `{ value, at }` overlays. On merge, for each field the newest of the office's stamped edit (`Main._fieldStamps`, written when the office changes that field) and every building's overlay wins. An overlay keeps its original `at` while its value is unchanged, and is dropped once the office has superseded it or the record is gone.
+- **Overlays (building → office records):** a building device can't save Main, so its edits to the floor fields `lots.plantCount / stage / currentRoom` and `calendarEvents[].completed / completedBy / labour_map` are saved in its own file as `{ value, at }` overlays. On merge, for each field the newest of the office's stamped edit (`Main._fieldStamps`, written when the office changes that field) and every building's overlay wins. An overlay keeps its original `at` while its value is unchanged, and is dropped once the office has superseded it or the record is gone.
 - **Labour hours merge entry by entry** (since 2026-10-13). `labour_map` is a list per day, and the office and a building can both add to it between saves. Newest-wins on the whole list used to drop the other side's entries (found by the 2026-10-13 test).
   - **Entry ids:** every entry has an `id` (`le_` + 10 characters). DailyWizard and EmployeeWizard give new entries one. Entries saved before ids existed get one derived from their content (`ensureLabourIds`, the same on every device), assigned in `DB.ensureStructure()` and on merge.
   - **A building's overlay** for `labour_map` is `{ value, at, entries: { id: time }, removed: { id: time } }`. `value`/`at` is the whole list, which older builds still use newest-wins. `entries` lists the entries this building added or changed, and `removed` the ones it removed.
@@ -529,7 +529,7 @@ A building device sees only its own building and only what it can save. It appli
   - SitkaTools sends `view: { building }` on `sitkaGit_db` / `sitkaGit_db_update`, and stores the same `view` in the shared working copy. `WorkCopy.apply(db, initial, view)` passes it to the tool's own handler.
   - Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
   - **Office-only tools** (`OFFICE_ONLY: true`: CropLabourWizard, EquipmentWizard, GeneralEvent) cover the page with "Office only" and stop before loading. EquipmentWizard never resyncs there.
-  - **DailyWizard** locks its Building selector to the device's building.
+  - **DailyWizard** locks its Building selector to the device's building. Its floor manager can sign the building's tasks off (✅ Mark done), and may reopen only their own sign-off of the same day.
   - **PaperWizard** lists only the building's lots, hides Configure Sheets, and its Room question and "Start on a chosen day" offer only the building's rooms. Moves between buildings go through Send / Accept.
   - **Read-only lots (PaperWizard):** some lots are view-and-print only on a building device (`lotElsewhere`):
     - a lot whose current room is in another building, even if its flower room is here — its open pages are in that building's file, which this device can't save;
@@ -913,7 +913,7 @@ Any implementation must reproduce this table exactly:
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
-| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs and ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials) |
+| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs, ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done) |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
@@ -1253,7 +1253,7 @@ function populateRoomSelector() {
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in a headless Firefox. It serves this folder on 127.0.0.1 and drives the browser over WebDriver BiDi, with real clicks, real pen strokes on the initials pad and real right-click save links.
 - Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - The tests use a made-up database (`tests/lib/helpers.mjs` → `fixtureDb()`) and never touch real DB files.
-- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; and every tool opening without page errors.
+- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open and ✅ Mark done; and every tool opening without page errors.
 - Run them before a change to saving, merging or the postMessage protocol goes out.
 
 ### JSON Database

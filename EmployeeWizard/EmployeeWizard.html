@@ -483,6 +483,8 @@
         }
 
         .emp-fields input:focus { outline: none; border-color: var(--accent); }
+        .emp-fields .emp-fm { grid-column: 1 / -1; padding-bottom: 0; }
+        .emp-fields .emp-fm input { padding: 0; width: 18px; height: 18px; accent-color: var(--accent); }
 
         .emp-actions {
             display: flex;
@@ -1199,6 +1201,7 @@
                                     <label for="empWageInput">Wage ($/hr)</label>
                                     <input type="number" id="empWageInput" min="0" step="0.5" placeholder="not set">
                                 </div>
+                                <label class="report-chk emp-fm" title="Floor managers sign crop and equipment tasks off as done in DailyWizard"><input type="checkbox" id="empFloorManager"> Floor manager — signs tasks off as done in DailyWizard</label>
                             </div>
                             <div class="emp-actions">
                                 <button type="button" class="btn btn-primary" id="saveEmpBtn">Save Changes</button>
@@ -2089,6 +2092,7 @@
             EMP.editorDays = [...(e?.workDays || [])];
             $('empNameInput').value = name;
             $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
+            $('empFloorManager').checked = e?.floorManager === true;
             setViewMode('editor');
         }
 
@@ -2255,6 +2259,8 @@
 
             if (wageRaw === null) delete emp.wage;
             else emp.wage = wageRaw;
+            if ($('empFloorManager').checked) emp.floorManager = true;
+            else delete emp.floorManager;
             emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
 
             EMP.selectedName = newName;
@@ -3301,6 +3307,7 @@
             const ev = selectedTask();
             if (!ev) return;
             ev.completed = !ev.completed;
+            if (!ev.completed) delete ev.completedBy;   // reopened: DailyWizard's floor-manager sign-off no longer applies
             notifySitkaTools();
             renderTasksTab();
             showToast(ev.completed ? 'Task marked completed' : 'Task reopened');

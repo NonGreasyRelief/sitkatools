@@ -7,7 +7,8 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 1. **Build per-building daily task lists.** The manager defines a set of recurring daily tasks for each building (emoji, name, estimated time, required staff). Task lists are saved directly to this tool's own database key (`_DailyWizard`) — they are *definitions*, not one-off events, and they never touch `calendarEvents`.
 2. **Show the day.** For any date (default: today), the tool renders that building's tasks for that day, followed by that building's scheduled calendar events from the main database (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent) for the same day — giving staff one complete picture of what happens in the building today.
 3. **Check things off.** Every row has a large thumb-friendly checkbox. Checking is **purely informational** — it never writes to the main database and never syncs back to SitkaTools. It exists so floor staff can coordinate on a tablet and the floor manager can direct staff day to day.
-4. **Log hours.** Each daily-task row, and each crop (CropLabourWizard) or equipment (EquipmentWizard) task in "Scheduled today", has a **⏱ Log** button. Staff pick their name, type hours and minutes, and sign with drawn initials. The hours save in the building's own file and feed EmployeeWizard's Tasks tab and Reports (see "⏱ Hours").
+4. **Log hours.** Each daily-task row, and each crop (CropLabourWizard) or equipment (EquipmentWizard) task in "Scheduled today" or "⏰ Still open", has a **⏱ Log** button. Staff pick their name, type hours and minutes, and sign with drawn initials. The hours save in the building's own file and feed EmployeeWizard's Tasks tab and Reports (see "⏱ Hours").
+5. **Keep tasks open until they're done.** A building's crop and equipment tasks whose day has passed stay listed under **⏰ Still open** until the floor manager signs them off with **✍️ Mark done**: their name and drawn initials (see "⏰ Still open and ✅ Mark done").
 
 ### Intended Use
 
@@ -17,9 +18,11 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 
 ### What This Tool Is NOT
 
-- It does **not** create, edit, or delete `calendarEvents`. It reads them to display a building's scheduled crop and equipment tasks for the selected day; the only thing it adds to one is labour hours in its `labour_map` (see "⏱ Hours").
-- It does **not** create, move or complete calendar events. The only thing it writes on an event is labour hours, added to that event's `labour_map`, the same field EmployeeWizard's Tasks tab edits. Chore hours live in its own key (`_DailyWizard.buildings[<id>].labour`).
-- It does **not** persist completion state anywhere — check-offs live only in the open page's memory.
+- It does **not** create, edit, move or delete `calendarEvents`. It reads them to display a building's crop and equipment tasks. On a crop or equipment event it writes only:
+  - labour hours, added to the event's `labour_map` (the same field EmployeeWizard's Tasks tab edits — see "⏱ Hours");
+  - the floor manager's sign-off: `completed` and `completedBy` (see "✅ Mark done").
+- Chore hours live in its own key (`_DailyWizard.buildings[<id>].labour`).
+- Row **check-offs** (the big checkboxes) are still not saved anywhere: they live only in the open page's memory. ✅ Mark done is the saved completion, for crop and equipment tasks.
 
 ## Task Model
 
@@ -107,7 +110,7 @@ buildingForEvent(event):
 - **Title-prefix fallback (last resort):** when neither `roomId` nor a live lot record resolves, the leading room-ID prefix in CLW titles is used — but only if it names an existing room in `DB.rooms`. Strain names or free-form text that merely resemble a room ID never match.
 - **Unattributable events** (GeneralEvent entries with no lot/room, or events whose room/lot can't be resolved, or rooms with no `buildingId`) never appear in a single-building view. In the **All Buildings** view they are collected into a muted "📌 Unassigned / General" section at the bottom so nothing silently disappears.
 - A lot whose rooms span multiple buildings is attributed per-task via the phase rules above — an event shows under exactly one building (the room where that task physically happens).
-- DailyWizard reads `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, and the labour estimate `estStaff` / `estMinutes`. The only field it writes is `labour_map`, when hours are logged on a crop or equipment task.
+- DailyWizard reads `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, and the labour estimate `estStaff` / `estMinutes`. It writes `labour_map` (hours logged on a crop or equipment task) and `completed` / `completedBy` (✅ Mark done).
 
 ## Completion State — Session-Only
 
@@ -145,6 +148,35 @@ Built 2026-10-12 (ROADMAP Phase 1, "Labour in DailyWizard"), following the roadm
 - **Reports:** EmployeeWizard's Reports read chore hours (`rptChoreLabour`) and event hours (`labour_map`): labour mix, labour hours, logged vs scheduled, estimate vs actual, and $ per gram.
   - A temp's typed wage is used for cost.
   - A temp with no wage counts in hours. A crop with such hours is left out of $ figures, the same rule as any missing wage.
+
+## ⏰ Still open and ✅ Mark done
+
+Built 2026-10-13 (user decisions: Still open only in a single building's view, not All Buildings; Mark done prompts for the floor manager's signature).
+
+- **⏰ Still open** (`appendStillOpenSection`), between the daily tasks and "Scheduled today" in a single building's view:
+  - **What it lists:** the building's CropLabourWizard and EquipmentWizard events (with an `id`) whose last day (`endDate || date`) is before the selected date and that aren't `completed`. The building comes from `buildingForEvent`, as for "Scheduled today".
+  - Projections, general events and the All Buildings view never show it.
+  - Oldest first, each with a `due Mon 12 Oct · 1 day overdue` chip and a warning-coloured left edge. The 10 oldest show; **+ N more** unfolds the rest for the session.
+  - Rows have no check-off box, but do have **⏱ Log** and **✍️ Mark done**.
+  - Hours logged there go on the **selected day** (`labour_map[<selected day>]`), even though it's outside the task's dates. That is EmployeeWizard's "+ Add day" convention, so its totals, the Labour Report, the Reports and the Labour Log all count them. The estimate shown is still the task's per-day estimate.
+- **✍️ Mark done** (`makeDoneButton` → the Mark done view), on every crop and equipment row whose building is known: Still open, and Scheduled today in both views.
+  - It shows **✅ Done** once the task is completed (the tooltip names who signed it off).
+  - It is disabled for future dates.
+- **The Mark done view:**
+  - the task, its building and due dates;
+  - **Floor manager:** the roster employees ticked "Floor manager" in EmployeeWizard (`employees[name].floorManager`). When none is ticked, everyone on the roster is listed, with a note saying so;
+  - the floor manager's **initials pad**.
+  - **✅ Mark done** needs a name and at least one stroke. It sets `completed: true` and `completedBy`, then calls `notifySitkaTools()`.
+- **`completedBy`** = `{ name, initials: { name, strokes }, at, by, day }`: the floor manager, their drawn initials (PaperWizard's stroke format), the ISO time, the device (a building id or `office`) and the day the view was on.
+  - It's a floor field like `completed`, so a building device saves it in its own file (root `CLAUDE.md` → "Split Database").
+  - CropLabourWizard and EquipmentWizard carry it over when they regenerate an event.
+  - SitkaTools' event panel shows "Completed — signed off by …".
+  - Un-ticking Completed in SitkaTools (event panel or terminal) or reopening in EmployeeWizard's Tasks tab deletes it. Ticking Completed there doesn't ask for a signature, so such tasks show as "Marked done in SitkaTools or EmployeeWizard (not signed)".
+- **Reopen** (in the Mark done view of a done task) follows the hours rules:
+  - a building device may reopen a sign-off it made itself, today;
+  - the office may reopen any.
+  - Reopening clears `completed` and `completedBy`.
+  - A sign-off the office reopens after its day is kept on record in the building's adjustments log, as `{ at, by, date, eventId, title, reopened: <the sign-off> }`. It has no `entry`, so the hours view and the Labour Log skip it.
 
 ## Database Key — `_DailyWizard`
 
@@ -378,7 +410,7 @@ Sticky footer per suite convention with one addition for this tool:
 - Vanilla HTML/CSS/JavaScript only
 - No network calls of any kind
 - No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage or SitkaTools' shared working copy; saving happens in SitkaTools
-- Reads `calendarEvents`, `rooms`, `buildings`, `lots` (for attribution) and the roster names in `_EmployeeWizard.employees` (for the hours log). Writes `_DailyWizard`, plus labour entries in the `labour_map` of crop and equipment events (a floor field)
+- Reads `calendarEvents`, `rooms`, `buildings`, `lots` (for attribution) and the roster in `_EmployeeWizard.employees` (names for the hours log, `floorManager` for Mark done). Writes `_DailyWizard`, plus labour entries in the `labour_map` and the floor manager's sign-off (`completed` / `completedBy`) on crop and equipment events (floor fields)
 
 ## Deferred Features
 
