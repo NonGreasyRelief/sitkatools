@@ -1536,6 +1536,8 @@
             // Handle live DB updates (e.g., new lots created in SitkaTools,
             // schedules regenerated in CropLabourWizard). The task list re-renders
             // with its scroll position preserved so active editing isn't disrupted.
+            // Only lists and calendars are redrawn — no input or form field is reset,
+            // and nothing is sent back (no notifySitkaTools()), so windows never ping-pong.
             if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
                 DB.data = e.data.payload;
                 DB.ensureStructure();
@@ -1544,6 +1546,9 @@
                 closeDayPicker();
                 populateLotSelector();
                 updateStatusBar();
+                renderEmpList();
+                if (EMP.viewMode === 'workweek') renderWorkweek();
+                else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
                 reconcileSelectedTask();
                 renderTasksTab();
             }
@@ -1738,12 +1743,13 @@
             if (toCount > 0) msg += `\n\nThis will also remove their ${toCount} booked time-off event(s) from the shared calendar.`;
             if (!confirm(msg + '\n\nThis action cannot be undone.')) return;
 
-            delete emps[name];
+            // Purge mirrored time-off calendar events in the same confirm step (confirmed design):
+            // by each booking's calEventId, plus any event with this employee's time-off title (older bookings)
+            const calIds = new Set((emps[name].timeOff || []).map(rec => rec.calEventId).filter(Boolean));
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => !(calIds.has(ev.id) ||
+                (ev.sourceTool === 'EmployeeWizard' && ev.title === `🏖️ Time Off — ${name}`)));
 
-            // Purge mirrored time-off calendar events in the same confirm step (confirmed design)
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(
-                ev => !(ev.sourceTool === 'EmployeeWizard' && ev.title === `🏖️ Time Off — ${name}`)
-            );
+            delete emps[name];
 
             if (EMP.selectedName === name) { EMP.selectedName = null; setViewMode('workweek'); }
 
@@ -1862,7 +1868,14 @@
             const emp = emps[oldName];
             if (newName !== oldName) {
                 if (emps[newName]) { showToast(`"${newName}" already exists — names are unique`); return; }
-                // Rename: move the record and re-point labour-map references on tasks
+                // Rename: retitle the employee's time-off events (and link older bookings to their event by id),
+                // then move the record and re-point labour-map references on tasks
+                for (const rec of emp.timeOff || []) {
+                    const cal = timeoffCalEvent(oldName, rec);
+                    if (!cal) continue;
+                    cal.title = `🏖️ Time Off — ${newName}`;
+                    rec.calEventId = cal.id;
+                }
                 delete emps[oldName];
                 emps[newName] = emp;
                 for (const ev of DB.data.calendarEvents) {
@@ -2049,14 +2062,15 @@
             }
 
             emp.timeOff = emp.timeOff || [];
-            const ev = { id: 'to-' + Date.now(), date: startStr };
+            const calEventId = newEventId();
+            const ev = { id: 'to-' + Date.now(), date: startStr, calEventId };
             if (endStr !== startStr) ev.endDate = endStr;
             if (hoursOff) ev.hoursOff = hoursOff;
             emp.timeOff.push(ev);
 
             // Mirror to the shared calendar (suite convention: omit endDate when equal to date)
             DB.data.calendarEvents.push({
-                id: newEventId(),
+                id: calEventId,
                 title: `🏖️ Time Off — ${name}`,
                 date: startStr,
                 ...(endStr !== startStr ? { endDate: endStr } : {}),
@@ -2102,6 +2116,18 @@
             });
         }
 
+        // The calendar event mirroring one time-off record: by its calEventId, or — for records booked before
+        // calEventId existed — the first EmployeeWizard event with the employee's time-off title and the same dates.
+        function timeoffCalEvent(name, rec) {
+            if (rec.calEventId) return DB.data.calendarEvents.find(c => c.id === rec.calEventId) || null;
+            return DB.data.calendarEvents.find(c =>
+                c.sourceTool === 'EmployeeWizard' &&
+                c.title === `🏖️ Time Off — ${name}` &&
+                c.date === rec.date &&
+                (c.endDate || null) === (rec.endDate || null)
+            ) || null;
+        }
+
         function deleteTimeoffEvent(name, id) {
             const emp = getEmployees()[name];
             if (!emp) return;
@@ -2109,13 +2135,9 @@
             if (idx < 0) return;
             const [ev] = emp.timeOff.splice(idx, 1);
 
-            // Remove the mirrored calendar event
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(c => !(
-                c.sourceTool === 'EmployeeWizard' &&
-                c.title === `🏖️ Time Off — ${name}` &&
-                c.date === ev.date &&
-                (c.endDate || null) === (ev.endDate || null)
-            ));
+            // Remove the mirrored calendar event (only that one — another block on the same day keeps its own)
+            const cal = timeoffCalEvent(name, ev);
+            if (cal) DB.data.calendarEvents = DB.data.calendarEvents.filter(c => c !== cal);
 
             renderTimeoffEventList();
             renderTimeoffCalendar();
@@ -2225,6 +2247,12 @@
 
         function taskHours(ev) { return taskDays(ev).reduce((s, d) => s + dayHours(ev, d), 0); }
         function taskCost(ev) { return taskDays(ev).reduce((s, d) => s + dayCost(ev, d), 0); }
+
+        // Wages live in Wages.json, which only the office opens (root CLAUDE.md → split DB). On a building device,
+        // or with no roster wages loaded, a $ total would be a made-up $20/h — show hours only.
+        function wagesLoaded() {
+            return !DeviceView.building && Object.values(getEmployees()).some(emp => emp?.wage != null);
+        }
 
         function fmtHours(h) {
             h = Number(h) || 0;
@@ -2413,10 +2441,11 @@
                 });
             }
 
+            const showMoney = wagesLoaded();
             $('teDayTotal').textContent =
-                `Day total: ${fmtHours(dayHours(ev, TASK.editDate))} · ${fmtMoney(dayCost(ev, TASK.editDate))}`;
+                `Day total: ${fmtHours(dayHours(ev, TASK.editDate))}` + (showMoney ? ` · ${fmtMoney(dayCost(ev, TASK.editDate))}` : '');
             $('teTaskTotal').textContent =
-                `Task total: ${fmtHours(taskHours(ev))} · ${fmtMoney(taskCost(ev))}`;
+                `Task total: ${fmtHours(taskHours(ev))}` + (showMoney ? ` · ${fmtMoney(taskCost(ev))}` : '');
 
             // Employee dropdown (roster names)
             const sel = $('lfEmpSelect');

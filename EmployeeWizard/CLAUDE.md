@@ -95,9 +95,10 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
 
 **Time-off events** (stored per employee, and mirrored to `calendarEvents`):
 ```json
-{ "id": "string", "date": "YYYY-MM-DD", "endDate": "YYYY-MM-DD | null", "hoursOff": [{ "date": "YYYY-MM-DD", "start": "HH:MM", "end": "HH:MM" }] }
+{ "id": "string", "date": "YYYY-MM-DD", "endDate": "YYYY-MM-DD | null", "hoursOff": [{ "date": "YYYY-MM-DD", "start": "HH:MM", "end": "HH:MM" }], "calEventId": "ev_…" }
 ```
 - `hoursOff` is present only for **partial** book-offs — a list of hour ranges per day. A full-day book-off has no `hoursOff` entry for that day (the whole day counts as off).
+- `calEventId` is the `id` of the mirrored calendar event. Deleting a booking removes exactly that event, so two blocks on the same day stay separate; records booked before `calEventId` existed fall back to title + dates (first match only). Deleting the employee removes their bookings' events by id, plus any event with their time-off title. Renaming an employee retitles their time-off events and links older records to their event by id.
 Each booked time-off also creates a calendar event in `calendarEvents`:
 - `title`: e.g., `"🏖️ Time Off — <Employee Name>"`
 - `date`, and `endDate` only when multi-day (suite convention: omit when equal to `date`)
@@ -129,6 +130,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 ## Man-Hour Tracking
 
 - **Cost per task-day** = Σ (hours × wage) across all entries in that day's labour map — regular employees use their roster wage, temps use their recorded wage.
+- **Hours only without wages:** wages live in `Wages.json`, which only the office opens (root `CLAUDE.md` → "Split Database"). On a building device, or when no roster employee has a `wage`, the task editor's day / task totals show hours only — no $ figure built on a made-up default wage.
 - **Day-to-day tracking:** each day's entries are recorded as work happens; previous days remain editable from the task editor.
 - **Averages:** total hours per task ÷ plant count → average time per plant, enabling comparison across different size rooms.
 - **Plant count source:** a `plantCount` field on the lot in SitkaTools (`lots.<LotID>.plantCount`) — set once at lot creation and shared by all tools. EmployeeWizard reads it for per-plant math; if a lot has no plant count, per-plant figures are unavailable for that lot (reports show totals only).
@@ -154,6 +156,7 @@ This tool is part of the SitkaGit suite. It operates as a standalone single-file
 - Opens as a centered popup from `SitkaTools.html` at **half the main app's viewport width** and **83% of the viewport height**.
 - Receives the DB via postMessage on open; sends updates back after every mutation (no localStorage, sessionStorage, IndexedDB, or cookies).
 - The main app auto-refreshes all views when it receives a `sitkaGit_db_update`.
+- **Live updates the other way:** SitkaTools posts `sitkaGit_db_update` whenever its DB changes (`WorkCopy.LIVE: true`). EmployeeWizard accepts it only from `window.opener` (or its own WorkCopy loader), replaces `DB.data`, applies the view and redraws its lists and calendars — the roster, work week / time-off calendar and task list, keeping the selected lot and task. No input or form field is reset, and it never calls `notifySitkaTools()` in response.
 
 ## UI Convention
 
