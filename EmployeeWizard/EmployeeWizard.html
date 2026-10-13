@@ -1029,7 +1029,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="empWageInput">Wage ($/hr)</label>
-                                    <input type="number" id="empWageInput" min="0" step="0.5" value="20">
+                                    <input type="number" id="empWageInput" min="0" step="0.5" placeholder="not set">
                                 </div>
                             </div>
                             <div class="emp-actions">
@@ -1731,7 +1731,7 @@
             const e = getEmployees()[name];
             EMP.editorDays = [...(e?.workDays || [])];
             $('empNameInput').value = name;
-            $('empWageInput').value = e?.wage ?? 20;
+            $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
             setViewMode('editor');
         }
 
@@ -1744,9 +1744,11 @@
             if (!confirm(msg + '\n\nThis action cannot be undone.')) return;
 
             // Purge mirrored time-off calendar events in the same confirm step (confirmed design):
-            // by each booking's calEventId, plus any event with this employee's time-off title (older bookings)
+            // by each booking's calEventId, each booking's event as timeoffCalEvent finds it (older bookings,
+            // incl. ones still titled with a name from before a rename), plus any event with this employee's time-off title
             const calIds = new Set((emps[name].timeOff || []).map(rec => rec.calEventId).filter(Boolean));
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => !(calIds.has(ev.id) ||
+            const recEvents = new Set((emps[name].timeOff || []).map(rec => timeoffCalEvent(name, rec)).filter(Boolean));
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => !(calIds.has(ev.id) || recEvents.has(ev) ||
                 (ev.sourceTool === 'EmployeeWizard' && ev.title === `🏖️ Time Off — ${name}`)));
 
             delete emps[name];
@@ -1776,7 +1778,7 @@
             const emps = getEmployees();
             if (emps[name]) { showToast(`"${name}" already exists — names are unique`); return; }
 
-            emps[name] = { wage: 20, workDays: [1, 2, 3, 4, 5], timeOff: [] }; // Mon–Fri by default
+            emps[name] = { workDays: [1, 2, 3, 4, 5], timeOff: [] }; // Mon–Fri by default; no wage until one is entered
             $('newEmpName').value = '';
             toggleAddForm(false);
             selectEmployee(name);   // highlight the new employee and open the editor
@@ -1784,7 +1786,7 @@
             renderWorkweek();
             updateStatusBar();
             notifySitkaTools();
-            showToast(`Added ${name} ($20/hr)`);
+            showToast(`Added ${name}`);
         });
 
         // ---- Right-panel view switching (workweek / editor / timeoff) ----
@@ -1860,10 +1862,15 @@
             if (!oldName || !emps[oldName]) return;
 
             const newName = $('empNameInput').value.trim();
-            const wageRaw = parseFloat($('empWageInput').value);
+            // Blank wage = no wage (Wages.json not opened, or cleared) — left unset, never a made-up default.
+            // A number field reads '' for unparseable text too, so badInput is what tells that apart from blank.
+            const wageStr = String($('empWageInput').value).trim();
+            const wageRaw = wageStr === '' ? null : parseFloat(wageStr);
 
             if (!newName) { showToast('Name is required'); return; }
-            if (isNaN(wageRaw) || wageRaw < 0) { showToast('Enter a valid wage ($/hr)'); return; }
+            if ($('empWageInput').validity?.badInput || (wageRaw !== null && (isNaN(wageRaw) || wageRaw < 0))) {
+                showToast('Enter a valid wage ($/hr), or leave it blank'); return;
+            }
 
             const emp = emps[oldName];
             if (newName !== oldName) {
@@ -1889,7 +1896,8 @@
                 }
             }
 
-            emp.wage = wageRaw;
+            if (wageRaw === null) delete emp.wage;
+            else emp.wage = wageRaw;
             emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
 
             EMP.selectedName = newName;
@@ -2118,14 +2126,24 @@
 
         // The calendar event mirroring one time-off record: by its calEventId, or — for records booked before
         // calEventId existed — the first EmployeeWizard event with the employee's time-off title and the same dates.
+        // Failing that, an orphaned time-off event with the same dates: one titled for a name no longer on the
+        // roster (a rename used to move the records but leave the old title) that no booking links by calEventId.
+        // Used only when exactly one fits. Callers mutate only on the user's delete / rename, never on render.
         function timeoffCalEvent(name, rec) {
             if (rec.calEventId) return DB.data.calendarEvents.find(c => c.id === rec.calEventId) || null;
-            return DB.data.calendarEvents.find(c =>
-                c.sourceTool === 'EmployeeWizard' &&
-                c.title === `🏖️ Time Off — ${name}` &&
+            const prefix = '🏖️ Time Off — ';
+            const sameDates = c => c.sourceTool === 'EmployeeWizard' &&
                 c.date === rec.date &&
-                (c.endDate || null) === (rec.endDate || null)
-            ) || null;
+                (c.endDate || null) === (rec.endDate || null);
+            const own = DB.data.calendarEvents.find(c => sameDates(c) && c.title === prefix + name);
+            if (own) return own;
+            const emps = getEmployees();
+            const claimed = new Set(Object.values(emps).flatMap(e => (e?.timeOff || []).map(r => r.calEventId).filter(Boolean)));
+            const orphans = DB.data.calendarEvents.filter(c => sameDates(c) &&
+                typeof c.title === 'string' && c.title.startsWith(prefix) &&
+                !Object.prototype.hasOwnProperty.call(emps, c.title.slice(prefix.length)) &&
+                !claimed.has(c.id));
+            return orphans.length === 1 ? orphans[0] : null;
         }
 
         function deleteTimeoffEvent(name, id) {
