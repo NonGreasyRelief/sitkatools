@@ -568,6 +568,7 @@
         .hours-del { min-width: 44px; min-height: 44px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--danger); font-size: 1rem; cursor: pointer; }
         .hours-total { font-size: 0.9rem; color: var(--text-secondary); text-align: right; }
         .hours-pad { width: 100%; height: 150px; background: #fff; border-radius: var(--radius); touch-action: none; cursor: crosshair; display: block; }
+        #hoursOther, #hoursWage { margin-top: 8px; }
         .hours-card input, .hours-card select { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
         .hours-note { font-size: 0.82rem; color: var(--text-secondary); max-width: 60%; }
 
@@ -783,6 +784,7 @@
                         <label for="hoursWho">Who worked on it</label>
                         <select id="hoursWho"></select>
                         <input type="text" id="hoursOther" placeholder="Name (not on the roster)" autocomplete="off" hidden>
+                        <input type="number" id="hoursWage" placeholder="Their hourly wage, $ (optional — used for labour cost)" min="0" step="0.5" inputmode="decimal" hidden>
                     </div>
                     <div class="editor-row">
                         <div class="form-group">
@@ -1423,7 +1425,7 @@
             minChip.textContent = `⏱ ${task.minutes ?? 0}m`;
             row.appendChild(minChip);
 
-            row.appendChild(makeHoursButton(buildingId, task));
+            row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
 
             if (allowMove) {
                 const moveBtns = document.createElement('div');
@@ -1513,6 +1515,10 @@
                 chip.className = 'chip chip-date';
                 chip.textContent = shortDate(ev.date);
                 row.appendChild(chip);
+            } else if (HOURS_TOOLS.includes(ev.sourceTool) && ev.id) {
+                // Crop and equipment tasks: hours go on the event's labour_map (see "⏱ Hours")
+                const buildingId = buildingForEvent(ev);
+                if (buildingId) row.appendChild(makeHoursButton({ kind: 'event', buildingId, eventId: ev.id, date: selectedDateStr() }));
             }
 
             return row;
@@ -2172,51 +2178,87 @@
             showToast('Task deleted');
         }
 
-        // ---- ⏱ Hours on chores (ROADMAP Phase 1 "Labour in DailyWizard") ----
-        // Staff log who worked on a chore, for how long, and sign it with drawn initials, on the day. The entries
-        // are stored with the building's task list, so they save in that building's own file:
-        //   _DailyWizard.buildings[<id>].labour[<YYYY-MM-DD>][<task code>] =
-        //       [{ employee | temp, hours, initials: { name, strokes }, at, by, removedAt?, removedBy? }]
-        // A building device can remove its own entries on the day they were logged (a same-day correction).
-        // After that only the office can, and an office removal is kept on record (removedAt / removedBy)
-        // instead of deleted. EmployeeWizard's Reports read these hours (rptChoreLabour). Check-offs stay
-        // session-only, as before.
-        let hoursCtx = null;   // { buildingId, code, date } while the hours view is open
+        // ---- ⏱ Hours on chores and on crop / equipment tasks (ROADMAP Phase 1 "Labour in DailyWizard") ----
+        // Staff log who worked on a row, for how long, and sign it with drawn initials, on the day.
+        //  • Chores: stored with the building's task list, so they save in that building's own file:
+        //      _DailyWizard.buildings[<id>].labour[<YYYY-MM-DD>][<task code>] = [entry, …]
+        //  • Crop (CropLabourWizard) and equipment (EquipmentWizard) tasks: added to the event's own labour_map —
+        //      calendarEvents[].labour_map[<YYYY-MM-DD>] = [entry, …] — the field EmployeeWizard's Tasks tab edits and
+        //      the Reports read. It's a floor field, so a building device's entries save in its own file as an
+        //      overlay (SitkaTools DbSplit).
+        //   entry = { employee | temp (+ wage when typed), hours, initials: { name, strokes }, at, by }
+        // A building device can remove an entry it logged today (a same-day correction). After that only the office
+        // can, and the removed entry is kept on record in the building's adjustments log
+        // (_DailyWizard.buildings[<id>].adjustments), so the hours themselves stay clean for every tool that reads them.
+        // Check-offs stay session-only, as before.
+        const HOURS_TOOLS = ['CropLabourWizard', 'EquipmentWizard'];
+        let hoursCtx = null;   // { kind: 'chore' | 'event', buildingId, date, code | eventId } while the hours view is open
         let padStrokes = [];   // the initials being drawn: [[x, y, x, y, …], …], normalized 0–1
 
-        function choreEntries(buildingId, date, code) { return DB.dailyBuildings[buildingId]?.labour?.[date]?.[code] || []; }
-        function choreHours(buildingId, date, code) { return choreEntries(buildingId, date, code).filter(e => !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0); }
+        const ctxEvent = ctx => ctx?.kind === 'event' ? DB.calendarEvents.find(e => e.id === ctx.eventId) || null : null;
+        const ctxTask = ctx => ctx?.kind === 'chore' ? (DB.dailyBuildings[ctx.buildingId]?.tasks || []).find(t => t.code === ctx.code) || null : null;
+        // The live entry list for a row and day; create = make the path when it's missing
+        function ctxEntries(ctx, create = false) {
+            if (ctx.kind === 'event') {
+                const ev = ctxEvent(ctx);
+                if (!ev) return [];
+                if (!create) return Array.isArray(ev.labour_map?.[ctx.date]) ? ev.labour_map[ctx.date] : [];
+                if (!ev.labour_map) ev.labour_map = {};
+                return ev.labour_map[ctx.date] || (ev.labour_map[ctx.date] = []);
+            }
+            const b = DB.dailyBuildings[ctx.buildingId];
+            if (!create) return b?.labour?.[ctx.date]?.[ctx.code] || [];
+            const day = (b.labour || (b.labour = {}))[ctx.date] || (b.labour[ctx.date] = {});
+            return day[ctx.code] || (day[ctx.code] = []);
+        }
+        // Drop the containers a removal left empty
+        function ctxTidy(ctx) {
+            if (ctx.kind === 'event') {
+                const ev = ctxEvent(ctx);
+                if (ev?.labour_map && !(ev.labour_map[ctx.date] || []).length) {
+                    delete ev.labour_map[ctx.date];
+                    if (!Object.keys(ev.labour_map).length) delete ev.labour_map;
+                }
+                return;
+            }
+            const labour = DB.dailyBuildings[ctx.buildingId]?.labour;
+            if (!labour?.[ctx.date]) return;
+            if (!(labour[ctx.date][ctx.code] || []).length) delete labour[ctx.date][ctx.code];
+            if (!Object.keys(labour[ctx.date]).length) delete labour[ctx.date];
+        }
+        // Office removals on record for this row and day
+        const ctxRemoved = ctx => (DB.dailyBuildings[ctx.buildingId]?.adjustments || [])
+            .filter(a => a.date === ctx.date && (ctx.kind === 'event' ? a.eventId === ctx.eventId : a.code === ctx.code));
+        const liveHours = list => list.filter(e => e && !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0);
         function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? `${hh}h ${mm}m` : `${hh}h`) : `${mm}m`; }
         function rosterNames() { return Object.keys(DB.data?._EmployeeWizard?.employees || {}).sort((a, b) => a.localeCompare(b)); }
-        const loggedToday = e => !!e.at && dateToStr(new Date(e.at)) === todayStr();
-        function canRemoveEntry(e) { return !e.removedAt && (!DeviceView.building || loggedToday(e)); }
+        const loggedToday = e => !!e?.at && dateToStr(new Date(e.at)) === todayStr();
+        // Office: any entry. Building device: an entry it logged itself, today.
+        const canRemoveEntry = e => !e.removedAt && (!DeviceView.building || (loggedToday(e) && (!e.by || e.by === DeviceView.building)));
 
-        function makeHoursButton(buildingId, task) {
-            const date = selectedDateStr();
-            const h = choreHours(buildingId, date, task.code);
-            const future = date > todayStr();
+        function makeHoursButton(ctx) {
+            const h = liveHours(ctxEntries(ctx));
+            const future = ctx.date > todayStr();
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'hours-btn' + (h > 0 ? ' logged' : '');
             btn.textContent = h > 0 ? `⏱ ${fmtHoursShort(h)}` : '⏱ Log';
-            btn.title = future ? 'Hours can only be logged for today or earlier' : h > 0 ? 'Hours logged on this chore — tap to review or add' : 'Log who worked on this chore and for how long';
+            btn.title = future ? 'Hours can only be logged for today or earlier' : h > 0 ? 'Hours logged on this — tap to review or add' : 'Log who worked on this and for how long';
             btn.disabled = future;
-            btn.addEventListener('click', (e) => { e.stopPropagation(); openHours(buildingId, task.code, date); });
+            btn.addEventListener('click', (e) => { e.stopPropagation(); openHours(ctx); });
             return btn;
         }
 
-        function openHours(buildingId, code, date) {
-            const task = (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === code);
-            if (!task || date > todayStr()) return;
-            hoursCtx = { buildingId, code, date };
+        function openHours(ctx) {
+            if (ctx.date > todayStr() || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
+            hoursCtx = { ...ctx };
             const who = $('hoursWho');
             who.innerHTML = '';
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
             add('', '— Pick your name —');
             for (const n of rosterNames()) add(n, n);
             add('__other', 'Someone else (not on the roster)…');
-            $('hoursOther').value = '';
-            $('hoursOther').hidden = true;
+            for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
             padStrokes = [];
@@ -2233,35 +2275,50 @@
 
         function renderHours() {
             if (!hoursCtx) return;
-            const { buildingId, code, date } = hoursCtx;
-            const task = (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === code);
-            if (!task) { closeHours(); return; }
-            const est = (task.staff ?? 1) * (task.minutes ?? 0) / 60;
-            $('hoursTitle').textContent = `⏱ ${task.emoji || '📋'} ${task.name}`;
-            $('hoursSub').textContent = `${DB.buildings[buildingId]?.name || buildingId} · ${shortDate(date)}${date === todayStr() ? ' (today)' : ''} · estimate 👥 ${task.staff ?? 1} × ${fmtMinutes(task.minutes ?? 0)}`;
+            const ctx = hoursCtx;
+            let title, est;
+            if (ctx.kind === 'chore') {
+                const task = ctxTask(ctx);
+                if (!task) { closeHours(); return; }
+                title = `${task.emoji || '📋'} ${task.name}`;
+                est = { staff: task.staff ?? 1, minutes: task.minutes ?? 0 };
+            } else {
+                const ev = ctxEvent(ctx);
+                if (!ev) { closeHours(); return; }
+                const { emoji, text } = eventEmojiAndText(ev.title);
+                title = `${emoji} ${text || ev.title || 'Task'}`;
+                est = eventEstimate(ev);
+            }
+            $('hoursTitle').textContent = `⏱ ${title}`;
+            $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? ' (today)' : ''} · ` +
+                (est ? `estimate 👥 ${est.staff} × ${fmtMinutes(est.minutes)}` : 'no estimate') +
+                (ctx.kind === 'event' ? ' · these hours also show in EmployeeWizard’s Tasks tab' : '');
             const list = $('hoursList');
             list.innerHTML = '';
-            const entries = choreEntries(buildingId, date, code);
-            if (!entries.length) list.appendChild(mutedLine('No hours logged on this chore for this day yet.'));
-            entries.forEach((e, i) => list.appendChild(makeHoursEntry(e, i)));
-            const total = choreHours(buildingId, date, code);
-            $('hoursTotal').textContent = total > 0 ? `Total ${fmtHoursShort(total)} · estimate ${fmtHoursShort(est)}` : '';
+            const entries = ctxEntries(ctx), removed = ctxRemoved(ctx);
+            if (!entries.length && !removed.length) list.appendChild(mutedLine('No hours logged for this day yet.'));
+            entries.forEach((e, i) => list.appendChild(makeHoursEntry(e, i, null)));
+            removed.forEach(a => list.appendChild(makeHoursEntry(a.entry || {}, -1, a)));
+            const total = liveHours(entries);
+            $('hoursTotal').textContent = total > 0 ? `Total ${fmtHoursShort(total)}${est ? ` · estimate ${fmtHoursShort(est.staff * est.minutes / 60)}` : ''}` : '';
             $('hoursNote').textContent = DeviceView.building
                 ? 'You can remove an entry on the day you logged it. After that, ask the office.'
-                : 'Office: an entry removed after its day is kept on record as an adjustment.';
+                : 'Office: an entry removed after its day is kept on record.';
         }
 
-        function makeHoursEntry(e, index) {
+        // One entry; `removal` is its record in the adjustments log when the office removed it
+        function makeHoursEntry(e, index, removal) {
             const row = document.createElement('div');
-            row.className = 'hours-entry' + (e.removedAt ? ' removed' : '');
+            row.className = 'hours-entry' + (removal || e.removedAt ? ' removed' : '');
             const who = document.createElement('span');
             who.className = 'who';
             who.textContent = `${e.employee || e.temp || '?'}${e.temp != null ? ' (not on roster)' : ''}`;
             const hrs = document.createElement('span');
             hrs.className = 'hrs';
             hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
-            row.append(who, hrs, initialsSvg(e.initials));
-            if (canRemoveEntry(e)) {
+            row.append(who, hrs);
+            if (e.initials?.strokes?.length) row.appendChild(initialsSvg(e.initials));
+            if (!removal && index >= 0 && canRemoveEntry(e)) {
                 const del = document.createElement('button');
                 del.type = 'button';
                 del.className = 'hours-del';
@@ -2273,7 +2330,10 @@
             const when = document.createElement('span');
             when.className = 'when';
             const stamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            when.textContent = (e.at ? `Logged ${stamp(e.at)}` : '') + (e.removedAt ? ` · removed by the office ${stamp(e.removedAt)}` : '');
+            const parts = [e.at ? `Logged ${stamp(e.at)}` : 'Entered in EmployeeWizard'];
+            const gone = removal?.at || e.removedAt;
+            if (gone) parts.push(`removed by the office ${stamp(gone)}`);
+            when.textContent = parts.join(' · ');
             row.appendChild(when);
             return row;
         }
@@ -2360,20 +2420,19 @@
 
         function addHours() {
             if (!hoursCtx) return;
-            const { buildingId, code, date } = hoursCtx;
-            const whoVal = $('hoursWho').value;
-            const name = whoVal === '__other' ? $('hoursOther').value.trim() : whoVal;
-            if (!name) { showToast(whoVal === '__other' ? 'Type the name of who worked on it' : 'Pick who worked on it'); return; }
+            const ctx = hoursCtx;
+            const whoVal = $('hoursWho').value, isTemp = whoVal === '__other';
+            const name = isTemp ? $('hoursOther').value.trim() : whoVal;
+            if (!name) { showToast(isTemp ? 'Type the name of who worked on it' : 'Pick who worked on it'); return; }
             const h = Math.max(0, parseInt($('hoursH').value, 10) || 0), m = Math.max(0, parseInt($('hoursM').value, 10) || 0);
             const hours = h + m / 60;
             if (hours <= 0) { showToast('Enter the hours and minutes worked'); return; }
             if (hours > 16) { showToast('That’s more than 16 hours — check the entry'); return; }
             if (!padStrokes.length) { showToast('Draw your initials to sign the entry'); return; }
-            const building = DB.ensureStructure()._DailyWizard.buildings[buildingId];
-            if (!building) return;
-            const day = (building.labour || (building.labour = {}))[date] || (building.labour[date] = {});
-            (day[code] || (day[code] = [])).push({
-                ...(whoVal === '__other' ? { temp: name } : { employee: name }),
+            const wage = isTemp ? parseFloat($('hoursWage').value) : NaN;
+            if (ctx.kind === 'chore' && !DB.ensureStructure()._DailyWizard.buildings[ctx.buildingId]) return;
+            ctxEntries(ctx, true).push({
+                ...(isTemp ? { temp: name, ...(wage > 0 ? { wage: Math.round(wage * 100) / 100 } : {}) } : { employee: name }),
                 hours: Math.round(hours * 1000) / 1000,
                 initials: { name, strokes: padStrokes.map(st => st.slice()) },
                 at: new Date().toISOString(),
@@ -2381,8 +2440,7 @@
             });
             notifySitkaTools();
             $('hoursWho').value = '';
-            $('hoursOther').value = '';
-            $('hoursOther').hidden = true;
+            for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
             padStrokes = [];
@@ -2394,21 +2452,24 @@
 
         function removeHours(index) {
             if (!hoursCtx) return;
-            const { buildingId, code, date } = hoursCtx;
-            const labour = DB.dailyBuildings[buildingId]?.labour;
-            const list = labour?.[date]?.[code];
-            const e = list?.[index];
+            const ctx = hoursCtx;
+            const list = ctxEntries(ctx);
+            const e = list[index];
             if (!e || !canRemoveEntry(e)) return;
             if (!confirm(`Remove ${fmtHoursShort(Number(e.hours) || 0)} logged by ${e.employee || e.temp}?`)) return;
             const sameDay = loggedToday(e);
-            if (sameDay) {
-                list.splice(index, 1);   // a same-day correction
-                if (!list.length) delete labour[date][code];
-                if (!Object.keys(labour[date]).length) delete labour[date];
-            } else {
-                e.removedAt = new Date().toISOString();   // a later office correction stays on record
-                e.removedBy = DeviceView.building || 'office';
+            list.splice(index, 1);
+            if (!sameDay) {
+                // A later office correction stays on record (with the building, in its own file)
+                const buildings = DB.ensureStructure()._DailyWizard.buildings;
+                const b = buildings[ctx.buildingId] || (buildings[ctx.buildingId] = { tasks: [] });
+                (b.adjustments || (b.adjustments = [])).push({
+                    at: new Date().toISOString(), by: DeviceView.building || 'office', date: ctx.date,
+                    ...(ctx.kind === 'event' ? { eventId: ctx.eventId, title: ctxEvent(ctx)?.title || '' } : { code: ctx.code }),
+                    entry: e
+                });
             }
+            ctxTidy(ctx);
             notifySitkaTools();
             renderHours();
             renderAll();
@@ -2572,7 +2633,12 @@
             $('hoursBackBtn').addEventListener('click', closeHours);
             $('hoursAddBtn').addEventListener('click', addHours);
             $('hoursPadClear').addEventListener('click', () => { padStrokes = []; drawPad(); });
-            $('hoursWho').addEventListener('change', () => { $('hoursOther').hidden = $('hoursWho').value !== '__other'; if (!$('hoursOther').hidden) $('hoursOther').focus(); });
+            $('hoursWho').addEventListener('change', () => {
+                const other = $('hoursWho').value === '__other';
+                $('hoursOther').hidden = !other;
+                $('hoursWage').hidden = !other;
+                if (other) $('hoursOther').focus();
+            });
             window.addEventListener('resize', () => { if (hoursCtx) sizePad(); });
 
             renderAll();

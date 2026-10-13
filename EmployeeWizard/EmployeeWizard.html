@@ -1339,6 +1339,7 @@
                     <select id="rptPer">
                         <option value="plant" selected>Per plant</option>
                         <option value="sqft">Per sq ft of canopy</option>
+                        <option value="light">Per light</option>
                         <option value="g">Per gram of flower</option>
                         <option value="total">Total</option>
                     </select>
@@ -2673,9 +2674,11 @@
                 list.innerHTML = '<div class="task-empty" style="padding:8px 4px;">No labour recorded for this day yet.</div>';
             } else {
                 list.innerHTML = entries.map((en, i) => {
-                    const who = en.temp != null
-                        ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · $${Number(en.wage) || 0}/hr</span>`
-                        : escapeHtml(en.employee);
+                    const who = (en.temp != null
+                        ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · ${Number(en.wage) > 0 ? `$${Number(en.wage)}/hr` : 'no wage'}</span>`
+                        : escapeHtml(en.employee)) +
+                        // Logged on the floor in DailyWizard, signed with drawn initials
+                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}">✍️ signed</span>` : '');
                     return `<div class="entry-row">
                         <span class="entry-name">${who}</span>
                         <span class="entry-hours">${fmtHours(en.hours)}</span>
@@ -3254,6 +3257,7 @@
         const rptRoomName = id => DB.data.rooms?.[id]?.name || id || '—';
         const rptBuildingName = id => DB.data.buildings?.[id]?.name || id || 'No building';
         const rptCanopy = roomId => { const v = Number(rptSettings().canopySqFt?.[roomId]); return v > 0 ? v : null; };
+        const rptLights = roomId => { const v = Number(DB.data.rooms?.[roomId]?.lightCount); return v > 0 ? v : null; };   // set in SitkaTools' Room Manager
         const rptShiftHours = () => { const v = Number(rptSettings().shiftHours); return v > 0 ? v : 8; };
 
         function rptTaskTypes() { return DB.data._CropLabourWizard?.taskTypes || {}; }
@@ -3418,6 +3422,7 @@
                 flowerRoomId: flowerRoomId || null,
                 buildingId: DB.data.rooms?.[flowerRoomId]?.buildingId || null,
                 canopySqFt: rptCanopy(flowerRoomId),
+                lightCount: rptLights(flowerRoomId),
                 dates: {
                     day0: sched.clone_cut_prep?.date || null, planting: sched.planting?.date || null,
                     transplant: sched.transplant?.date || null, flip: sched.flip?.date || null,
@@ -4032,19 +4037,22 @@
             plant: { label: 'per plant', hours: 'min per plant', money: '$ per plant', yieldUnit: 'g per plant' },
             sqft: { label: 'per sq ft of canopy', hours: 'min per sq ft', money: '$ per sq ft of canopy', yieldUnit: 'g per sq ft' },
             g: { label: 'per gram of flower', hours: 'h per kg of flower', money: '$ per gram of flower', yieldUnit: 'g per plant' },
+            light: { label: 'per light', hours: 'h per light', money: '$ per light', yieldUnit: 'g per light' },
             total: { label: 'in total', hours: 'hours', money: 'labour $', yieldUnit: 'kg of flower' }
         };
-        // A crop's divisor: plants harvested, canopy sq ft or grams of flower (1 for totals); null when unknown
+        // A crop's divisor: plants harvested, canopy sq ft, flower-room lights or grams of flower (1 for totals); null when unknown
         function rptPerDenom(c, per) {
-            const v = per === 'plant' ? c.plants?.harvested : per === 'sqft' ? c.canopySqFt : per === 'g' ? c.weights?.flower : 1;
+            const v = per === 'plant' ? c.plants?.harvested : per === 'sqft' ? c.canopySqFt : per === 'light' ? c.lightCount : per === 'g' ? c.weights?.flower : 1;
             return Number(v) > 0 ? Number(v) : null;
         }
-        const rptPerHours = (h, denom, per) => per === 'total' ? h : per === 'g' ? h * 1000 / denom : h * 60 / denom;
+        // Minutes per plant / sq ft, hours per light, hours per kg of flower
+        const rptPerHours = (h, denom, per) => per === 'total' ? h : per === 'g' ? h * 1000 / denom : per === 'light' ? h / denom : h * 60 / denom;
         // A crop's flower yield in the "Per" unit: kg (total), g per sq ft (needs the room's canopy) or g per plant
         function rptYieldOf(c, per) {
             if (c.weights?.flower == null) return null;
             if (per === 'total') return c.weights.flower / 1000;
             if (per === 'sqft') return c.derived?.gsf ?? null;
+            if (per === 'light') return c.lightCount > 0 ? c.weights.flower / c.lightCount : null;
             return c.derived?.gpp ?? null;
         }
         const rptFmtSmart = v => rN(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0);
@@ -4171,7 +4179,7 @@
             const costed = rptHarvested(M, M.per.from, M.per.to).map(c => ({ c, k: rptCropCost(c), d: rptPerDenom(c, per) }))
                 .filter(x => x.k && x.k.missing === 0 && x.k.cost > 0 && x.c.labour.act > 0 && x.d);
             const people = new Set(costed.flatMap(x => x.k.people));
-            if (!costed.length) return { empty: rEmpty(`No harvested crops with fully-costed hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'plant' ? ' and a plant count' : ''} in this period.`, 'Needs a wage for everyone who logged hours on the crop' + (per === 'g' ? ', and harvest numbers.' : '.')) };
+            if (!costed.length) return { empty: rEmpty(`No harvested crops with fully-costed hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'light' ? ' and a light count (Room Manager)' : per === 'plant' ? ' and a plant count' : ''} in this period.`, 'Needs a wage for everyone who logged hours on the crop' + (per === 'g' ? ', and harvest numbers.' : '.')) };
             if (people.size < RPT_MIN_PEOPLE) return { empty: rEmpty('Hidden: fewer than 3 people logged hours on these crops.', 'A cost from so few people would show their wage.') };
             const denom = rSum(costed, x => x.d), by = { clone: 0, veg: 0, flower: 0, post: 0 };
             for (const { c, k } of costed) {
@@ -4207,7 +4215,7 @@
             const par = rptPareto(M), ovr = rptOverrun(M), mix = rptMix(M), wf = rptWaterfall(M);
             const per = RPT.per;
             const noHours = per === 'total' ? rEmpty('No crop-task hours logged in this period.', 'Hours come from the Tasks tab (labour_map on each crop task).')
-                : rEmpty(`No harvested crops with hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : ''} in this period.`, `Per ${per === 'sqft' ? 'sq ft' : per === 'g' ? 'gram' : 'plant'} uses every hour of the crops harvested in the period. Switch Per to Total to see hours as they were logged.`);
+                : rEmpty(`No harvested crops with hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'light' ? ' and a light count (set in SitkaTools’ Room Manager)' : ''} in this period.`, `Per ${per === 'sqft' ? 'sq ft' : per === 'g' ? 'gram' : per === 'light' ? 'light' : 'plant'} uses every hour of the crops harvested in the period. Switch Per to Total to see hours as they were logged.`);
             const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
             const parSub = !par ? '' : per === 'total'
                 ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of crop-task hours logged in this period. Bars are hours logged; outlines are the estimate.`
@@ -4227,7 +4235,7 @@
             const xOf = c => rptYieldOf(c, per);
             const list = rptHarvested(M, M.per.from, M.per.to).filter(c => xOf(c) != null && c.lab?.potency != null);
             if (list.length < 2) return null;
-            const unit = per === 'total' ? 'kg' : per === 'sqft' ? 'g/sq ft' : 'g/plant';
+            const unit = per === 'total' ? 'kg' : per === 'sqft' ? 'g/sq ft' : per === 'light' ? 'g/light' : 'g/plant';
             const W = 640, H = 380, X0 = 56, X1 = 600, Y0 = 330, Y1 = 30;
             const xn = rNice(Math.min(...list.map(xOf)) * 0.95, Math.max(...list.map(xOf)) * 1.05, 5), yn = rNice(Math.min(...list.map(c => c.lab.potency)) - 0.5, Math.max(...list.map(c => c.lab.potency)) + 0.5, 5);
             const xs = rLin(xn.lo, xn.hi, X0, X1), ys = rLin(yn.lo, yn.hi, Y0, Y1);
@@ -4235,7 +4243,7 @@
             let s = '';
             xn.t.forEach(v => { s += rVl(xs(v), Y1, Y0) + rT(xs(v), Y0 + 18, rN(v, xn.step < 1 ? 1 : 0), 'rv-ax', 'middle'); });
             yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 8, ys(v) + 4, rN(v, yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
-            const xLabel = per === 'total' ? 'Flower per crop (kg) →' : per === 'sqft' ? 'Grams of flower per sq ft of canopy →' : 'Grams of flower per plant →';
+            const xLabel = per === 'total' ? 'Flower per crop (kg) →' : per === 'sqft' ? 'Grams of flower per sq ft of canopy →' : per === 'light' ? 'Grams of flower per light →' : 'Grams of flower per plant →';
             s += rT((X0 + X1) / 2, H - 6, xLabel, 'rv-lbl', 'middle') + `<text x="14" y="${(Y0 + Y1) / 2}" class="rv-lbl" text-anchor="middle" transform="rotate(-90 14 ${(Y0 + Y1) / 2})">Total THC % →</text>`;
             s += rVl(xs(mx), Y1, Y0, 'rv-base') + rHl(X0, X1, ys(my), 'rv-base');
             s += rT(X1 - 6, Y1 + 16, 'KEEP', 'rv-quad', 'end') + rT(X0 + 8, Y1 + 16, 'POTENCY PLAY', 'rv-quad') + rT(X1 - 6, Y0 - 8, 'VOLUME PLAY', 'rv-quad', 'end') + rT(X0 + 8, Y0 - 8, 'REVIEW', 'rv-quad');
@@ -4283,8 +4291,8 @@
             const per = RPT.per === 'g' ? 'total' : RPT.per;
             const list = rptHarvested(M, M.per.from, M.per.to).filter(c => c.weights?.wet > 0 && c.weights?.dry > 0 && c.weights?.flower > 0 && (per === 'total' || rptPerDenom(c, per)));
             if (!list.length) return null;
-            const d = per === 'total' ? 1000 : rSum(list, c => rptPerDenom(c, per));   // grams → kg, g per plant or g per sq ft
-            const unit = per === 'total' ? 'kg' : per === 'plant' ? 'g/plant' : 'g/sq ft';
+            const d = per === 'total' ? 1000 : rSum(list, c => rptPerDenom(c, per));   // grams → kg, or g per plant / sq ft / light
+            const unit = per === 'total' ? 'kg' : per === 'plant' ? 'g/plant' : per === 'light' ? 'g/light' : 'g/sq ft';
             const wet = rSum(list, c => c.weights.wet), dry = rSum(list, c => c.weights.dry), flower = rSum(list, c => c.weights.flower);
             const trim = rSum(list, c => c.weights.trim || 0), total = flower + trim;
             const grades = {};
@@ -4323,8 +4331,9 @@
                 .sort((a, b) => a.dates.harvestStart.localeCompare(b.dates.harvestStart));
             if (per === 'g') per = 'plant';
             if (per === 'sqft' && !list.some(c => c.derived?.gsf != null)) per = 'plant';   // no canopy set yet
+            if (per === 'light' && !list.some(c => c.lightCount > 0)) per = 'plant';      // no light counts in Room Manager yet
             const rooms = [...new Set(list.map(c => c.flowerRoomId))].map(id => ({ id, points: list.filter(c => c.flowerRoomId === id && rptYieldOf(c, per) != null).map(c => ({ c, d: c.dates.harvestStart, v: rptYieldOf(c, per) })) })).filter(r => r.points.length);
-            return { rooms, per, unit: per === 'total' ? 'kg of flower' : per === 'sqft' ? 'g/sq ft' : 'g/plant', useSf: per === 'sqft' };
+            return { rooms, per, unit: per === 'total' ? 'kg of flower' : per === 'sqft' ? 'g/sq ft' : per === 'light' ? 'g/light' : 'g/plant', useSf: per === 'sqft' };
         }
         function rptRoomTrend(M) {
             const T = rptRoomTrendData(M);
@@ -4359,6 +4368,7 @@
                 ['flowerDays', 'Flower days (flip → harvest)', c => c.dates?.flip && c.dates?.harvestStart ? dDiff(c.dates.flip, c.dates.harvestStart) : null],
                 ['plants', 'Plants harvested', c => c.plants?.harvested ?? null],
                 ['density', 'Plants per sq ft of canopy', c => c.plants?.harvested > 0 && c.canopySqFt ? c.plants.harvested / c.canopySqFt : null],
+                ['perLight', 'Plants per light', c => c.plants?.harvested > 0 && c.lightCount ? c.plants.harvested / c.lightCount : null],
                 ['survival', 'Plant survival (%)', c => c.plants?.started > 0 && c.plants?.harvested != null ? c.plants.harvested / c.plants.started * 100 : null],
                 ['temp', 'Flower temperature (°F, average)', fl('temp')], ['rh', 'Flower humidity (% RH, average)', fl('rh')],
                 ['vpd', 'Flower VPD (kPa, average)', fl('vpd')], ['co2', 'Flower CO₂ (ppm, average)', fl('co2')], ['par', 'Flower PAR (average)', fl('par')],
@@ -4378,6 +4388,7 @@
             ['gpp', 'Grams of flower per plant', c => c.derived?.gpp ?? null],
             ['gsf', 'Grams of flower per sq ft', c => c.derived?.gsf ?? null],
             ['gsfy', 'Grams per sq ft per year', c => c.derived?.gsfy ?? null],
+            ['gpl', 'Grams of flower per light', c => c.weights?.flower != null && c.lightCount ? c.weights.flower / c.lightCount : null],
             ['flower', 'Flower yield (kg)', c => c.weights?.flower != null ? c.weights.flower / 1000 : null],
             ['potency', 'Potency (total THC %)', c => c.lab?.potency ?? null],
             ['terpenes', 'Terpenes (total %)', c => c.lab?.terpenes ?? null],
@@ -4420,13 +4431,14 @@
             const sc = rptScatter(M), st = rptStrips(M), ca = rptCascade(M), tr = rptRoomTrend(M), ex = rptExplorer(M);
             const need = rEmpty('Needs harvest numbers.', 'Tag the harvest-log questions with report metrics in PaperWizard → Configure Sheets (see Setup &amp; data).');
             const trSub = !tr ? '' : tr.per === 'sqft' ? 'Flower yield per square foot of canopy, crop by crop.'
+                : tr.per === 'light' ? 'Flower yield per light in the flower room, crop by crop.'
                 : tr.per === 'total' ? 'Flower yield per crop, in kg.'
-                : 'Flower yield per plant, crop by crop.' + (RPT.per === 'sqft' ? ' Set canopy sq ft in Setup &amp; data to see it per sq ft.' : '');
+                : 'Flower yield per plant, crop by crop.' + (RPT.per === 'sqft' ? ' Set canopy sq ft in Setup &amp; data to see it per sq ft.' : RPT.per === 'light' ? ' Set each room’s light count in SitkaTools’ Room Manager to see it per light.' : '');
             return `<div class="rpt-grid">` +
                 rCard({ title: 'Which strains should we keep growing?', chips: ['harvest'], sub: sc ? `Each dot is a harvested crop in this period, ${rEsc(sc.unit)} against potency. Rings mark the three most-grown strains’ averages; the median lines split the field into four calls.` : '', body: sc ? sc.svg : need, table: sc?.table, legend: sc?.legend, source: 'Flower yield (follows Per) · harvest.potency' }) +
                 rCard({ title: 'How consistent is each strain?', chips: ['harvest'], sub: st ? 'Every crop’s potency and terpene result, with the range and the median (white tick). Not affected by Per.' : '', body: st ? st.svg : need, table: st?.table, source: 'harvest.potency · harvest.terpenes' }) +
                 rCard({ title: 'Where does the weight go between harvest and processing?', chips: ['harvest'], sub: ca ? `${ca.n} crop${ca.n > 1 ? 's' : ''} harvested in this period, in ${rEsc(ca.unit)}. Dry weight is <b>${rPct(ca.dryDown, 1)}</b> of wet weight; flower is <b>${rPct(ca.trimOut, 1)}</b> of dry weight.` : '', body: ca ? ca.svg : need, table: ca?.table, legend: ca?.legend, source: 'harvest.wetWeight → harvest.dryWeight → bigs + mids + smalls + popcorn (+ trim = total yield)' }) +
-                rCard({ title: 'Is any room slipping?', chips: ['harvest'], sub: trSub, body: tr ? tr.svg : need, table: tr?.table, legend: tr?.legend, source: tr?.useSf ? 'Flower yield ÷ canopy sq ft (Setup & data)' : tr?.per === 'total' ? 'Flower yield per crop' : 'Flower yield ÷ plants harvested' }) +
+                rCard({ title: 'Is any room slipping?', chips: ['harvest'], sub: trSub, body: tr ? tr.svg : need, table: tr?.table, legend: tr?.legend, source: tr?.useSf ? 'Flower yield ÷ canopy sq ft (Setup & data)' : tr?.per === 'light' ? 'Flower yield ÷ the flower room’s lights (Room Manager)' : tr?.per === 'total' ? 'Flower yield per crop' : 'Flower yield ÷ plants harvested' }) +
                 rCard({ wide: true, title: 'What drives yield?', chips: ['harvest', 'tags'], control: ex.control, sub: ex.sub, body: ex.body, table: ex.table, legend: ex.legend, source: 'Harvested crops in the period · grow-log averages are over the flower phase (flip → harvest)' }) +
                 `</div>`;
         }
@@ -4685,7 +4697,7 @@
         }
         function rptSetup(M) {
             const ew = DB.data._EmployeeWizard || {}, saved = ew.crops || {};
-            const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n"><input type="number" min="0" step="10" class="rpt-num" data-canopy="${rEsc(id)}" value="${rptCanopy(id) ?? ''}" placeholder="sq ft"></td></tr>`).join('');
+            const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n"><input type="number" min="0" step="10" class="rpt-num" data-canopy="${rEsc(id)}" value="${rptCanopy(id) ?? ''}" placeholder="sq ft"></td><td class="n">${rptLights(id) ?? '<span class="rpt-muted">not set</span>'}</td></tr>`).join('');
             const live = M.crops.filter(c => !c.closed && c.dates?.harvestStart).sort((a, b) => b.dates.harvestStart.localeCompare(a.dates.harvestStart));
             const closed = M.crops.filter(c => c.closed).sort((a, b) => (b.dates?.harvestStart || '').localeCompare(a.dates?.harvestStart || ''));
             const status = c => {
@@ -4720,7 +4732,7 @@
             }).join('');
             const ready = live.filter(c => c.dates.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
             return `<div class="rpt-grid">` +
-                rCard({ title: 'Canopy area of each flower room', sub: 'Used for grams per square foot. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: '_EmployeeWizard.settings.canopySqFt' }) +
+                rCard({ title: 'Canopy area and lights of each flower room', sub: 'Canopy is used for grams per square foot; lights for “Per light”. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager, where each room’s light count is set.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th><th class="n">Lights</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: '_EmployeeWizard.settings.canopySqFt · rooms.<id>.lightCount (Room Manager)' }) +
                 rCard({ title: 'Shift length', sub: 'Roster capacity = work days × this many hours, less booked time off and BC holidays.', body: `<label class="rpt-inline">Hours per shift <input type="number" min="1" max="16" step="0.5" class="rpt-num" id="rptShiftInput" value="${rptShiftHours()}"></label>`, source: '_EmployeeWizard.settings.shiftHours' }) +
                 rCard({ wide: true, title: 'Crop summaries — keep closed-out lots in the charts', sub: `Close-out moves a lot’s events and paperwork to its archive file. A saved summary (dates, rooms, plants, hours by task and person, the harvest numbers and grow-log averages — never wages) stays in Main.json for ${RPT_KEEP_MONTHS} months so the trends keep that crop. While Wages.json is open, saving also freezes the crop’s labour cost (kept in Wages.json), so later raises don’t change it. Save a lot once it has shipped, and update it if numbers change before close-out. A lot closed without one can be brought back from its archive file.`,
                     control: `<button type="button" class="rpt-tbtn" id="rptSaveAll"${ready.length ? '' : ' disabled'}>💾 Save ${ready.length} shipped</button><button type="button" class="rpt-tbtn" id="rptImportBtn">📂 Import archived lots</button>`,

@@ -16,7 +16,9 @@ Reports is the third tab (**Employees · Tasks · 📊 Reports**). It's office o
   - **Period:** last 3, 6, 12, 24 or 36 months, or year to date.
   - **Building, Flower room, Strain.**
   - Every tile compares against the **previous period of the same length**.
-  - **Per:** plant (default), sq ft of canopy, gram of flower, or total. It changes hours by task, labour $ by phase, the strain scorecard, the weight cascade and the room trend. Every other card says it isn't affected. Per gram shows hours per kg, because hours per gram are too small to read.
+  - **Per:** plant (default), sq ft of canopy, light, gram of flower, or total. It changes hours by task, labour $ by phase, the strain scorecard, the weight cascade and the room trend. Every other card says it isn't affected.
+    - Per gram shows hours per kg, because hours per gram are too small to read.
+    - Per light shows hours per light and g per light, using the flower room's **light count**, set in SitkaTools' Room Manager (`rooms.<id>.lightCount`).
 - **⤢ Expand:** grows the popup to the full screen. Cards then lay out two to a row.
 - **🖨️ Board pack:** opens the six report pages, with the current filters, in a print-ready window:
   - light theme, Letter landscape, one report page per sheet;
@@ -105,13 +107,14 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 
 | Source | Used for |
 |---|---|
-| CropLabourWizard events: `labour_map`, `estStaff` / `estMinutes`, `completed`, `taskType`, `roomPhase` | hours, estimates, the Gantts, schedule dates |
+| CropLabourWizard events: `labour_map` (entered in the Tasks tab, or logged and signed in DailyWizard), `estStaff` / `estMinutes`, `completed`, `taskType`, `roomPhase` | hours, estimates, the Gantts, schedule dates |
 | CropProjection events | projected room stays, future labour demand, harvest forecast |
 | Other events with a `labour_map` (EquipmentWizard, …) | "equipment & other" hours and cost |
 | `_EmployeeWizard.employees`: `workDays`, `timeOff`, `wage` (wages only while Wages.json is open) | capacity, cost |
 | `_PaperWizard.wizards[*].questions[*].metric` / `metricUnit` + `_PaperWizard.entries` | harvest numbers, grow-log series, plant counts (🌱 plant-count questions need no tag) |
 | `_DailyWizard.buildings[*].tasks` (minutes × staff, recurrence) | chore hours in the demand forecast |
-| `_DailyWizard.buildings[*].labour` (logged in DailyWizard with drawn initials) | chore hours in the labour mix, labour hours, logged vs scheduled, and the chores share of $ per gram. Office-removed entries (`removedAt`) don't count. |
+| `_DailyWizard.buildings[*].labour` (logged in DailyWizard with drawn initials) | chore hours in the labour mix, labour hours, logged vs scheduled, and the chores share of $ per gram. Entries the office removed are gone from it (kept only in `_DailyWizard.buildings[*].adjustments`). |
+| `rooms.<id>.lightCount` (SitkaTools Room Manager) | Per light; saved on each crop summary as `lightCount` |
 | `_EmployeeWizard.crops` | closed-out lots |
 | `_EmployeeWizard.settings` | canopy sq ft, shift length |
 | `_CropLabourWizard.taskTypes` | task names and order, and the cost phase of each task |
@@ -124,7 +127,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 {
   version: 1, lotId, strain, parentLotId, savedAt,
   rooms: { cloning, veg, flower, dry, trim },            // names, as on the lot
-  flowerRoomId, buildingId, canopySqFt,
+  flowerRoomId, buildingId, canopySqFt, lightCount,           // lightCount: the flower room's lights (Room Manager)
   dates: { day0, planting, transplant, flip, harvestStart, harvestEnd, tankClean, bucking, trimStart, trimEnd, ship },
   labour: { est, act, temp, tempCost, tempNoWage,
             byPerson: { "<employee>": h, "temp:<name>": h },        // hours only — never wages
@@ -155,7 +158,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 | `rptHours`, `rptDoneTasks`, `rptAgg`, `rptCropCost`, `rptOtherCost`, `rptCapacity` | Labour hours by work date, completed tasks with estimates, headline numbers, costs with today's wages, roster capacity |
 | `rptOtherLabour` / `rptChoreLabour` | Non-crop labour: equipment and other events with a `labour_map`, and the chore hours logged in DailyWizard |
 | `rptOverview` … `rptSetup` | One function per page |
-| `RPT_PER`, `rptPerDenom`, `rptPerHours`, `rptYieldOf` | The Per switch: each crop's divisor (plants harvested, canopy sq ft, grams of flower) and the unit labels |
+| `RPT_PER`, `rptPerDenom`, `rptPerHours`, `rptYieldOf` | The Per switch: each crop's divisor (plants harvested, canopy sq ft, flower-room lights, grams of flower) and the unit labels |
 | `rptExploreMeasures`, `RPT_OUTCOMES`, `rptExplorer` | What drives yield? Measures include labour per plant and per task, flower days, density, survival, flower-phase climate and feed averages, water and nutrient per plant, and IPM days. Least-squares line and Pearson r. |
 | `rptBoardPack`, `RPT_PRINT_CSS` | The board pack window and its light print theme |
 | `rCard`, `rSvg`, `rT`, `rRect`, `rNice`, `rLin` … | Chart kit |
@@ -209,7 +212,7 @@ Answers are parsed leniently: `"1,250"`, `"12 kg"` and `"24.0"` all read as numb
 | **Estimate accuracy** | Σ actual ÷ Σ estimated, over completed tasks that have both, planned in the period |
 | **Suggested estimate** | the recipe's staff × (minutes × median actual/estimate ratio of the last 8 crops), rounded to 5 min. Shown once a task has 3+ crops. Recipes are changed in CropLabourWizard, never here. |
 | **Labour cost** | staff hours × roster wage + temp hours × their own wage, or a closed lot's frozen cost. A crop with any hours that have no wage is left out of $ figures. |
-| **Per (normalized)** | Plant / sq ft / gram use the crops **harvested in the period**: every hour (or $) on those crops ÷ Σ plants harvested, Σ canopy sq ft or Σ grams of flower. Total shows hours as logged by work date. |
+| **Per (normalized)** | Plant / sq ft / light / gram use the crops **harvested in the period**: every hour (or $) on those crops ÷ Σ plants harvested, Σ canopy sq ft, Σ flower-room lights or Σ grams of flower. Hours read as minutes per plant or sq ft, hours per light, and hours per kg. Total shows hours as logged by work date. |
 | **r (What drives yield?)** | Pearson correlation over harvested crops in the period with both values. Below 0.2 it reads "no clear link", below 0.4 weak, below 0.6 moderate, otherwise strong. Under 8 crops it reads "too few to tell". |
 | **Labour $/g, direct** | Σ crop cost ÷ Σ flower, for harvested crops in the period |
 | **Labour $/g, fully loaded** | direct + (equipment and chore cost in the period ÷ the same flower) |
@@ -248,6 +251,5 @@ Answers are parsed leniently: `"1,250"`, `"12 kg"` and `"24.0"` all read as numb
 
 ## 9. Not built yet
 
-- **Hours on crop and equipment rows in DailyWizard:** today those hours are entered in EmployeeWizard's Tasks tab. Chore hours are logged in DailyWizard and already feed the reports.
 - **Lab results card:** only if potency and terpenes aren't on a controlled form. They can also be tagged on any sheet, a lab-results sheet included.
 - **Data Health page:** partly covered today by Needs attention and the Setup & data tables.

@@ -74,6 +74,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "createdDate": "YYYY-MM-DD",
       "assignedLots": ["<LotID>"],
       "isFlowering": "boolean",       // Crop Projection eligibility flag
+      "lightCount": "number | null",  // lights in the room — EmployeeWizard Reports' "Per light" (Room Manager)
       "buildingId": "string | null"   // building the room is in (also tracked in buildings.<buildingId>.assignedRooms)
     }
   },
@@ -429,7 +430,7 @@ Include these styles in SitkaTools.html:
 The central hub with two modes:
 
 1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database. The create-lot form assigns all five destination rooms — cloning, veg, flower (destination), **dry**, and **trim** (dry rooms double as trim rooms; the two fields may point at the same or different rooms) — plus a start-room choice (clone room by default, or veg room for purchased clones that skip cloning). The lot's live `currentRoom` starts from that choice and is maintained by PaperWizard when its logs record room moves. Only `destRoom` syncs to `rooms.<roomId>.assignedLots`; the other room fields are names stored on the lot (renaming/deleting a room nulls them out on affected lots).
-2. **Room Manager:** Create rooms (with an optional flowering flag) and buildings, then assign rooms to buildings. A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
+2. **Room Manager:** Create rooms (with an optional flowering flag and light count) and buildings, then assign rooms to buildings. A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
 3. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
 4. **DB Folder Mode (Chrome/Edge):** the **📁 Folder** header button and the start screen open the DB straight from the OneDrive-synced SharePoint folder (`showDirectoryPicker`). Opening loads the newest `DB-YY-MM-DD.json` in the folder, and **💾 Save DB** writes today's `DB-YY-MM-DD.json` back into it with one click. Before writing, Save re-scans the folder. If a newer day's DB file exists, or the file it opened was re-saved from elsewhere (content hash differs), it never overwrites: it asks, then writes a separate `DB-YY-MM-DD-conflict-HHMM.json`. Opening warns about same-day copies such as OneDrive's `DB-YY-MM-DD-PCNAME.json` conflict files. Up to 5 recent folders are remembered (most recent offered first on the start screen; the rest in the 📁 menu). Loading a file with 📂 Load DB switches folder mode off, and Save DB goes back to the download / Save-dialog flow. Browsers without `showDirectoryPicker` never show the folder UI.
 
@@ -452,7 +453,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 |---|---|---|
 | `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries and report settings (`_EmployeeWizard.crops` / `.settings`), recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
 | `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }`. `cropCosts` is the labour cost frozen with EmployeeWizard's crop summaries: money, so it stays out of Main. |
-| `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list and the chore hours logged there), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
+| `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list, the chore hours logged there, and the office's adjustments log), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
 
 **Every device opens all the files and saves only its own.** SitkaTools merges them into the usual single-DB shape (`DbSplit.merge`), so every tool works unchanged, and splits it back on save (`DbSplit.split`). The device's role — `office` or a building id — comes from the **page link**: each device bookmarks / adds to its home screen `SitkaTools.html?device=office` or `?device=<building id>` (matched case-insensitively; 🏢 Building Files → **Set this device…** shows the link). Without it, opening the files asks "Which device is this?" and the answer lasts only for that page session. The role is **never stored in the browser** (an older build's stored role is deleted on start).
@@ -886,7 +887,7 @@ Any implementation must reproduce this table exactly:
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
-| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs and ⏱ hours logged on chores (name, hours, drawn initials) |
+| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs and ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials) |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.

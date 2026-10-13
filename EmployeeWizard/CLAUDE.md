@@ -100,7 +100,7 @@ The full spec, the metric list, the definitions and the **harvest-log hook-up st
   - **Rooms & Environment:** climate per lot and the pest heat map.
   - **Forecast:** labour demand vs roster capacity, and the 6-month harvest forecast.
   - **⚙️ Setup & data:** canopy sq ft, shift length, crop summaries with archive import, and the metric hook-up table.
-- **Filters:** a filter row (period, building, flower room, strain, **Per** plant / sq ft / gram / total) scopes every page. Comparisons are always against the previous period of the same length.
+- **Filters:** a filter row (period, building, flower room, strain, **Per** plant / sq ft / light / gram / total) scopes every page. Per light uses each flower room's light count from SitkaTools' Room Manager. Comparisons are always against the previous period of the same length.
 - **🖨️ Board pack:** opens the report pages in a print-ready window (light theme, Letter landscape, a tick box per page).
 - **What drives yield?** (Yield & Quality page): any per-crop measure against an outcome, with a fitted line and r.
 - **Reads every tool's data, read-only** (user decision 2026-10-12): calendar events and `labour_map`, the roster, CropLabourWizard / CropProjection schedules and estimates, PaperWizard answers to questions tagged with a report metric (`question.metric`), DailyWizard chore lists. It writes only `_EmployeeWizard.crops` and `_EmployeeWizard.settings`.
@@ -171,6 +171,7 @@ Tasks are calendar events created by Labour wizards. EmployeeWizard adds a `labo
 }
 ```
 - `labour_map` keys are ISO dates; each value records who worked that day and for how long. Regular employees reference roster names (wage resolved from the roster at report time); temp entries carry their own name + wage inline.
+- **Hours logged on the floor:** DailyWizard adds entries to the same `labour_map` when staff log hours on a crop or equipment task. Those entries also carry `initials` (`{ name, strokes }`), `at` and `by`; a DailyWizard temp may have no `wage`. The Tasks tab lists them with a **✍️ signed** tag (and "no wage" for such a temp), and edits or deletes them like any other entry.
 - Keys may fall **outside** the event's `[date, endDate]` range: when a single-day event turns into multi-day work, the task editor's "+ Add day" picker records extra days in `labour_map` without touching the event's dates (the task keeps sitting in its original due state until completed). Task hour/cost totals span **all** recorded days, not just the event range.
 - `completed` is set when the task is marked finished from the task editor panel.
 
