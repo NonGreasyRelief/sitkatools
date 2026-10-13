@@ -806,6 +806,17 @@
             return $('dateInput').value || todayStr();
         }
 
+        // The date shown follows today while it is still the one set automatically: a tablet left
+        // open overnight moves to the new day. A hand-picked date is left alone.
+        let autoDate = null; // the date last set automatically
+        function rollToToday() {
+            const today = todayStr();
+            if (!autoDate || today === autoDate || $('dateInput').value !== autoDate) return;
+            autoDate = today;
+            $('dateInput').value = today;
+            renderAll();
+        }
+
         // ---- Toast ----
         let toastTimer = null;
         function showToast(msg) {
@@ -1303,7 +1314,8 @@
             return wrap;
         }
 
-        function makeTaskRow(buildingId, task, index, total, allowMove) {
+        // prevCode / nextCode: the codes of the rows shown just above / below this one (null at the ends)
+        function makeTaskRow(buildingId, task, prevCode, nextCode, allowMove) {
             const dateStr = selectedDateStr();
             const key = `${dateStr}:${task.code}`;
             const row = document.createElement('div');
@@ -1350,16 +1362,16 @@
                 up.type = 'button';
                 up.className = 'move-btn';
                 up.textContent = '▲';
-                up.disabled = index === 0;
+                up.disabled = !prevCode;
                 up.title = 'Move up';
-                up.addEventListener('click', () => moveTask(buildingId, index, -1));
+                up.addEventListener('click', () => moveTask(buildingId, task.code, prevCode));
                 const down = document.createElement('button');
                 down.type = 'button';
                 down.className = 'move-btn';
                 down.textContent = '▼';
-                down.disabled = index === total - 1;
+                down.disabled = !nextCode;
                 down.title = 'Move down';
-                down.addEventListener('click', () => moveTask(buildingId, index, +1));
+                down.addEventListener('click', () => moveTask(buildingId, task.code, nextCode));
                 moveBtns.appendChild(up);
                 moveBtns.appendChild(down);
                 row.appendChild(moveBtns);
@@ -1409,12 +1421,15 @@
         }
 
         // Reorder a task within its building's array (definition mutation → sync).
-        function moveTask(buildingId, index, dir) {
+        // Swaps the two tasks by code: the row shown next to it may not be its neighbour in the
+        // full list when some tasks don't run on the selected date.
+        function moveTask(buildingId, code, otherCode) {
             const tasks = DB.dailyBuildings[buildingId]?.tasks;
             if (!tasks) return;
-            const j = index + dir;
-            if (j < 0 || j >= tasks.length) return;
-            [tasks[index], tasks[j]] = [tasks[j], tasks[index]];
+            const i = tasks.findIndex(t => t.code === code);
+            const j = tasks.findIndex(t => t.code === otherCode);
+            if (i === -1 || j === -1 || i === j) return;
+            [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
             notifySitkaTools();
             renderAll();
         }
@@ -1857,9 +1872,12 @@
         }
 
         // Keep an open detail view consistent with a freshly delivered DB
-        // (closes itself if its task no longer exists).
+        // (closes itself if its task no longer exists). Skipped while a step's text is being
+        // typed — re-rendering would wipe it; finishing the edit re-renders with the fresh DB.
         function syncOpenDetail() {
-            if ($('detailOverlay').classList.contains('open')) renderDetail();
+            if (!$('detailOverlay').classList.contains('open')) return;
+            if (document.querySelector('#stepsList .step-text-input')) return;
+            renderDetail();
         }
 
         function renderDetail() {
@@ -1941,14 +1959,18 @@
             input.value = task.steps[index].text || '';
             input.placeholder = 'Step instruction…';
 
+            const bid = detailBuildingId, code = task.code;
             let done = false;
             const finish = (commit) => {
                 if (done) return;
                 done = true;
                 if (commit) {
                     const v = input.value.trim();
-                    if (v !== (task.steps[index].text || '')) {
-                        task.steps[index].text = v;
+                    // Look the task up again: a live DB update while typing replaced the `task` captured above
+                    const step = (DB.dailyBuildings[bid]?.tasks || []).find(t => t.code === code)?.steps?.[index];
+                    if (!step) showToast('Step not saved — the task was changed elsewhere');
+                    else if (v !== (step.text || '')) {
+                        step.text = v;
                         notifySitkaTools(); // step mutation → sync
                         showToast(v ? 'Step updated' : 'Step text cleared');
                     }
@@ -2063,7 +2085,7 @@
             } else if (tasks.length === 0) {
                 container.appendChild(mutedLine('No daily tasks scheduled for this date.'));
             } else {
-                tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, i, tasks.length, true)));
+                tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true)));
             }
 
             appendEventsSection(container, events);
@@ -2095,7 +2117,7 @@
                 if (tasks.length === 0) {
                     section.appendChild(mutedLine('No daily tasks for this date.'));
                 } else {
-                    tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, 0, tasks.length, false)));
+                    tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, null, null, false)));
                 }
 
                 appendEventsSection(section, events);
@@ -2150,10 +2172,15 @@
 
         // ---- Init ----
         function init() {
-            $('dateInput').value = todayStr();
+            autoDate = todayStr();
+            $('dateInput').value = autoDate;
 
             $('buildingSelect').addEventListener('change', renderAll);
             $('dateInput').addEventListener('change', renderAll);
+            // Move to the new day past midnight: tab shown again, window focused, or once a minute
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') rollToToday(); });
+            window.addEventListener('focus', rollToToday);
+            setInterval(rollToToday, 60000);
             $('resetDayBtn').addEventListener('click', resetDay);
             $('closeToolBtn').addEventListener('click', () => window.close());
 

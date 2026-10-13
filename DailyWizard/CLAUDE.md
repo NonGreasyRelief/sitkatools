@@ -185,7 +185,7 @@ Opened by itself (no SitkaTools on the device), it shows "Open this tool from Si
 
 ### Standard postMessage Pattern
 
-DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor.
+DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor. An open task detail view refreshes too, except while a step's text is being typed: it refreshes when that edit ends, and the edit is written into the fresh DB.
 
 ## UI Convention
 
@@ -214,7 +214,7 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 
 - **Logo:** `📋 DailyWizard` on the left.
 - **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") the selector holds only that building and is locked.
-- **Date input** (`<input type="date">`): defaults to today. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
+- **Date input** (`<input type="date">`): defaults to today, and follows today while it still shows the date it set itself — a tablet left open overnight moves to the new day (checked when the window gets focus, when the tab is shown again, and once a minute). A hand-picked date is left alone. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
 
 ### Status Bar
 
@@ -229,7 +229,7 @@ Each row, left to right:
 3. **Task name** — tapping anywhere else on the row opens the task's **detail view**.
 4. **Code chip** — small monospace muted chip (e.g., `j234`).
 5. **Labour chips** — `👥 {staff}` and `⏱ {minutes}m`.
-6. **Move buttons** `▲ ▼` — single-building mode only; disabled at the list ends. Hidden in All Buildings mode (ordering is per-building).
+6. **Move buttons** `▲ ▼` — single-building mode only; disabled at the ends of the list shown. A move swaps the task with the row shown above/below it, so tasks that don't run on the selected date keep their places. Hidden in All Buildings mode (ordering is per-building).
 
 Completed rows: accent-filled checkbox, muted row background, strikethrough name. Rows are never reordered by completion.
 
