@@ -3054,19 +3054,27 @@
             return null;
         }
 
+        // Is the lot's live stage (changed in SitkaTools) different from this open log's phase?
+        // Asked when the runner opens (checkStageMismatch) and when a live update arrives while it
+        // is open (refreshRunnerPrefills). `key` is the runner's page.
+        function stageMismatch(lotId, sheetId, key, inst) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || sheet.cadence !== 'daily-weekly') return false;
+            if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
+            // An older page opened to backfill a day isn't the open log either
+            if (dailyChain(lotId, sheetId).some(c => c.key > key)) return false;
+            const lot = DB.lots[lotId];
+            // Compare in the form's vocabulary — 'flower' and 'Bloom' are the same phase.
+            return !!(lot && inst.phase && lot.stage && normalizeStage(inst.phase) !== normalizeStage(lot.stage));
+        }
+
         // Reverse-direction detection (spec): the lot's live stage changed in SitkaTools and no
         // longer matches this instance's stored phase → prompt to confirm the move. Rolls over
         // WITHOUT writing back — the main DB is already correct. Called from openRunner after
         // runnerCtx is set up for this instance; returns true when the open was handled.
         async function checkStageMismatch(lotId, sheetId, inst) {
-            const sheet = DB.paperWizard?.sheets?.[sheetId];
-            if (!sheet || sheet.cadence !== 'daily-weekly') return false;
-            if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
-            // An older page opened to backfill a day isn't the open log either
-            if (runnerCtx && dailyChain(lotId, sheetId).some(c => c.key > runnerCtx.key)) return false;
+            if (!stageMismatch(lotId, sheetId, runnerCtx?.key, inst)) return false;
             const lot = DB.lots[lotId];
-            // Compare in the form's vocabulary — 'flower' and 'Bloom' are the same phase.
-            if (!lot || !inst.phase || !lot.stage || normalizeStage(inst.phase) === normalizeStage(lot.stage)) return false;
             // If the runner opens normally after all (declined / cancelled), the Phase question
             // prefills the lot's live phase, not this page's (see resetRunnerDraft).
             if (runnerCtx) runnerCtx.phaseFromLot = true;
@@ -3611,6 +3619,7 @@
             // the live lot (applyBackfill) — so its plant count / phase / room prefill from the page.
             const backfill = !!day && isBackfillDay(runnerCtx.lotId, sheetId, runnerCtx.key, day);
             const draft = {};
+            const prefilled = {};
             for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (q.type === 'initials') {
                     // Drawn initials: the answer is a {name, strokes} object stored in the same
@@ -3623,25 +3632,83 @@
                 }
                 let v = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
                 if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom) {
-                    // day.date prefills from the current day (row-scoped only).
-                    v = resolveBinding(q.prefillFrom, { lotId: runnerCtx.lotId, sheetId: runnerCtx.sheetId, key: runnerCtx.key, inst, dayDate: q.rowScoped ? day : null });
-                    if (backfill) {
-                        // Live values would read as a change on save: a false "shift later days?"
-                        // prompt (plant count) or a false strike-out + re-page (phase / room).
-                        if (q.type === 'plant-count' && q.rowScoped) {
-                            const prev = lastRecordedPlantCount(runnerCtx.lotId, sheetId, runnerCtx.key, addDaysStr(day, -1));
-                            if (prev !== null) v = prev;
-                        } else if (q.type === 'phase' && inst.phase) v = normalizeStage(inst.phase);
-                        else if (q.type === 'room' && inst.room) v = inst.room;
-                    } else if (q.type === 'phase' && runnerCtx.phaseFromLot) {
-                        // "Lot is now in X — close this log?" was declined: the day records the lot's
-                        // live phase, so a plain save isn't read as a change back (checkStageMismatch).
-                        v = currentLotPhase(runnerCtx.lotId) ?? v;
-                    }
+                    v = runnerPrefill(q, backfill);
+                    prefilled[q.id] = v;
                 }
                 draft[q.id] = (v === null || v === undefined) ? '' : String(v);
             }
             runnerCtx.draft = draft;
+            runnerCtx.prefilled = prefilled; // what each prefilled answer opened with (refreshRunnerPrefills)
+        }
+
+        // The prefill for a question left blank in the runner's current scope (prefillFrom set).
+        function runnerPrefill(q, backfill) {
+            const { lotId, sheetId, key, inst, day } = runnerCtx;
+            // day.date prefills from the current day (row-scoped only).
+            let v = resolveBinding(q.prefillFrom, { lotId, sheetId, key, inst, dayDate: q.rowScoped ? day : null });
+            if (backfill) {
+                // Live values would read as a change on save: a false "shift later days?"
+                // prompt (plant count) or a false strike-out + re-page (phase / room).
+                if (q.type === 'plant-count' && q.rowScoped) {
+                    const prev = lastRecordedPlantCount(lotId, sheetId, key, addDaysStr(day, -1));
+                    if (prev !== null) v = prev;
+                } else if (q.type === 'phase' && inst.phase) v = normalizeStage(inst.phase);
+                else if (q.type === 'room' && inst.room) v = inst.room;
+            } else if (q.type === 'phase' && runnerCtx.phaseFromLot) {
+                // "Lot is now in X — close this log?" was declined: the day records the lot's
+                // live phase, so a plain save isn't read as a change back (checkStageMismatch).
+                v = currentLotPhase(lotId) ?? v;
+            }
+            return (v === null || v === undefined) ? '' : String(v);
+        }
+
+        // A live update from SitkaTools while the runner is open: prefilled answers follow the new
+        // DB — a stale plant count / phase / room prefill would otherwise be saved over the newer
+        // value (or read as a change). Recomputed with the same rules as the open (a backfill day
+        // still prefills from the page), and only where the answer is still the old prefill: an
+        // answer the user typed or picked is never touched.
+        function refreshRunnerPrefills() {
+            const ctx = runnerCtx;
+            if (!ctx || ctx.mode === 'init' || !ctx.prefilled) return; // not drafted yet — the open will prefill
+            const wiz = wizardForSheet(ctx.sheetId);
+            if (!wiz) return;
+            const cids = new Set(constantQuestionIds(ctx.sheetId));
+            const steps = (wiz.questions || []).filter(q => !cids.has(q.id)); // must match renderRunner
+            const shown = steps[ctx.idx];
+            const backfill = !!ctx.day && isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day);
+            // The stage changed in SitkaTools: opening now would ask "Lot is now in … — close this
+            // grow-log?". A live update doesn't ask — it goes on as if that was declined, so the
+            // phase prefill follows the lot's live phase (a plain save isn't read as a change back).
+            if (stageMismatch(ctx.lotId, ctx.sheetId, ctx.key, ctx.inst)) ctx.phaseFromLot = true;
+            let shownChanged = false;
+            for (const q of steps) {
+                if (!Object.prototype.hasOwnProperty.call(ctx.prefilled, q.id)) continue;
+                const old = ctx.prefilled[q.id];
+                // Changed by the user (or no longer a prefilled question): theirs from now on.
+                if (q.type === 'initials' || !q.prefillFrom || String(ctx.draft[q.id] ?? '') !== old) {
+                    delete ctx.prefilled[q.id];
+                    continue;
+                }
+                const nv = runnerPrefill(q, backfill);
+                if (nv === old) continue;
+                ctx.draft[q.id] = nv;
+                ctx.prefilled[q.id] = nv;
+                if (q !== shown) continue;
+                // On screen: the control still showing the old prefill shows the new one.
+                const ctl = $('wizCtl');
+                if (ctl && ctl.value === old) {
+                    ctl.value = nv;
+                    if (ctl.tagName === 'SELECT' && ctl.value !== nv) { // e.g. a room added since the step was drawn
+                        const opt = document.createElement('option');
+                        opt.value = nv;
+                        opt.textContent = nv;
+                        ctl.appendChild(opt);
+                        ctl.value = nv;
+                    }
+                }
+                shownChanged = true;
+            }
+            if (shownChanged) updateRunnerFooter(); // a mandatory step's Next / Save follows the new answer
         }
 
         // Sources for "⏪ Same as last time": row-scoped questions copy the previous day's
@@ -4697,6 +4764,10 @@
             }
         }
 
+        // The lot whose cabinet is on screen and its section keys, in drawn order — so a redraw of the
+        // same lot (a live update from SitkaTools, a save) keeps the sections the user opened / closed.
+        let cabDrawn = { lotId: null, keys: [] };
+
         function renderCabinet() {
             const panel = $('cabinetPanel');
             if (!dbLoaded) {
@@ -4882,7 +4953,14 @@
             // Cabinet header + collapsible sections. The 'other' fallback bucket
             // only renders when it actually holds something.
             let totalDocs = 0, totalMissing = 0;
-            const sectionHtml = CAB_SECTIONS.filter(sec => sec.key !== 'other' || sections[sec.key].length > 0).map(sec => {
+            // Open / closed as the user left them when this lot's cabinet is redrawn; a lot just
+            // switched to (or a section not drawn before) starts from the default below.
+            const wasOpen = {};
+            if (cabDrawn.lotId === activeLotId) {
+                panel.querySelectorAll('details.cab-section').forEach((d, i) => { if (cabDrawn.keys[i]) wasOpen[cabDrawn.keys[i]] = d.open; });
+            }
+            const shownSections = CAB_SECTIONS.filter(sec => sec.key !== 'other' || sections[sec.key].length > 0);
+            const sectionHtml = shownSections.map(sec => {
                 const leaves = sections[sec.key];
                 const missing = leaves.filter(l => l.missing).length;
                 totalDocs += leaves.length;
@@ -4894,7 +4972,8 @@
                     ? leaves.map(l => l.html).join('')
                     : `<div class="cab-leaf" style="opacity:.5; justify-content:center;">— none yet</div>`;
                 // Default: all sections collapsed except Grow Logs (which stays open).
-                return `<details class="cab-section"${sec.key === 'grow-log' ? ' open' : ''}>
+                const isOpen = (sec.key in wasOpen) ? wasOpen[sec.key] : sec.key === 'grow-log';
+                return `<details class="cab-section"${isOpen ? ' open' : ''}>
                     <summary>${sec.icon} ${sec.label}<span class="cab-count">${countTxt}</span></summary>
                     <div class="cab-body">${body}</div>
                 </details>`;
@@ -4929,6 +5008,7 @@
                 ${Object.keys(pw.sheets || {}).length === 0 ? '<div class="cab-hint">No sheets configured yet — load a document and configure it in the <b>Configure Sheets</b> tab.</div>' : ''}
                 ${lot && !plantingDate ? `<div class="cab-warn">⚠️ This lot has no planting date on file — run it through the <b>CropLabourWizard</b> first. Grow-log coverage (one log per day since planting) can't be checked until a planting date is set.</div>` : ''}
                 ${sectionHtml}`;
+            cabDrawn = { lotId: activeLotId, keys: shownSections.map(sec => sec.key) };
 
             // Read-only lot: no Fill / Start / Sign buttons — view and print only
             if (elsewhere) panel.querySelectorAll('.cab-fill, [data-sign]').forEach(el => el.remove());
@@ -5767,10 +5847,11 @@
                 // half-typed answer keeps its caret); only its page is looked up again in the new DB.
                 // A draft page that was never saved isn't there — it stays a draft. Saves re-read
                 // the DB anyway, and the dialogs (signature, start log, strike initials) check for
-                // the swap themselves.
+                // the swap themselves. Answers still showing their prefill follow the new DB.
                 if (runnerCtx && runnerCtx.mode !== 'init') {
                     const fresh = DB.paperWizard.entries[runnerCtx.lotId]?.[runnerCtx.sheetId]?.instances?.[runnerCtx.key];
                     if (fresh) runnerCtx.inst = fresh;
+                    refreshRunnerPrefills();
                 }
                 applyDeviceView();
                 renderAll(); // the cabinet behind any open dialog — dialogs are separate overlays
