@@ -7092,8 +7092,8 @@
                 return DeviceView.building ? this.events.filter(ev => DeviceView.eventVisible(ev)) : this.events;
             },
 
-            // The event a 7-day / terminal row was drawn for, by its stable id — an array index would point
-            // at a different event once the array changes
+            // The event a 7-day / terminal row or a dragged month-grid event was drawn for, by its stable
+            // id — an array index would point at a different event once the array changes
             eventById(id) {
                 return id ? this.events.find(ev => ev.id === id) || null : null;
             },
@@ -8366,15 +8366,16 @@
                         eventEl.textContent = displayText;
 
                         eventEl.draggable = !DeviceView.building; // a building device can't reschedule events
-                        eventEl.dataset.eventIndex = this.events.indexOf(event);
+                        eventEl.dataset.eventId = event.id || '';
 
-                        // Drag events
+                        // Drag events — carry the event's stable id, not its array index: an open tool can
+                        // replace DB.data mid-drag, and an index would then point at a different event
                         eventEl.addEventListener('dragstart', (e) => {
                             this.draggedEvent = event;
                             eventEl.classList.add('dragging');
                             e.dataTransfer.effectAllowed = 'move';
                             e.dataTransfer.setData('text/plain', JSON.stringify({
-                                eventIndex: this.events.indexOf(event),
+                                eventId: event.id || '',
                                 fromDate: dateStr
                             }));
                         });
@@ -8413,7 +8414,7 @@
                     cell.classList.remove('drag-over');
                     try {
                         const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-                        this.moveEvent(data.eventIndex, dateStr);
+                        this.moveEvent(data.eventId, dateStr);
                     } catch {}
                 });
 
@@ -8429,11 +8430,11 @@
                 return cell;
             },
 
-            moveEvent(eventIndex, newDate) {
+            moveEvent(eventId, newDate) {
                 if (DeviceView.building) return;
-                if (eventIndex < 0 || eventIndex >= DB.data.calendarEvents.length) return;
-
-                const event = DB.data.calendarEvents[eventIndex];
+                // Found by id in the current DB — gone (e.g. deleted by a tool mid-drag) → nothing to move
+                const event = this.eventById(eventId);
+                if (!event) return;
                 const oldDate = event.date;
                 // Preserve duration when moving multi-day events — in whole days: a millisecond offset is an hour
                 // off across a DST change and lands the end on the wrong day

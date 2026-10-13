@@ -189,37 +189,45 @@ In SitkaTools.html, when a module link is clicked:
 
 ```js
 // ---- Module Link Handlers — postMessage Convention ----
-let openSubtools = [];
+let openSubtools = [];   // [{ win, url, sent }] — `sent`: what that window was last sent (subtoolSyncKey)
 
 document.querySelectorAll('.module-link').forEach(link => {
     link.addEventListener('click', (e) => {
         e.preventDefault();
-        openModuleInTab(link.href);
+        WorkCopy.flush();   // a tool that can't get the DB by postMessage loads it from the shared copy
+        if (isMobileDevice) openToolInTab(link.href);   // phones: a tab, fed from the shared copy
+        else openModuleInTab(link.href);                // centered popup, fed by postMessage
     });
 });
 
 function openModuleInTab(url) {
-    const newWindow = window.open(url, '_blank');
+    // Centered popup: half the viewport wide, 83% of it tall
+    const newWindow = window.open(url, '_blank', `width=${width},height=${height},left=${left},top=${top}`);
     if (!newWindow) return;
 
-    openSubtools.push(newWindow);
+    const entry = { win: newWindow, url };
+    openSubtools.push(entry);
 
     // Track close with interval fallback (close event unreliable on file://)
     const closeCheck = setInterval(() => {
         if (newWindow.closed) {
-            openSubtools = openSubtools.filter(w => w !== newWindow);
+            openSubtools = openSubtools.filter(w => w.win !== newWindow);
             clearInterval(closeCheck);
         }
     }, 1000);
 
     // Send DB via postMessage with retry mechanism
-    const dbPayload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
     let attempts = 0, acknowledged = false;
 
     function trySend() {
         if (acknowledged || newWindow.closed || attempts >= 5) return;
         attempts++;
-        newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload }, SITKA_MSG_ORIGIN);
+        // The DB as it is now (it may have changed since the window opened); note what the window was
+        // sent, so broadcastToSubtools doesn't send the same again
+        const payload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
+        const view = DeviceView.message();
+        entry.sent = subtoolSyncKey(payload, view);
+        newWindow.postMessage({ type: 'sitkaGit_db', payload, view }, SITKA_MSG_ORIGIN);
     }
 
     // Listen for acknowledgment from subtool
@@ -238,6 +246,31 @@ function openModuleInTab(url) {
         else trySend();
     }, 200);
 }
+
+// What a tool window was last sent (the DB without SitkaTools' save stamp, plus the view)
+function subtoolSyncKey(payload, view) {
+    return JSON.stringify({ db: { ...payload, _meta: undefined }, view });
+}
+
+// Rule 9: push the current DB to every open tool window. Called (debounced) from WorkCopy.flush() on every
+// DB change, and by the update handler below with the sender as `except`.
+function broadcastToSubtools(except) {
+    if (!DB.data) return;
+    const view = DeviceView.message();
+    const key = subtoolSyncKey(DB.data, view);
+    openSubtools.forEach(entry => {
+        const win = entry?.win;
+        if (!win || win.closed) return;
+        if (win === except || entry.sent === key) {   // the sender, or a window that already has this DB
+            entry.sent = key;
+            return;
+        }
+        try {
+            win.postMessage({ type: 'sitkaGit_db_update', payload: DB.data, view }, SITKA_MSG_ORIGIN);
+            entry.sent = key;
+        } catch (_) { /* window gone */ }
+    });
+}
 ```
 
 #### SitkaTools Sync Toast Pattern
@@ -255,6 +288,14 @@ In SitkaTools.html, listen for subtool updates via postMessage:
 ```js
 const syncToast = $('syncToast');
 const syncToastText = $('syncToastText');
+let syncToastTimer;
+
+function showSyncToast(message) {
+    syncToastText.textContent = message;
+    syncToast.classList.remove('hidden');
+    clearTimeout(syncToastTimer);
+    syncToastTimer = setTimeout(() => syncToast.classList.add('hidden'), 3000); // auto-dismiss after 3 seconds
+}
 
 // Listen for subtool updates via postMessage
 window.addEventListener('message', (e) => {
@@ -262,24 +303,25 @@ window.addEventListener('message', (e) => {
     // Only accept DB updates from subtool windows this page opened
     if (!openSubtools.some(entry => (entry.win || entry) === e.source)) return;
 
+    // Keep SitkaTools' own save stamp; only a real change counts as unsaved (some tools resync on open)
+    keepOwnSaveStamp(e.data.payload);
+    const changed = JSON.stringify(e.data.payload) !== JSON.stringify(DB.data);
     DB.data = e.data.payload;
     DB.ensureStructure();
-    markUnsaved();
+    if (changed) markUnsaved();
 
     // Re-render all views with fresh data
     updateStatusBar();
     renderLotList();
-    updateLotIdSuggestion();
-    RoomManager.renderRoomList();
-    updateRoomStatusBar();
-    RoomManager.updateRoomDatalist();
+    // … lot ID suggestion, room / building lists and status bars …
+    Calendar.onDbChanged();   // drops stale filters; re-finds the selected event by id in the new DB
     Calendar.render();
     updateCalendarStatusBar();
 
-    syncToastText.textContent = 'Subtool has updated data — views refreshed automatically';
-    syncToast.classList.remove('hidden');
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => syncToast.classList.add('hidden'), 3000);
+    // Other open tools get this change now; the sender already has it
+    broadcastToSubtools(e.source);
+
+    showSyncToast('Subtool has updated data — views refreshed automatically');
 });
 ```
 
@@ -293,6 +335,7 @@ DB.ensureStructure();
 
 // Notify SitkaTools of changes via postMessage
 function notifySitkaTools() {
+    if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data); // tablet tab: via the shared working copy
     if (window.opener && !window.opener.closed) {
         window.opener.postMessage({
             type: 'sitkaGit_db_update',
@@ -303,7 +346,10 @@ function notifySitkaTools() {
 
 // Listen for DB from SitkaTools via postMessage
 window.addEventListener('message', (e) => {
-    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
+    // Real messages must come from the SitkaTools window that opened us; untrusted events are this
+    // page's own shared-copy loader (WorkCopy.apply)
+    if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
+
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();
@@ -312,10 +358,20 @@ window.addEventListener('message', (e) => {
         if (window.opener && !window.opener.closed) {
             window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
         }
+        if (DeviceView.take(e.data)) return; // records the view; office-only tools stop here on a building device
 
         // Reconcile and render with fresh data (tool-specific calls vary by subtool)
         updateStatusBar();
         showToast('Database loaded from SitkaTools');
+    }
+
+    // Live DB updates pushed by SitkaTools (rule 9) — re-render without losing half-typed input or an
+    // open draft. No ack, no toast, and never notifySitkaTools() back (it would echo).
+    if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+        DB.data = e.data.payload;
+        DB.ensureStructure();
+        if (DeviceView.take(e.data)) return;
+        updateStatusBar(); // tool-specific: refresh lists, leave forms alone
     }
 });
 ```
@@ -325,7 +381,7 @@ window.addEventListener('message', (e) => {
 notifySitkaTools();
 ```
 
-This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**. All cross-window state flows through postMessage.
+Apart from the shared working copy (`WorkCopy` — see "Shared Working Copy"), subtools use **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**, and all cross-window state flows through postMessage.
 
 #### Sync Toast CSS (Shared Across All Tools)
 
@@ -800,9 +856,9 @@ Any implementation must reproduce this table exactly:
 | Labour Day | Sep 7 (Mon) | Sep 6 (Mon) |
 | Truth & Reconciliation | Sep 30 (Wed) | Sep 30 (Thu) |
 | Thanksgiving | Oct 12 (Mon) | Oct 11 (Mon) |
+| Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | Christmas Day | Dec 25 (Fri) | **Dec 27 (Mon)** — observed; Dec 25 falls on a Saturday |
-Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
-| 
+
 ### Holiday-Awareness Behavior
 
 - **Calendar (SitkaTools) — implemented:** Each of the 11 holidays is rendered on the calendar grid by default, visually distinct from tool-generated events (amber holiday chips). Holidays are computed per year and are read-only — they are not stored in the database. Clicking a holiday chip opens a read-only detail panel; when a fixed-date holiday shifts to its observed date, the panel notes the nominal date. A "🏛️ Holidays" toggle in the calendar nav (on by default) hides/shows all holiday chips.
@@ -1094,9 +1150,6 @@ const DB = {
         return this.data;
     }
 };
-
-const $ = id => document.getElementById(id);
-```
 
 const $ = id => document.getElementById(id);
 ```
