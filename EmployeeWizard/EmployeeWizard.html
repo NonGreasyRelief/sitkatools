@@ -182,27 +182,66 @@
         .tab-pane { display: none; }
         .tab-pane.active { display: block; }
 
-        /* ---- Labour Report section (dummy until Phase 5) ---- */
+        /* ---- Labour Report — estimated vs. actual hours ---- */
         .report-section {
             margin-top: 24px;
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            padding: 24px;
-            text-align: center;
+            padding: 20px 24px;
         }
+
+        .report-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 
         .report-section h3 {
             color: var(--accent);
             font-size: 1.05rem;
-            margin-bottom: 8px;
         }
 
-        .report-section p {
-            color: var(--text-secondary);
+        .report-scope { font-size: 0.85rem; color: var(--text-secondary); }
+
+        .report-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px; }
+
+        .report-controls input[type="date"] {
+            padding: 9px 10px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
             font-size: 0.9rem;
+            color-scheme: dark;
         }
+        .report-controls input[type="date"]:focus { outline: none; border-color: var(--accent); }
+        .report-controls .form-group select { padding: 9px 10px; font-size: 0.9rem; }
+
+        .report-chk { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); padding-bottom: 10px; cursor: pointer; }
+        .report-chk input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+        .report-table-wrap { overflow-x: auto; }
+
+        .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .report-table th {
+            text-align: right; padding: 6px 8px; color: var(--text-secondary);
+            font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px;
+            border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+        .report-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        .report-table th:first-child, .report-table td:first-child { text-align: left; white-space: normal; }
+        .report-table tfoot td { font-weight: 700; border-bottom: none; border-top: 2px solid var(--border); }
+        .report-table .rp-muted { color: var(--text-secondary); font-size: 0.78rem; }
+        .report-table .rp-over { color: var(--warning); }
+        .report-table .rp-under { color: var(--accent); }
+
+        /* Estimated (outline) vs. actual (filled) bars, scaled to the largest row */
+        .report-table td.rp-bars { width: 28%; min-width: 90px; }
+        .rp-bar { height: 6px; border-radius: 3px; margin: 2px 0; }
+        .rp-bar.est { border: 1px solid var(--text-secondary); height: 5px; }
+        .rp-bar.act { background: var(--accent); }
+        .rp-bar.act.over { background: var(--warning); }
+
+        .report-notes { margin-top: 10px; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; }
+        .report-empty { color: var(--text-secondary); font-size: 0.9rem; padding: 12px 0; }
 
         /* ---- Phase 3 — Employees tab ---- */
 
@@ -1183,10 +1222,33 @@
             </div>
         </div>
 
-        <!-- Labour Report (dummy — functional in Phase 5) -->
+        <!-- Labour Report — estimated vs. actual hours on crop tasks (office only) -->
         <section class="report-section">
-            <h3>📊 Labour Report</h3>
-            <p>Reports &amp; graphs arrive in Phase 5.</p>
+            <div class="report-head">
+                <h3>📊 Labour Report — estimated vs. actual</h3>
+                <span class="report-scope" id="reportScope"></span>
+            </div>
+            <div class="report-controls">
+                <div class="form-group">
+                    <label for="reportGroup">Group by</label>
+                    <select id="reportGroup">
+                        <option value="task">Task</option>
+                        <option value="lot">Lot</option>
+                        <option value="room">Room</option>
+                        <option value="building">Building</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="reportFrom">From</label>
+                    <input type="date" id="reportFrom">
+                </div>
+                <div class="form-group">
+                    <label for="reportTo">To</label>
+                    <input type="date" id="reportTo">
+                </div>
+                <label class="report-chk"><input type="checkbox" id="reportDoneOnly" checked> Completed tasks only</label>
+            </div>
+            <div id="reportBody"></div>
         </section>
     </main>
 
@@ -2266,6 +2328,27 @@
         function taskHours(ev) { return taskDays(ev).reduce((s, d) => s + dayHours(ev, d), 0); }
         function taskCost(ev) { return taskDays(ev).reduce((s, d) => s + dayCost(ev, d), 0); }
 
+        // ---- Labour estimate on a task ----
+        // CropLabourWizard writes estStaff / estMinutes (per day) on each crop task from its recipe. The task's
+        // estimate is staff × minutes × the days of its [date, endDate] range (extra labour days don't count).
+        function taskEstimate(ev) {
+            if (!Number.isInteger(ev.estMinutes) || ev.estMinutes <= 0) return null;
+            const staff = Number.isInteger(ev.estStaff) && ev.estStaff >= 1 ? ev.estStaff : 1;
+            const days = Math.max(1, Math.round((parseISO(taskEnd(ev)) - parseISO(ev.date)) / 86400000) + 1);
+            return { staff, minutes: ev.estMinutes, days, hours: staff * ev.estMinutes * days / 60 };
+        }
+
+        // 90 → "1h 30m", 45 → "45m", 480 → "8h"
+        function fmtMinutes(m) {
+            const h = Math.floor(m / 60), r = m % 60;
+            return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+        }
+
+        // "👥 2 × 1h 30m/day ≈ 21.0 h"
+        function estimateText(est) {
+            return `👥 ${est.staff} × ${fmtMinutes(est.minutes)}${est.days > 1 ? '/day' : ''} ≈ ${est.hours.toFixed(1)} h`;
+        }
+
         // Wages live in Wages.json, which only the office opens (root CLAUDE.md → split DB). On a building device,
         // or with no roster wages loaded, a $ total would be a made-up $20/h — show hours only.
         function wagesLoaded() {
@@ -2406,8 +2489,10 @@
 
             $('teTitle').textContent = ev.title || '(untitled task)';
             const range = ev.endDate && ev.endDate !== ev.date ? `${ev.date} → ${ev.endDate}` : ev.date;
+            const est = taskEstimate(ev);
             $('teMeta').innerHTML =
-                `<span>📅 ${range}</span><span>🏷️ ${escapeHtml(ev.lotId)}</span><span>⚙️ ${escapeHtml(ev.sourceTool)}</span>`;
+                `<span>📅 ${range}</span><span>🏷️ ${escapeHtml(ev.lotId)}</span><span>⚙️ ${escapeHtml(ev.sourceTool)}</span>` +
+                (est ? `<span title="Estimated labour (CropLabourWizard recipe)">⏱ Est. ${estimateText(est)}</span>` : '');
 
             const btn = $('teCompleteBtn');
             btn.textContent = ev.completed ? '✓ Completed — click to reopen' : 'Mark task completed';
@@ -2463,7 +2548,8 @@
             $('teDayTotal').textContent =
                 `Day total: ${fmtHours(dayHours(ev, TASK.editDate))}` + (showMoney ? ` · ${fmtMoney(dayCost(ev, TASK.editDate))}` : '');
             $('teTaskTotal').textContent =
-                `Task total: ${fmtHours(taskHours(ev))}` + (showMoney ? ` · ${fmtMoney(taskCost(ev))}` : '');
+                `Task total: ${fmtHours(taskHours(ev))}` + (showMoney ? ` · ${fmtMoney(taskCost(ev))}` : '') +
+                (est ? ` · estimated ${fmtHours(est.hours)}` : '');
 
             // Employee dropdown (roster names)
             const sel = $('lfEmpSelect');
@@ -2474,10 +2560,193 @@
             if (names.includes(prev)) sel.value = prev;
         }
 
+        // Every task change (labour, completion, lot switch, DB load/update) comes through here, so the
+        // labour report below is redrawn with it
         function renderTasksTab(scrollToToday = false) {
             renderTaskList(scrollToToday);
             renderTaskEditor();
+            renderLabourReport();
         }
+
+        // =====================================================
+        // Labour Report — estimated vs. actual hours (office only; hidden on building devices)
+        // Estimated: the task's CropLabourWizard estimate (taskEstimate). Actual: the hours recorded in its
+        // labour_map, on every day. Scope: the selected lot, or every lot when none is selected (global).
+        // Projections aren't included — they're not real work.
+        // =====================================================
+
+        // The room a crop task happens in — CropLabourWizard's phase rules, as in SitkaTools and DailyWizard:
+        // the event's own roomId, else the lot's cloning / veg / flower room by roomPhase, then task type.
+        const CLW_CLONE_ROOM_TYPES = ['clone_cut_prep', 'clone_room_clean'];
+        const CLW_VEG_ROOM_TYPES = ['planting', 'ipm_spray_veg_early', 'topping', 'order_ipm', 'veg_room_clean'];
+
+        function taskRoomId(ev) {
+            const rooms = DB.data.rooms || {};
+            if (ev.roomId && rooms[ev.roomId]) return ev.roomId;
+            const lot = DB.lots[ev.lotId];
+            if (!lot) return null;
+            const byName = name => name ? (Object.keys(rooms).find(id => rooms[id]?.name === name) || null) : null;
+            let roomName;
+            if (ev.roomPhase === 'cloning') roomName = lot.cloningRoom;
+            else if (ev.roomPhase === 'veg') roomName = lot.vegRoom;
+            else if (ev.roomPhase === 'flower') roomName = lot.destRoom;
+            else if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) roomName = lot.cloningRoom;
+            else if (CLW_VEG_ROOM_TYPES.includes(ev.taskType)) roomName = lot.vegRoom;
+            else roomName = lot.destRoom;   // transplant and everything after it
+            const found = byName(roomName);
+            if (found) return found;
+            // A lot with only one room set: that room
+            const names = [...new Set([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean))];
+            return names.length === 1 ? byName(names[0]) : null;
+        }
+
+        // Grouping: key of a task, its label, and the sort order of the keys
+        const REPORT_GROUPS = {
+            task: {
+                key: ev => ev.taskType || ev.title || '?',
+                label: k => {
+                    const t = DB.data._CropLabourWizard?.taskTypes?.[k];
+                    return t ? `${t.emoji || ''} ${t.name || k}`.trim() : k;
+                },
+                // The task-type registry lists tasks in recipe (chronological) order
+                order: () => {
+                    const types = Object.keys(DB.data._CropLabourWizard?.taskTypes || {});
+                    return k => { const i = types.indexOf(k); return i === -1 ? Infinity : i; };
+                }
+            },
+            lot: {
+                key: ev => ev.lotId,
+                label: k => DB.lots[k]?.strain ? `${k} · ${DB.lots[k].strain}` : k,
+                order: () => k => DB.lots[k]?.createdDate || '9999'
+            },
+            room: {
+                key: ev => taskRoomId(ev) || '',
+                label: k => k ? `${k} — ${DB.data.rooms?.[k]?.name || k}` : 'No room',
+                order: () => k => k || '￿'
+            },
+            building: {
+                key: ev => (taskRoomId(ev) && DB.data.rooms[taskRoomId(ev)]?.buildingId) || '',
+                label: k => k ? `${k} — ${DB.data.buildings?.[k]?.name || k}` : 'No building',
+                order: () => k => k || '￿'
+            }
+        };
+
+        function renderLabourReport() {
+            const body = $('reportBody');
+            if (!body || !DB.data || DeviceView.building) return;
+
+            const lotId = activeLotId();
+            const groupBy = REPORT_GROUPS[$('reportGroup').value] || REPORT_GROUPS.task;
+            const from = $('reportFrom').value, to = $('reportTo').value;
+            const doneOnly = $('reportDoneOnly').checked;
+            $('reportScope').textContent = lotId ? `Lot ${lotId}` : 'All lots';
+
+            // Crop tasks in scope that have an estimate or recorded hours
+            const tasks = DB.data.calendarEvents.filter(ev =>
+                ev.lotId && LABOUR_TOOLS.includes(ev.sourceTool) &&
+                (!lotId || ev.lotId === lotId) &&
+                (!from || ev.date >= from) && (!to || ev.date <= to) &&
+                (!doneOnly || ev.completed === true));
+
+            const rows = new Map();   // key → { est, act, count, noEst, noHours, plantHours, lots: Set }
+            const total = { est: 0, act: 0, count: 0, noEst: 0, noHours: 0, plantHours: 0, lots: new Set() };
+            for (const ev of tasks) {
+                const est = taskEstimate(ev);
+                const act = taskHours(ev);
+                if (!est && act <= 0) continue;
+                const key = groupBy.key(ev);
+                if (!rows.has(key)) rows.set(key, { est: 0, act: 0, count: 0, noEst: 0, noHours: 0, plantHours: 0, lots: new Set() });
+                const plants = Number(DB.lots[ev.lotId]?.plantCount) > 0;
+                for (const r of [rows.get(key), total]) {
+                    r.count++;
+                    if (est) r.est += est.hours; else r.noEst++;
+                    r.act += act;
+                    if (act <= 0) r.noHours++;
+                    // Per plant: only lots with a plant count
+                    if (plants) { r.plantHours += act; r.lots.add(ev.lotId); }
+                }
+            }
+
+            if (!rows.size) {
+                body.innerHTML = `<div class="report-empty">No ${doneOnly ? 'completed ' : ''}crop tasks with an estimate or recorded hours${from || to ? ' in this date range' : ''}.` +
+                    (doneOnly ? ' Untick “Completed tasks only” to include open tasks.' : '') + '</div>';
+                return;
+            }
+
+            const orderOf = groupBy.order();
+            const keys = [...rows.keys()].sort((a, b) => {
+                const oa = orderOf(a), ob = orderOf(b);
+                if (oa < ob) return -1;
+                if (oa > ob) return 1;
+                return groupBy.label(a).localeCompare(groupBy.label(b));
+            });
+            const scale = Math.max(...[...rows.values()].map(r => Math.max(r.est, r.act)), 0.01);
+
+            const h = v => v.toFixed(1);
+            const diffCell = r => {
+                if (r.est <= 0) return '<span class="rp-muted">—</span>';
+                const d = r.act - r.est;
+                const pct = Math.round(d / r.est * 100);
+                const cls = d > 0.05 ? 'rp-over' : (d < -0.05 ? 'rp-under' : '');
+                return `<span class="${cls}">${d >= 0 ? '+' : '−'}${h(Math.abs(d))} h <span class="rp-muted">(${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%)</span></span>`;
+            };
+            // Minutes per plant: the hours on lots with a plant count, over those lots' plants
+            const perPlant = r => {
+                const plants = [...r.lots].reduce((s, id) => s + Number(DB.lots[id].plantCount), 0);
+                return plants > 0 ? `${(r.plantHours * 60 / plants).toFixed(1)} min` : '<span class="rp-muted">—</span>';
+            };
+            const countCell = r => `${r.count}${r.noEst ? ` <span class="rp-muted">(${r.noEst} no est.)</span>` : ''}`;
+            const bars = r => {
+                const over = r.est > 0 && r.act > r.est;
+                return `<div class="rp-bar est" style="width:${(r.est / scale * 100).toFixed(1)}%" title="Estimated ${h(r.est)} h"></div>` +
+                    `<div class="rp-bar act${over ? ' over' : ''}" style="width:${(r.act / scale * 100).toFixed(1)}%" title="Actual ${h(r.act)} h"></div>`;
+            };
+
+            const bodyRows = keys.map(k => {
+                const r = rows.get(k);
+                return `<tr>
+                    <td>${escapeHtml(groupBy.label(k))}</td>
+                    <td>${countCell(r)}</td>
+                    <td>${r.est > 0 ? `${h(r.est)} h` : '<span class="rp-muted">—</span>'}</td>
+                    <td>${h(r.act)} h</td>
+                    <td>${diffCell(r)}</td>
+                    <td>${perPlant(r)}</td>
+                    <td class="rp-bars">${bars(r)}</td>
+                </tr>`;
+            }).join('');
+
+            const notes = [
+                'Estimated = CropLabourWizard recipe estimate (staff × time per day × the task’s days). Actual = hours recorded on the task.',
+                'Per plant uses each lot’s current plant count; lots without one are left out of it.'
+            ];
+            if (total.noEst) notes.push(`${total.noEst} task${total.noEst === 1 ? ' has' : 's have'} no estimate — their hours count as actual only.`);
+            if (total.noHours) notes.push(`${total.noHours} task${total.noHours === 1 ? ' has' : 's have'} an estimate but no hours recorded.`);
+
+            body.innerHTML = `
+                <div class="report-table-wrap">
+                    <table class="report-table">
+                        <thead><tr>
+                            <th>${escapeHtml($('reportGroup').selectedOptions[0].textContent)}</th>
+                            <th>Tasks</th><th>Estimated</th><th>Actual</th><th>Difference</th>
+                            <th title="Actual minutes per plant">Per plant</th><th title="Outline = estimated, filled = actual">Est. vs actual</th>
+                        </tr></thead>
+                        <tbody>${bodyRows}</tbody>
+                        <tfoot><tr>
+                            <td>Total</td>
+                            <td>${countCell(total)}</td>
+                            <td>${total.est > 0 ? `${h(total.est)} h` : '<span class="rp-muted">—</span>'}</td>
+                            <td>${h(total.act)} h</td>
+                            <td>${diffCell(total)}</td>
+                            <td>${perPlant(total)}</td>
+                            <td></td>
+                        </tr></tfoot>
+                    </table>
+                </div>
+                <div class="report-notes">${notes.map(escapeHtml).join('<br>')}</div>`;
+        }
+
+        ['reportGroup', 'reportFrom', 'reportTo', 'reportDoneOnly'].forEach(id =>
+            $(id).addEventListener('change', renderLabourReport));
 
         // ---- Day picker — add days outside the event's native range ----
         // Single-day events often grow into multi-day work. The picker lets the

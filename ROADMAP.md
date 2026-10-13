@@ -177,8 +177,13 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
 
 ### Phase 2: Features (from Brainstorm)
 
-- **Estimated hours in CropLabourWizard recipes** (Hours × Employees, as in DailyWizard), with room for an actual captured number when one is available. This feeds labour forecasting.
-- **Labour report sheet:** estimated vs. actual hours by building, room, lot and task.
+- [x] **Estimated hours in CropLabourWizard recipes:** done on 2026-10-12.
+  - Recipe tasks hold minutes per day × staff, as in DailyWizard. Generated events carry them as `estStaff` / `estMinutes`.
+  - The estimate shows in CropLabourWizard, DailyWizard's floor view, the SitkaTools calendar tooltip and EmployeeWizard's task editor.
+  - The actual number is the hours recorded in `labour_map`.
+- [x] **Labour report sheet:** done on 2026-10-12, as EmployeeWizard's Labour Report.
+  - Estimated vs. actual hours by task, lot, room or building, for one lot or all lots.
+  - Hours only; cost reports and graphs are still to come.
 - [x] **Close Out tool:** done in Phase 1, one archive file per lot.
 - [x] **Wages in a separate, restricted file:** done in Phase 1 (`Wages.json`, office only).
 - **Crop line-up tool:** start crops on a fixed cadence (the 1st, 5th, 9th, 13th, 17th, 21st, 25th).

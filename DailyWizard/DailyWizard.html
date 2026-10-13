@@ -1380,6 +1380,18 @@
             return row;
         }
 
+        // CropLabourWizard's labour estimate on a crop event — per day, like a daily task's staff/minutes
+        function eventEstimate(ev) {
+            if (!Number.isInteger(ev.estMinutes) || ev.estMinutes <= 0) return null;
+            return { staff: Number.isInteger(ev.estStaff) && ev.estStaff >= 1 ? ev.estStaff : 1, minutes: ev.estMinutes };
+        }
+
+        // 30 → "30m", 90 → "1h 30m", 480 → "8h" (crop tasks run for hours)
+        function fmtMinutes(m) {
+            const h = Math.floor(m / 60), r = m % 60;
+            return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+        }
+
         // mode: 'today' (default) — checkable row for the selected date.
         //       'upcoming' — read-only row with a date chip, no checkbox.
         function makeEventRow(ev, mode = 'today') {
@@ -1409,6 +1421,22 @@
             name.className = 'task-name readonly';
             name.textContent = text || ev.title || '(untitled event)';
             row.appendChild(name);
+
+            // Crop tasks carry CropLabourWizard's labour estimate (per day) — same chips as daily tasks
+            const est = eventEstimate(ev);
+            if (est) {
+                const staffChip = document.createElement('span');
+                staffChip.className = 'chip';
+                staffChip.textContent = `👥 ${est.staff}`;
+                staffChip.title = 'Staff needed (estimate)';
+                row.appendChild(staffChip);
+
+                const minChip = document.createElement('span');
+                minChip.className = 'chip';
+                minChip.textContent = `⏱ ${fmtMinutes(est.minutes)}`;
+                minChip.title = 'Estimated time for the day';
+                row.appendChild(minChip);
+            }
 
             if (mode === 'upcoming') {
                 const chip = document.createElement('span');

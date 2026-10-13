@@ -58,6 +58,7 @@ Validation: a task must have at least one weekday **or** at least one month-day 
 
 - Task rows show two small chips: `👥 {staff}` and `⏱ {minutes}m`.
 - The task detail view shows the derived total labour: `staff × minutes / 60` person-hours (e.g., 2 staff × 30 min → "≈ 1.0 h labour").
+- **Crop tasks** (CropLabourWizard / CropProjection events) whose recipe task has a labour estimate show the same two chips, from the event's `estStaff` / `estMinutes` — the estimate for one day, so a multi-day task like Trim shows its per-day figure on each of its days. Long times read as hours (`⏱ 8h`, `⏱ 1h 30m`). Events without an estimate show no chips.
 
 ## Step Pictures
 
@@ -105,7 +106,7 @@ buildingForEvent(event):
 - **Title-prefix fallback (last resort):** when neither `roomId` nor a live lot record resolves, the leading room-ID prefix in CLW titles is used — but only if it names an existing room in `DB.rooms`. Strain names or free-form text that merely resemble a room ID never match.
 - **Unattributable events** (GeneralEvent entries with no lot/room, or events whose room/lot can't be resolved, or rooms with no `buildingId`) never appear in a single-building view. In the **All Buildings** view they are collected into a muted "📌 Unassigned / General" section at the bottom so nothing silently disappears.
 - A lot whose rooms span multiple buildings is attributed per-task via the phase rules above — an event shows under exactly one building (the room where that task physically happens).
-- DailyWizard never modifies events; it only reads `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, and `taskType`.
+- DailyWizard never modifies events; it only reads `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, and the labour estimate `estStaff` / `estMinutes`.
 
 ## Completion State — Session-Only
 
@@ -233,7 +234,7 @@ Each row, left to right:
 
 Completed rows: accent-filled checkbox, muted row background, strikethrough name. Rows are never reordered by completion.
 
-Calendar event rows use the same anatomy minus the code chip and move buttons; their emoji comes from the event title.
+Calendar event rows use the same anatomy minus the code chip and move buttons; their emoji comes from the event title, and the labour chips appear only on crop tasks with an estimate (see "Labour Display").
 
 ### Upcoming Section
 

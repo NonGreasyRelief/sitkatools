@@ -7261,6 +7261,27 @@
                 return this._tooltipEl;
             },
 
+            // "⏱ Est. 👥 2 × 1h 30m/day ≈ 21.0 h · recorded 18.5 h" — the estimate (estStaff / estMinutes,
+            // per day, written by CropLabourWizard from its recipe) and the labour_map hours. Null when
+            // the event has neither.
+            _labourTooltipText(event) {
+                const parts = [];
+                if (Number.isInteger(event.estMinutes) && event.estMinutes > 0) {
+                    const staff = Number.isInteger(event.estStaff) && event.estStaff >= 1 ? event.estStaff : 1;
+                    const m = event.estMinutes, h = Math.floor(m / 60), r = m % 60;
+                    const time = h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+                    const days = event.endDate && event.endDate > event.date
+                        ? Math.round((parseLocalDate(event.endDate) - parseLocalDate(event.date)) / 86400000) + 1 : 1;
+                    parts.push(`⏱ Est. 👥 ${staff} × ${time}${days > 1 ? '/day' : ''} ≈ ${(staff * m * days / 60).toFixed(1)} h`);
+                }
+                let recorded = 0;
+                for (const entries of Object.values(event.labour_map || {})) {
+                    for (const en of Array.isArray(entries) ? entries : []) recorded += Number(en?.hours) || 0;
+                }
+                if (recorded > 0) parts.push(`${parts.length ? 'recorded' : '⏱ Recorded'} ${Math.round(recorded * 10) / 10} h`);
+                return parts.length ? parts.join(' · ') : null;
+            },
+
             // Build the tooltip HTML for a single event (shared by the
             // per-event and per-day tooltips).
             _eventTooltipHtml(event) {
@@ -7301,6 +7322,10 @@
                         html += `<div class="tt-row">${label}: ${escapeHtml(String(val))}</div>`;
                     }
                 }
+
+                // CropLabourWizard's labour estimate, and the hours recorded in EmployeeWizard
+                const labour = this._labourTooltipText(event);
+                if (labour) html += `<div class="tt-row">${escapeHtml(labour)}</div>`;
 
                 // Notes / description — the long text that usually gets cut off
                 if (event.notes) {

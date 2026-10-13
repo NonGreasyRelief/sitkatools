@@ -580,9 +580,10 @@ Each flowering room gets exactly **5** projected lots forming a chain:
 
 - **Lot Day 0** = the lot's clone-cut date (the form's anchor date when cloning is enabled) — the day its parent clones were cut.
 - Within a lot (default settings): planting = Day 0 + 14 → transplant = Day 0 + 24 (planting +10) → flip = Day 0 + 34 (planting +20) → harvest start = flip + bloomLength (default **63**) = Day 0 + 97 → trim start = harvest + 11 (7 days) → weigh/ship = trim + 8.
-- **Chain rule:** Lot(k+1) Day 0 = Lot(k) harvest **start** − `chain.cloneCutBeforeHarvest` days (default 21). With the default 63-day bloom, consecutive Day 0s are exactly **76 days apart**; the 5 lots span ~420 days (~14 months). With an 8-week (56-day) recipe they are **69 days apart** (~345 days / ~11.5 months for 5 lots).
-- **Projection Recipe dropdown:** the header's recipe selector sets `projectionRecipeId` (built-in `sitka-9week` by default). It only affects projection chain generation — not manual preview editing or per-lot real schedules. The bloom length comes from the selected recipe's harvest offset, and because `clone_cut` stays at harvest start − `chain.cloneCutBeforeHarvest`, the chain cadence remains correct for any recipe.
+- **Chain rule:** Lot(k+1) Day 0 = Lot(k)'s "Cut Clones to Replace Lot" (`clone_cut`) day, read from its events. That is an ordinary recipe task counted back from harvest **end** (built-in −21), and each lot may move it. With the default 63-day bloom, consecutive Day 0s are exactly **76 days apart**; the 5 lots span ~420 days (~14 months). With an 8-week (56-day) recipe they are **69 days apart** (~345 days / ~11.5 months for 5 lots). A multi-day harvest adds its extra days.
+- **Projection Recipe dropdown:** the header's recipe selector sets `projectionRecipeId` (built-in `sitka-9week` by default). It only affects projection chain generation — not manual preview editing or per-lot real schedules. The bloom length comes from the selected recipe's harvest offset, and because `clone_cut` counts back from harvest, the chain cadence follows any bloom length.
 - **Anchor for Lot 1:** Lot 1's Day 0 = the "Cut Clones to Replace Lot" (`clone_cut`) day of the room's **newest real lot** — the one with the latest `createdDate` (the crop that most recently came into the room) — or that lot's start day (Day 0 / `plantingDate`) if it has no `clone_cut` event. The gate is specific to that newest lot: Project Crop is available only once **that** lot has a generated schedule (an older scheduled lot does not count); there is no "today" fallback.
+- **Room-ready check on Project Crop:** a projected lot that would be transplanted before the day after the previous lot's Tank & Irrigation Clean is pushed back by the minimum (later lots move with it). A confirm lists every push; cancel leaves everything as it was.
 - **Overwrite push-back (room-readiness gate):** overwriting a projected lot's schedule — or the room's active real lot's schedule (the newest crop that took TBA-1's slot) — pushes *later* TBA lots forward **only** when their transplant would land before the overwritten lot's new irrigation-clean + 1 day — never pulled backward. A blocking warning lists every affected lot and its delta; cancelling leaves the chain untouched. Lots already late enough stay put (their planned delay absorbs the push) and stop the cascade through them. If the overwrite leaves extra slack, later lots keep their dates (the chain may drift from its nominal cadence — Project Crop re-tightens it).
 
 ### Reprojection
@@ -671,14 +672,18 @@ Threaded through: lot selector, form load/save, preview, generate, clear, schedu
 ### Rule Changes — 63-Day Bloom + Dynamic Clone Cut
 
 - **Default bloom offset** (flip → harvest): **56 → 63 days** (9 weeks). All CLW defaults, fallbacks, and anchor reconstruction use 63.
-- **"Cut Clones to Replace Lot" (`clone_cut`)** is now a **derived/locked task**: always **harvest start − 21 days**, regardless of bloom length (previously flip + 42, which only equals harvest − 21 for a 63-day bloom). Its displayed offset relative to flip = bloomLength − 21.
+- **"Cut Clones to Replace Lot" (`clone_cut`)** starts the next lot in the room. It is an ordinary recipe task counted back from harvest **end** (built-in −21), editable in the recipe editor and per lot. At −21 the next lot transplants the day after this lot's Tank & Irrigation Clean. CropLabourWizard shows where the next lot lands as you edit (its `CLAUDE.md` → "Room Turnaround").
+  - It used to be derived at harvest *start* − `chain.cloneCutBeforeHarvest` and locked.
+  - Old recipes convert on load (see "Task Recipes").
+  - Already-generated events keep their dates.
 - Cadence math at the 63-day default: clone cut Day 0 → planting +14 → transplant +24 (planting+10) → flip +34 (planting+20) → harvest +97 (flip+63) → trim start +108 (harvest+11, 7 days, ends +114) → weigh/ship +116.
 - **Tightened pre-flip defaults:** transplant = planting +10 (was +14), flip = planting +20 (was +21); flower-room prep moved earlier too — coco layout +9 (day before transplant), hydrate +10 and undercanopy lights +10 (transplant day). Net effect: the next lot's transplant lands ~2 days after the previous lot's grow-room clean (tight but valid).
 
 ### UI — CropLabourWizard
 
 - **Lot selector:** projected lots appear under their room's divider (after the room's real lots) as `🔮 G1B6-TBA-0n`; stale ones get a ⚠️ suffix.
-- **Projection Recipe dropdown** in the header, to the left of Project Crop: lists the built-in recipe (labelled "(built-in)") plus every user recipe; **the built-in is the default**. Selecting one sets `projectionRecipeId`, which drives fresh projection-lot generation and chain cadence only — manual preview editing and per-lot real schedules are untouched. The bloom length comes from the selected recipe's harvest offset, and because clone cut stays at harvest − `chain.cloneCutBeforeHarvest`, the chain cadence remains correct for any recipe.
+- **Projection Recipe dropdown** in the header, to the left of Project Crop: lists the built-in recipe (labelled "(built-in)") plus every user recipe; **the built-in is the default**. Selecting one sets `projectionRecipeId`, which drives fresh projection-lot generation and chain cadence only — manual preview editing and per-lot real schedules are untouched. The bloom length comes from the selected recipe's harvest offset, and because clone cut counts back from harvest, the chain cadence follows any recipe.
+- **Room turnaround readout** in the recipe editor and below the preview: when the next lot in the room has its clones cut, is planted and is transplanted (in days from harvest), where that transplant lands against Grow-Room Clean, and how long each cycle is. It updates as you edit, and a change also shows a toast.
 - **Task Recipe dropdown** in the form row plus a **✏️ Manage** button: selects the recipe used for the currently selected lot's schedule (persisted as `recipeId` on Generate) and opens the recipe manager overlay, whose list view also holds the ⬆️ Import / ⬇️ Export buttons. See "Task Recipes".
 - **Project Crop button** in the header, to the left of the Active Lot selector (sized to match the dropdown's height): generates/refreshes the 5-lot chain for the selected room using the currently selected bloom length. Greyed out (disabled) when the selected lot can't be projected (no lot, no flower room, or room not flagged flowering) **or** when the room's **newest real lot** (latest `createdDate`) has no generated schedule — projections anchor off that specific lot's clone-cut day, so it must be scheduled first (the tooltip names the newest lot). Never auto-runs on load or when a room flag changes.
 - **Reproject label swap:** when the resolved room is *pending reprojection*, this same button's label swaps from "🔮 Project Crop" to "🔁 Reproject". It stays disabled — with a tooltip explaining that the room's new lot needs a generated schedule first — until the room's active real lot has a CropLabourWizard schedule; it then runs the reprojection algorithm (see "Reprojection") instead of a fresh projection.
@@ -722,15 +727,18 @@ CropLabourWizard's cultivation tasks are **data-driven** via self-contained reci
 - **`id`** — unique identifier. Built-in is `sitka-9week`. User recipes get a fresh 6-char id from the suite's `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`), collision-checked against the built-in and existing DB recipes.
 - **`name`** — human-readable label shown in selectors.
 - **`version`** — integer, for forward compatibility.
-- **`chain.cloneCutBeforeHarvest`** — positive integer (default `21` when absent). The clone-cut task is *derived*, not independently offset: it always lands at harvest start − this many days, so it follows bloom length automatically.
+- **`chain.cloneCutBeforeHarvest`** — kept for older copies of the tool. Every save writes it from the `clone_cut` task's days before harvest; the task is the source of truth.
+  - **Converting old recipes:** a `clone_cut` task that doesn't reference `harvest` is converted on load and import to `reference: 'harvest'`, `defaultOffset: −cloneCutBeforeHarvest` (default 21), and unlocked, so every date stays where it was.
+  - A recipe with no `clone_cut` task falls back to this number (default 21).
 - **`tasks[]`** — the ordered task list. **Array order is load-bearing**: it is the chronological display order and drives the pre/post-transplant room split (see Compatibility below). Each task:
   - `taskType` — unique, non-empty `snake_case` id (e.g., `flip`, `harvest`). Stable across recipes; this is what other tools key on.
   - `name` / `emoji` — display label + icon.
   - `reference` — the anchor the offset is measured from: one of `cloning`, `planting`, `flip`, `harvest`, `trim`. The referenced anchor must exist in the recipe (except `cloning`, which is always available as Day 0).
   - `defaultOffset` — integer days from the reference (clamped −30…+365 on import/save).
   - `hasToggle` / `defaultEnabled` — optional. When `hasToggle` is true the task can be switched off in the preview; `defaultEnabled` sets its initial state (IPM sprays default to `false`).
-  - `isLocked` — optional. Locked tasks (e.g., the derived clone cut) are not user-editable.
+  - `isLocked` — optional. Locked tasks (e.g., Cutting Clones at Day 0) are not user-editable.
   - `roomPhase` — optional. One of `cloning`, `veg`, `flower`. When present, it is written onto generated events and overrides the order-based room split for that task.
+  - `minutes` / `staff` — optional **labour estimate**, as on DailyWizard tasks: estimated time **per day** in minutes (at least 5; the editor steps by 5) and the staff needed (at least 1; blank = 1). Blank minutes = no estimate. A multi-day task (Trim, multi-day Harvest) needs that much on each of its days. The built-in recipe has none — duplicate it to add them. Written onto generated events as `estStaff` / `estMinutes` (see "Event Contract").
 
 ### Validation Rules
 
@@ -739,7 +747,9 @@ Enforced on **import** and on **in-wizard save** (the same `validateRecipe()` ru
 - **Reference integrity:** every `reference` ∈ {`cloning`,`planting`,`flip`,`harvest`,`trim`} and the referenced anchor task must exist (`cloning` is always available as Day 0).
 - **taskType uniqueness:** non-empty, `snake_case`, unique within the recipe.
 - **defaultOffset:** integer (clamped −30…+365).
-- **chain.cloneCutBeforeHarvest:** positive integer (defaults to 21 when absent).
+- **clone_cut:** must reference `harvest` (it counts back from harvest end).
+- **chain.cloneCutBeforeHarvest:** positive integer when present (written from the `clone_cut` task on save).
+- **minutes / staff (optional):** when present, `minutes` is an integer ≥ 5 and `staff` an integer ≥ 1.
 
 ### Database Keys — `_CropLabourWizard` additions
 
@@ -752,10 +762,12 @@ Two new keys under the tool-owned `_CropLabourWizard` key:
 Generated CropLabourWizard events keep their existing shape and gain one **additive, optional** field:
 
 ```js
-{ date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, roomId?, roomPhase? }
+{ date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, roomId?, roomPhase?, estStaff?, estMinutes? }
 ```
 
 - `roomPhase` (`'cloning' | 'veg' | 'flower'`) is present **only** when the recipe task specifies it. It lets consumers attribute the event to a physical room without re-deriving phase from task order. Consumers that don't know about it simply ignore it — existing behaviour is unchanged.
+- `estStaff` / `estMinutes` — the recipe task's labour estimate, **per day**, present only when the task has one. The event's estimated person-hours = `estStaff × estMinutes × days in [date, endDate] ÷ 60`. CropLabourWizard and CropProjection events both carry it. They come from the recipe, so they are **not** carried over on regeneration: Generate writes the current recipe's values, and Project Crop refreshes them on projected lots it shifts. They are separate from `estimatedHours`, the field typed in SitkaTools' event panel, which nothing else reads.
+- **Who shows the estimate:** CropLabourWizard (preview, saved schedule, lot total), DailyWizard (`👥 staff` / `⏱ time` chips on crop event rows), the SitkaTools calendar tooltip (estimate plus the hours recorded in `labour_map`), and EmployeeWizard (task editor and the estimated-vs-actual Labour Report).
 
 ### Compatibility Rules (do not break)
 
