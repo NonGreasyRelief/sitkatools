@@ -3317,6 +3317,8 @@
             let val = parseFloat(input.value) || 0;
             val = Math.max(min, Math.min(max, val + delta));
             input.value = val;
+            // Setting .value fires no event — tell listeners (the lot list saves plant counts on 'change')
+            input.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
         // ---- Initialize ----
@@ -3492,6 +3494,8 @@
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = filename;
+                // The click must not reach the document handler, which would close the save popup
+                a.addEventListener('click', (e) => e.stopPropagation());
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -4295,6 +4299,9 @@
                     const orphans = {};
                     for (const [id, v] of Object.entries(dailyAll)) if (!buildingIds.includes(id)) orphans[id] = v;
                     main._DailyWizard = { ...main._DailyWizard, buildings: orphans };
+                    // Nothing left for Main (DailyWizard only adds an empty `buildings`): leave it out, so a building
+                    // device doesn't see an office change it can't save
+                    if (!Object.keys(orphans).length && Object.keys(main._DailyWizard).length === 1) delete main._DailyWizard;
                 }
                 const entries = main._PaperWizard?.entries || {};
                 if (main._PaperWizard) delete main._PaperWizard.entries;
@@ -4421,11 +4428,14 @@
             buildingOverlays(db, id, now) {
                 const base = JSON.parse(this.baseline);
                 const ov = JSON.parse(JSON.stringify(this.overlays[id] || { lots: {}, events: {} }));
-                // An update keeps its original time while its value is unchanged, so re-saving never makes an
-                // old floor value look newer than a later office correction
+                // An update keeps its original time while its value is unchanged and it still wins (newer than the
+                // office's edit and every other building's update), so re-saving never makes an old floor value look
+                // newer than a later office correction. A value entered again after it was overruled is stamped now.
+                const stillWins = (kind, rid, f, at) => at > (this.stamps[kind][rid]?.[f] || 0) &&
+                    Object.entries(this.overlays).every(([bid, o]) => bid === id || !((o?.[kind]?.[rid]?.[f]?.at || 0) >= at));
                 const record = (kind, rid, f, value) => {
                     const prev = ov[kind][rid]?.[f];
-                    if (prev && sameValue(prev.value, value)) return;
+                    if (prev && sameValue(prev.value, value) && stillWins(kind, rid, f, prev.at)) return;
                     (ov[kind][rid] || (ov[kind][rid] = {}))[f] = { value: value ?? null, at: now };
                 };
                 for (const [lotId, lot] of Object.entries(db.lots || {})) {
@@ -4512,7 +4522,7 @@
             // files: { main: {name, text}, wages: {name, text}|null, buildings: [{name, text}], folder: dir|null }
             async open(files) {
                 let main, wages = null;
-                const buildings = [];
+                let buildings = [];
                 try {
                     main = JSON.parse(files.main.text);
                     for (const f of files.buildings) buildings.push({ name: f.name, data: JSON.parse(f.text), text: f.text });
@@ -4520,6 +4530,24 @@
                     alert('Could not read the database files: ' + err.message);
                     return false;
                 }
+                // OneDrive conflict copies ("Building-B1-OFFICEPC.json", "Building-B1 (1).json") hold the same
+                // building as the real file: use only the file with the exact name and skip the copies (warned
+                // below). A copy is used only when no file has the exact name, so a renamed file still opens.
+                const skipped = [];
+                const byBuilding = new Map();
+                for (const b of buildings) {
+                    const id = b.data?._building;
+                    if (!id) { byBuilding.set(b, b); continue; }
+                    const prev = byBuilding.get(id);
+                    if (!prev) { byBuilding.set(id, b); continue; }
+                    if (b.name === buildingFileName(id) && prev.name !== buildingFileName(id)) {
+                        skipped.push(prev.name);
+                        byBuilding.set(id, b);
+                    } else {
+                        skipped.push(b.name);
+                    }
+                }
+                buildings = [...byBuilding.values()];
                 await this.ensureRole(main.buildings);
                 if (this.role === 'office' && files.wages) {
                     try { wages = JSON.parse(files.wages.text); } catch (_) { alert('Wages.json could not be read — wages are not loaded.'); }
@@ -4559,6 +4587,11 @@
                 refreshAllViews();
                 hideOverlay();
                 if (this.role === 'office' && tidy.length) this.promptTidy(tidy);
+                if (skipped.length) {
+                    alert(`Heads up: these files were not opened:\n\n• ${skipped.join('\n• ')}\n\n` +
+                        `They are copies of building files that were opened (for example a OneDrive conflict copy). ` +
+                        `They may hold changes that aren't in the files you just opened.`);
+                }
                 return true;
             },
 
@@ -4674,6 +4707,8 @@
                     none.textContent = 'Nothing to save from this device.';
                     saveFileLinks.appendChild(none);
                     savePopup.classList.remove('hidden');
+                    // Every file already matches (e.g. an edit was undone): nothing is unsaved any more
+                    if (plan.cannot.length === 0) this.finish(plan);
                     return;
                 }
 
@@ -4874,6 +4909,9 @@
             async flush() {
                 clearTimeout(this._timer);
                 if (!DB.data) return;
+                // Every DB change or (re)load lands here (markUnsaved / clearUnsaved schedule it): push it to
+                // open tool windows too, so none keeps an old copy that its next edit would write back
+                broadcastToSubtools();
                 const value = {
                     db: DB.data, at: Date.now(), unsaved: hasUnsavedChanges, from: 'SitkaTools',
                     fileName: DB.fileName, split: DbSplit.active ? DbSplit.exportState() : null,
@@ -4995,8 +5033,12 @@
         const saveFolderAction = $('saveFolderAction');
         const saveFileLinks = $('saveFileLinks');
         let saveBlobUrls = [];
+        // Revoked a moment later, not at once: a left-clicked save link may still be starting its download
+        function revokeBlobUrlsSoon(urls) {
+            if (urls.length) setTimeout(() => urls.forEach(url => URL.revokeObjectURL(url)), 1000);
+        }
         function revokeSaveBlobs() {
-            saveBlobUrls.forEach(url => URL.revokeObjectURL(url));
+            revokeBlobUrlsSoon(saveBlobUrls);
             saveBlobUrls = [];
         }
 
@@ -5329,7 +5371,7 @@
 
             // Revoke previous blob URL to free memory
             if (currentBlobUrl) {
-                URL.revokeObjectURL(currentBlobUrl);
+                revokeBlobUrlsSoon([currentBlobUrl]);
             }
 
             const blob = new Blob([save.json], { type: 'application/json' });
@@ -5368,11 +5410,15 @@
             closeSavePopup();
         });
 
+        // Clicks inside the popup (its save links) must not reach the document handler below: it would
+        // close the popup and revoke the file before a left-clicked link's download starts
+        savePopup.addEventListener('click', (e) => e.stopPropagation());
+
         function closeSavePopup() {
             savePopup.classList.add('hidden');
             revokeSaveBlobs();
             if (currentBlobUrl) {
-                URL.revokeObjectURL(currentBlobUrl);
+                revokeBlobUrlsSoon([currentBlobUrl]);
                 currentBlobUrl = null;
             }
         }
@@ -5730,7 +5776,8 @@
             );
             if (!newWindow) return;
 
-            openSubtools.push({ win: newWindow, url });
+            const entry = { win: newWindow, url };
+            openSubtools.push(entry);
 
             // Track close with interval fallback (close event unreliable on file://)
             const closeCheck = setInterval(() => {
@@ -5741,13 +5788,17 @@
             }, 1000);
 
             // Send DB via postMessage with retry mechanism
-            const dbPayload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
             let attempts = 0, acknowledged = false;
 
             function trySend() {
                 if (acknowledged || newWindow.closed || attempts >= 5) return;
                 attempts++;
-                newWindow.postMessage({ type: 'sitkaGit_db', payload: dbPayload, view: DeviceView.message() }, SITKA_MSG_ORIGIN);
+                // The DB as it is now (it may have changed since the window opened); note what the window was
+                // sent, so broadcastToSubtools doesn't send the same again
+                const payload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
+                const view = DeviceView.message();
+                entry.sent = subtoolSyncKey(payload, view);
+                newWindow.postMessage({ type: 'sitkaGit_db', payload, view }, SITKA_MSG_ORIGIN);
             }
 
             // Listen for acknowledgment from subtool
@@ -5801,6 +5852,9 @@
             Calendar.render();
             updateCalendarStatusBar();
             updateIOStatusBar();
+
+            // Other open tools get this change now; the sender already has it
+            broadcastToSubtools(e.source);
 
             showSyncToast('Subtool has updated data — views refreshed automatically');
         });
@@ -6206,6 +6260,8 @@
 
                     const rooms = DB.data.rooms || {};
                     const roomName = select.value || null;
+                    const flowerRoomChanged = field === 'destRoom' && lot.destRoom !== roomName;
+                    let targetId = null;
 
                     // Keep the flower room's assignedLots in sync with destRoom
                     if (field === 'destRoom') {
@@ -6213,7 +6269,8 @@
                             if (!r.assignedLots) return;
                             r.assignedLots = r.assignedLots.filter(id => id !== lotId);
                         });
-                        const target = Object.values(rooms).find(r => r.name === roomName);
+                        targetId = Object.keys(rooms).find(id => rooms[id].name === roomName) || null;
+                        const target = targetId ? rooms[targetId] : null;
                         if (target) {
                             if (!target.assignedLots) target.assignedLots = [];
                             if (!target.assignedLots.includes(lotId)) target.assignedLots.push(lotId);
@@ -6222,6 +6279,13 @@
 
                     lot[field] = roomName;
                     markUnsaved();
+
+                    // A real lot taking a flowering room's slot "takes" TBA-1, as in the Room Manager's moveLot
+                    if (flowerRoomChanged && targetId && rooms[targetId].isFlowering) {
+                        const res = deleteTBA1Projection(targetId);
+                        if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${rooms[targetId].name} — room flagged for reprojection`);
+                    }
+
                     renderLotList();
                 });
             });
@@ -6290,23 +6354,40 @@
 
             if (result.removedEntry || result.deletedEvents > 0) {
                 markUnsaved();
-                broadcastToCropLabourWizard(); // push fresh DB so open CLW windows see the missing TBA-1
+                broadcastToSubtools(); // push fresh DB so open CLW windows see the missing TBA-1
+            }
+            if (result.deletedEvents > 0) {
+                // The calendar and terminal still show the deleted events — redraw them
+                Calendar.onDbChanged();
+                Calendar.render();
+                updateCalendarStatusBar();
             }
             return result;
         }
 
-        // Re-broadcast the current DB to any open CropLabourWizard windows via sitkaGit_db_update.
-        // CLW's handler refreshes its lot selector / schedule list / status bar without disrupting
-        // active form editing. Scoped by URL so other subtools aren't needlessly re-rendered.
-        function broadcastToCropLabourWizard() {
-            const payload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
+        // What a tool window was last sent (the DB without SitkaTools' save stamp, plus the view)
+        function subtoolSyncKey(payload, view) {
+            return JSON.stringify({ db: { ...payload, _meta: undefined }, view });
+        }
+
+        // Push the current DB to every open tool window via sitkaGit_db_update, so none keeps an old copy that its
+        // next edit would write back over newer work. Tools re-render without disrupting active editing and never
+        // reply to it. A window that already has exactly this DB is skipped, and so is `except` — the window
+        // whose update was just taken in.
+        function broadcastToSubtools(except) {
+            if (!DB.data) return;
+            const view = DeviceView.message();
+            const key = subtoolSyncKey(DB.data, view);
             openSubtools.forEach(entry => {
-                const win = entry && typeof entry === 'object' ? entry.win : entry; // tolerate legacy bare-window entries
-                const url = entry && typeof entry === 'object' ? (entry.url || '') : '';
+                const win = entry?.win;
                 if (!win || win.closed) return;
-                if (url && !/CropLabourWizard/i.test(url)) return;
+                if (win === except || entry.sent === key) {
+                    entry.sent = key;
+                    return;
+                }
                 try {
-                    win.postMessage({ type: 'sitkaGit_db_update', payload, view: DeviceView.message() }, SITKA_MSG_ORIGIN);
+                    win.postMessage({ type: 'sitkaGit_db_update', payload: DB.data, view }, SITKA_MSG_ORIGIN);
+                    entry.sent = key;
                 } catch (_) { /* window gone */ }
             });
         }
@@ -6846,6 +6927,11 @@
                 const room = this.rooms[roomId];
                 if (!room) return;
 
+                // A lot has one flower room: take it out of any other room first (as moveLot does)
+                for (const [id, r] of Object.entries(this.rooms)) {
+                    if (id !== roomId && Array.isArray(r?.assignedLots)) r.assignedLots = r.assignedLots.filter(l => l !== lotId);
+                }
+
                 if (!room.assignedLots) room.assignedLots = [];
                 if (!room.assignedLots.includes(lotId)) {
                     room.assignedLots.push(lotId);
@@ -7004,6 +7090,12 @@
             // The events this device shows — a building device only its own building's (DeviceView)
             get shownEvents() {
                 return DeviceView.building ? this.events.filter(ev => DeviceView.eventVisible(ev)) : this.events;
+            },
+
+            // The event a 7-day / terminal row was drawn for, by its stable id — an array index would point
+            // at a different event once the array changes
+            eventById(id) {
+                return id ? this.events.find(ev => ev.id === id) || null : null;
             },
 
             init() {
@@ -7341,10 +7433,9 @@
 
             // Attach hover-tooltip listeners to a calendar event element.
             // The tooltip appears after a short delay and hides when the mouse leaves.
-            _attachEventTooltip(eventEl, eventIndex) {
+            _attachEventTooltip(eventEl) {
                 eventEl.addEventListener('mouseenter', (e) => {
-                    const idx = parseInt(eventEl.dataset.eventIndex, 10);
-                    const ev = DB.data.calendarEvents[idx];
+                    const ev = this.eventById(eventEl.dataset.eventId);
                     if (!ev) return;
                     this._hideEventTooltip(); // cancel any pending show
                     this._tooltipTimer = setTimeout(() => {
@@ -7411,10 +7502,10 @@
                 const counts = new Map();
                 for (const ev of this._visibleEvents || []) {
                     const tt = ev.taskType || null;
-                    const startMs = parseLocalDate(ev.date).getTime();
-                    const endMs = parseLocalDate(ev.endDate || ev.date).getTime();
-                    for (let ms = startMs; ms <= endMs; ms += 86400000) {
-                        const dateStr = localDate(new Date(ms));
+                    const end = parseLocalDate(ev.endDate || ev.date);
+                    // Step by calendar day, not 24 h: across a DST change 24 h lands on the same day or skips one
+                    for (const d = parseLocalDate(ev.date); d <= end; d.setDate(d.getDate() + 1)) {
+                        const dateStr = localDate(d);
                         if (!counts.has(dateStr)) counts.set(dateStr, new Map());
                         const byType = counts.get(dateStr);
                         byType.set(tt, (byType.get(tt) || 0) + 1);
@@ -7604,7 +7695,7 @@
                                 displayText = `${displayHour}:${m}${ampm} ${displayText}`;
                             }
 
-                            html += `<div class="${cssClass}" data-event-index="${this.events.indexOf(event)}">${escapeHtml(displayText)}</div>`;
+                            html += `<div class="${cssClass}" data-event-id="${escapeHtml(event.id || '')}">${escapeHtml(displayText)}</div>`;
                         });
                         html += '</div>';
                     }
@@ -7623,12 +7714,12 @@
                 // Click an event → select it (opens the detail panel)
                 view.querySelectorAll('.week-event').forEach(el => {
                     el.addEventListener('click', () => {
-                        const idx = parseInt(el.dataset.eventIndex, 10);
-                        if (DB.data.calendarEvents[idx]) this.selectEvent(DB.data.calendarEvents[idx]);
+                        const ev = this.eventById(el.dataset.eventId);
+                        if (ev) this.selectEvent(ev);
                     });
 
                     // Hover tooltip with the full entry text
-                    this._attachEventTooltip(el, el.dataset.eventIndex);
+                    this._attachEventTooltip(el);
                 });
             },
 
@@ -8091,6 +8182,18 @@
                 if (this.filters.length !== before) {
                     console.log('[Calendar] Dropped stale filter(s) after DB change');
                 }
+                // The event panel edits this.selectedEvent: after the DB was replaced, point it at the same event in
+                // the new DB (found by id), or close the panel if that event is gone — edits to the old copy are lost
+                const sel = this.selectedEvent;
+                if (sel && !this.events.includes(sel)) {
+                    const fresh = this.eventById(sel.id);
+                    if (fresh) {
+                        this.selectedEvent = fresh;
+                        this.renderEventPanel(fresh);
+                    } else {
+                        this.closeEventPanel();
+                    }
+                }
             },
 
             render() {
@@ -8332,16 +8435,16 @@
 
                 const event = DB.data.calendarEvents[eventIndex];
                 const oldDate = event.date;
-                // Preserve duration when moving multi-day events
+                // Preserve duration when moving multi-day events — in whole days: a millisecond offset is an hour
+                // off across a DST change and lands the end on the wrong day
                 let endDateOffset = null;
                 if (event.endDate && event.endDate !== event.date) {
-                    const startMs = parseLocalDate(event.date).getTime();
-                    const endMs = parseLocalDate(event.endDate).getTime();
-                    endDateOffset = endMs - startMs;
+                    endDateOffset = Math.round((parseLocalDate(event.endDate) - parseLocalDate(event.date)) / 86400000);
                 }
                 event.date = newDate;
                 if (endDateOffset !== null) {
-                    const endD = new Date(parseLocalDate(newDate).getTime() + endDateOffset);
+                    const endD = parseLocalDate(newDate);
+                    endD.setDate(endD.getDate() + endDateOffset);
                     event.endDate = localDate(endD);
                 }
                 markUnsaved();
@@ -8506,6 +8609,8 @@
                 if (!this.selectedEvent) return;
 
                 const inputs = $('eventPanelBody').querySelectorAll('.event-detail-input');
+                const ev = this.selectedEvent;
+                const prevDates = { date: ev.date, endDate: ev.endDate };
                 let changed = false;
                 inputs.forEach(input => {
                     const field = input.dataset.field;
@@ -8521,6 +8626,15 @@
                         changed = true;
                     }
                 });
+
+                // A start after the end would hide the event from every calendar view: undo the date edit
+                const datesEdited = ev.date !== prevDates.date || ev.endDate !== prevDates.endDate;
+                if (datesEdited && ev.date && ev.endDate && ev.endDate < ev.date) {
+                    alert(`The end date (${ev.endDate}) can't be before the start date (${ev.date}). The dates were not changed.`);
+                    ev.date = prevDates.date;
+                    if (prevDates.endDate === undefined) delete ev.endDate;
+                    else ev.endDate = prevDates.endDate;
+                }
 
                 if (changed) markUnsaved();
 
@@ -8661,13 +8775,13 @@
                 }
 
                 // Click terminal line to select event
-                body.querySelectorAll('.terminal-line[data-event-index]').forEach(line => {
+                body.querySelectorAll('.terminal-line[data-event-id]').forEach(line => {
                     line.addEventListener('click', (e) => {
                         // Don't trigger selection when clicking action buttons
                         if (e.target.closest('.terminal-delete-btn') || e.target.closest('.terminal-check') || e.target.closest('.terminal-reschedule-btn') || e.target.closest('.terminal-complete-btn')) return;
-                        const idx = parseInt(line.dataset.eventIndex);
-                        if (DB.data.calendarEvents[idx]) {
-                            this.selectEvent(DB.data.calendarEvents[idx]);
+                        const event = this.eventById(line.dataset.eventId);
+                        if (event) {
+                            this.selectEvent(event);
                         }
                     });
                 });
@@ -8676,8 +8790,7 @@
                 body.querySelectorAll('.terminal-check').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const idx = parseInt(btn.dataset.eventIndex);
-                        const event = DB.data.calendarEvents[idx];
+                        const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
                         event.completed = !event.completed;
                         markUnsaved();
@@ -8689,8 +8802,7 @@
                 body.querySelectorAll('.terminal-complete-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const idx = parseInt(btn.dataset.eventIndex);
-                        const event = DB.data.calendarEvents[idx];
+                        const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
                         event.completed = true;
                         markUnsaved();
@@ -8702,11 +8814,11 @@
                 body.querySelectorAll('.terminal-delete-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const idx = parseInt(btn.dataset.eventIndex);
-                        const event = DB.data.calendarEvents[idx];
+                        const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
                         if (!confirm(`Delete event "${event.title}"?`)) return;
-                        DB.data.calendarEvents.splice(idx, 1);
+                        const idx = DB.data.calendarEvents.indexOf(event);
+                        if (idx >= 0) DB.data.calendarEvents.splice(idx, 1);
                         markUnsaved();
                         // Clear selection if the deleted event was selected
                         if (this.selectedEvent === event) {
@@ -8721,8 +8833,7 @@
                 body.querySelectorAll('.terminal-reschedule-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const idx = parseInt(btn.dataset.eventIndex);
-                        const event = DB.data.calendarEvents[idx];
+                        const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
                         this.showReschedulePicker(btn, event);
                     });
@@ -8754,20 +8865,21 @@
                 const confirm = () => {
                     const newDate = $('rescheduleDateInput').value;
                     if (!newDate) return;
-                    // Preserve duration for multi-day events
+                    // Preserve duration for multi-day events (in whole days — see moveEvent)
                     let endDateOffset = null;
                     if (event.endDate && event.endDate !== event.date) {
-                        const startMs = parseLocalDate(event.date).getTime();
-                        const endMs = parseLocalDate(event.endDate).getTime();
-                        endDateOffset = endMs - startMs;
+                        endDateOffset = Math.round((parseLocalDate(event.endDate) - parseLocalDate(event.date)) / 86400000);
                     }
                     event.date = newDate;
                     if (endDateOffset !== null) {
-                        const endD = new Date(parseLocalDate(newDate).getTime() + endDateOffset);
+                        const endD = parseLocalDate(newDate);
+                        endD.setDate(endD.getDate() + endDateOffset);
                         event.endDate = localDate(endD);
                     }
                     markUnsaved();
                     picker.remove();
+                    // An open event panel must show the new dates, or its next save writes the old ones back
+                    if (this.selectedEvent === event) this.renderEventPanel(event);
                     this.render();
                 };
 
@@ -8823,12 +8935,14 @@
                 const eventEnd = event.endDate || event.date;
                 const showReschedule = !isCompleted && eventEnd < todayStr;
 
-                return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" data-event-index="${DB.data.calendarEvents.indexOf(event)}">
-                    <span class="${checkClass}" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="${isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
+                // Rows and their buttons find the event by its stable id (see eventById)
+                const ref = `data-event-id="${escapeHtml(event.id || '')}"`;
+                return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" ${ref}>
+                    <span class="${checkClass}" ${ref} title="${isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
                     <span class="terminal-date">${displayDate}${timeDisplay}</span>
                     <span class="terminal-title">${title}${lotInfo}</span>
-                    ${showReschedule ? `<button class="terminal-complete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Mark complete">✓</button><button class="terminal-reschedule-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Reschedule">↻ Reschedule</button>` : ''}
-                    <button class="terminal-delete-btn" data-event-index="${DB.data.calendarEvents.indexOf(event)}" title="Delete event">✕</button>
+                    ${showReschedule ? `<button class="terminal-complete-btn" ${ref} title="Mark complete">✓</button><button class="terminal-reschedule-btn" ${ref} title="Reschedule">↻ Reschedule</button>` : ''}
+                    <button class="terminal-delete-btn" ${ref} title="Delete event">✕</button>
                 </div>`;
             }
         };
@@ -8876,7 +8990,8 @@
                 let ics = this.icsHeader();
 
                 events.forEach((event, idx) => {
-                    const uid = `sitka-${idx}-${Date.now()}@sitkatools.local`;
+                    // Stable per event, so re-importing a newer export updates events instead of duplicating them
+                    const uid = event.id ? `sitka-${event.id}@sitkatools.local` : `sitka-${idx}-${Date.now()}@sitkatools.local`;
 
                     // Determine if this is a timed event or all-day event
                     const hasTime = !!event.startTime;

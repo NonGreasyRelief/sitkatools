@@ -125,7 +125,7 @@ Every calendar event carries a unique, stable `id`, so tools can refer to an eve
 Tools that regenerate their events (CropLabourWizard on **Generate**, EquipmentWizard on every resync) rebuild them from scratch. Anything added on top of a generated event is copied onto its replacement with `carryOverAnnotations(previous, fresh, keyOf)`:
 
 - **Annotation fields:** `id`, `completed`, `labour_map` (EmployeeWizard), and the SitkaTools event-panel fields `startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`.
-- **Matching:** CropLabourWizard by `taskType` within the lot; EquipmentWizard by `equipmentId + title + date`.
+- **Matching:** CropLabourWizard by `taskType` within the lot; EquipmentWizard by `equipmentId + taskId + date` (events saved before `taskId` existed fall back to `equipmentId + title + date`).
 - **Unmatched work records** (`completed` or a non-empty `labour_map`) are never dropped silently: CropLabourWizard asks before a Generate, Clear Schedule or Delete Schedule would delete them (cancel = no changes); EquipmentWizard keeps them on the calendar as maintenance history while their equipment and room still exist.
 
 #### Multi-Day Events
@@ -156,6 +156,9 @@ Calendar events support an optional `endDate` field for events that span consecu
 
 // Subtool → SitkaTools: Send database after mutation
 { type: 'sitkaGit_db_update', payload: DB.data }
+
+// SitkaTools → every open subtool: the current DB, whenever it changes (see rule 9)
+{ type: 'sitkaGit_db_update', payload: DB.data, view: { building: '<building id>' | null } }
 ```
 
 #### Rules
@@ -168,6 +171,11 @@ Calendar events support an optional `endDate` field for events that span consecu
 6. **No localStorage, sessionStorage, IndexedDB, or cookies in subtools.** All cross-window state flows through postMessage.
 7. **Same-origin messages only.** Every `postMessage` targets `SITKA_MSG_ORIGIN` — the page's own origin when served over http(s) (GitHub Pages), falling back to `'*'` only under `file://`, where origins are opaque and can't be targeted. Receivers check the sender: SitkaTools accepts `sitkaGit_db_update` only from windows in its `openSubtools` list, and subtools accept messages only from `window.opener`.
 8. **Subtool updates mark the DB unsaved.** SitkaTools calls `markUnsaved()` when a `sitkaGit_db_update` arrives, so closing the main window after a subtool edit triggers the unsaved-changes warning.
+9. **SitkaTools pushes every change to every open subtool.** Otherwise a tool window keeps the DB it opened with, and its next edit writes that old copy back over newer work. `broadcastToSubtools()` posts `sitkaGit_db_update` (with `view`) to each window in `openSubtools`:
+   - whenever SitkaTools' DB changes or is loaded, reloaded or replaced — debounced, from `WorkCopy.flush()`, which `markUnsaved()` / `clearUnsaved()` schedule;
+   - right after it takes a subtool's `sitkaGit_db_update`, skipping the sender (it already has that DB).
+
+   A window that was already sent exactly this DB (the save stamp `_meta` aside) is skipped, and the initial `sitkaGit_db` retries always send the current DB. Subtools handle it from their opener like `sitkaGit_db` — replace `DB.data`, `ensureStructure()`, re-render without losing half-typed input or an open draft — but **never reply** to it (no `sitkaGit_ready`, no `notifySitkaTools()`), so nothing ping-pongs. EquipmentWizard doesn't resync on it.
 
 ```js
 // postMessage target origin: our own origin when served over http(s).
@@ -374,7 +382,7 @@ The central hub with two modes:
    The calendar has three views selected by a group of three buttons in the nav row: **📆 Monthly** (default), **📅 7-Day**, and **🗓️ Annual**. The active view's button gains an accent highlight; clicking another button switches views immediately.
 
    - **7-Day view** — a vertically stacked list of seven day cards (one per day, first day on top), each with a header row (day-of-week name, full date, "Today" badge, holiday name if any, task count) and the day's events rendered as full-width rows with complete task text (time prefix when `startTime` is set). Multi-day events keep their range styling (`range-start` / `range-end` borders), completed events are struck through, and projection events are muted/dashed — same conventions as the month grid. The window slides **one day at a time** with Prev/Next; clicking any day's header re-anchors the window so that day becomes the first; "Today" re-anchors to today. The first day of the window gets an accent border highlight. The title reads "Mon D, YYYY – Mon D, YYYY — 7-Day View".
-   - **Annual view** — a 12-month overview. It exists because task text is unreadable at annual scale, so each day shows only small **emoji dots** instead of event labels: one dot per distinct task type on that day (multi-day events span their full `[date, endDate]` range), using a fixed `taskType → emoji` map with a fallback to the first emoji in the event title (or 📌). A **legend** above the grid lists up to 8 task types (most frequent first) with their event counts and a "+N more…" overflow note. The view is designed to be used together with the tag filters — e.g. filtering by harvest/clone/plant dates so only a few dot colours are on screen. **Cluster detection** warns when the same task type is scheduled too close together: consecutive events of one task type whose gap (previous event's `endDate` → next event's start) is ≤ 7 days form a cluster, and every clustered day after the first gets a red inset ring plus an "N×" badge (N = cluster size). Prev/Next step **whole years** in annual mode; clicking any day cell jumps into the **7-day view with that day as the first day of the window**. The title reads "YYYY — Annual View".
+   - **Annual view** — a 12-month overview. It exists because task text is unreadable at annual scale, so each day shows only small **emoji dots** instead of event labels: one dot per distinct task type on that day (multi-day events span their full `[date, endDate]` range), using a fixed `taskType → emoji` map with a fallback to the first emoji in the event title (or 📌). A **legend** above the grid lists up to 8 task types (most frequent first) with their event counts and a "+N more…" overflow note. The view is designed to be used together with the tag filters — e.g. filtering by harvest/clone/plant dates so only a few dot colours are on screen. **Cluster detection** warns when the same task type is double-booked: a day on which two or more events of one task type fall (multi-day events count on every day they span) gets a red inset ring plus an "N×" badge (N = the number of same-type events that day; when several types clash, the largest count is shown). Only the visible (filtered) events count, and the day tooltip in the month and annual views notes "⚠️ Clustered: N× <task type> on this day". Prev/Next step **whole years** in annual mode; clicking any day cell jumps into the **7-day view with that day as the first day of the window**. The title reads "YYYY — Annual View".
 
 ### Subtools — Popup Window Convention
 
