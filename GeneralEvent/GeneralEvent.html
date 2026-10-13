@@ -474,6 +474,17 @@
 
         const $ = id => document.getElementById(id);
 
+        // Today as local YYYY-MM-DD (toISOString() is UTC — it gives tomorrow every BC evening)
+        function todayStr() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        // True once SitkaTools' DB has arrived (postMessage or the shared working copy).
+        // Needed because ensureStructure() makes DB.data an empty DB from load time — adding an
+        // event to that and sending it back would replace SitkaTools' whole DB.
+        let dbLoaded = false;
+
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
 
@@ -537,7 +548,7 @@
         // `var` (not const) so notifySitkaTools() can check it safely however early it runs.
         var WorkCopy = {
             TOOL: 'GeneralEvent',
-            LIVE: false,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
+            LIVE: true,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
             MAX_AGE: 12 * 60 * 60 * 1000,
             inUse: false,            // the DB in this tab came from the shared copy
             gotDb: false,            // SitkaTools delivered the DB by postMessage
@@ -705,12 +716,25 @@
                     window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
                 }
                 if (DeviceView.take(e.data)) return; // office only — calendar events go in Main.json
+                dbLoaded = true;
 
                 // Reconcile and render with fresh data
                 reconcileLog();
                 renderEventList();
                 updateStatusBar();
                 showToast('Database loaded from SitkaTools');
+            }
+
+            // Live DB updates pushed by SitkaTools — refresh the event list only; the form being
+            // filled in is left alone. No ack, no toast, and never notifySitkaTools() back (it would echo).
+            if (e.data?.type === 'sitkaGit_db_update' && e.data.payload) {
+                DB.data = e.data.payload;
+                DB.ensureStructure();
+                if (DeviceView.take(e.data)) return;
+                dbLoaded = true;
+                reconcileLog();
+                renderEventList();
+                updateStatusBar();
             }
         });
 
@@ -737,8 +761,9 @@
                         text = match[2] || '';
                     }
 
-                    // Create a stable ID from date + text for deduplication
-                    const id = ev.date + '|' + text;
+                    // One row per calendar event, keyed by its stable id (ensureStructure() gave every
+                    // event one). Older logs keyed rows `date|text`; they are replaced here, not merged.
+                    const id = ev.id;
 
                     if (!seenIds.has(id)) {
                         rebuilt.push({
@@ -790,6 +815,12 @@
         eventForm.addEventListener('submit', (e) => {
             e.preventDefault();
 
+            // Nothing to add to until SitkaTools' DB arrives — sending back the empty one would wipe it
+            if (!dbLoaded) {
+                showToast('Waiting for SitkaTools…');
+                return;
+            }
+
             DB.ensureStructure();
 
             const emoji = getSelectedEmoji();
@@ -831,10 +862,10 @@
             newEvent.id = newEventId();
             DB.data.calendarEvents.push(newEvent);
 
-            // Track in _GeneralEvent log (use stable ID for deduplication)
+            // Track in _GeneralEvent log (keyed by the calendar event's id)
             if (!DB.data._GeneralEvent) DB.data._GeneralEvent = { events: [] };
             DB.data._GeneralEvent.events.push({
-                id: date + '|' + text,
+                id: newEvent.id,
                 text: text,
                 date: date,
                 endDate: endDate,
@@ -848,7 +879,7 @@
             renderEventList();
             updateStatusBar();
             eventForm.reset();
-            eventDateInput.value = new Date().toISOString().split('T')[0];
+            eventDateInput.value = todayStr();
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
             document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
 
@@ -866,7 +897,7 @@
         // ---- Clear Form ----
         clearFormBtn.addEventListener('click', () => {
             eventForm.reset();
-            eventDateInput.value = new Date().toISOString().split('T')[0];
+            eventDateInput.value = todayStr();
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
             document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
         });
@@ -952,19 +983,9 @@
 
             DB.ensureStructure();
 
-            // First, find the log entry so we know what title/date to remove from calendarEvents
-            const logEntry = (DB.data._GeneralEvent?.events || []).find(e => e.id === id);
-
-            // Remove matching event from calendarEvents (by sourceTool + title + date)
-            if (logEntry) {
-                const targetTitle = `${logEntry.emoji} ${logEntry.text}`;
-                DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
-                    if (ev.sourceTool === 'GeneralEvent' && ev.title === targetTitle && ev.date === logEntry.date) {
-                        return false; // Remove this calendar event
-                    }
-                    return true;
-                });
-            }
+            // Remove exactly this event from calendarEvents — the log id is the event's id, so another
+            // event with the same text on the same day stays
+            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => !(ev.sourceTool === 'GeneralEvent' && ev.id === id));
 
             // Remove from _GeneralEvent log
             if (DB.data._GeneralEvent?.events) {
@@ -983,10 +1004,11 @@
         function updateStatusBar() {
             const count = (DB.data?._GeneralEvent?.events || []).length;
             const totalCalendar = (DB.data?.calendarEvents || []).length;
+            statusBar.style.borderColor = ''; // the "no events yet" warning border must not outlive a live update
 
-            if (!DB.data) {
+            if (!dbLoaded) {
                 statusBar.className = 'status-bar';
-                statusText.textContent = 'No database loaded. Open this tool from SitkaTools.';
+                statusText.textContent = 'No database loaded. Waiting for SitkaTools…';
                 return;
             }
 
@@ -1022,9 +1044,8 @@
 
         // ---- Start ----
         function init() {
-            // Set default date to today
-            const today = new Date().toISOString().split('T')[0];
-            eventDateInput.value = today;
+            // Set default date to today (local)
+            eventDateInput.value = todayStr();
 
             // Wait for postMessage delivery from SitkaTools — render empty state initially
             reconcileLog();

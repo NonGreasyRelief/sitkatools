@@ -5,7 +5,7 @@
 GeneralEvent is a minimal calendar event creator for the SitkaGit suite. It allows users to post an independent, standalone calendar event consisting of only three things:
 
 1. **Event text** — a free-form string describing the event.
-2. **Date** — the date the event should appear on the calendar.
+2. **Date** — the date the event should appear on the calendar (defaults to today's local date).
 3. **Opening emoji** — a selectable emoji that prefixes the event title in the calendar view.
 
 No lots, no rooms, no sub-fields. Just a quick way to drop arbitrary reminders or milestones onto the shared calendar.
@@ -137,7 +137,7 @@ GeneralEvent reads and writes its own keys within the shared database, following
 ```
 _GeneralEvent: { ... }
 ```
-Tool-wide state lives under this top-level key. This may include a log of events created by this tool for reference or undo purposes.
+Tool-wide state lives under this top-level key: `_GeneralEvent.events`, a log with one row per GeneralEvent calendar event, rebuilt from `calendarEvents` every time a DB arrives. Each row's `id` is its calendar event's `id` (older files keyed rows `date|text`; the rebuild replaces them), and Delete removes exactly that one event.
 
 **Calendar events:**
 When the user creates an event, GeneralEvent appends it to the shared `calendarEvents` array using `"sourceTool": "GeneralEvent"`. The main SitkaTools calendar view will render these alongside events from all other tools.
@@ -160,7 +160,8 @@ GeneralEvent receives its database from SitkaTools via `postMessage`, following 
 3. After receiving the DB, GeneralEvent acknowledges with `{ type: 'sitkaGit_ready' }` so SitkaTools stops retrying.
 4. After every mutation (add/delete/edit), GeneralEvent calls `notifySitkaTools()` which sends the updated DB back via `postMessage` with type `sitkaGit_db_update`.
 5. The main app auto-refreshes all views and shows a toast notification that auto-dismisses after 3 seconds.
-6. On init, GeneralEvent renders its UI immediately (no selector dropdown needed — this is an independent tool).
+6. On init, GeneralEvent renders its UI immediately (no selector dropdown needed — this is an independent tool). Until a DB arrives (postMessage or the shared working copy), Add Event is refused with "Waiting for SitkaTools…" — the empty DB sent back would replace SitkaTools' whole DB.
+7. While open, it also takes live `sitkaGit_db_update` pushes (from `window.opener`, or the shared working copy): it replaces its DB and rebuilds the event list, leaves the form alone, and sends no ack, no toast and nothing back.
 
 **Implementation:**
 ```js
