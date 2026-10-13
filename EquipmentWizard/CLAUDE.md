@@ -163,9 +163,9 @@ Any implementation must reproduce this table exactly:
 | Labour Day | Sep 7 (Mon) | Sep 6 (Mon) |
 | Truth & Reconciliation | Sep 30 (Wed) | Sep 30 (Thu) |
 | Thanksgiving | Oct 12 (Mon) | Oct 11 (Mon) |
+| Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | Christmas Day | Dec 25 (Fri) | **Dec 27 (Mon)** — observed; Dec 25 falls on a Saturday |
-Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
-| 
+
 ### Holiday-Awareness Behavior for EquipmentWizard (implementation pending)
 
 When generating or regenerating a room's maintenance schedule, compare each occurrence date against the 11 BC civic holidays for that year (using observed dates). If any occurrence falls on a holiday, surface a notification listing the affected sub-tasks and holidays (e.g., "⚠️ 🔧 Replace Filter — Dehumidifier #1 — Flower Room A falls on Labour Day (Sep 7)"). Do not auto-reschedule occurrences — notify only. The SitkaTools calendar will render the holidays themselves as if they were events.
@@ -231,7 +231,9 @@ function notifySitkaTools() {
 }
 
 window.addEventListener('message', (e) => {
-    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
+    // Real messages must come from the SitkaTools window that opened us; untrusted events are this
+    // page's own shared-copy loader (WorkCopy — root CLAUDE.md → "Shared Working Copy")
+    if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();

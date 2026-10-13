@@ -114,9 +114,9 @@ Any implementation must reproduce this table exactly:
 | Labour Day | Sep 7 (Mon) | Sep 6 (Mon) |
 | Truth & Reconciliation | Sep 30 (Wed) | Sep 30 (Thu) |
 | Thanksgiving | Oct 12 (Mon) | Oct 11 (Mon) |
+| Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | Christmas Day | Dec 25 (Fri) | **Dec 27 (Mon)** — observed; Dec 25 falls on a Saturday |
-Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
-| 
+
 ### Holiday-Awareness Behavior for GeneralEvent (implementation pending)
 
 When the user picks a date, check whether it is one of the 11 BC civic holidays for that year (nominal or observed). If so, show a gentle notification (e.g., "📌 Note: Oct 12 is Thanksgiving") while still allowing the event to be created. The SitkaTools calendar will render the holidays themselves as if they were events.
@@ -178,7 +178,9 @@ function notifySitkaTools() {
 }
 
 window.addEventListener('message', (e) => {
-    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
+    // Real messages must come from the SitkaTools window that opened us; untrusted events are this
+    // page's own shared-copy loader (WorkCopy — root CLAUDE.md → "Shared Working Copy")
+    if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();

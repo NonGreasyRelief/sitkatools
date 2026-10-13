@@ -346,9 +346,9 @@ Any implementation must reproduce this table exactly:
 | Labour Day | Sep 7 (Mon) | Sep 6 (Mon) |
 | Truth & Reconciliation | Sep 30 (Wed) | Sep 30 (Thu) |
 | Thanksgiving | Oct 12 (Mon) | Oct 11 (Mon) |
+| Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
 | Christmas Day | Dec 25 (Fri) | **Dec 27 (Mon)** — observed; Dec 25 falls on a Saturday |
-Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
-| 
+
 ### Holiday-Awareness Behavior for CropLabourWizard
 
 CropLabourWizard is holiday-aware in three places, all computed live from the year (no stored data):
@@ -427,7 +427,9 @@ function notifySitkaTools() {
 
 // Listen for DB from SitkaTools via postMessage
 window.addEventListener('message', (e) => {
-    if (!window.opener || e.source !== window.opener) return; // only trust the SitkaTools window that opened us
+    // Real messages must come from the SitkaTools window that opened us; untrusted events are this
+    // page's own shared-copy loader (WorkCopy — root CLAUDE.md → "Shared Working Copy")
+    if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
     if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
         DB.data = e.data.payload;
         DB.ensureStructure();
