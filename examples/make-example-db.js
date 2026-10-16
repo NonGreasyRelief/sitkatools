@@ -1,20 +1,36 @@
 #!/usr/bin/env node
 // make-example-db.js — builds examples/Example-Reports-DB.json, a demo database for EmployeeWizard's 📊 Reports.
 //
-//   node examples/make-example-db.js [output.json]
+//   node examples/make-example-db.js [output.json] [--today=YYYY-MM-DD]
+//
+// --today builds it as if it were that day (e.g. the day of a demo) instead of the day it's run.
 //
 // Starts from PaperWizard/Current.json (the real rooms, buildings, lots, schedules, projections, roster, daily chores and
 // grow-log wizard) and adds, dated relative to today:
-//   • ~2½ years of past crops in the three flower rooms on the 76-day cadence, kept as crop summaries (with frozen labour
+//   • 3 years of past crops in the three crop rooms on the 76-day cadence, kept as crop summaries (with frozen labour
 //     costs). Each one is built as if it were a close-out archive and summarised by EmployeeWizard's own code.
+//     Made up to improve steadily over the 3 years: yield, THC, terpenes and grade up, labour per crop down.
 //   • labour on every past crop task (roster staff + temps; the last two weeks signed in DailyWizard), recipe estimates,
 //     tagged grow logs, an example harvest log (1000 g wet per plant), chore hours, equipment maintenance with hours,
 //     booked time off, canopy sq ft and room light counts.
+//   • the floor features: floor managers, sign-offs (✅ Mark done) on recent tasks, today's check-offs, one task still
+//     open, and a late and a changed entry for the Labour Log.
 // Rerun it on the day of a demo so "today" is current. The output holds real staff and lot names: it is git-ignored.
 // Needs Node 18+. Nothing here touches the real database files.
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..');
-const OUT = process.argv[2] || path.join(__dirname, 'Example-Reports-DB.json');
+const ARGS = process.argv.slice(2);
+const OUT = ARGS.find(a => !a.startsWith('--')) || path.join(__dirname, 'Example-Reports-DB.json');
+const TODAY_ARG = ARGS.find(a => a.startsWith('--today='))?.slice(8);
+if (TODAY_ARG) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(TODAY_ARG)) throw new Error('--today wants YYYY-MM-DD');
+    // The clock starts at 7:30 that morning, so the day's check-offs and sign-offs are all before a demo
+    const RealDate = Date, shift = new RealDate(`${TODAY_ARG}T07:30:00`).getTime() - RealDate.now();
+    globalThis.Date = class extends RealDate {
+        constructor(...a) { if (a.length) super(...a); else super(RealDate.now() + shift); }
+        static now() { return RealDate.now() + shift; }
+    };
+}
 // A do-nothing page, so EmployeeWizard's script can run outside a browser
 const mk = () => { const el = { value: '', options: [], dataset: {}, style: {}, hidden: false, checked: false, innerHTML: '', textContent: '',
   classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, addEventListener() {}, removeEventListener() {}, appendChild() {}, insertBefore() {},

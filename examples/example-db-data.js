@@ -18,6 +18,14 @@ const doy = s => { const d = parseISO(s); return Math.round((d - new Date(d.getF
 const db = JSON.parse(JSON.stringify(SRC));
 delete db._meta;
 const ROSTER = Object.keys(db._EmployeeWizard.employees);           // real names, real wages
+// Floor managers (EmployeeWizard → Floor manager): who DailyWizard's ✅ Mark done offers, and who signed recent tasks off
+const FLOOR_MANAGERS = ['Will', 'Kasia', 'Matt'].filter(n => db._EmployeeWizard.employees[n]);
+for (const n of FLOOR_MANAGERS) db._EmployeeWizard.employees[n].floorManager = true;
+// Made-up progress over the 3 years: 0 three years ago → 1 today. Yield, THC, terpenes and grade rise with it and
+// labour per crop falls, so every trend reads as a business getting better.
+const START = dMonths(TODAY, -36);
+const prog = day => Math.min(1, Math.max(0, dDiff(START, day) / Math.max(1, dDiff(START, TODAY))));
+const lift = p => 0.35 * p + 0.65 * p * p;   // the improvement builds: gentle at first, strongest in the last year
 const INITIALS_STROKES = name => [[0.1, 0.7, 0.16, 0.25, 0.22, 0.7], [0.13, 0.5, 0.2, 0.5], [0.32, 0.7, 0.32, 0.25, 0.44, 0.45, 0.32, 0.5]].map(st => st.map((v, i) => i % 2 ? v : v + (name.charCodeAt(0) % 5) * 0.02));
 
 // ---- 1. Rooms: light counts (Room Manager) and report settings ----
@@ -66,7 +74,7 @@ function labourFor(ev, building, signedFrom) {
     if (!est) return null;
     const map = {};
     for (let d = ev.date; d <= (ev.endDate || ev.date) && d < TODAY; d = dAdd(d, 1)) {
-        const total = est.staff * est.minutes / 60 * (OVER[ev.taskType] || 1) * U(0.86, 1.14);
+        const total = est.staff * est.minutes / 60 * (OVER[ev.taskType] || 1) * (1.14 - 0.16 * prog(d)) * U(0.92, 1.08);
         const n = Math.max(1, Math.min(est.staff + (rnd() < 0.3 ? 1 : 0), 10));
         const staff = [...ROSTER].sort(() => rnd() - 0.5).slice(0, Math.min(n, TEMPY.has(ev.taskType) ? 3 : 5));
         const temps = TEMPY.has(ev.taskType) ? Array.from({ length: Math.max(0, n - staff.length) }, (_, i) => `Temp ${i + 1}`) : [];
@@ -137,19 +145,20 @@ function growLog(lot, lotId, d, started, harvested, flowerRoom, until, ipmPlan) 
 }
 // Harvest numbers, from 1000 g wet per plant: strain, room, climate and luck move it
 const STRAIN = {
-    'White Hot Guava': { wet: 1.0, thc: 24.8, terp: 2.95 }, 'Chimera Junky': { wet: 0.95, thc: 28.6, terp: 2.1 },
-    'Jealousy x Kush Mints': { wet: 1.06, thc: 27.0, terp: 3.35 }, 'Lemon Cherry Gelato': { wet: 0.86, thc: 23.6, terp: 2.25 }
+    'White Hot Guava': { wet: 1.0, thc: 26.8, terp: 2.95 }, 'Chimera Junky': { wet: 0.99, thc: 27.3, terp: 2.75 },
+    'Jealousy x Kush Mints': { wet: 1.02, thc: 27.1, terp: 3.05 }, 'Lemon Cherry Gelato': { wet: 0.98, thc: 26.5, terp: 2.8 }
 };
-function harvestNumbers(strain, plants, roomF, flowerTemp) {
-    const s = STRAIN[strain];
-    const climate = 1 - 0.065 * Math.max(0, flowerTemp - 76.5);   // hot flower rooms cost yield
-    const wet = plants * 1000 * s.wet * roomF * climate * U(0.95, 1.05);
-    const dry = wet * U(0.225, 0.25), total = dry * (1 - U(0.12, 0.155)), trim = total * U(0.16, 0.2), flower = total - trim;
-    const g = { bigs: U(0.42, 0.5), mids: U(0.27, 0.33), smalls: U(0.14, 0.19) };
+// p: the crop's place in the 3-year improvement (prog of its harvest day). best: the newest harvest, at the top of the trend
+function harvestNumbers(strain, plants, roomF, flowerTemp, p, best = false) {
+    const s = STRAIN[strain], L = lift(p);
+    const climate = 1 - 0.01 * Math.max(0, flowerTemp - 76.5);    // hot flower rooms cost a little yield
+    const wet = plants * 1000 * s.wet * roomF * climate * (0.86 + 0.2 * L) * (best ? 1.012 : U(0.99, 1.01));
+    const dry = wet * (0.228 + 0.012 * L) * U(0.995, 1.005), total = dry * (1 - U(0.125, 0.135)), trim = total * (0.19 - 0.03 * L) * U(0.98, 1.02), flower = total - trim;
+    const g = { bigs: 0.40 + 0.09 * L + U(-0.01, 0.01), mids: U(0.28, 0.31), smalls: 0.18 - 0.04 * L + U(-0.008, 0.008) };
     g.popcorn = Math.max(0.04, 1 - g.bigs - g.mids - g.smalls);
     const sum = g.bigs + g.mids + g.smalls + g.popcorn;
     return { wet, dry, trim, flower, grades: Object.fromEntries(Object.entries(g).map(([k, v]) => [k, flower * v / sum])),
-        thc: NRM(s.thc, 0.55), terp: NRM(s.terp - 0.2 * Math.max(0, flowerTemp - 77), 0.12) };
+        thc: s.thc - 2.2 + 3.4 * L + (best ? 0.35 : NRM(0, 0.15)), terp: s.terp - 0.45 + 0.7 * L - 0.03 * Math.max(0, flowerTemp - 77) + (best ? 0.08 : NRM(0, 0.04)) };
 }
 function harvestLog(d, h, plants) {
     const instances = {};
@@ -179,15 +188,15 @@ const datesFrom = evs => { const g = tt => evs.find(e => e.taskType === tt); ret
 const ANCHOR = { B66DG1: datesFrom(byLotEv['1171']).harvestStart, B66DG2: datesFrom(byLotEv['1137']).harvestStart, B6G2: H1179 };
 const [WHG, CJ, JX, LCG] = Object.keys(STRAIN);
 const ROT = {
-    B66DG1: [CJ, WHG, CJ, JX, CJ, WHG, CJ, LCG, CJ, LCG, WHG, CJ],
-    B66DG2: [WHG, CJ, WHG, JX, WHG, CJ, WHG, LCG, JX, WHG, LCG, CJ],
-    B6G2: [JX, JX, WHG, JX, CJ, JX, JX, LCG, JX, WHG, JX, LCG]
+    B66DG1: [CJ, WHG, CJ, JX, CJ, WHG, CJ, LCG, CJ, LCG, WHG, CJ, JX, CJ, WHG, CJ],
+    B66DG2: [WHG, CJ, WHG, JX, WHG, CJ, WHG, LCG, JX, WHG, LCG, CJ, WHG, JX, CJ, WHG],
+    B6G2: [JX, JX, WHG, JX, CJ, JX, JX, LCG, JX, WHG, JX, LCG, JX, CJ, JX, WHG]
 };
-const cutoff = dMonths(TODAY, -30);
+const cutoff = dAdd(dMonths(TODAY, -36), 10);   // 3 years, inside the reports' 36-month summary window
 const past = [];
 for (const room of Object.keys(ANCHOR)) {
     let h = ANCHOR[room];
-    for (let k = 1; k <= 12; k++) {
+    for (let k = 1; k <= ROT[room].length; k++) {
         h = dAdd(h, -76 - (k > 1 && rnd() < 0.2 ? Math.round(U(3, 9)) : 0));   // now and then a slow turnaround
         if (h < cutoff) break;
         past.push({ room, k, strain: ROT[room][k - 1], harvest: h });
@@ -196,7 +205,7 @@ for (const room of Object.keys(ANCHOR)) {
 past.sort((a, b) => a.harvest.localeCompare(b.harvest));
 const pastCrops = [];
 past.forEach((p, i) => {
-    const lotId = String(1010 + i * 3);
+    const lotId = String(1001 + i * 3);   // stays below the real lots' numbers
     const roomName = db.rooms[p.room].name;
     const plants = p.room === 'B6G2' ? Math.round(NRM(380, 4)) : Math.round(NRM(540, 6));
     const started = Math.round(plants / U(0.93, 0.985));
@@ -214,23 +223,24 @@ past.forEach((p, i) => {
     const ipm = rnd() < 0.25 ? { spike: dAdd(d.flip, Math.round(U(20, 40))) } : null;
     if (ipm) { ipm.pests = [dAdd(ipm.spike, 1), dAdd(ipm.spike, 2)]; if (rnd() < 0.4) ipm.herm = [dAdd(ipm.spike, 3)]; }
     const grow = growLog(lot, lotId, d, started, plants, roomName, dAdd(d.harvestStart, -1), ipm);
-    const roomF = p.room === 'B66DG1' ? 0.98 + 0.004 * (12 - p.k) : p.room === 'B66DG2' ? 0.985 : (p.k <= 3 ? [0.86, 0.9, 0.94][p.k - 1] : 1.03);
-    const h = harvestNumbers(p.strain, plants, roomF, flowerAvgTemp(grow, d));
+    const roomF = { B66DG1: 1.0, B66DG2: 1.0, B6G2: 1.01 }[p.room];
+    const h = harvestNumbers(p.strain, plants, roomF, flowerAvgTemp(grow, d), prog(p.harvest));
     const paper = { growlog: grow, harvestlog: harvestLog(d, h, plants) };
     pastCrops.push(rptBuildCrop(lotId, lot, events, paper, rptQuestionMap()));
 });
 
 // ---- 6. Live lots: labour so far, grow logs, and the harvest log of the lot that has shipped ----
-const overdue = new Set([byLotEv['1179'].find(e => e.taskType === 'veg_room_clean')?.id]);
-const noHours = new Set([byLotEv['1171'].find(e => e.taskType === 'order_ipm')?.id]);
+// Yesterday's Grow 2 harvest is left open (hours logged, not signed off), so DailyWizard's ⏰ Still open has one
+const overdue = new Set([byLotEv['1179'].find(e => e.taskType === 'harvest')?.id]);
+const noHours = new Set();   // every finished task has its hours (no "completed task with no hours" note in the demo)
 for (const [lotId, evs] of Object.entries(byLotEv)) {
     const lot = db.lots[lotId];
     if (!lot) continue;
     const building = db.rooms[rptRoomIdByName(lot.destRoom)]?.buildingId || null;
     for (const ev of evs) {
-        if ((ev.endDate || ev.date) >= TODAY || overdue.has(ev.id)) continue;
+        if ((ev.endDate || ev.date) >= TODAY) continue;
         if (!noHours.has(ev.id)) { const lm = labourFor(ev, building, dAdd(TODAY, -14)); if (lm) ev.labour_map = lm; }
-        ev.completed = true;
+        if (!overdue.has(ev.id)) ev.completed = true;
     }
 }
 for (const lotId of ['1137', '1171', '1179', '1190']) {
@@ -241,7 +251,7 @@ for (const lotId of ['1137', '1171', '1179', '1190']) {
     const grow = growLog(lot, lotId, d, Math.round(harvested / 0.965), harvested, lot.destRoom, until, ipm);
     const entries = db._PaperWizard.entries[lotId] || (db._PaperWizard.entries[lotId] = {});
     entries.growlog = { ...(entries.growlog || {}), instances: { ...grow.instances, ...(entries.growlog?.instances || {}) }, constants: entries.growlog?.constants || {} };
-    if (lotId === '1137') entries.harvestlog = harvestLog(d, harvestNumbers(lot.strain, harvested, 0.985, flowerAvgTemp(grow, d)), harvested);
+    if (lotId === '1137') entries.harvestlog = harvestLog(d, harvestNumbers(lot.strain, harvested, 1.0, flowerAvgTemp(grow, d), prog(d.harvestStart), true), harvested);
 }
 
 // ---- 7. Daily chores and the hours logged on them (DailyWizard) ----
@@ -298,6 +308,42 @@ for (const [roomId, r] of Object.entries(EQW)) {
     }
 }
 
+// ---- 8b. The floor: sign-offs, today's check-offs, and the Labour Log's flags ----
+// Tasks finished in the last two weeks were signed off by a floor manager (DailyWizard ✅ Mark done), and the hours on
+// equipment visits then were logged and signed on the building tablet
+const SIGN_FROM = dAdd(TODAY, -14);
+const eventBuilding = ev => db.rooms[taskRoomId(ev)]?.buildingId || null;
+for (const ev of db.calendarEvents) {
+    if (ev.completed !== true || !['CropLabourWizard', 'EquipmentWizard'].includes(ev.sourceTool)) continue;
+    const end = ev.endDate || ev.date, bid = eventBuilding(ev);
+    if (end < SIGN_FROM || end >= TODAY) continue;
+    const name = pick(FLOOR_MANAGERS);
+    ev.completedBy = { name, initials: { name, strokes: INITIALS_STROKES(name) }, at: new Date(parseISO(end).getTime() + 17.5 * 3600000).toISOString(), by: bid || 'office', day: end };
+    if (ev.sourceTool !== 'EquipmentWizard') continue;
+    for (const [d, list] of Object.entries(ev.labour_map || {})) {
+        for (const en of list) Object.assign(en, { initials: { name: en.employee, strokes: INITIALS_STROKES(en.employee) }, at: new Date(parseISO(d).getTime() + 14 * 3600000).toISOString(), by: bid || 'office' });
+    }
+}
+// This morning's check-offs (DailyWizard, saved per day): about half of today's chores done before the demo
+for (const [bid, b] of Object.entries(daily)) {
+    if (!db.buildings[bid]) continue;
+    const dt = parseISO(TODAY);
+    const todays = (b.tasks || []).filter(t => (t.days || []).includes(dt.getDay()) || (t.monthDays || []).includes(dt.getDate()));
+    todays.forEach((t, i) => {
+        if (i % 2) return;
+        ((b.checks || (b.checks = {}))[TODAY] || (b.checks[TODAY] = {}))[t.code] = { at: new Date(dt.getTime() + (6.5 + i * 0.15) * 3600000).toISOString(), by: bid };
+    });
+}
+// The Labour Log's accountability flags: one chore entry logged the next morning, and one signed crop entry the office
+// corrected in EmployeeWizard's Tasks tab
+{
+    const day = dAdd(TODAY, -3), list = Object.values(daily.B66D?.labour?.[day] || {})[0];
+    if (list?.[0]) list[0].at = new Date(parseISO(dAdd(day, 1)).getTime() + 8.2 * 3600000).toISOString();
+    const ev = db.calendarEvents.find(e => e.sourceTool === 'CropLabourWizard' && e.labour_map?.[dAdd(TODAY, -2)]?.some(x => x.initials));
+    const en = ev?.labour_map[dAdd(TODAY, -2)].find(x => x.initials);
+    if (en) Object.assign(en, { signedHours: en.hours, hours: en.hours + 0.5, editedAt: new Date(parseISO(dAdd(TODAY, -1)).getTime() + 10 * 3600000).toISOString(), editedBy: 'office' });
+}
+
 // ---- 9. Booked time off (EmployeeWizard) — shows as dips in roster capacity ----
 for (const [name, from, to] of [['Kasia', '2026-12-21', '2027-01-01'], ['Liam', '2026-11-02', '2026-11-06']]) {
     const calEventId = evId();
@@ -307,7 +353,9 @@ for (const [name, from, to] of [['Kasia', '2026-12-21', '2027-01-01'], ['Liam', 
 
 // ---- 10. Save the past crops' summaries (and their frozen labour cost) the way Setup & data does ----
 DB.data = db; DB.ensureStructure();
-const dropped = rptSaveSummaries(pastCrops);
+// …and the live lot that has already shipped (1137), as the office would before closing it out
+const shipped = rptModel().crops.filter(c => !c.closed && c.dates?.ship && c.dates.ship < TODAY && c.weights?.flower != null);
+const dropped = rptSaveSummaries([...pastCrops, ...shipped]);
 
 // ---- 11. Check every page: what's drawn and what's still empty ----
 const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, yield: rptYield, rooms: rptRooms, forecast: rptForecast, settings: rptSetup };
@@ -325,6 +373,11 @@ RPT.per = 'plant';
 const M = rptModel(), A = rptAgg(M, rptHarvested(M, M.per.from, M.per.to), M.per.from, M.per.to);
 report.push(`KPIs (12 mo): ${A.n} crops · flower ${rN(A.flower / 1000, 1)} kg · ${rN(A.gpp, 0)} g/plant · ${rN(A.gsfy, 0)} g/sqft/yr · THC ${rN(A.potency, 1)} % · terps ${rN(A.terpenes, 2)} % · $${rN(A.loaded, 2)}/g · ${rN(A.hours.total, 0)} h (chores ${rN(A.hours.chore, 0)}, equipment ${rN(A.hours.equipment, 0)}) · accuracy ${rN(A.acc * 100, 0)} %`);
 report.push('Needs attention: ' + rptAttention(M).map(x => x.text).join(' || '));
+// The made-up improvement, year by year (each line: the 12 months ending that many years ago)
+for (const back of [2, 1, 0]) {
+    const to = dMonths(TODAY, -12 * back), from = dMonths(to, -12), Y = rptAgg(M, rptHarvested(M, from, to), from, to);
+    report.push(`year to ${to}: ${Y.n} crops · ${rN(Y.gpp, 0)} g/plant · ${rN(Y.gsfy, 0)} g/sqft/yr · THC ${rN(Y.potency, 1)} % · terps ${rN(Y.terpenes, 2)} % · $${rN(Y.loaded, 2)}/g · ${rN(Y.hours.total, 0)} h`);
+}
 report.push(`past crops ${pastCrops.length} (${past[0].harvest} → ${past[past.length - 1].harvest}) · summaries ${Object.keys(db._EmployeeWizard.crops).length} · frozen costs ${Object.keys(db._EmployeeWizard.cropCosts || {}).length} · dropped ${dropped}`);
 report.push(`events ${db.calendarEvents.length} · equipment events ${db.calendarEvents.filter(e => e.sourceTool === 'EquipmentWizard').length}`);
 fs.writeFileSync(OUT, JSON.stringify(db));
