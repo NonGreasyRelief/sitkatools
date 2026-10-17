@@ -3567,6 +3567,10 @@
                         if (!isDay(day) || (inst.phaseChangeDate && day > inst.phaseChangeDate)) continue;   // struck-out rows
                         for (const [qid, v] of Object.entries(answers || {})) if (qs[qid]) add(qs[qid], v, day, inst.room, { ...(inst.header || {}), ...(answers || {}) });
                     }
+                    // Repeating entries (e.g. one wet weight per tote), dated like the instance's other answers
+                    for (const row of Array.isArray(inst.rows) ? inst.rows : []) {
+                        for (const [qid, v] of Object.entries(row || {})) if (qs[qid]) add(qs[qid], v, instDate, inst.room, { ...(inst.header || {}), ...(row || {}) });
+                    }
                 }
             }
             return out;
@@ -5314,6 +5318,7 @@
                     for (const inst of Object.values(e.instances || {})) {
                         if (inst?.header?.[qid] != null && inst.header[qid] !== '') n++;
                         for (const ans of Object.values(inst?.days || {})) if (ans?.[qid] != null && ans[qid] !== '') n++;
+                        for (const row of Array.isArray(inst?.rows) ? inst.rows : []) if (row?.[qid] != null && row[qid] !== '') n++;
                     }
                 }
                 return n;

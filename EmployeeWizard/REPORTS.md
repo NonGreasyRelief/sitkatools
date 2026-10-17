@@ -182,6 +182,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 - **Question fields:** `metric` (a key above) and `metricUnit` (`g` / `kg` / `lb` for weights, `F` / `C` for temperature). Both are optional and saved with the sheet.
 - **Editor:** a **Report metric** drop-down on text, number and select questions, plus an **Answered in** picker for weights and temperature. Changing a question to another type clears its tag.
 - PaperWizard itself never reads the tags.
+- **Repeating entries:** a 🔁 Repeating question (e.g. one wet weight per tote on the harvest log) stores one answer per entry in the page's `rows` list. `rptAnswers` reads those too, dated by the page (the event date), so a summed metric such as `harvest.wetWeight` adds up every entry.
 
 ---
 
