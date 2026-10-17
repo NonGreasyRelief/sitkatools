@@ -3883,7 +3883,8 @@
         // Electricity is estimated room by room, day by day — lights × watts per light × the room's veg or bloom hours ×
         // that day's light % (grow-log metric env.lightPct, 100 % when not logged), plus every piece of equipment's
         // watts × units × hours a day — and given to the crops in the room that day, split by plants. A room with no crop
-        // that day (a mother room, a hall, an empty flower room) passes its power to the building's crops that day.
+        // that day (a hall, an empty flower room) passes its power to the building's crops that day; so does a room
+        // designated "Mother", whose lights run every day at its veg hours.
         // "Power bills" spreads each bill evenly over its days and splits each day by those estimates.
         // Water (water.total, L) and fertilizer (feed.nutrient, mL by product) come from the grow logs, priced with the
         // ⚡ Power & Rates water rate and CropLabourWizard's price list. Supplies come from the lot's recipe.
@@ -3943,6 +3944,7 @@
                 const n = Number(r?.lightCount), w = Number(r?.lightWattage);
                 info[id] = {
                     b: r?.buildingId || null, lightKw: n > 0 && w > 0 ? n * w / 1000 : 0, hasLights: n > 0,
+                    mother: r?.designation === 'Mother',   // mother plants: lights on every day, shared by the building's crops
                     veg: Number(r?.vegLightHours) > 0 ? Number(r.vegLightHours) : 18, bloom: Number(r?.bloomLightHours) > 0 ? Number(r.bloomLightHours) : 12,
                     equip: (DB.data._EquipmentWizard?.rooms?.[id]?.equipment || []).filter(e => Number(e?.power?.watts) > 0)
                         .map(e => ({ from: isDay(e.installedDate) ? e.installedDate : '0000-00-00', kWh: e.power.watts * (Number(e.power.units) || 1) * (e.power.hoursPerDay ?? 12) / 1000 })),
@@ -3979,7 +3981,11 @@
                             give(st.c.lotId, equipKwh * share, 'equip');
                             dayKwh.set(st.c.lotId, (dayKwh.get(st.c.lotId) || 0) + (lightKwh + equipKwh) * share);
                         }
-                    } else if (equipKwh > 0) pool[r.b] = (pool[r.b] || 0) + equipKwh;   // an empty room: the building carries it
+                    } else {
+                        // An empty room (or a mother room): the building's crops carry it
+                        const motherKwh = r.mother && r.lightKw > 0 ? r.lightKw * r.veg : 0;
+                        if (equipKwh + motherKwh > 0) pool[r.b] = (pool[r.b] || 0) + equipKwh + motherKwh;
+                    }
                 }
                 // Empty rooms' power goes to the building's crops that day, by plants
                 for (const [b, kWh] of Object.entries(pool)) {
@@ -5118,7 +5124,7 @@
             // 1. What does a gram cost? This period against the previous one
             const bars = [['Previous period', b.costPG, b.nFlower], ['This period', a.costPG, a.nFlower]];
             const maxPG = Math.max(...bars.map(([, pg]) => pg.allIn || 0), 0.01);
-            const W = 640, X0 = 130, X1 = 560, xs = rLin(0, maxPG, X0, X1);
+            const W = 1100, X0 = 130, X1 = 1000, xs = rLin(0, maxPG, X0, X1);   // wide card: a wide drawing keeps the text its normal size
             let s1 = '';
             bars.forEach(([name, pg, n], i) => {
                 const y = 24 + i * 58;
@@ -5145,7 +5151,7 @@
             }).filter(x => RPT_COST_PARTS.some(([k]) => x.pg[k] != null));
             let byCrop = rEmpty('No costed crops in this period.', '');
             if (perCrop.length) {
-                const H = 300, CX0 = 52, CX1 = 630, Y0 = 250, Y1 = 22;
+                const H = 300, CX0 = 52, CX1 = 1080, Y0 = 250, Y1 = 22;
                 const top = Math.max(...perCrop.map(x => rSum(Object.values(x.pg).filter(v => v != null))));
                 const yn = rNice(0, top * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(perCrop.length, 6);
                 let s2 = '';
@@ -5162,7 +5168,7 @@
                     }
                     s2 += rT(cx + w / 2, Y0 + 14, rShort(x.c.lotId, 6), 'rv-axs', 'middle');
                 });
-                byCrop = rSvg(640, H, s2, 'Cost per gram of each crop, by part');
+                byCrop = rSvg(1100, H, s2, 'Cost per gram of each crop, by part');
             }
             const byCropTable = { cols: [{ h: 'Lot' }, { h: 'Strain' }, { h: 'Harvested' }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $/g`, n: 1 })), { h: 'All in $/g', n: 1 }],
                 rows: perCrop.map(x => [x.c.lotId, x.c.strain, x.c.dates.harvestStart, ...RPT_COST_PARTS.map(([k]) => x.pg[k] != null ? rMoney(x.pg[k], 3) : '—'), rMoney(rSum(Object.values(x.pg).filter(v => v != null)), 3)]) };
@@ -5265,6 +5271,9 @@
             // _EmployeeWizard.cropCosts in Wages.json, never in Main.json
             const costs = wagesLoaded() ? (ew.cropCosts || (ew.cropCosts = {})) : null;
             const M = rptModel();
+            // Crops being saved that aren't in the report yet (archives) share rooms and bills with each other too
+            const extra = list.filter(c => !M.crops.some(x => x.lotId === c.lotId));
+            if (extra.length) M.crops = [...M.crops, ...extra];
             for (const c of list) {
                 ew.crops[c.lotId] = rptSummaryOf(c);
                 ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer and supplies as they stood

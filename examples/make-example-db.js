@@ -15,6 +15,8 @@
 //     booked time off, canopy sq ft and room light counts.
 //   • the floor features: floor managers, sign-offs (✅ Mark done) on recent tasks, today's check-offs, one task still
 //     open, and a late and a changed entry for the Labour Log.
+//   • total cost per gram: room lights / watts / canopy / light cycles, equipment power, a price list (fertilizers and
+//     supplies), recipe supplies, daily light % and fertilizer product links in the grow log, monthly power bills.
 // Rerun it on the day of a demo so "today" is current. The output holds real staff and lot names: it is git-ignored.
 // Needs Node 18+. Nothing here touches the real database files.
 const fs = require('fs'), path = require('path');

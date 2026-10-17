@@ -200,6 +200,10 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
   - A per-lot tree of propagation sheet, IPM log, weekly grow logs, room-cleaning sheets inherited from the previous lot in each room, and the harvest log.
   - N/A fill for unanswered questions.
   - The strike-out rule for grow logs that end early.
+- [x] **Total cost per gram** (2026-10-16, branch `costs`): labour + electricity + water + fertilizer + supplies.
+  - Room Manager gained watts per light, canopy sq ft and veg / bloom light cycles; EquipmentWizard power (watts × units × hours).
+  - CropLabourWizard recipe editor 🧪 Inputs (a shared price list and per-recipe supplies); PaperWizard's Light intensity (%) metric and fertilizer product links.
+  - EmployeeWizard is shown as the Labour & Cost Wizard, with ⚡ Power & Rates (bills or estimated usage, rates, power bills), the overview's Cost / g (all in) tile and a 💲 Costs page. See root `CLAUDE.md` → "Total Cost per Gram".
 - [x] **Cost graphs and reports:** built on 2026-10-12 as EmployeeWizard's 📊 Reports tab (branch `reports`, not merged). See `EmployeeWizard/REPORTS.md`.
   - Labour Gantt per crop, room schedule Gantt, hours by task, over/under estimate with suggested recipe estimates, labour mix, $/g by phase, staffing forecast against roster capacity.
   - Yield, potency and terpene charts by strain and room, weight cascade, harvest forecast. These fill in once the harvest log's questions are tagged with report metrics (PaperWizard → Configure Sheets → Report metric).

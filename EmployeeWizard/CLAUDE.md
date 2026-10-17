@@ -1,4 +1,6 @@
-# EmployeeWizard — Tool Context
+# Labour & Cost Wizard (EmployeeWizard) — Tool Context
+
+**Name:** shown everywhere as **"👥 Labour & Cost Wizard"** (user decision 2026-10-16). The folder, file, the `_EmployeeWizard` DB key, `sourceTool: 'EmployeeWizard'` and `WorkCopy.TOOL` keep the old name, so old files, links and other tools keep working. SitkaTools maps the id to the new name in its toasts (`toolDisplayName`).
 
 ## What This Tool Does
 
@@ -14,13 +16,13 @@ EmployeeWizard is an **employee roster, work-schedule, and labour-cost tracking*
 
 ## UI Layout
 
-The tool has **four main tabs — Employees, Tasks, 📜 Labour Log and 📊 Reports**. Employees and Tasks use a two-panel setup: a scrolling list on the left and an editor panel on the right. The Labour Log is a full-width list of every hours entry (see "Labour Log Tab"), and Reports is a full-width page of charts (see "Reports Tab"). Below the tabs (full width) sits the **Labour Report** section, which the Labour Log tab hides.
+The tool has **five main tabs — Employees, Tasks, 📜 Labour Log, ⚡ Power & Rates and 📊 Reports**. Employees and Tasks use a two-panel setup: a scrolling list on the left and an editor panel on the right. The Labour Log is a full-width list of every hours entry (see "Labour Log Tab"), and Reports is a full-width page of charts (see "Reports Tab"). Below the tabs (full width) sits the **Labour Report** section, which the Labour Log tab hides.
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│ Header: 👥 EmployeeWizard            [Active Lot ▾]  │
+│ Header: 👥 Labour & Cost Wizard      [Active Lot ▾]  │
 ├──────────────────────────────────────────────────────┤
-│ [Employees] [Tasks] [📜 Labour Log] [📊 Reports]   │
+│ [Employees] [Tasks] [📜 Log] [⚡ Power] [📊 Reports] │
 ├────────────────────────┬─────────────────────────────┤
 │ Scrolling list         │ Editor panel                │
 │ (employees or tasks)   │ (context-dependent)         │
@@ -116,18 +118,28 @@ Built 2026-10-13 (user decision: its own tab; the office sees everything, a buil
 - **🖨️ Print:** opens the log with the current filters in a light, print-ready window, the same way as the board pack.
 - Hours only: no wages or $. Redrawn on tab switch, on DB load and on live updates while the tab is open.
 
+### ⚡ Power & Rates Tab (office only)
+
+Built 2026-10-16 for the total cost per gram (user decisions: bills or estimated usage, chosen with a radio; prices and bills saved in Main.json).
+
+- **Electricity cost comes from:** (•) **Power bills** or ( ) **Estimated usage** — `costs.electricity`. Bills: each bill is spread over its days and each day is split between the crops in that building by their estimated use. Estimate: estimated kWh × the rate.
+- **Electricity rate ($ per kWh)** — used for the estimate; with bills the note shows the bills' average $/kWh. **Water ($ per 1,000 L)** — prices the grow logs' water.
+- **🧾 Power bills:** meter (a building, or "Whole site"), from, to, kWh (optional), amount. Each row shows days and $/kWh and has a ✕ (asks first). A bill overlapping another for the same meter asks before it's added. Below, a strip shows which of the last 12 months the bills cover, per meter (full / part / none).
+- Hidden on building devices with the rest of the office work. Every change calls `notifySitkaTools()`; live updates redraw it while open.
+
 ### Reports Tab (📊, office only)
 
 The full spec, the metric list, the definitions and the **harvest-log hook-up steps** are in `EmployeeWizard/REPORTS.md`. In short:
 
 - **Pages:**
-  - **Overview:** 8 KPI tiles and Needs attention.
+  - **Overview:** 8 KPI tiles (one is **Cost / g (all in)**) and Needs attention.
+  - **💲 Costs:** cost per gram by part (labour, electricity, water, fertilizer, supplies), crop by crop, electricity per crop, inputs used and what's missing — see `REPORTS.md` → Definitions.
   - **Crop Timeline:** the crop labour Gantt and the room schedule Gantt.
   - **Labour:** hours by task, over/under estimate with suggested estimates, labour mix, $ per gram by phase.
   - **Yield & Quality:** strain scorecard, potency/terpene strips, weight cascade, room trend.
   - **Rooms & Environment:** climate per lot and the pest heat map.
   - **Forecast:** labour demand vs roster capacity, and the 6-month harvest forecast.
-  - **⚙️ Setup & data:** canopy sq ft, shift length, crop summaries with archive import, and the metric hook-up table.
+  - **⚙️ Setup & data:** canopy sq ft, lights and watts per light (read-only, from Room Manager), shift length, crop summaries with archive import, and the metric hook-up table.
 - **Filters:** a filter row (period, building, flower room, strain, **Per** plant / sq ft / light / gram / total) scopes every page. Per light uses each flower room's light count from SitkaTools' Room Manager. Comparisons are always against the previous period of the same length.
 - **🖨️ Board pack:** opens the report pages in a print-ready window (light theme, Letter landscape, a tick box per page).
 - **What drives yield?** (Yield & Quality page): any per-crop measure against an outcome, with a fitted line and r.
@@ -154,14 +166,17 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
       "timeOff": []
     }
   },
-  "crops": { "<lotId>": { "version": 1, "savedAt": "…", "…": "crop summary — schema in REPORTS.md §4" } },
-  "settings": { "canopySqFt": { "<roomId>": 1150 }, "shiftHours": 8 },
+  "crops": { "<lotId>": { "version": 2, "savedAt": "…", "costs": { "…": "frozen non-labour costs" }, "…": "crop summary — schema in REPORTS.md §4" } },
+  "settings": { "shiftHours": 8 },
+  "costs": { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4,
+             "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
   "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } }
 }
 ```
 
 - `crops` — saved crop summaries (Reports → Setup & data). They keep a closed-out lot in the report trends, hold hours per person but never wages, and are dropped after 36 months. Created on the first save.
-- `settings` — report settings: canopy area per flower room, and the shift length used for roster capacity (default 8 h). Created on the first change.
+- `settings` — report settings: the shift length used for roster capacity (default 8 h). Canopy area used to live here as `settings.canopySqFt`; it is now set on the room in SitkaTools' Room Manager (`rooms.<id>.canopySqFt`), and the old value is only a fallback. Created on the first change.
+- `costs` — ⚡ Power & Rates: where electricity cost comes from (`bills` / `estimate`), $/kWh, water $ per 1,000 L, and the power bills (`buildingId` null = whole site). Saved in Main.json (user decision 2026-10-16).
 - `cropCosts` — the labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. It's money, so SitkaTools' split keeps it in **Wages.json** (office only), not Main.json.
 - `crops` and `settings` live in Main.json with the roster (the split keeps everything in `_EmployeeWizard` there except wages and `cropCosts`).
 

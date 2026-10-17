@@ -127,6 +127,17 @@ The **✏️ Manage** button (`#manageRecipesBtn`) opens the recipe manager over
 
 - **List view:** a toolbar with `＋ New Recipe` (clones the built-in, assigns a fresh 6-char id from `CODE_ALPHABET` `abcdefghjkmnpqrstuvwxyz23456789`, collision-checked against the built-in + DB recipes) plus ⬆️ Import / ⬇️ Export on the right, and one row per recipe below. Built-in rows get **Duplicate / Export** only; user rows get **Edit / Duplicate / Export / Delete**. Clicking a row's main area selects that recipe (updates `activeRecipe` + dropdowns, closes the overlay).
 - **Editor view:** name input, read-only id, the **Room turnaround** readout (see "Room Turnaround"), and a task table (top → bottom = chronological order) with columns for emoji, name, type (`snake_case`), reference anchor, offset, room phase, labour estimate (minutes per day, staff), toggleable, on-by-default, and locked. In narrow windows the table scrolls sideways. Rows support move up/down, delete, and `＋ Add Task`. **DOM-sync rule:** before any mutating re-render (add/move/delete row), the table is read back into the working copy via `readTaskTable()` so typed-but-uncommitted values are not wiped.
+- **Editor tabs — 🗓️ Tasks | 🧪 Inputs** (Inputs added 2026-10-16 for the total cost per gram):
+  - **Tasks** is the turnaround readout and task table above.
+  - **Inputs → Price list — shared by every recipe** (`_CropLabourWizard.inputs[id] = { name, kind: 'fertilizer' | 'supply', unit, price }`):
+    - name, kind, unit, $ per unit. A fertilizer is priced per litre (unit fixed to `L`). Its mL come from the grow logs, where PaperWizard links each mL question to its product **by the same name**.
+    - A supply is used up once per crop (coco block, peat puck, trellis ft…).
+    - ＋ Add Input; ✕ deletes. Deleting an input other recipes use asks first, listing them, and removes it from every recipe when saved.
+    - Names must be filled in and unique (checked on save).
+  - **Inputs → Supplies this recipe uses** (`recipe.inputs = [{ inputId, name, unit, qty, per: 'crop' | 'plant' }]`): a supply, its quantity, per crop or per plant, and the cost it comes to. The name and unit travel with `recipe-<id>.json`.
+  - **Saving:** both are part of the editor session. **Save Recipe** writes the recipe and the price list; **Cancel** drops both. Like the task table, the tables are read back before any re-render. A change updates the hints in place, so tabbing through a row keeps its focus.
+  - **Import** matches each supply to the price list by name (case-insensitive) and adds unknown ones without a price. `validateRecipe` checks `inputs[]` (a name, a qty ≥ 0, per `crop` / `plant`).
+  - The Labour & Cost Wizard's Reports price each crop's supplies from its lot's recipe (`_tool_CropLabourWizard.recipeId`).
 - **Delete fallback:** deleting a recipe in use shows a confirm warning with the lot count — e.g., `1 lot(s) currently use it — they'll fall back to the built-in recipe.` Lots whose stored `recipeId` dangles resolve safely to the built-in on next selection (no crash). If the deleted recipe was the projection recipe, `projectionRecipeId` resets to the built-in.
 - Saving from the editor re-runs full validation, writes to `_CropLabourWizard.recipes`, merges the task-type registry, and notifies SitkaTools.
 
@@ -428,7 +439,8 @@ Stores the lot's schedule configuration: anchor date, task count, trim length (u
 _CropLabourWizard: {
     generations: [ /* generation log — real lots only */ ],
     projectedLots: { /* source of truth for projected lots — see "Crop Projection" section */ },
-    recipes: { /* id → recipe object — user-created/imported recipes ONLY; built-in stays in code */ },
+    recipes: { /* id → recipe object — user-created/imported recipes ONLY; built-in stays in code. A recipe may carry inputs: [{ inputId, name, unit, qty, per }] */ },
+    inputs: { /* id → { name, kind: 'fertilizer' | 'supply', unit, price } — the price list, shared by every recipe (🧪 Inputs tab) */ },
     taskTypes: { /* taskType → { name, emoji, roomPhase? } registry — backfilled + merged on save/import */ }
 }
 ```

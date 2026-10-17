@@ -28,10 +28,16 @@ const prog = day => Math.min(1, Math.max(0, dDiff(START, day) / Math.max(1, dDif
 const lift = p => 0.35 * p + 0.65 * p * p;   // the improvement builds: gentle at first, strongest in the last year
 const INITIALS_STROKES = name => [[0.1, 0.7, 0.16, 0.25, 0.22, 0.7], [0.13, 0.5, 0.2, 0.5], [0.32, 0.7, 0.32, 0.25, 0.44, 0.45, 0.32, 0.5]].map(st => st.map((v, i) => i % 2 ? v : v + (name.charCodeAt(0) % 5) * 0.02));
 
-// ---- 1. Rooms: light counts (Room Manager) and report settings ----
-const LIGHTS = { B66DG1: 72, B66DG2: 72, B6G2: 48 };
-for (const [id, n] of Object.entries(LIGHTS)) db.rooms[id].lightCount = n;
-db._EmployeeWizard.settings = { canopySqFt: { B66DG1: 1150, B66DG2: 1150, B6G2: 800 }, shiftHours: 8 };
+// ---- 1. Rooms (Room Manager): lights, watts per light, canopy, light cycles; report settings ----
+const ROOM_POWER = {   // [lights, watts per light, canopy sq ft]
+    B66DG1: [72, 1000, 1150], B66DG2: [72, 1000, 1150], B6G2: [48, 1000, 800],
+    B6VEG: [24, 630, null], B6CLONE: [12, 100, null], B6MOM: [8, 630, null]
+};
+for (const [id, [n, w, sq]] of Object.entries(ROOM_POWER)) {
+    if (!db.rooms[id]) continue;
+    Object.assign(db.rooms[id], { lightCount: n, lightWattage: w, vegLightHours: 18, bloomLightHours: 12, ...(sq ? { canopySqFt: sq } : {}) });
+}
+db._EmployeeWizard.settings = { shiftHours: 8 };
 
 // ---- 2. A recipe with labour estimates (the built-in tasks + minutes × staff) ----
 const EST = {
@@ -58,7 +64,18 @@ for (const m of recipeBlock.matchAll(/\{ name: '([^']*)', emoji: '([^']*)', task
 }
 if (tasks.length !== 32) throw new Error('recipe parse: ' + tasks.length + ' tasks');
 const RECIPE_ID = 'xmpe23';
-db._CropLabourWizard.recipes = { [RECIPE_ID]: { id: RECIPE_ID, name: 'Sitka Standard (9-week) — example labour estimates', version: 1, chain: { cloneCutBeforeHarvest: 21 }, tasks } };
+// The price list (CropLabourWizard → recipe → 🧪 Inputs): fertilizers per litre, supplies per unit
+const INPUTS = {
+    inactv: { name: 'Activator', kind: 'fertilizer', unit: 'L', price: 48 }, incore: { name: 'Core', kind: 'fertilizer', unit: 'L', price: 36 },
+    infade: { name: 'Fade', kind: 'fertilizer', unit: 'L', price: 38 }, ingrow: { name: 'Grow', kind: 'fertilizer', unit: 'L', price: 32 },
+    inblom: { name: 'Bloom', kind: 'fertilizer', unit: 'L', price: 34 }, inphup: { name: 'pH Up', kind: 'fertilizer', unit: 'L', price: 20 },
+    incoco: { name: 'Coco block', kind: 'supply', unit: 'block', price: 3.5 }, inpeat: { name: 'Peat puck', kind: 'supply', unit: 'puck', price: 0.22 },
+    intrel: { name: 'Trellis netting', kind: 'supply', unit: 'ft', price: 0.15 }
+};
+db._CropLabourWizard.inputs = INPUTS;
+const RECIPE_INPUTS = [['inpeat', 1, 'plant'], ['incoco', 1, 'plant'], ['intrel', 300, 'crop']]
+    .map(([id, qty, per]) => ({ inputId: id, name: INPUTS[id].name, unit: INPUTS[id].unit, qty, per }));
+db._CropLabourWizard.recipes = { [RECIPE_ID]: { id: RECIPE_ID, name: 'Sitka Standard (9-week) — example labour estimates', version: 1, chain: { cloneCutBeforeHarvest: 21 }, tasks, inputs: RECIPE_INPUTS } };
 for (const lot of Object.values(db.lots)) lot._tool_CropLabourWizard = { ...(lot._tool_CropLabourWizard || {}), recipeId: RECIPE_ID };
 for (const p of Object.values(db._CropLabourWizard.projectedLots || {})) p.config = { ...(p.config || {}), recipeId: RECIPE_ID };
 const estOf = tt => EST[tt] ? { staff: EST[tt][0], minutes: EST[tt][1] } : null;
@@ -95,6 +112,11 @@ const GROW_TAGS = { smtv: ['env.temp', 'F'], '45nq': ['env.rh'], '9f7n': ['feed.
     k3v3: ['feed.nutrient'], nmgx: ['feed.nutrient'], wknf: ['feed.nutrient'], '7nws': ['water.total'], tvzw: ['water.perPlant'], z8cc: ['water.runoff'],
     pbcb: ['runoff.ec'], npbe: ['runoff.ec'], ruur: ['runoff.ph'], qz4q: ['runoff.ph'], zsfp: ['ipm.pests'], z8fw: ['ipm.disease'], af9s: ['ipm.herm'], u9ts: ['ipm.issue'] };
 for (const q of db._PaperWizard.wizards.jrgt.questions) if (GROW_TAGS[q.id]) { q.metric = GROW_TAGS[q.id][0]; if (GROW_TAGS[q.id][1]) q.metricUnit = GROW_TAGS[q.id][1]; }
+// Each fertilizer mL question's product: Activator always; Core / Fade and Grow / Bloom from the question before it
+const PRODUCT_LINKS = { k3v3: { name: 'Activator' }, nmgx: { from: '6p8t' }, wknf: { from: 'qvds' } };
+for (const q of db._PaperWizard.wizards.jrgt.questions) if (PRODUCT_LINKS[q.id]) q.metricProduct = PRODUCT_LINKS[q.id];
+// A daily light % question (notes only — the paper form has no box for it yet), for the lighting power estimate
+db._PaperWizard.wizards.jrgt.questions.push({ id: 'lt01', label: 'What % are the lights set to?', type: 'number', options: [], rowScoped: true, sameAsLast: true, mandatory: false, prefillFrom: null, metric: 'env.lightPct' });
 // An example harvest log sheet (no page images — it exists to feed the reports), tagged with the harvest metrics
 db._PaperWizard.sheets.harvestlog = { name: 'Harvest Log (example)', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'event', document: 'harvest', fields: [], signature: null };
 const HQ = [['hw01', 'Wet weight in the drying room on harvest day (kg)', 'harvest.wetWeight', 'kg'], ['hw10', 'Plants harvested', 'harvest.plantsHarvested'],
@@ -134,7 +156,8 @@ function growLog(lot, lotId, d, started, harvested, flowerRoom, until, ipmPlan) 
             zsfp: yes('pests'), z8fw: yes('disease'), af9s: yes('herm'), u9ts: yes('issue'),
             smtv: r1(tempF), '45nq': String(Math.round(rh)), '9f7n': r1(NRM(5.95, 0.08), 2), gjaw: r1(NRM(feedEc, 0.08), 2),
             a56r: String(Math.round(NRM(flower ? 1150 : 850, 40))), huut: String(Math.round(NRM(flower ? (late ? 900 : 1000) : 600, 25))),
-            qy8c: 'YES', k3v3: String(Math.round(NRM(500, 40))), '6p8t': flower ? 'Core' : 'No', nmgx: flower ? String(Math.round(NRM(650, 50))) : '0',
+            qy8c: 'YES', k3v3: String(Math.round(NRM(500, 40))), '6p8t': late ? 'Fade' : flower ? 'Core' : 'No', nmgx: flower ? String(Math.round(NRM(650, 50))) : '0',
+            lt01: String(Math.round(flower ? (late ? 90 : Math.min(100, 80 + (day >= dAdd(d.flip, 14) ? 20 : 10))) : 75)),
             qvds: flower ? 'Bloom' : 'Grow', wknf: String(Math.round(NRM(1000, 80))),
             '7nws': String(Math.round(plants * NRM(perPlant, 0.08))), tvzw: r1(NRM(perPlant, 0.08), 2), z8cc: String(Math.round(NRM(220, 30))),
             pbcb: r1(NRM(feedEc + 0.3 + 0.5 * t, 0.12), 2), ruur: r1(NRM(6.2, 0.1), 2), npbe: r1(NRM(feedEc + 0.35 + 0.5 * t, 0.12), 2), qz4q: r1(NRM(6.25, 0.1), 2),
@@ -219,7 +242,7 @@ past.forEach((p, i) => {
         return ev;
     });
     const d = datesFrom(events);
-    const lot = { name: lotId, strain: p.strain, stage: 'shipped', createdDate: d.day0, closedDate: d.ship, destRoom: roomName, vegRoom: 'Vegetation Room', cloningRoom: 'Clone Room', currentRoom: roomName, plantCount: plants, parentLotId: null, type: 'new-lot' };
+    const lot = { name: lotId, strain: p.strain, stage: 'shipped', createdDate: d.day0, closedDate: d.ship, destRoom: roomName, vegRoom: 'Vegetation Room', cloningRoom: 'Clone Room', currentRoom: roomName, plantCount: plants, parentLotId: null, type: 'new-lot', _tool_CropLabourWizard: { recipeId: RECIPE_ID } };
     const ipm = rnd() < 0.25 ? { spike: dAdd(d.flip, Math.round(U(20, 40))) } : null;
     if (ipm) { ipm.pests = [dAdd(ipm.spike, 1), dAdd(ipm.spike, 2)]; if (rnd() < 0.4) ipm.herm = [dAdd(ipm.spike, 3)]; }
     const grow = growLog(lot, lotId, d, started, plants, roomName, dAdd(d.harvestStart, -1), ipm);
@@ -344,6 +367,35 @@ for (const [bid, b] of Object.entries(daily)) {
     if (en) Object.assign(en, { signedHours: en.hours, hours: en.hours + 0.5, editedAt: new Date(parseISO(dAdd(TODAY, -1)).getTime() + 10 * 3600000).toISOString(), editedBy: 'office' });
 }
 
+// ---- 8c. Power: equipment ratings (EquipmentWizard), monthly power bills and rates (⚡ Power & Rates) ----
+// Individual dehumidifiers carry their own watts; the AC and fan groups carry theirs (a group plus its members would
+// count twice). The demo dates all equipment from mid-2023 so the 3 years of crops share the same rooms' power.
+const DEHU_W = [[/506/, 4800], [/Dual 225/, 1700], [/Dual 205/, 1300], [/Dual 105/, 900], [/Anden|Cannadri/, 1000]];
+for (const [roomId, r] of Object.entries(EQW)) {
+    for (const eq of r.equipment || []) {
+        eq.installedDate = '2023-06-01';
+        if (eq.type === 'Dehumidifier') { const w = DEHU_W.find(([re]) => re.test(eq.name))?.[1]; if (w) eq.power = { watts: w, units: 1, hoursPerDay: 14 }; }
+        else if (/^All ACs/.test(eq.name)) eq.power = { watts: roomId === 'B6MOM' ? 3500 : 5000, units: roomId === 'B6MOM' ? 1 : 2, hoursPerDay: 12 };
+        else if (/^All Fans/.test(eq.name)) eq.power = { watts: 150, units: 12, hoursPerDay: 24 };
+        else if (/^Dehumidifiers \//.test(eq.name)) eq.power = { watts: 1500, units: 4, hoursPerDay: 14 };
+        else if (/^ACs \//.test(eq.name)) eq.power = { watts: 5000, units: 2, hoursPerDay: 12 };
+    }
+}
+// Monthly bills per building: roughly the rooms' lights at ~13 h plus the equipment, at $0.11 per kWh
+const KWH_RATE = 0.11;
+const buildingKwhDay = bid => Object.entries(db.rooms).filter(([, r]) => r.buildingId === bid).reduce((t, [id, r]) =>
+    t + (r.lightCount || 0) * (r.lightWattage || 0) / 1000 * (r.isFlowering ? 13 : 18)
+      + (EQW[id]?.equipment || []).reduce((u, e) => u + (e.power ? e.power.watts * e.power.units * e.power.hoursPerDay / 1000 : 0), 0), 0);
+const bills = [];
+for (let m = START.slice(0, 7) + '-01'; dMonths(m, 1) <= TODAY; m = dMonths(m, 1)) {
+    const to = dAdd(dMonths(m, 1), -1), days = dDiff(m, to) + 1;
+    for (const bid of Object.keys(db.buildings)) {
+        const kWh = Math.round(buildingKwhDay(bid) * days * U(0.95, 1.06));
+        bills.push({ id: 'pb' + rid(8), buildingId: bid, from: m, to, kWh, amount: Math.round(kWh * KWH_RATE * U(0.99, 1.03) * 100) / 100 });
+    }
+}
+db._EmployeeWizard.costs = { electricity: 'bills', kWhRate: KWH_RATE, waterPer1000L: 2.4, bills };
+
 // ---- 9. Booked time off (EmployeeWizard) — shows as dips in roster capacity ----
 for (const [name, from, to] of [['Kasia', '2026-12-21', '2027-01-01'], ['Liam', '2026-11-02', '2026-11-06']]) {
     const calEventId = evId();
@@ -358,7 +410,7 @@ const shipped = rptModel().crops.filter(c => !c.closed && c.dates?.ship && c.dat
 const dropped = rptSaveSummaries([...pastCrops, ...shipped]);
 
 // ---- 11. Check every page: what's drawn and what's still empty ----
-const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, yield: rptYield, rooms: rptRooms, forecast: rptForecast, settings: rptSetup };
+const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, yield: rptYield, rooms: rptRooms, forecast: rptForecast, settings: rptSetup };
 const report = [];
 for (const per of ['plant', 'light', 'total']) {
     RPT.per = per; RPT.period = '12m'; RPT.ganttLot = ''; RPT.envLot = '';
@@ -376,7 +428,9 @@ report.push('Needs attention: ' + rptAttention(M).map(x => x.text).join(' || '))
 // The made-up improvement, year by year (each line: the 12 months ending that many years ago)
 for (const back of [2, 1, 0]) {
     const to = dMonths(TODAY, -12 * back), from = dMonths(to, -12), Y = rptAgg(M, rptHarvested(M, from, to), from, to);
-    report.push(`year to ${to}: ${Y.n} crops · ${rN(Y.gpp, 0)} g/plant · ${rN(Y.gsfy, 0)} g/sqft/yr · THC ${rN(Y.potency, 1)} % · terps ${rN(Y.terpenes, 2)} % · $${rN(Y.loaded, 2)}/g · ${rN(Y.hours.total, 0)} h`);
+    const pg = Y.costPG, part = k => pg[k] != null ? rN(pg[k], 3) : '—';
+    report.push(`year to ${to}: ${Y.n} crops · ${rN(Y.gpp, 0)} g/plant · ${rN(Y.gsfy, 0)} g/sqft/yr · THC ${rN(Y.potency, 1)} % · terps ${rN(Y.terpenes, 2)} % · ${rN(Y.hours.total, 0)} h`);
+    report.push(`    $/g all in ${part('allIn')} = labour ${part('labour')} + power ${part('power')} + water ${part('water')} + fert ${part('fert')} + supplies ${part('supplies')}`);
 }
 report.push(`past crops ${pastCrops.length} (${past[0].harvest} → ${past[past.length - 1].harvest}) · summaries ${Object.keys(db._EmployeeWizard.crops).length} · frozen costs ${Object.keys(db._EmployeeWizard.cropCosts || {}).length} · dropped ${dropped}`);
 report.push(`events ${db.calendarEvents.length} · equipment events ${db.calendarEvents.filter(e => e.sourceTool === 'EquipmentWizard').length}`);

@@ -75,7 +75,12 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "createdDate": "YYYY-MM-DD",
       "assignedLots": ["<LotID>"],
       "isFlowering": "boolean",       // Crop Projection eligibility flag
-      "lightCount": "number | null",  // lights in the room — EmployeeWizard Reports' "Per light" (Room Manager)
+      "lightCount": "number | null",  // lights in the room — Reports' "Per light" and the lighting power estimate (Room Manager)
+      "lightWattage": "number | null",// watts per light (Room Manager) — lighting power estimate
+      "canopySqFt": "number | null",  // canopy square footage (Room Manager) — Reports' "Per sq ft"
+      "vegLightHours": "number",      // hours of light a day in veg (default 18 → 18/6)
+      "bloomLightHours": "number",    // hours of light a day in bloom, from flip (default 12 → 12/12)
+      "designation": "string | null", // Room Manager role (Grow 1…4, Clone, Mother, Vegetation); a "Mother" room's lights run every day
       "buildingId": "string | null"   // building the room is in (also tracked in buildings.<buildingId>.assignedRooms)
     }
   },
@@ -110,7 +115,7 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
 
 - Each tool writes its own key under `_tool_<ToolName>` within a lot, or at the top level as `_<ToolName>`.
 - **`_meta` (save stamp):** SitkaTools builds it when the user saves and commits it to `DB.data` only once the save actually happens (the save link clicked, right-clicked, or tapped), so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited concurrently from the same starting copy. No tool reads `_meta` for logic yet — it is informational and groundwork for the multi-file plan in `ROADMAP.md`. Subtools carry it through untouched.
-- Tools only read/write their own keys — they do not modify other tools' data. **Reports exception (read-only):** EmployeeWizard's 📊 Reports tab may *read* every tool's data (user decision 2026-10-12); it writes only `_EmployeeWizard.crops` / `.settings` (see `EmployeeWizard/REPORTS.md`). Its 📜 Labour Log tab reads every hours entry the same way — DailyWizard chore hours and adjustments, and every event's `labour_map` — and writes nothing (user decision 2026-10-13). PaperWizard questions may carry an optional `metric` tag for it. **Write exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
+- Tools only read/write their own keys — they do not modify other tools' data. **Reports exception (read-only):** the Labour & Cost Wizard's (EmployeeWizard folder) 📊 Reports tab may *read* every tool's data (user decision 2026-10-12) — including equipment power and CropLabourWizard's price list and recipe supplies for the cost per gram; it writes only `_EmployeeWizard.crops` / `.settings` / `.costs` (see `EmployeeWizard/REPORTS.md`). Its 📜 Labour Log tab reads every hours entry the same way — DailyWizard chore hours and adjustments, and every event's `labour_map` — and writes nothing (user decision 2026-10-13). PaperWizard questions may carry an optional `metric` tag for it. **Write exception:** PaperWizard may write exactly three fields on lot records (`plantCount`, `stage`, `currentRoom`) when a log entry records a change — the only cross-tool write permission in the suite (see `PaperWizard/CLAUDE.md`). Long-term, PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events (sub-lot creation, plant destruction, room/phase changes); the SitkaTools lot manager will eventually handle only external lots.
 - Calendar events are append-only; each event records which tool generated it via `sourceTool`.
 
 #### Event IDs
@@ -449,7 +454,7 @@ Include these styles in SitkaTools.html:
 The central hub with two modes:
 
 1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database. The create-lot form assigns all five destination rooms — cloning, veg, flower (destination), **dry**, and **trim** (dry rooms double as trim rooms; the two fields may point at the same or different rooms) — plus a start-room choice (clone room by default, or veg room for purchased clones that skip cloning). The lot's live `currentRoom` starts from that choice and is maintained by PaperWizard when its logs record room moves. Only `destRoom` syncs to `rooms.<roomId>.assignedLots`; the other room fields are names stored on the lot (renaming/deleting a room nulls them out on affected lots).
-2. **Room Manager:** Create rooms (with an optional flowering flag and light count) and buildings, then assign rooms to buildings. A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
+2. **Room Manager:** Create rooms (with an optional flowering flag, light count, **watts per light**, **canopy sq ft**, and **veg / bloom light cycles** — 18/6 and 12/12 by default; all editable in the room's detail panel too) and buildings, then assign rooms to buildings. The light and canopy fields feed the Labour & Cost Wizard's Reports (per sq ft, per light, and the electricity estimate). A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
 3. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
 4. **DB Folder Mode (Chrome/Edge):** the **📁 Folder** header button and the start screen open the DB straight from the OneDrive-synced SharePoint folder (`showDirectoryPicker`). Opening loads the newest `DB-YY-MM-DD.json` in the folder, and **💾 Save DB** writes today's `DB-YY-MM-DD.json` back into it with one click. Before writing, Save re-scans the folder. If a newer day's DB file exists, or the file it opened was re-saved from elsewhere (content hash differs), it never overwrites: it asks, then writes a separate `DB-YY-MM-DD-conflict-HHMM.json`. Opening warns about same-day copies such as OneDrive's `DB-YY-MM-DD-PCNAME.json` conflict files. Up to 5 recent folders are remembered (most recent offered first on the start screen; the rest in the 📁 menu). Loading a file with 📂 Load DB switches folder mode off, and Save DB goes back to the download / Save-dialog flow. Browsers without `showDirectoryPicker` never show the folder UI.
 
@@ -470,7 +475,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 | File | Saved by | Holds |
 |---|---|---|
-| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries and report settings (`_EmployeeWizard.crops` / `.settings`), recipes, equipment plans, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
+| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries (with their frozen non-labour costs) and report settings (`_EmployeeWizard.crops` / `.settings`), power bills and rates (`_EmployeeWizard.costs`), recipes and the input price list (`_CropLabourWizard.inputs`), equipment plans and power, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
 | `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }`. `cropCosts` is the labour cost frozen with EmployeeWizard's crop summaries: money, so it stays out of Main. |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list, the chore hours logged there, its saved check-offs per day, and the office's adjustments log), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
@@ -537,7 +542,7 @@ A building device sees only its own building and only what it can save. It appli
     - a lot on its way **to** this building — accept it in SitkaTools first.
 
     The cabinet shows a banner and drops Fill, Sign and Initialize paperwork. Every fill, sign or start entry point refuses with a toast, and printing doesn't stamp `printedAt`.
-  - **EmployeeWizard** shows only the Tasks tab (labour on the building's lots) and the 📜 Labour Log of the work done in the building. The roster, time off and reports are hidden.
+  - **The Labour & Cost Wizard** (EmployeeWizard) shows only the Tasks tab (labour on the building's lots) and the 📜 Labour Log of the work done in the building. The roster, time off, ⚡ Power & Rates and reports are hidden.
 
 ## Crop Projection (Projected Lots)
 
@@ -765,6 +770,7 @@ CropLabourWizard's cultivation tasks are **data-driven** via self-contained reci
   - `hasToggle` / `defaultEnabled` — optional. When `hasToggle` is true the task can be switched off in the preview; `defaultEnabled` sets its initial state (IPM sprays default to `false`).
   - `isLocked` — optional. Locked tasks (e.g., Cutting Clones at Day 0) are not user-editable.
   - `roomPhase` — optional. One of `cloning`, `veg`, `flower`. When present, it is written onto generated events and overrides the order-based room split for that task.
+  - (recipe level) `inputs` — optional **supplies** the recipe uses up per crop: `[{ inputId, name, unit, qty, per: 'crop' | 'plant' }]`, priced from the shared price list `_CropLabourWizard.inputs` (CropLabourWizard → recipe → 🧪 Inputs). See "Total Cost per Gram".
   - `minutes` / `staff` — optional **labour estimate**, as on DailyWizard tasks: estimated time **per day** in minutes (at least 5; the editor steps by 5) and the staff needed (at least 1; blank = 1). Blank minutes = no estimate. A multi-day task (Trim, multi-day Harvest) needs that much on each of its days. The built-in recipe has none — duplicate it to add them. Written onto generated events as `estStaff` / `estMinutes` (see "Event Contract").
 
 ### Validation Rules
@@ -777,11 +783,13 @@ Enforced on **import** and on **in-wizard save** (the same `validateRecipe()` ru
 - **clone_cut:** must reference `harvest` (it counts back from harvest end).
 - **chain.cloneCutBeforeHarvest:** positive integer when present (written from the `clone_cut` task on save).
 - **minutes / staff (optional):** when present, `minutes` is an integer ≥ 5 and `staff` an integer ≥ 1.
+- **inputs (optional):** an array; each entry has a name, a qty ≥ 0 and `per` of `crop` or `plant`. Import links each to the price list by name (adding unknown ones without a price).
 
 ### Database Keys — `_CropLabourWizard` additions
 
-Two new keys under the tool-owned `_CropLabourWizard` key:
+New keys under the tool-owned `_CropLabourWizard` key:
 - **`recipes`** — a map of `id → recipe object`. Holds **only** user-created/imported recipes. The built-in `sitka-9week` is never written here; it stays in code and is always available as the fallback.
+- **`inputs`** — the **price list**, shared by every recipe: `id → { name, kind: 'fertilizer' | 'supply', unit, price }`. Fertilizers are priced per litre (their mL come from the grow logs, linked by product name); supplies per unit. Edited in the recipe editor's 🧪 Inputs tab and saved with Save Recipe.
 - **`taskTypes`** — a registry map of `taskType → { name, emoji, roomPhase? }`. Backfilled by `ensureStructure()` with the 32 built-in types, and **merged on every recipe save/import** (`mergeTaskTypeRegistry`) so custom task types defined in a recipe are discoverable by other tools.
 
 ### Event Contract — optional `roomPhase`
@@ -806,6 +814,23 @@ Generated CropLabourWizard events keep their existing shape and gain one **addit
 
 - Exported/imported recipe files follow the naming convention **`recipe-<id>.json`** (e.g., `recipe-sitka-9week.json`).
 - **No auto-loading:** the tool never `fetch()`s adjacent/sibling JSON files. Under `file://`, cross-file fetches are blocked by CORS, and this is also a deliberate user requirement. Recipe import is always via an **explicit file picker** (`⬆️ Import` button → hidden `<input type="file">`).
+
+## Total Cost per Gram
+
+Built 2026-10-16 (plan approved by the user). The CEO's key number: **all-in cost per gram of flower = labour + electricity + water + fertilizer + supplies**, in the Labour & Cost Wizard's Reports (overview tile **Cost / g (all in)** and the **💲 Costs** page; definitions in `EmployeeWizard/REPORTS.md`).
+
+| Part | Comes from | Priced with |
+|---|---|---|
+| Labour | hours on crop tasks, chores and equipment (fully loaded) | wages (Wages.json) |
+| Electricity | rooms (lights, watts per light, veg / bloom hours — Room Manager), the grow log's daily **Light intensity (%)** (PaperWizard metric `env.lightPct`; 100 % when not logged), equipment power (EquipmentWizard) | **⚡ Power & Rates**: power bills (split by estimated use) **or** estimated kWh × $/kWh — a radio |
+| Water | grow log `water.total` (L) | water $ per 1,000 L (⚡ Power & Rates) |
+| Fertilizer | grow log `feed.nutrient` mL, **by product** (PaperWizard product link on each mL question) | price list, $ per litre (CropLabourWizard → 🧪 Inputs) |
+| Supplies | the lot's recipe supplies, per crop or per plant | price list, $ per unit |
+
+- **User decisions (2026-10-16):** light cycles per room (veg 18/6, bloom 12/12 by default); a power bill is split between crops by estimated usage; fertilizer products are linked in PaperWizard's Configure Sheets (the paper form is unchanged); prices, rates and bills live in **Main.json**; EmployeeWizard is shown as the **Labour & Cost Wizard**.
+- **Electricity model:** room by room, day by day. A room's kWh goes to the crops in it that day (split by plants); an empty room — and a "Mother" room, whose lights always run — passes its kWh to the building's crops that day.
+- **Each part's $/g uses the crops that part can price**, and Costs → "What's missing from the cost?" lists the gaps (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies).
+- **Closed-out lots** keep their non-labour costs frozen in their crop summary (`_EmployeeWizard.crops[lotId].costs`, version 2); labour stays frozen in Wages.json as before.
 
 ## BC Civic Holidays
 
@@ -912,7 +937,7 @@ Any implementation must reproduce this table exactly:
 | GeneralEvent | `GeneralEvent/` | Active | Create standalone calendar events with text, date, and emoji |
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
-| EmployeeWizard | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); 📊 Reports tab (labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
+| Labour & Cost Wizard (EmployeeWizard) | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); ⚡ Power & Rates (power bills or estimated usage, $/kWh, water rate); 📊 Reports tab (total cost per gram, labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
 | DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs (saved per day), ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done) |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
@@ -1253,7 +1278,7 @@ function populateRoomSelector() {
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in a headless Firefox. It serves this folder on 127.0.0.1 and drives the browser over WebDriver BiDi, with real clicks, real pen strokes on the initials pad and real right-click save links.
 - Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - The tests use a made-up database (`tests/lib/helpers.mjs` → `fixtureDb()`) and never touch real DB files.
-- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open, ✅ Mark done and saved check-offs; and every tool opening without page errors.
+- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open, ✅ Mark done and saved check-offs; the cost inputs (rooms, equipment power, recipe inputs, light %, power & rates); a hand-worked total cost per gram; and every tool opening without page errors.
 - Run them before a change to saving, merging or the postMessage protocol goes out.
 
 ### JSON Database

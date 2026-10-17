@@ -27,6 +27,16 @@ The data model has three levels:
    - A start date (the first occurrence; can be in the past for retroactive scheduling)
    - An emoji icon for calendar display
 
+### ⚡ Power Use (for the electricity cost)
+
+Added 2026-10-16 for the Labour & Cost Wizard's total cost per gram.
+
+- Every equipment item can carry `power: { watts, units, hoursPerDay }`: watts per unit, how many units (default 1), and about how many hours a day it runs (default 12). Its estimated use is `watts × units × hours ÷ 1000` kWh a day, from its `installedDate` on. ACs and dehumidifiers matter most.
+- **Add form:** "⚡ Power draw (watts)", "How many units", "Runs about (hours a day)". No watts = no power entry.
+- **Each item's card:** a power line under the name (`⚡ 1,100 W × 2 · 16 h/day ≈ 35.2 kWh/day`, or "Power not set"), and an editable "⚡ Power use" row at the top of its expanded body. A change saves straight away with `notifySitkaTools()`. It never resyncs the calendar, because it doesn't change the schedule.
+- **Group entries:** an item that stands for a group ("All ACs / Grow 2") can carry the whole group's power (units = how many). Don't also give power to its members, or the room counts them twice.
+- The Labour & Cost Wizard reads it (read-only) for the estimated electricity of the room's crops (root `CLAUDE.md` → "Total Cost per Gram").
+
 ### Common Equipment Types (Dropdown)
 
 The tool provides a dropdown of pre-defined equipment types for quick selection, but also allows free-text entry for custom types:
