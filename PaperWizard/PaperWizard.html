@@ -666,6 +666,8 @@
         .q-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .q-controls > .form-group { margin-bottom: 0; }
         .q-controls .q-full { grid-column: 1 / -1; }
+        .q-product { display: flex; gap: 8px; flex-wrap: wrap; }
+        .q-product > * { flex: 1; min-width: 160px; }
         .q-bind-indicator {
             font-size: 0.8rem; color: var(--text-secondary);
             background: var(--bg-secondary); border: 1px dashed var(--border);
@@ -5258,6 +5260,7 @@
             ['Grow log — daily', [
                 ['env.temp', 'Room temperature', 'temp'], ['env.rh', 'Relative humidity %', 'number'],
                 ['env.co2', 'CO₂ (ppm)', 'number'], ['env.par', 'PAR', 'number'],
+                ['env.lightPct', 'Light intensity (%) — scales the lighting power estimate day by day', 'number'],
                 ['feed.ph', 'Feed pH', 'number'], ['feed.ec', 'Feed EC', 'number'],
                 ['feed.nutrient', 'Nutrient used (mL) — several questions add up', 'number'],
                 ['water.total', 'Water used (L)', 'number'], ['water.perPlant', 'Irrigation per plant (L)', 'number'],
@@ -5277,7 +5280,29 @@
             const units = REPORT_METRIC_UNITS[REPORT_METRIC_KIND[q.metric]];
             const unitSel = units ? `<div class="form-group"><label>Answered in</label><select class="q-metric-unit">${units.map(([v, l]) => `<option value="${v}"${(q.metricUnit || units[0][0]) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>` : '';
             const stale = q.metric && !REPORT_METRIC_KIND[q.metric] ? `<option value="${escapeHtml(q.metric)}" selected>${escapeHtml(q.metric)} (unknown)</option>` : '';
-            return `<div class="form-group" title="Tag this question so EmployeeWizard's Reports tab can chart its answers"><label>Report metric</label><select class="q-metric">${opts}${stale}</select></div>${unitSel}`;
+            return `<div class="form-group" title="Tag this question so the Labour & Cost Wizard's Reports can chart its answers"><label>Report metric</label><select class="q-metric">${opts}${stale}</select></div>${unitSel}${productControlsHtml(q)}`;
+        }
+
+        // A fertilizer amount (feed.nutrient, mL) needs its product to be priced: either always the same product
+        // (q.metricProduct = { name }), or whatever another question that day says (q.metricProduct = { from: qid } —
+        // e.g. "Core or Fade?"). The Labour & Cost Wizard prices it from CropLabourWizard's price list by name.
+        function productControlsHtml(q) {
+            if (q.metric !== 'feed.nutrient') return '';
+            const p = q.metricProduct || {};
+            const mode = p.from ? 'from' : p.name != null ? 'fixed' : '';
+            const sources = cfgWizard.questions.filter(x => x.id !== q.id && x.type === 'select');
+            return `<div class="form-group q-full" title="Which product this amount is — priced from the CropLabourWizard price list by the same name">
+                <label>Product (for the cost of each mL)</label>
+                <div class="q-product">
+                    <select class="q-product-mode">
+                        <option value=""${!mode ? ' selected' : ''}>— not set —</option>
+                        <option value="fixed"${mode === 'fixed' ? ' selected' : ''}>Always this product</option>
+                        <option value="from"${mode === 'from' ? ' selected' : ''}>The answer to another question</option>
+                    </select>
+                    ${mode === 'fixed' ? `<input type="text" class="q-product-name" value="${escapeHtml(p.name || '')}" placeholder="e.g., Activator">` : ''}
+                    ${mode === 'from' ? `<select class="q-product-from">${sources.map(x => `<option value="${x.id}"${p.from === x.id ? ' selected' : ''}>${escapeHtml(x.label || x.id)} (${escapeHtml((x.options || []).join(' / '))})</option>`).join('') || '<option value="">no select questions on this wizard</option>'}</select>` : ''}
+                </div>
+            </div>`;
         }
 
         function questionCardHtml(q, i) {
@@ -5356,7 +5381,7 @@
                 card.querySelector('.q-label').addEventListener('change', () => { q.label = card.querySelector('.q-label').value.trim(); refreshCfgOverlays(); });
                 card.querySelector('.q-type').addEventListener('change', () => {
                     q.type = card.querySelector('.q-type').value;
-                    if (!['text', 'number', 'select'].includes(q.type)) { delete q.metric; delete q.metricUnit; }   // only typed answers feed report metrics
+                    if (!['text', 'number', 'select'].includes(q.type)) { delete q.metric; delete q.metricUnit; delete q.metricProduct; }   // only typed answers feed report metrics
                     refreshWizardBuilder();
                 });
                 const optsEl = card.querySelector('.q-options');
@@ -5371,12 +5396,25 @@
                 const metricEl = card.querySelector('.q-metric');
                 if (metricEl) metricEl.addEventListener('change', () => {
                     if (metricEl.value) q.metric = metricEl.value; else delete q.metric;
+                    if (q.metric !== 'feed.nutrient') delete q.metricProduct;
                     const units = REPORT_METRIC_UNITS[REPORT_METRIC_KIND[q.metric]];
                     if (units) { if (!units.some(([v]) => v === q.metricUnit)) q.metricUnit = units[0][0]; } else delete q.metricUnit;
                     refreshWizardBuilder();   // shows or hides the unit picker
                 });
                 const unitEl = card.querySelector('.q-metric-unit');
                 if (unitEl) unitEl.addEventListener('change', () => { q.metricUnit = unitEl.value; });
+                // Fertilizer product link (feed.nutrient only)
+                const pModeEl = card.querySelector('.q-product-mode');
+                if (pModeEl) pModeEl.addEventListener('change', () => {
+                    if (pModeEl.value === 'fixed') q.metricProduct = { name: q.metricProduct?.name || '' };
+                    else if (pModeEl.value === 'from') q.metricProduct = { from: cfgWizard.questions.find(x => x.id !== q.id && x.type === 'select')?.id || '' };
+                    else delete q.metricProduct;
+                    refreshWizardBuilder();
+                });
+                const pNameEl = card.querySelector('.q-product-name');
+                if (pNameEl) pNameEl.addEventListener('change', () => { q.metricProduct = { name: pNameEl.value.trim() }; });
+                const pFromEl = card.querySelector('.q-product-from');
+                if (pFromEl) pFromEl.addEventListener('change', () => { q.metricProduct = { from: pFromEl.value }; });
                 // Write-back is implicit for plant-count / phase / room types — no control here.
                 card.querySelector('.q-row').addEventListener('change', () => { q.rowScoped = card.querySelector('.q-row').checked; refreshCfgOverlays(); });
                 card.querySelector('.q-same').addEventListener('change', () => { q.sameAsLast = card.querySelector('.q-same').checked; refreshCfgOverlays(); });

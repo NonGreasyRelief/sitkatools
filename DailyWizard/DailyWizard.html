@@ -2491,7 +2491,7 @@
             $('hoursTitle').textContent = `⏱ ${title}`;
             $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? ' (today)' : ''} · ` +
                 (est ? `estimate 👥 ${est.staff} × ${fmtMinutes(est.minutes)}` : 'no estimate') +
-                (ctx.kind === 'event' ? ' · these hours also show in EmployeeWizard’s Tasks tab' : '');
+                (ctx.kind === 'event' ? ' · these hours also show in the Labour & Cost Wizard’s Tasks tab' : '');
             const list = $('hoursList');
             list.innerHTML = '';
             const entries = ctxEntries(ctx), removed = ctxRemoved(ctx);
@@ -2529,8 +2529,8 @@
             const when = document.createElement('span');
             when.className = 'when';
             const stamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            const parts = [e.at ? `Logged ${stamp(e.at)}` : 'Entered in EmployeeWizard'];
-            if (e.editedAt) parts.push(`signed for ${fmtHoursShort(Number(e.signedHours) || 0)}, changed in EmployeeWizard ${stamp(e.editedAt)}`);
+            const parts = [e.at ? `Logged ${stamp(e.at)}` : 'Entered in the Labour & Cost Wizard'];
+            if (e.editedAt) parts.push(`signed for ${fmtHoursShort(Number(e.signedHours) || 0)}, changed in the Labour & Cost Wizard ${stamp(e.editedAt)}`);
             const gone = removal?.at || e.removedAt;
             if (gone) parts.push(`removed by the office ${stamp(gone)}`);
             when.textContent = parts.join(' · ');
@@ -2707,7 +2707,7 @@
             btn.type = 'button';
             btn.className = 'done-btn' + (done ? ' done' : '');
             btn.textContent = done ? '✅ Done' : '✍️ Mark done';
-            btn.title = done ? (sign?.name ? `Signed off by ${sign.name}${sign.at ? ', ' + doneStamp(sign.at) : ''}` : 'Marked done in SitkaTools or EmployeeWizard (not signed)')
+            btn.title = done ? (sign?.name ? `Signed off by ${sign.name}${sign.at ? ', ' + doneStamp(sign.at) : ''}` : 'Marked done in SitkaTools or the Labour & Cost Wizard (not signed)')
                 : 'Floor manager: sign this task off as done';
             btn.disabled = !done && selectedDateStr() > todayStr();
             btn.addEventListener('click', (e) => { e.stopPropagation(); openDone(ev.id, buildingId); });
@@ -2724,7 +2724,7 @@
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
             add('', '— Pick the floor manager —');
             for (const n of fm.names) add(n, n);
-            $('doneWhoNote').textContent = fm.everyone ? 'No floor managers are set yet (EmployeeWizard → employee → Floor manager), so everyone on the roster is listed.' : '';
+            $('doneWhoNote').textContent = fm.everyone ? 'No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.' : '';
             renderDone();
             $('doneOverlay').classList.add('open');
             sizePad('donePad');
@@ -2758,7 +2758,7 @@
             row.className = 'hours-entry';
             const who = document.createElement('span');
             who.className = 'who';
-            who.textContent = sign?.name ? `✅ Signed off by ${sign.name}` : '✅ Marked done in SitkaTools or EmployeeWizard';
+            who.textContent = sign?.name ? `✅ Signed off by ${sign.name}` : '✅ Marked done in SitkaTools or the Labour & Cost Wizard';
             row.appendChild(who);
             if (sign?.initials?.strokes?.length) row.appendChild(initialsSvg(sign.initials));
             if (canReopen(ev)) {

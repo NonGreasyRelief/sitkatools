@@ -3057,6 +3057,22 @@
                         <label for="roomLightCount">Lights in the room</label>
                         <input type="number" id="roomLightCount" min="0" step="1" inputmode="numeric" placeholder="e.g., 48">
                     </div>
+                    <div class="form-group">
+                        <label for="roomLightWattage">Watts per light</label>
+                        <input type="number" id="roomLightWattage" min="0" step="1" inputmode="numeric" placeholder="e.g., 1000">
+                    </div>
+                    <div class="form-group">
+                        <label for="roomCanopySqFt">Canopy (sq ft)</label>
+                        <input type="number" id="roomCanopySqFt" min="0" step="1" inputmode="numeric" placeholder="e.g., 1150">
+                    </div>
+                    <div class="form-group">
+                        <label for="roomVegLightHours">Veg light cycle</label>
+                        <select id="roomVegLightHours" class="light-cycle-select" data-default="18"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="roomBloomLightHours">Bloom light cycle</label>
+                        <select id="roomBloomLightHours" class="light-cycle-select" data-default="12"></select>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="clearRoomFormBtn">Clear</button>
                         <button type="submit" class="btn btn-primary" id="createRoomBtn">Create Room</button>
@@ -3176,8 +3192,8 @@
                 </a>
 
                 <a class="tool-link module-link" href="../EmployeeWizard/EmployeeWizard.html">
-                    <span class="tool-link-name">👥 Employee Wizard</span>
-                    <span class="tool-link-desc">Employee schedules, time-off booking &amp; labour cost tracking</span>
+                    <span class="tool-link-name">👥 Labour &amp; Cost Wizard</span>
+                    <span class="tool-link-desc">Roster, time off &amp; labour hours · power bills &amp; total cost per gram</span>
                 </a>
 
                 <a class="tool-link module-link" href="../DailyWizard/DailyWizard.html">
@@ -5121,6 +5137,9 @@
         }
 
         // A tool tab changed the shared copy → take it in, like a subtool update
+        // A tool's name as people see it (EmployeeWizard is shown as the Labour & Cost Wizard)
+        const toolDisplayName = id => ({ EmployeeWizard: 'Labour & Cost Wizard' })[id] || id;
+
         async function takeToolCopy(from) {
             const copy = await WorkCopy.read();
             if (!copy?.db) return;
@@ -5174,9 +5193,9 @@
             WorkCopy.channel.addEventListener('message', async (e) => {
                 const type = e.data?.type;
                 if ((type !== 'db-updated' && type !== 'save-request') || e.data.from === 'SitkaTools') return;
-                await takeToolCopy(e.data.from);
+                await takeToolCopy(toolDisplayName(e.data.from));
                 if (type !== 'save-request') return;
-                if (hasUnsavedChanges) SaveRequired.show(e.data.from);
+                if (hasUnsavedChanges) SaveRequired.show(toolDisplayName(e.data.from));
                 else showSyncToast('Nothing to save — everything is already saved');
             });
         }
@@ -6593,6 +6612,13 @@
         // match the lot's current room's designation). Stored on room.designation.
         const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
 
+        // Light cycles, stored as hours of light a day (veg default 18/6, bloom 12/12). The Labour & Cost Wizard's
+        // reports estimate lighting power from them: lights × watts per light × hours × the day's light %.
+        const LIGHT_CYCLE_HOURS = [24, 20, 18, 16, 14, 12];
+        const DEFAULT_VEG_LIGHT_HOURS = 18, DEFAULT_BLOOM_LIGHT_HOURS = 12;
+        const lightCycleOptions = (selected) => LIGHT_CYCLE_HOURS.map(h => `<option value="${h}"${h === selected ? ' selected' : ''}>${h}/${24 - h}</option>`).join('');
+        const positiveOrNull = (v) => { const n = parseFloat(v); return n > 0 ? n : null; };
+
         const RoomManager = {
             expandedRoomId: null,
 
@@ -6611,6 +6637,9 @@
                     roomForm.reset();
                     this.updateRoomIdSuggestion();
                 });
+
+                // Light cycle selects (the form's reset() puts them back on their default)
+                document.querySelectorAll('#roomForm .light-cycle-select').forEach(sel => { sel.innerHTML = lightCycleOptions(Number(sel.dataset.default)); });
 
                 this.updateRoomIdSuggestion();
                 this.updateRoomDatalist();
@@ -6682,6 +6711,10 @@
                 const designation = $('roomDesignation') ? $('roomDesignation').value : '';
                 const isFlowering = $('roomIsFlowering') ? $('roomIsFlowering').checked : false;
                 const lightCount = $('roomLightCount') ? parseInt($('roomLightCount').value, 10) : NaN;
+                const lightWattage = $('roomLightWattage') ? positiveOrNull($('roomLightWattage').value) : null;
+                const canopySqFt = $('roomCanopySqFt') ? positiveOrNull($('roomCanopySqFt').value) : null;
+                const vegLightHours = Number($('roomVegLightHours')?.value) || DEFAULT_VEG_LIGHT_HOURS;
+                const bloomLightHours = Number($('roomBloomLightHours')?.value) || DEFAULT_BLOOM_LIGHT_HOURS;
 
                 if (!roomId || !roomName) {
                     alert('Please fill in Room ID and Room Name.');
@@ -6710,7 +6743,11 @@
                     isFlowering: isFlowering,
                     buildingId: buildingId || null,
                     designation: designation || null,
-                    lightCount: lightCount > 0 ? lightCount : null   // "Per light" in EmployeeWizard's Reports
+                    lightCount: lightCount > 0 ? lightCount : null,   // "Per light" in the Labour & Cost Wizard's Reports
+                    lightWattage,                                     // watts per light — lighting power estimate
+                    canopySqFt,                                       // canopy square footage — "Per sq ft"
+                    vegLightHours,                                    // hours of light a day in veg (18/6 default)
+                    bloomLightHours                                   // hours of light a day in bloom (12/12 default)
                 };
 
                 // Register the room with its building (day-1 assignment)
@@ -6721,7 +6758,7 @@
                 }
 
                 markUnsaved();
-                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${buildingId ? `\n🏢 Assigned to building: ${DB.data.buildings[buildingId].name} (${buildingId})` : ''}${designation ? `\n🏷 Designation: ${designation}` : ''}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}${lightCount > 0 ? `\n💡 ${lightCount} lights` : ''}\nRemember to export the database to save.`);
+                alert(`Room "${roomName}" created successfully!\n\nID: ${roomId}${buildingId ? `\n🏢 Assigned to building: ${DB.data.buildings[buildingId].name} (${buildingId})` : ''}${designation ? `\n🏷 Designation: ${designation}` : ''}${isFlowering ? '\n🌸 Flagged as a flowering room (eligible for Crop Projection).' : ''}${lightCount > 0 ? `\n💡 ${lightCount} lights${lightWattage ? ` × ${lightWattage} W` : ''}` : ''}${canopySqFt ? `\n📐 ${canopySqFt} sq ft of canopy` : ''}\nRemember to export the database to save.`);
 
                 $('roomForm').reset();
                 this.updateRoomIdSuggestion();
@@ -6815,7 +6852,22 @@
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Lights:</span>
-                            <input type="number" class="room-light-count" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.lightCount > 0 ? room.lightCount : ''}" placeholder="not set" title="Number of lights in the room — EmployeeWizard's Reports use it for “Per light”" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="room-light-count" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.lightCount > 0 ? room.lightCount : ''}" placeholder="not set" title="Number of lights in the room — the Labour & Cost Wizard's Reports use it for “Per light” and the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Watts per light:</span>
+                            <input type="number" class="room-light-watts" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.lightWattage > 0 ? room.lightWattage : ''}" placeholder="not set" title="Power draw of one light at 100 % — for the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Canopy (sq ft):</span>
+                            <input type="number" class="room-canopy" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.canopySqFt > 0 ? room.canopySqFt : ''}" placeholder="not set" title="Canopy square footage — the Labour & Cost Wizard's Reports use it for “Per sq ft”" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                        </div>
+                        <div class="room-detail-row">
+                            <span class="detail-label">Light cycle:</span>
+                            <label style="display:flex; align-items:center; gap:6px;">Veg
+                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${roomId}" data-field="vegLightHours" title="Hours of light a day in veg">${lightCycleOptions(room.vegLightHours || DEFAULT_VEG_LIGHT_HOURS)}</select></label>
+                            <label style="display:flex; align-items:center; gap:6px;">Bloom
+                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${roomId}" data-field="bloomLightHours" title="Hours of light a day in bloom (from flip)">${lightCycleOptions(room.bloomLightHours || DEFAULT_BLOOM_LIGHT_HOURS)}</select></label>
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Building:</span>
@@ -7030,6 +7082,29 @@
                         const n = parseInt(inp.value, 10);
                         room.lightCount = n > 0 ? n : null;
                         inp.value = n > 0 ? n : '';
+                        markUnsaved();
+                    });
+                });
+
+                // Watts per light and canopy sq ft (per-room detail panel) — the cost and per-sq-ft reports use them
+                for (const [cls, field] of [['.room-light-watts', 'lightWattage'], ['.room-canopy', 'canopySqFt']]) {
+                    document.querySelectorAll(cls).forEach(inp => {
+                        inp.addEventListener('change', () => {
+                            const room = this.rooms[inp.dataset.roomId];
+                            if (!room) return;
+                            room[field] = positiveOrNull(inp.value);
+                            inp.value = room[field] ?? '';
+                            markUnsaved();
+                        });
+                    });
+                }
+
+                // Veg / bloom light cycle (hours of light a day)
+                document.querySelectorAll('.room-light-hours').forEach(sel => {
+                    sel.addEventListener('change', () => {
+                        const room = this.rooms[sel.dataset.roomId];
+                        if (!room) return;
+                        room[sel.dataset.field] = Number(sel.value);
                         markUnsaved();
                     });
                 });

@@ -858,6 +858,15 @@
         .recipe-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
         .recipe-actions .btn { padding: 6px 10px; font-size: 0.8rem; }
 
+        /* Recipe editor tabs (🗓️ Tasks | 🧪 Inputs) */
+        .editor-tabs { display: flex; gap: 4px; margin: 4px 0 14px; border-bottom: 1px solid var(--border); }
+        .editor-tab { padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+        .editor-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .input-hint { font-size: 0.78rem; color: var(--text-secondary); margin-top: 8px; line-height: 1.45; }
+        .task-table td.in-used, .task-table td.ri-cost { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
+        .task-table .in-price, .task-table .ri-qty { width: 96px; }
+        .task-table .in-unit { width: 90px; }
+
         /* Task table */
         .task-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .task-table th {
@@ -1021,6 +1030,11 @@
                         <input type="text" id="recipeIdInput" readonly title="Stable machine id — do not change">
                     </div>
                 </div>
+                <div class="editor-tabs" role="tablist">
+                    <button type="button" class="editor-tab active" data-tab="tasks" role="tab">🗓️ Tasks</button>
+                    <button type="button" class="editor-tab" data-tab="inputs" role="tab">🧪 Inputs</button>
+                </div>
+                <div id="recipeTasksTab">
                 <div class="form-group">
                     <label>Room turnaround</label>
                     <div class="turnaround-box" id="recipeTurnaround"></div>
@@ -1051,6 +1065,31 @@
                         </table>
                     </div>
                     <button type="button" class="btn btn-secondary" id="recipeAddTaskBtn" style="margin-top:10px;">＋ Add Task</button>
+                </div>
+                </div>
+                <!-- 🧪 Inputs: the price list (every recipe) + the single-use supplies this recipe uses -->
+                <div id="recipeInputsTab" style="display:none;">
+                    <div class="form-group">
+                        <label>Price list — shared by every recipe</label>
+                        <div style="overflow-x:auto;">
+                            <table class="task-table" id="inputCatalogTable">
+                                <thead><tr><th>Name</th><th>Kind</th><th>Unit</th><th title="Price per unit — fertilizers per litre">$ per unit</th><th>Used by</th><th></th></tr></thead>
+                                <tbody id="inputCatalogBody"></tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="addInputBtn" style="margin-top:10px;">＋ Add Input</button>
+                        <div class="input-hint">Fertilizers are priced per litre. The grow logs record the mL each crop used: in PaperWizard → Configure Sheets, each mL question is linked to its product, by the same name as here. Supplies are used up once per crop (coco blocks, peat pucks, trellis…) and are counted below.</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Supplies this recipe uses, per crop</label>
+                        <div style="overflow-x:auto;">
+                            <table class="task-table" id="recipeInputsTable">
+                                <thead><tr><th>Supply</th><th>Quantity</th><th>Per</th><th>Cost</th><th></th></tr></thead>
+                                <tbody id="recipeInputsBody"></tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="addRecipeInputBtn" style="margin-top:10px;">＋ Add Supply</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1527,6 +1566,14 @@
                 }
             }
             // Chain params (optional; cloneCutBeforeHarvest defaults to 21 when absent)
+            if (obj.inputs != null) {
+                if (!Array.isArray(obj.inputs)) errors.push('inputs: must be an array');
+                else obj.inputs.forEach((x, i) => {
+                    if (!x || typeof x !== 'object' || typeof x.name !== 'string' || !x.name.trim()) errors.push(`inputs[${i}]: name is required`);
+                    else if (!(Number(x.qty) >= 0)) errors.push(`inputs[${i}] "${x.name}": qty must be a number ≥ 0`);
+                    else if (x.per != null && !['crop', 'plant'].includes(x.per)) errors.push(`inputs[${i}] "${x.name}": per must be "crop" or "plant"`);
+                });
+            }
             if (obj.chain != null) {
                 if (typeof obj.chain !== 'object' || Array.isArray(obj.chain)) {
                     errors.push('chain: must be an object');
@@ -1630,6 +1677,8 @@
                 }
                 DB.data._CropLabourWizard.recipes[parsed.id] = parsed;
                 mergeTaskTypeRegistry(parsed);
+                // Its supplies join the price list by name (new ones without a price)
+                if (parsed.inputs?.length) linkRecipeInputs(parsed, DB.data._CropLabourWizard.inputs || (DB.data._CropLabourWizard.inputs = {}));
                 // Select the imported recipe and rebuild the preview from its defaults
                 populateRecipeSelector(false);
                 populateProjectionRecipeSelector(true);
@@ -1709,6 +1758,7 @@
         function closeRecipeManager() {
             $('recipeManagerOverlay').classList.remove('open');
             editorRecipe = null;
+            editorInputs = null;
         }
         function setRecipeMgrView(view) {
             const isList = view === 'list';
@@ -1788,13 +1838,191 @@
             showRecipeEditor(copy);
         }
 
+        // ---- 🧪 Inputs — the price list (shared by every recipe) and the supplies a recipe uses ----
+        // _CropLabourWizard.inputs[id] = { name, kind: 'fertilizer' | 'supply', unit, price }
+        //   fertilizer: priced per litre (unit 'L'); the grow logs record the mL each crop used (PaperWizard links each
+        //   mL question to its product by name). supply: used up once per crop, priced per unit ('bag', 'puck', 'ft'…).
+        // recipe.inputs = [{ inputId, name, unit, qty, per: 'crop' | 'plant' }] — supplies only. The name and unit keep a
+        //   recipe-<id>.json meaningful in another database. The Labour & Cost Wizard's reports price them per crop.
+        // Edits belong to the editor session: Save Recipe writes the price list and the recipe; Cancel drops both.
+        let editorInputs = null;   // working copy of the price list while the editor is open
+        const INPUT_KINDS = [['fertilizer', 'Fertilizer'], ['supply', 'Supply (single use)']];
+        const catalogInputs = () => DB.data?._CropLabourWizard?.inputs || {};
+        function newInputId(taken) {
+            let id;
+            do { id = 'in'; for (let i = 0; i < 6; i++) id += RECIPE_CODE_ALPHABET[Math.floor(Math.random() * RECIPE_CODE_ALPHABET.length)]; } while (taken[id]);
+            return id;
+        }
+        const money = v => '$' + (Math.round(v * 100) / 100).toFixed(2);
+        // The other saved recipes that use an input
+        function recipesUsingInput(inputId) {
+            return Object.values(DB.data?._CropLabourWizard?.recipes || {})
+                .filter(r => r.id !== editorRecipe?.id && (r.inputs || []).some(x => x.inputId === inputId)).map(r => r.name);
+        }
+        // Find (or add, without a price) the price-list entry for a recipe's input — imported recipes match by name
+        function linkRecipeInputs(recipe, list) {
+            for (const x of recipe.inputs || []) {
+                const byId = list[x.inputId], name = String(x.name || '').trim().toLowerCase();
+                if (byId && byId.name.trim().toLowerCase() === name) continue;
+                const match = Object.entries(list).find(([, v]) => v.name.trim().toLowerCase() === name);
+                if (match) { x.inputId = match[0]; continue; }
+                x.inputId = newInputId(list);
+                list[x.inputId] = { name: String(x.name).trim(), kind: 'supply', unit: x.unit || 'each', price: null };
+            }
+        }
+
+        // fresh: the editor was just opened — the tables on screen aren't this recipe's yet, so nothing is read back
+        function setRecipeEditorTab(tab, fresh = false) {
+            const onInputs = $('recipeInputsTab').style.display !== 'none';
+            if (tab === 'inputs') {
+                if (!fresh && !onInputs) editorRecipe.tasks = readTaskTable();
+                renderInputTables();
+            } else if (!fresh && onInputs) readInputTables();
+            document.querySelectorAll('.editor-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            $('recipeTasksTab').style.display = tab === 'tasks' ? '' : 'none';
+            $('recipeInputsTab').style.display = tab === 'inputs' ? '' : 'none';
+        }
+
+        function renderInputTables() {
+            renderCatalogRows();
+            renderRecipeInputRows();
+        }
+        const inputUsedText = (id, x) => {
+            if (x.kind === 'fertilizer') return 'grow logs';
+            const n = recipesUsingInput(id).length + ((editorRecipe.inputs || []).some(r => r.inputId === id) ? 1 : 0);
+            return n ? `${n} recipe${n === 1 ? '' : 's'}` : '—';
+        };
+        const recipeInputCost = (r) => {
+            const item = editorInputs[r.inputId];
+            if (!item) return '';
+            if (!(item.price > 0)) return 'no price yet';
+            return r.qty > 0 ? `≈ ${money(item.price * r.qty)} per ${r.per === 'plant' ? 'plant' : 'crop'}` : '';
+        };
+        function renderCatalogRows() {
+            const cat = $('inputCatalogBody');
+            cat.innerHTML = '';
+            const entries = Object.entries(editorInputs);
+            if (!entries.length) cat.innerHTML = '<tr><td colspan="6" class="in-used">No inputs yet — ＋ Add Input (e.g. Activator, Core, Coco block, Peat puck, Trellis).</td></tr>';
+            for (const [id, x] of entries) {
+                const tr = document.createElement('tr');
+                tr.dataset.id = id;
+                const fert = x.kind === 'fertilizer';
+                tr.innerHTML = `
+                    <td><input type="text" class="in-name" value="${escapeHtml(x.name || '')}" placeholder="e.g., Coco block"></td>
+                    <td><select class="in-kind">${INPUT_KINDS.map(([v, l]) => `<option value="${v}"${x.kind === v ? ' selected' : ''}>${l}</option>`).join('')}</select></td>
+                    <td><input type="text" class="in-unit" value="${escapeHtml(fert ? 'L' : (x.unit || ''))}" placeholder="bag, puck, ft…" ${fert ? 'disabled title="Fertilizers are priced per litre"' : ''}></td>
+                    <td><input type="number" class="in-price" min="0" step="0.01" inputmode="decimal" value="${x.price != null ? x.price : ''}" placeholder="$"></td>
+                    <td class="in-used">${inputUsedText(id, x)}</td>
+                    <td class="t-del"><button type="button" class="danger" data-act="del-input" title="Delete from the price list">✕</button></td>`;
+                cat.appendChild(tr);
+            }
+        }
+        function renderRecipeInputRows() {
+            const entries = Object.entries(editorInputs);
+            const body = $('recipeInputsBody');
+            body.innerHTML = '';
+            const supplies = entries.filter(([, x]) => x.kind !== 'fertilizer');
+            const rows = editorRecipe.inputs || [];
+            if (!rows.length) body.innerHTML = `<tr><td colspan="5" class="in-used">${supplies.length ? 'No supplies on this recipe yet — ＋ Add Supply.' : 'Add supplies to the price list first.'}</td></tr>`;
+            rows.forEach((r, i) => {
+                const tr = document.createElement('tr');
+                tr.dataset.i = i;
+                tr.innerHTML = `
+                    <td><select class="ri-input">${supplies.map(([id, x]) => `<option value="${id}"${id === r.inputId ? ' selected' : ''}>${escapeHtml(x.name || '(unnamed)')}${x.unit ? ` (${escapeHtml(x.unit)})` : ''}</option>`).join('')}</select></td>
+                    <td><input type="number" class="ri-qty" min="0" step="any" inputmode="decimal" value="${r.qty ?? ''}"></td>
+                    <td><select class="ri-per"><option value="crop"${r.per !== 'plant' ? ' selected' : ''}>per crop</option><option value="plant"${r.per === 'plant' ? ' selected' : ''}>per plant</option></select></td>
+                    <td class="ri-cost">${recipeInputCost(r)}</td>
+                    <td class="t-del"><button type="button" class="danger" data-act="del-ri" title="Remove from this recipe">✕</button></td>`;
+                body.appendChild(tr);
+            });
+            $('addRecipeInputBtn').disabled = !supplies.length;
+        }
+
+        // Read both tables back into the working copies (DOM-sync rule, as for the task table)
+        function readInputTables() {
+            for (const tr of $('inputCatalogBody').querySelectorAll('tr[data-id]')) {
+                const x = editorInputs[tr.dataset.id];
+                if (!x) continue;
+                x.name = tr.querySelector('.in-name').value.trim();
+                x.kind = tr.querySelector('.in-kind').value;
+                x.unit = x.kind === 'fertilizer' ? 'L' : (tr.querySelector('.in-unit').value.trim() || 'each');
+                const price = parseFloat(tr.querySelector('.in-price').value);
+                x.price = price >= 0 ? price : null;
+            }
+            editorRecipe.inputs = [...$('recipeInputsBody').querySelectorAll('tr[data-i]')].map(tr => {
+                const inputId = tr.querySelector('.ri-input').value, item = editorInputs[inputId];
+                const qty = parseFloat(tr.querySelector('.ri-qty').value);
+                return { inputId, name: item?.name || '', unit: item?.unit || 'each', qty: qty >= 0 ? qty : 0, per: tr.querySelector('.ri-per').value };
+            }).filter(r => editorInputs[r.inputId]);
+        }
+
+        function wireInputTables() {
+            $('addInputBtn').addEventListener('click', () => {
+                readInputTables();
+                const id = newInputId(editorInputs);
+                editorInputs[id] = { name: '', kind: 'supply', unit: 'each', price: null };
+                renderInputTables();
+                $('inputCatalogBody').querySelector(`tr[data-id="${id}"] .in-name`)?.focus();
+            });
+            $('addRecipeInputBtn').addEventListener('click', () => {
+                readInputTables();
+                const first = Object.entries(editorInputs).find(([, x]) => x.kind !== 'fertilizer');
+                if (!first) return;
+                (editorRecipe.inputs || (editorRecipe.inputs = [])).push({ inputId: first[0], name: first[1].name, unit: first[1].unit, qty: 1, per: 'crop' });
+                renderInputTables();
+            });
+            $('inputCatalogBody').addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-act="del-input"]');
+                if (!btn) return;
+                readInputTables();
+                const id = btn.closest('tr').dataset.id, x = editorInputs[id];
+                const others = recipesUsingInput(id);
+                if (others.length && !confirm(`Delete "${x.name || 'this input'}" from the price list?\n\nThese recipes use it, and lose it when you save:\n• ${others.join('\n• ')}`)) return;
+                delete editorInputs[id];
+                editorRecipe.inputs = (editorRecipe.inputs || []).filter(r => r.inputId !== id);
+                renderInputTables();
+            });
+            $('recipeInputsBody').addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-act="del-ri"]');
+                if (!btn) return;
+                readInputTables();
+                editorRecipe.inputs.splice(Number(btn.closest('tr').dataset.i), 1);
+                renderInputTables();
+            });
+            // A finished edit updates the hints in place, so tabbing through a row keeps its focus
+            $('inputCatalogBody').addEventListener('change', (e) => {
+                readInputTables();
+                const tr = e.target.closest('tr[data-id]'), x = tr && editorInputs[tr.dataset.id];
+                if (x) {
+                    const unit = tr.querySelector('.in-unit');
+                    unit.disabled = x.kind === 'fertilizer';
+                    unit.value = x.kind === 'fertilizer' ? 'L' : (x.unit === 'L' && e.target.classList.contains('in-kind') ? 'each' : x.unit);
+                    if (!unit.disabled) x.unit = unit.value;
+                    tr.querySelector('.in-used').textContent = inputUsedText(tr.dataset.id, x);
+                }
+                const fertToSupply = x && e.target.classList.contains('in-kind');
+                if (fertToSupply && x.kind === 'fertilizer') editorRecipe.inputs = (editorRecipe.inputs || []).filter(r => r.inputId !== tr.dataset.id);
+                renderRecipeInputRows();   // names, units and kinds show there
+            });
+            $('recipeInputsBody').addEventListener('change', (e) => {
+                readInputTables();
+                const tr = e.target.closest('tr[data-i]');
+                if (tr) tr.querySelector('.ri-cost').textContent = recipeInputCost(editorRecipe.inputs[Number(tr.dataset.i)] || {});
+                document.querySelectorAll('#inputCatalogBody tr[data-id]').forEach(row => { row.querySelector('.in-used').textContent = inputUsedText(row.dataset.id, editorInputs[row.dataset.id]); });
+            });
+            document.querySelectorAll('.editor-tab').forEach(b => b.addEventListener('click', () => setRecipeEditorTab(b.dataset.tab)));
+        }
+
         // ---- Editor ----
         function showRecipeEditor(recipe) {
             editorRecipe = normalizeCloneCut(recipe);
+            editorInputs = JSON.parse(JSON.stringify(catalogInputs()));
+            linkRecipeInputs(editorRecipe, editorInputs);
             $('recipeNameInput').value = recipe.name || '';
             $('recipeIdInput').value = recipe.id || '';
             editorTurnaroundSig = null;   // opening the editor shows the readout without a toast
             renderTaskTable();
+            setRecipeEditorTab('tasks', true);
             setRecipeMgrView('editor');
         }
 
@@ -1888,8 +2116,18 @@
         function saveRecipeFromEditor() {
             if (!editorRecipe) return;
             editorRecipe.name = $('recipeNameInput').value.trim();
-            editorRecipe.tasks = readTaskTable();
+            if ($('recipeTasksTab').style.display !== 'none') editorRecipe.tasks = readTaskTable();   // the tab shown holds the latest edits
+            else readInputTables();
             syncChainFromCloneCut(editorRecipe);
+            // Price list: names must be filled in and unique (fertilizers are matched to the grow logs by name)
+            const names = new Set();
+            for (const x of Object.values(editorInputs)) {
+                const key = x.name.trim().toLowerCase();
+                if (!key) { alert('Every input in the price list needs a name (or delete the empty row) — see the 🧪 Inputs tab.'); return; }
+                if (names.has(key)) { alert(`"${x.name}" is in the price list twice — names must be unique (see the 🧪 Inputs tab).`); return; }
+                names.add(key);
+            }
+            if (!editorRecipe.inputs?.length) delete editorRecipe.inputs;
             if (editorRecipe.version == null) editorRecipe.version = 1;
 
             const errors = validateRecipe(editorRecipe);
@@ -1915,6 +2153,14 @@
             const wasNew = !DB.data._CropLabourWizard.recipes[editorRecipe.id];
             DB.data._CropLabourWizard.recipes[editorRecipe.id] = editorRecipe;
             mergeTaskTypeRegistry(editorRecipe);
+            // The price list is saved with it; inputs deleted from it leave every recipe
+            DB.data._CropLabourWizard.inputs = editorInputs;
+            for (const r of Object.values(DB.data._CropLabourWizard.recipes)) {
+                if (!r.inputs) continue;
+                r.inputs = r.inputs.filter(x => editorInputs[x.inputId]);
+                for (const x of r.inputs) { x.name = editorInputs[x.inputId].name; x.unit = editorInputs[x.inputId].unit; }
+                if (!r.inputs.length) delete r.inputs;
+            }
 
             // If this is the active recipe, refresh the preview from its (possibly changed) defaults.
             if (activeRecipe?.id === editorRecipe.id) {
@@ -4542,6 +4788,7 @@
             showRecipeEditor(base);
         });
         $('recipeAddTaskBtn').addEventListener('click', addTaskRow);
+        wireInputTables();
         $('recipeEditorCancelBtn').addEventListener('click', () => { renderRecipeList(); setRecipeMgrView('list'); });
         $('recipeEditorSaveBtn').addEventListener('click', saveRecipeFromEditor);
         // Task table: delegated move/remove + live enable/disable of the "on by default" box

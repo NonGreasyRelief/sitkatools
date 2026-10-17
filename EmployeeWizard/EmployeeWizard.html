@@ -8,7 +8,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EmployeeWizard</title>
+    <title>Labour &amp; Cost Wizard</title>
     <style>
         :root {
             --bg-primary: #1a1a2e;
@@ -219,6 +219,20 @@
 
         .report-chk { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); padding-bottom: 10px; cursor: pointer; }
         .report-chk input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+        /* ---- ⚡ Power & Rates ---- */
+        .power-card { margin-top: 0; margin-bottom: 16px; }
+        .power-card h3 { margin-bottom: 12px; }
+        .power-radio { align-items: flex-start; padding-bottom: 8px; color: var(--text-primary); }
+        .power-radio input { margin-top: 3px; accent-color: var(--accent); }
+        .power-card .report-controls input[type="number"] { padding: 9px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 0.9rem; width: 150px; }
+        .power-note { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; }
+        .pw-cov { display: grid; grid-template-columns: 140px repeat(12, 1fr); gap: 3px; margin-top: 14px; font-size: 0.72rem; color: var(--text-secondary); align-items: center; }
+        .pw-cov span.m { text-align: center; }
+        .pw-cov span.c { height: 18px; border-radius: 3px; background: var(--input-bg); border: 1px solid var(--border); }
+        .pw-cov span.c.full { background: rgba(83, 216, 168, 0.55); border-color: var(--accent); }
+        .pw-cov span.c.part { background: rgba(243, 156, 18, 0.45); border-color: var(--warning); }
+        .report-table td.pw-del { text-align: right; }
 
         /* ---- 📜 Labour Log ---- */
         .log-print { margin-left: auto; }
@@ -1130,7 +1144,7 @@
     <!-- Header (lot-focused tool — Active Lot selector) -->
     <header class="header">
         <div class="header-left">
-            <span class="logo">👥 EmployeeWizard</span>
+            <span class="logo">👥 Labour &amp; Cost Wizard</span>
         </div>
         <div class="header-right">
             <div class="form-group">
@@ -1154,6 +1168,7 @@
             <button type="button" class="tab-btn active" id="tabEmployees">👥 Employees</button>
             <button type="button" class="tab-btn" id="tabTasks">📋 Tasks</button>
             <button type="button" class="tab-btn" id="tabLog">📜 Labour Log</button>
+            <button type="button" class="tab-btn" id="tabPower">⚡ Power &amp; Rates</button>
             <button type="button" class="tab-btn" id="tabReports">📊 Reports</button>
         </div>
 
@@ -1392,6 +1407,33 @@
             </div>
         </div>
 
+        <!-- ⚡ Power & Rates (office only) — where electricity cost comes from, the rates, and the power bills -->
+        <div class="tab-pane" id="panePower">
+            <div class="report-section power-card">
+                <h3>⚡ Electricity cost comes from</h3>
+                <label class="report-chk power-radio"><input type="radio" name="powerSource" value="bills"> <span><b>Power bills</b> — the bills entered below. Each crop's share of a bill comes from its estimated use (lights, AC, dehumidifiers).</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="powerSource" value="estimate"> <span><b>Estimated usage</b> — lights × watts × hours × the day's light %, plus AC / dehumidifier watts × run time, at the rate below.</span></label>
+                <div class="report-controls">
+                    <div class="form-group"><label for="pwRate">Electricity rate ($ per kWh)</label><input type="number" id="pwRate" min="0" step="0.001" inputmode="decimal" placeholder="e.g., 0.12"></div>
+                    <div class="form-group"><label for="pwWater">Water ($ per 1,000 L)</label><input type="number" id="pwWater" min="0" step="0.01" inputmode="decimal" placeholder="e.g., 2.50"></div>
+                </div>
+                <div class="power-note" id="pwNote"></div>
+            </div>
+            <div class="report-section power-card">
+                <h3>🧾 Power bills</h3>
+                <div class="report-controls">
+                    <div class="form-group"><label for="pwBillBuilding">Meter</label><select id="pwBillBuilding"></select></div>
+                    <div class="form-group"><label for="pwBillFrom">From</label><input type="date" id="pwBillFrom"></div>
+                    <div class="form-group"><label for="pwBillTo">To</label><input type="date" id="pwBillTo"></div>
+                    <div class="form-group"><label for="pwBillKwh">kWh</label><input type="number" id="pwBillKwh" min="0" step="1" inputmode="numeric" placeholder="optional"></div>
+                    <div class="form-group"><label for="pwBillAmount">Amount ($)</label><input type="number" id="pwBillAmount" min="0" step="0.01" inputmode="decimal"></div>
+                    <button type="button" class="btn btn-primary" id="pwBillAddBtn">＋ Add bill</button>
+                </div>
+                <div class="report-table-wrap"><table class="report-table" id="pwBillTable"></table></div>
+                <div id="pwCoverage"></div>
+            </div>
+        </div>
+
         <!-- Reports Tab (office only) — charts and KPIs; spec and hook-up notes in EmployeeWizard/REPORTS.md -->
         <div class="tab-pane" id="paneReports">
             <div class="rpt-filters">
@@ -1439,7 +1481,7 @@
         <svg id="rvDefs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="rvh-blue" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-blue);fill-opacity:.16"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-blue);stroke-width:2"/></pattern><pattern id="rvh-clone" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-clone);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-clone);stroke-width:2"/></pattern><pattern id="rvh-veg" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-veg);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-veg);stroke-width:2"/></pattern><pattern id="rvh-flower" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-flower);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-flower);stroke-width:2"/></pattern><pattern id="rvh-post" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-ph-post);fill-opacity:.14"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-ph-post);stroke-width:2"/></pattern><pattern id="rvh-neutral" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--rv-neutral);fill-opacity:.25"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--rv-neutral);stroke-width:2"/></pattern></defs></svg>
 
         <!-- Labour Report — estimated vs. actual hours on crop tasks (office only) -->
-        <section class="report-section">
+        <section class="report-section" id="labourReportSection">
             <div class="report-head">
                 <h3>📊 Labour Report — estimated vs. actual</h3>
                 <span class="report-scope" id="reportScope"></span>
@@ -1887,6 +1929,7 @@
                 renderTasksTab(true);
                 renderReports();
                 renderLabourLog();
+                renderPowerTab();
                 showToast('Database loaded from SitkaTools');
             }
 
@@ -1911,6 +1954,7 @@
                 // Only redraws while the Reports tab is open, and not under a Setup input being typed in
                 if (!document.activeElement?.closest?.('#rptBody input')) renderReports();
                 renderLabourLog();   // only while its tab is open
+                renderPowerTab();    // likewise
             }
         });
 
@@ -3362,6 +3406,7 @@
             'env.rh': { label: 'Relative humidity %', kind: 'number', agg: 'avg', daily: true },
             'env.co2': { label: 'CO₂ (ppm)', kind: 'number', agg: 'avg', daily: true },
             'env.par': { label: 'PAR', kind: 'number', agg: 'avg', daily: true },
+            'env.lightPct': { label: 'Light intensity (%)', kind: 'number', agg: 'avg', daily: true },
             'feed.ph': { label: 'Feed pH', kind: 'number', agg: 'avg', daily: true },
             'feed.ec': { label: 'Feed EC', kind: 'number', agg: 'avg', daily: true },
             'feed.nutrient': { label: 'Nutrient used (mL)', kind: 'number', agg: 'sum', daily: true },
@@ -3416,8 +3461,10 @@
         }
         const rptRoomName = id => DB.data.rooms?.[id]?.name || id || '—';
         const rptBuildingName = id => DB.data.buildings?.[id]?.name || id || 'No building';
-        const rptCanopy = roomId => { const v = Number(rptSettings().canopySqFt?.[roomId]); return v > 0 ? v : null; };
+        // Canopy is set in SitkaTools' Room Manager (rooms.<id>.canopySqFt); older files kept it in this tool's settings
+        const rptCanopy = roomId => { const v = Number(DB.data.rooms?.[roomId]?.canopySqFt ?? rptSettings().canopySqFt?.[roomId]); return v > 0 ? v : null; };
         const rptLights = roomId => { const v = Number(DB.data.rooms?.[roomId]?.lightCount); return v > 0 ? v : null; };   // set in SitkaTools' Room Manager
+        const rptLightWatts = roomId => { const v = Number(DB.data.rooms?.[roomId]?.lightWattage); return v > 0 ? v : null; };
         const rptShiftHours = () => { const v = Number(rptSettings().shiftHours); return v > 0 ? v : 8; };
 
         function rptTaskTypes() { return DB.data._CropLabourWizard?.taskTypes || {}; }
@@ -4863,7 +4910,7 @@
         }
         function rptSetup(M) {
             const ew = DB.data._EmployeeWizard || {}, saved = ew.crops || {};
-            const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n"><input type="number" min="0" step="10" class="rpt-num" data-canopy="${rEsc(id)}" value="${rptCanopy(id) ?? ''}" placeholder="sq ft"></td><td class="n">${rptLights(id) ?? '<span class="rpt-muted">not set</span>'}</td></tr>`).join('');
+            const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n">${rptCanopy(id) ?? '<span class="rpt-muted">not set</span>'}</td><td class="n">${rptLights(id) ?? '<span class="rpt-muted">not set</span>'}</td><td class="n">${rptLightWatts(id) ? rN(rptLightWatts(id), 0) + ' W' : '<span class="rpt-muted">not set</span>'}</td></tr>`).join('');
             const live = M.crops.filter(c => !c.closed && c.dates?.harvestStart).sort((a, b) => b.dates.harvestStart.localeCompare(a.dates.harvestStart));
             const closed = M.crops.filter(c => c.closed).sort((a, b) => (b.dates?.harvestStart || '').localeCompare(a.dates?.harvestStart || ''));
             const status = c => {
@@ -4898,7 +4945,7 @@
             }).join('');
             const ready = live.filter(c => c.dates.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
             return `<div class="rpt-grid">` +
-                rCard({ title: 'Canopy area and lights of each flower room', sub: 'Canopy is used for grams per square foot; lights for “Per light”. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager, where each room’s light count is set.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th><th class="n">Lights</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: '_EmployeeWizard.settings.canopySqFt · rooms.<id>.lightCount (Room Manager)' }) +
+                rCard({ title: 'Canopy area and lights of each flower room', sub: 'Canopy is used for grams per square foot; lights for “Per light” and, with watts per light, the lighting power estimate. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager, where all three are set.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th><th class="n">Lights</th><th class="n">Watts per light</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: 'rooms.<id>.canopySqFt · lightCount · lightWattage (Room Manager)' }) +
                 rCard({ title: 'Shift length', sub: 'Roster capacity = work days × this many hours, less booked time off and BC holidays.', body: `<label class="rpt-inline">Hours per shift <input type="number" min="1" max="16" step="0.5" class="rpt-num" id="rptShiftInput" value="${rptShiftHours()}"></label>`, source: '_EmployeeWizard.settings.shiftHours' }) +
                 rCard({ wide: true, title: 'Crop summaries — keep closed-out lots in the charts', sub: `Close-out moves a lot’s events and paperwork to its archive file. A saved summary (dates, rooms, plants, hours by task and person, the harvest numbers and grow-log averages — never wages) stays in Main.json for ${RPT_KEEP_MONTHS} months so the trends keep that crop. While Wages.json is open, saving also freezes the crop’s labour cost (kept in Wages.json), so later raises don’t change it. Save a lot once it has shipped, and update it if numbers change before close-out. A lot closed without one can be brought back from its archive file.`,
                     control: `<button type="button" class="rpt-tbtn" id="rptSaveAll"${ready.length ? '' : ' disabled'}>💾 Save ${ready.length} shipped</button><button type="button" class="rpt-tbtn" id="rptImportBtn">📂 Import archived lots</button>`,
@@ -5035,13 +5082,6 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 notifySitkaTools();
                 showToast(`Shift length set to ${rptShiftHours()} h`);
             });
-            body.querySelectorAll('[data-canopy]').forEach(inp => inp.addEventListener('change', () => {
-                const ew = rptEnsureOwnKeys(), v = Number(inp.value);
-                if (!ew.settings.canopySqFt) ew.settings.canopySqFt = {};
-                if (v > 0) ew.settings.canopySqFt[inp.dataset.canopy] = v; else delete ew.settings.canopySqFt[inp.dataset.canopy];
-                notifySitkaTools();
-                showToast(`Canopy for ${rptRoomName(inp.dataset.canopy)} ${v > 0 ? `set to ${rN(v, 0)} sq ft` : 'cleared'}`);
-            }));
         }
 
         $('rptPages').addEventListener('click', e => {
@@ -5403,20 +5443,120 @@ ${logHtml(M)}
         });
 
 
+        // =====================================================
+        // ⚡ Power & Rates — where electricity cost comes from, the rates, and the power bills (office only)
+        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L,
+        //                           bills: [{ id, buildingId | null (whole site), from, to, kWh, amount }] }
+        // Saved in Main.json (user decision 2026-10-16). The Reports turn it into each crop's electricity and water $:
+        // estimated kWh × the rate, or the bills split across crops by their estimated use.
+        // =====================================================
+        const costSettings = () => DB.data?._EmployeeWizard?.costs || {};
+        function ensureCosts() {
+            const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = { employees: {} });
+            const c = ew.costs || (ew.costs = {});
+            if (!c.electricity) c.electricity = 'estimate';
+            if (!Array.isArray(c.bills)) c.bills = [];
+            return c;
+        }
+        const electricitySource = () => costSettings().electricity === 'bills' ? 'bills' : 'estimate';
+        const pwBuildingName = id => id ? (DB.data.buildings?.[id]?.name || id) : 'Whole site';
+        const pwMoney = v => '$' + (Math.round(v * 100) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const pwDays = (from, to) => dDiff(from, to) + 1;
+
+        function renderPowerTab() {
+            if (!DB.data || !$('panePower').classList.contains('active')) return;
+            const c = costSettings(), src = electricitySource();
+            document.querySelectorAll('input[name="powerSource"]').forEach(r => { r.checked = r.value === src; });
+            if (document.activeElement !== $('pwRate')) $('pwRate').value = c.kWhRate ?? '';
+            if (document.activeElement !== $('pwWater')) $('pwWater').value = c.waterPer1000L ?? '';
+            const bills = [...(c.bills || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''));
+            const billKwh = bills.reduce((s, b) => s + (Number(b.kWh) || 0), 0), billAmt = bills.filter(b => Number(b.kWh) > 0).reduce((s, b) => s + (Number(b.amount) || 0), 0);
+            const avg = billKwh > 0 ? billAmt / billKwh : null;
+            $('pwNote').textContent = src === 'bills'
+                ? `Crops are charged the bills: each day of a bill is split between the crops in that building by their estimated use. ${bills.length ? `${bills.length} bill${bills.length === 1 ? '' : 's'} entered${avg != null ? ` · average ${pwMoney(avg)} per kWh` : ''}.` : 'No bills entered yet — add them below.'}`
+                : `Crops are charged their estimated kWh × ${c.kWhRate > 0 ? pwMoney(c.kWhRate) + ' per kWh' : 'the rate (not set yet)'}. Set lights, watts per light and light cycles in SitkaTools' Room Manager, AC / dehumidifier watts in EquipmentWizard, and log the light % daily in the grow log.${avg != null ? ` Your bills average ${pwMoney(avg)} per kWh.` : ''}`;
+            const sel = $('pwBillBuilding'), keep = sel.value;
+            sel.innerHTML = `<option value="">Whole site</option>` + Object.entries(DB.data.buildings || {}).map(([id, b]) => `<option value="${escapeHtml(id)}">${escapeHtml(b?.name || id)}</option>`).join('');
+            if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+            $('pwBillTable').innerHTML = bills.length
+                ? `<thead><tr><th>Meter</th><th>Period</th><th>Days</th><th>kWh</th><th>Amount</th><th>$ per kWh</th><th></th></tr></thead><tbody>` +
+                  bills.map(b => `<tr><td>${escapeHtml(pwBuildingName(b.buildingId))}</td><td>${escapeHtml(b.from)} → ${escapeHtml(b.to)}</td><td>${pwDays(b.from, b.to)}</td>` +
+                      `<td>${Number(b.kWh) > 0 ? Math.round(b.kWh).toLocaleString() : '—'}</td><td>${pwMoney(Number(b.amount) || 0)}</td>` +
+                      `<td>${Number(b.kWh) > 0 ? pwMoney(b.amount / b.kWh) : '—'}</td><td class="pw-del"><button type="button" class="emp-del" data-bill="${escapeHtml(b.id)}" title="Delete this bill">✕</button></td></tr>`).join('') + '</tbody>'
+                : '<tbody><tr><td style="text-align:left; color:var(--text-secondary);">No power bills yet.</td></tr></tbody>';
+            // Which of the last 12 months the bills cover, per meter
+            const months = [];
+            for (let m = dMonths(localDateStr(new Date()).slice(0, 7) + '-01', -11); months.length < 12; m = dMonths(m, 1)) months.push(m.slice(0, 7));
+            const meters = [null, ...Object.keys(DB.data.buildings || {})].filter(id => id === null ? bills.some(b => !b.buildingId) : true);
+            const cover = (id, ym) => {
+                const first = ym + '-01', last = dAdd(dMonths(first, 1), -1), n = pwDays(first, last);
+                let days = 0;
+                for (let d = first; d <= last; d = dAdd(d, 1)) if (bills.some(b => (b.buildingId || null) === id && b.from <= d && d <= b.to)) days++;
+                return days >= n ? 'full' : days > 0 ? 'part' : '';
+            };
+            $('pwCoverage').innerHTML = meters.length ? `<div class="pw-cov"><span></span>${months.map(m => `<span class="m">${MONTH_NAMES[Number(m.slice(5)) - 1].slice(0, 3)}</span>`).join('')}` +
+                meters.map(id => `<span>${escapeHtml(pwBuildingName(id))}</span>${months.map(m => `<span class="c ${cover(id, m)}" title="${escapeHtml(pwBuildingName(id))} · ${m}"></span>`).join('')}`).join('') + '</div>' : '';
+        }
+
+        document.querySelectorAll('input[name="powerSource"]').forEach(r => r.addEventListener('change', () => {
+            if (!DB.data || !r.checked) return;
+            ensureCosts().electricity = r.value;
+            notifySitkaTools();
+            renderPowerTab();
+            showToast(r.value === 'bills' ? 'Electricity cost now comes from the power bills' : 'Electricity cost now comes from estimated usage');
+        }));
+        for (const [id, key, label] of [['pwRate', 'kWhRate', 'Electricity rate'], ['pwWater', 'waterPer1000L', 'Water rate']]) {
+            $(id).addEventListener('change', () => {
+                if (!DB.data) return;
+                const v = parseFloat($(id).value), c = ensureCosts();
+                if (v >= 0) c[key] = v; else delete c[key];
+                notifySitkaTools();
+                renderPowerTab();
+                showToast(v >= 0 ? `${label} set to ${pwMoney(v)}` : `${label} cleared`);
+            });
+        }
+        $('pwBillAddBtn').addEventListener('click', () => {
+            if (!DB.data) return;
+            const from = $('pwBillFrom').value, to = $('pwBillTo').value, amount = parseFloat($('pwBillAmount').value), kWh = parseFloat($('pwBillKwh').value);
+            const buildingId = $('pwBillBuilding').value || null;
+            if (!from || !to || to < from) { showToast('Enter the bill period (From on or before To)'); return; }
+            if (!(amount > 0)) { showToast('Enter the bill amount'); return; }
+            const c = ensureCosts();
+            const overlap = c.bills.find(b => (b.buildingId || null) === buildingId && b.from <= to && from <= b.to);
+            if (overlap && !confirm(`This overlaps the ${pwBuildingName(buildingId)} bill for ${overlap.from} → ${overlap.to}. Both will be charged for the days they share.\n\nAdd it anyway?`)) return;
+            c.bills.push({ id: 'pb' + Math.random().toString(36).slice(2, 10), buildingId, from, to, ...(kWh > 0 ? { kWh } : {}), amount: Math.round(amount * 100) / 100 });
+            for (const id of ['pwBillFrom', 'pwBillTo', 'pwBillKwh', 'pwBillAmount']) $(id).value = '';
+            notifySitkaTools();
+            renderPowerTab();
+            showToast(`Bill added: ${pwBuildingName(buildingId)} ${from} → ${to}`);
+        });
+        $('pwBillTable').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-bill]');
+            if (!btn || !DB.data) return;
+            const c = ensureCosts(), b = c.bills.find(x => x.id === btn.dataset.bill);
+            if (!b || !confirm(`Delete the ${pwBuildingName(b.buildingId)} bill for ${b.from} → ${b.to} (${pwMoney(b.amount)})?`)) return;
+            c.bills = c.bills.filter(x => x !== b);
+            notifySitkaTools();
+            renderPowerTab();
+            showToast('Bill deleted');
+        });
+
         // ---- Tab Switching ----
         function switchTab(tabName) {
-            for (const [name, tab, pane] of [['employees', 'tabEmployees', 'paneEmployees'], ['tasks', 'tabTasks', 'paneTasks'], ['log', 'tabLog', 'paneLog'], ['reports', 'tabReports', 'paneReports']]) {
+            for (const [name, tab, pane] of [['employees', 'tabEmployees', 'paneEmployees'], ['tasks', 'tabTasks', 'paneTasks'], ['log', 'tabLog', 'paneLog'], ['power', 'tabPower', 'panePower'], ['reports', 'tabReports', 'paneReports']]) {
                 $(tab).classList.toggle('active', name === tabName);
                 $(pane).classList.toggle('active', name === tabName);
             }
-            // The estimated-vs-actual report below the tabs belongs to the roster / task work, not to the log
-            document.querySelector('.report-section').style.display = (DeviceView.building || tabName === 'log') ? 'none' : '';
+            // The estimated-vs-actual report below the tabs belongs to the roster / task work, not to the log or rates
+            $('labourReportSection').style.display = (DeviceView.building || tabName === 'log' || tabName === 'power') ? 'none' : '';
             if (tabName === 'reports') renderReports();
             if (tabName === 'log') renderLabourLog();
+            if (tabName === 'power') renderPowerTab();
         }
         $('tabEmployees').addEventListener('click', () => switchTab('employees'));
         $('tabTasks').addEventListener('click', () => switchTab('tasks'));
         $('tabLog').addEventListener('click', () => switchTab('log'));
+        $('tabPower').addEventListener('click', () => switchTab('power'));
         $('tabReports').addEventListener('click', () => switchTab('reports'));
 
         // Building device (DeviceView): the roster, wages, time off and reports are office work (saved in
@@ -5426,7 +5566,8 @@ ${logHtml(M)}
             const onBuilding = !!DeviceView.building;
             $('tabEmployees').style.display = onBuilding ? 'none' : '';
             $('tabReports').style.display = onBuilding ? 'none' : '';
-            document.querySelector('.report-section').style.display = (onBuilding || $('tabLog').classList.contains('active')) ? 'none' : '';
+            $('tabPower').style.display = onBuilding ? 'none' : '';
+            $('labourReportSection').style.display = (onBuilding || $('tabLog').classList.contains('active') || $('tabPower').classList.contains('active')) ? 'none' : '';
             if (onBuilding && !$('tabTasks').classList.contains('active') && !$('tabLog').classList.contains('active')) switchTab('tasks');
         }
 

@@ -263,6 +263,8 @@
             margin-top: 2px;
         }
 
+        .power-edit { margin-bottom: 14px; }
+
         .equipment-task-count {
             font-size: 0.75rem;
             color: var(--text-secondary);
@@ -696,6 +698,20 @@
                             <label for="equipmentFilterSize">Filter Size</label>
                             <input type="text" id="equipmentFilterSize" placeholder="e.g., 12x12x1 in" autocomplete="off">
                         </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="equipmentWatts">⚡ Power draw (watts)</label>
+                        <input type="number" id="equipmentWatts" min="0" step="1" inputmode="numeric" placeholder="e.g., 1200 — for the power estimate">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentUnits">How many units</label>
+                        <input type="number" id="equipmentUnits" min="1" step="1" inputmode="numeric" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentHours">Runs about (hours a day)</label>
+                        <input type="number" id="equipmentHours" min="0" max="24" step="0.5" inputmode="decimal" value="12">
                     </div>
                 </div>
                 <div class="form-actions">
@@ -1370,11 +1386,18 @@
                             <div class="equipment-name">${eq.name}</div>
                             ${eq.type ? `<span class="equipment-type-badge">${eq.type}</span>` : ''}
                             ${dehumDetails}
+                            <div class="equipment-details equipment-power" id="eqPower_${idx}">${powerSummary(eq.power)}</div>
                         </div>
                         <span class="equipment-task-count">${taskCount} task${taskCount !== 1 ? 's' : ''}</span>
                         <button class="equipment-delete-btn" data-idx="${idx}" title="Remove equipment">✕</button>
                     </div>
                     <div class="equipment-body" id="eqBody_${idx}">
+                        <div class="tracker-title">⚡ Power use — for the electricity estimate</div>
+                        <div class="form-row power-edit" data-idx="${idx}">
+                            <div class="form-group"><label>Watts per unit</label><input type="number" class="eq-watts" min="0" step="1" inputmode="numeric" value="${eq.power?.watts ?? ''}" placeholder="not set"></div>
+                            <div class="form-group"><label>Units</label><input type="number" class="eq-units" min="1" step="1" inputmode="numeric" value="${eq.power?.units ?? 1}"></div>
+                            <div class="form-group"><label>Hours a day</label><input type="number" class="eq-hours" min="0" max="24" step="0.5" inputmode="decimal" value="${eq.power?.hoursPerDay ?? 12}"></div>
+                        </div>
                         <div class="subtask-list" id="subtaskList_${idx}"></div>
 
                         <!-- Scheduled Maintenance Header -->
@@ -1492,6 +1515,19 @@
                 }
             });
 
+            // ⚡ Power edits: saved straight away (no schedule change, so no calendar resync)
+            equipmentListEl.querySelectorAll('.power-edit').forEach(row => {
+                row.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => {
+                    const eq = getRoomEquipment(roomId)[Number(row.dataset.idx)];
+                    if (!eq) return;
+                    const power = readPower(row.querySelector('.eq-watts').value, row.querySelector('.eq-units').value, row.querySelector('.eq-hours').value);
+                    if (power) eq.power = power; else delete eq.power;
+                    $(`eqPower_${row.dataset.idx}`).textContent = powerSummary(eq.power);
+                    notifySitkaTools();
+                    showToast(power ? `Power saved for "${eq.name}"` : `Power cleared for "${eq.name}"`);
+                }));
+            });
+
             // Bind expand/collapse headers
             equipmentListEl.querySelectorAll('.equipment-header').forEach(header => {
                 header.addEventListener('click', (e) => {
@@ -1577,6 +1613,22 @@
             });
         }
 
+        // ---- ⚡ Power use (for the Labour & Cost Wizard's electricity estimate) ----
+        // equipment.power = { watts, units, hoursPerDay }: watts per unit, how many units, hours a day it runs.
+        // Estimated use = watts × units × hours ÷ 1000 kWh a day. No watts = no power entry.
+        function readPower(watts, units, hours) {
+            const w = parseFloat(watts);
+            if (!(w > 0)) return null;
+            const u = Math.max(1, Math.round(parseFloat(units) || 1));
+            const h = Math.min(24, Math.max(0, parseFloat(hours)));
+            return { watts: w, units: u, hoursPerDay: Number.isFinite(h) ? h : 12 };
+        }
+        function powerSummary(power) {
+            if (!power?.watts) return '⚡ Power not set';
+            const kwh = power.watts * (power.units || 1) * (power.hoursPerDay ?? 12) / 1000;
+            return `⚡ ${power.watts.toLocaleString()} W${power.units > 1 ? ` × ${power.units}` : ''} · ${power.hoursPerDay ?? 12} h/day ≈ ${kwh.toLocaleString(undefined, { maximumFractionDigits: 1 })} kWh/day`;
+        }
+
         // ---- Add Equipment ----
         equipmentForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -1600,6 +1652,7 @@
             const filterSize = type === 'Dehumidifier' ? $('equipmentFilterSize').value.trim() : undefined;
 
             const equipment = getRoomEquipment(roomId);
+            const power = readPower($('equipmentWatts').value, $('equipmentUnits').value, $('equipmentHours').value);
             equipment.push({
                 id: uid(),
                 type: type,
@@ -1608,6 +1661,7 @@
                 installedDate: todayStr(),
                 serialNumber: serialNumber || undefined,
                 filterSize: filterSize || undefined,
+                ...(power ? { power } : {}),
                 tasks: [],
                 additionalMaintenance: []
             });
@@ -1618,6 +1672,9 @@
             equipmentTypeSelect.value = '';
             $('equipmentSerial').value = '';
             $('equipmentFilterSize').value = '';
+            $('equipmentWatts').value = '';
+            $('equipmentUnits').value = '1';
+            $('equipmentHours').value = '12';
             renderEquipmentList();
             autoSyncCalendar(roomId);
             showToast(`Added "${name}" to room`);
