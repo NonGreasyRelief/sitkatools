@@ -8095,7 +8095,8 @@
             // One-click filter presets shown at the top of the "Add filter" menu.
             // Each preset is a fixed set of taskType values applied together in a
             // single click (see _applyPreset). Values are raw CropLabourWizard task
-            // type ids; their display names come from TASK_TYPE_NAMES / _taskTypeName.
+            // type ids (plus equipment_maintenance, which every EquipmentWizard event
+            // resolves to); their display names come from TASK_TYPE_NAMES / _taskTypeName.
             FILTER_PRESETS: [
                 {
                     id: 'all-phase-changes',
@@ -8108,6 +8109,12 @@
                     label: 'Clone, Flip, Harvest, Clean',
                     icon: '🔁',
                     taskTypes: ['clone_cut_prep', 'flip', 'harvest', 'room_clean']
+                },
+                {
+                    id: 'equipment-maintenance',
+                    label: 'Equipment maintenance',
+                    icon: '🔧',
+                    taskTypes: ['equipment_maintenance']
                 }
             ],
 
@@ -8191,7 +8198,9 @@
                     return b.name ? `${b.name} (${buildingId})` : buildingId;
                 };
 
-                let room = null, lot = null, strain = null, taskType = ev.taskType || null;
+                // Every EquipmentWizard event counts as equipment maintenance, even one saved without a taskType
+                let room = null, lot = null, strain = null,
+                    taskType = ev.taskType || (ev.sourceTool === 'EquipmentWizard' ? 'equipment_maintenance' : null);
 
                 if (ev.sourceTool === 'CropProjection' && ev.lotId) {
                     const entry = projected[ev.lotId];
