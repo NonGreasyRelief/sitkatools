@@ -1,5 +1,6 @@
 // DailyWizard step pictures and videos: 📁 Upload image pack / 🖼 Upload images / videos read files named
 // {code}_{n}.png|jpg|webp|mp4 into the window (never stored or saved) and show them on their steps ahead of pics/.
+// A language prefix (es_j234_1.jpg) is that language's version; other languages fall back to the English file.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,6 +64,24 @@ export async function run(b, BASE) {
     await b.run(dw, `const l = document.getElementById('langSelect'); l.value = 'es'; l.dispatchEvent(new Event('change'));`);
     const labels = await b.run(dw, `return document.getElementById('uploadPackBtn').textContent + ' | ' + document.getElementById('uploadImagesBtn').textContent;`);
     check('in Spanish the buttons are translated', labels.includes('Subir paquete de imágenes') && labels.includes('Subir imágenes / vídeos'), labels);
+
+    // Language versions: an es_ file shows in Spanish; a language without its own file shows the English one
+    const enPic = s[0], enVid = v[1];
+    await b.sleep(600);
+    let es = await srcs(), esV = await vids();
+    check('in Spanish without Spanish files, the English picture and video show', es[0] === enPic && esV[1] === enVid, JSON.stringify([es, esV]));
+    await pick('imagesInput', [file('es_wat1_1.png'), file('es_wat1_2.mp4')]);
+    const esToast = await b.run(dw, `return document.getElementById('toast').textContent;`);
+    es = await srcs(); esV = await vids();
+    check('Spanish files (es_ prefix) replace the English ones in Spanish', es[0].startsWith('blob:') && es[0] !== enPic && esV[1].startsWith('blob:') && esV[1] !== enVid, JSON.stringify([es, esV]));
+    check('they load as Spanish versions, not as a task called "es_w"', esToast.includes('1') && !esToast.includes('match no task'), esToast);
+    await b.run(dw, `const l = document.getElementById('langSelect'); l.value = 'fr'; l.dispatchEvent(new Event('change'));`);
+    await b.sleep(600);
+    let fr = await srcs(), frV = await vids();
+    check('in French (no French files) the English picture and video show', fr[0] === enPic && frV[1] === enVid, JSON.stringify([fr, frV]));
+    await b.run(dw, `const l = document.getElementById('langSelect'); l.value = 'en'; l.dispatchEvent(new Event('change'));`);
+    await b.sleep(300);
+    check('back in English the English files show', (await srcs())[0] === enPic && (await vids())[1] === enVid);
 
     await b.run(dw, `closeTaskDetail();`);
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });

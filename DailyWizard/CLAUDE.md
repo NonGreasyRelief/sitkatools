@@ -76,6 +76,10 @@ Each step in a task's detail view can display a picture, referenced purely by **
   - When a step has both, the picture shows first, then the video. A step with neither shows `🖼 j234_1.png / .mp4 not found`.
   - Use **H.264** mp4. A video the browser can't decode (e.g. HEVC from some phones) probes as missing.
   - Keep videos short and compressed. GitHub refuses files over 100 MB, and every tablet streams the file.
+- **Language versions** (optional, added 2026-10-17): a picture or video whose name starts with a language code is that language's version: `es_j234_1.jpg`, `fr_j234_1.mp4` (codes `fr`, `es`, `vi`, `zh`, as in "🌐 Language").
+  - When the screen is in that language, each step looks for its own version first and falls back to the English file (no prefix). The picture and the video are looked up separately, so a step can have a Spanish video and the English picture.
+  - The order is: the language's version (uploaded, then `pics/`), then the English one (uploaded, then `pics/`). English never looks at prefixed files.
+  - It works the same for files in `pics/` and for uploaded ones (`stepMediaSrc`). 🔄 Refresh images re-checks both versions for the language on screen.
 - **Loading mechanism:** plain `<img src="pics/...">` tags. This works on **both** deployment protocols:
   - **http (GitHub Pages):** normal same-origin loading — `pics/` must be committed to the repo.
   - **file:// (local/offline):** relative image tags load fine from a double-clicked HTML file in Chrome, Firefox, and Safari. The `file://` CORS sandbox blocks *programmatic* access (`fetch()`, XHR) but not tag-based resource loading, so no server is required.
@@ -210,6 +214,7 @@ Built 2026-10-17 (user decisions: daily chores only, not crop or equipment task 
 - **What's missing:**
   - A task **name** with no translation in the chosen language shows the English, with a small dashed **EN** tag (tooltip "Not translated yet — showing English").
   - A **step** with none shows **blank** (user decision 2026-10-17), so the floor only ever reads a real translation. Its number, picture and ▲ ▼ 🗑 stay. The empty, dashed line is where you tap to paste the translation. Switching language shows each language's own steps.
+  - A step's **picture or video** can have a language version too (`es_j234_1.jpg`); without one the English file shows (see "Step Pictures").
 - **Writing translations** (pick the language first):
   - **Name:** Add / Edit Task shows a second field, **Name (<language>)**. Blank shows the English name. The first field is then labelled "Name in English" and is still required.
   - **Steps:** in the task detail view, tapping a step (or an untranslated step's blank line) edits its translation, with the English shown under the box while you type. Clearing it makes the step blank again in that language. ▲ ▼ 🗑 move or delete the step in every language.

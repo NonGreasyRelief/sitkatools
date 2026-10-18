@@ -2289,9 +2289,10 @@
         // sent anywhere (user decision 2026-10-17), and win over pics/. Only the file name counts: {code}_{n}.{ext},
         // png / jpg / webp for the picture and mp4 for the video (a pack's subfolders are fine). Within one pick, png
         // beats jpg beats webp, as in the pics/ probe; a later pick replaces an earlier file of the same step.
-        const uploadedPics = new Map();   // `${code}_${n}` → { url, file }
-        const uploadedVids = new Map();   // `${code}_${n}` → { url, file } (mp4)
-        const MEDIA_NAME = /^([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp|mp4)$/i;
+        // A language prefix (es_j234_1.jpg, fr_j234_1.mp4) makes a file that language's version (see stepMediaSrc).
+        const uploadedPics = new Map();   // `${lang_}${code}_${n}` → { url, file }
+        const uploadedVids = new Map();   // `${lang_}${code}_${n}` → { url, file } (mp4)
+        const MEDIA_NAME = /^(?:(fr|es|vi|zh)_)?([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp|mp4)$/i;
         const PIC_RANK = { png: 0, jpg: 1, jpeg: 1, webp: 2 };
         function loadPictureFiles(fileList) {
             const pics = new Map(), vids = new Map(), skipped = [];
@@ -2301,7 +2302,7 @@
                     if (!/^\./.test(f.name) && !/^(thumbs\.db|desktop\.ini)$/i.test(f.name)) skipped.push(f.name);
                     continue;
                 }
-                const key = `${m[1].toLowerCase()}_${Number(m[2])}`, ext = m[3].toLowerCase();
+                const key = `${m[1] ? m[1].toLowerCase() + '_' : ''}${m[2].toLowerCase()}_${Number(m[3])}`, ext = m[4].toLowerCase();
                 if (ext === 'mp4') { vids.set(key, { f }); continue; }
                 const rank = PIC_RANK[ext], prev = pics.get(key);
                 if (!prev || rank < prev.rank) pics.set(key, { f, rank });
@@ -2312,7 +2313,7 @@
                 for (const [key, { f }] of batch) {
                     if (store.has(key)) URL.revokeObjectURL(store.get(key).url);
                     store.set(key, { url: URL.createObjectURL(f), file: f.name });
-                    if (!known.has(key.split('_')[0])) noTask.push(f.name);
+                    if (!known.has(key.split('_').at(-2))) noTask.push(f.name);
                 }
             };
             take(pics, uploadedPics);
@@ -2333,9 +2334,30 @@
             note.textContent = n + v ? T('🖼 Uploaded in use — pictures: {n}, videos: {v} — this window only', { n, v }) : '';
         }
 
-        // A step's picture and video: uploaded ones first, else pics/{code}_{n}.png|jpg|webp and pics/{code}_{n}.mp4.
-        // Both show when both exist; a step with neither shows what to name the files. Elements are only added, never
-        // redrawn, so a playing video isn't reset when the other probe finishes.
+        // One step's picture (kind 'pic') or video ('vid'), best first: in another language its own file
+        // (`es_j234_1`) — uploaded, then pics/ — and then the English one (no prefix), uploaded, then pics/.
+        // cb(src | null); it may run straight away when everything is known.
+        function stepMediaSrc(kind, code, n, cb) {
+            const prefixes = LANG !== 'en' ? [LANG + '_', ''] : [''];
+            const uploaded = kind === 'pic' ? uploadedPics : uploadedVids, cache = kind === 'pic' ? stepImageCache : stepVideoCache;
+            let i = 0;
+            const next = () => {
+                if (i >= prefixes.length) { cb(null); return; }
+                const pre = prefixes[i++], key = `${pre}${code}_${n}`;
+                const up = uploaded.get(key);
+                if (up) { cb(up.url); return; }
+                const srcOf = v => !v ? null : kind === 'pic' ? `pics/${key}.${v}` : `pics/${key}.mp4`;
+                if (key in cache) { const src = srcOf(cache[key]); if (src) cb(src); else next(); return; }
+                (kind === 'pic' ? probeStepImage : probeStepVideo)(pre + code, n, false, v => { const src = srcOf(v); if (src) cb(src); else next(); });
+            };
+            next();
+        }
+        // Probe-cache keys of a task: `${code}_${n}` and the language versions `${lang}_${code}_${n}`
+        const isTaskMediaKey = (k, code) => k.startsWith(code + '_') || /^(fr|es|vi|zh)_/.test(k) && k.slice(3).startsWith(code + '_');
+
+        // A step's picture and video (stepMediaSrc). Both show when both exist; a step with neither shows what to
+        // name the files. Elements are only added, never redrawn, so a playing video isn't reset when the other
+        // lookup finishes.
         function makeStepImageWrap(code, n) {
             const wrap = document.createElement('div');
             wrap.className = 'step-img-wrap';
@@ -2368,13 +2390,8 @@
                 chip.textContent = st.pic === undefined || st.vid === undefined ? `🖼 ${key}.png …`
                     : T('🖼 {file} not found', { file: `${key}.png / .mp4` });
             };
-            const upPic = uploadedPics.get(key), upVid = uploadedVids.get(key);
-            if (upPic) st.pic = upPic.url;
-            else if (key in stepImageCache) st.pic = stepImageCache[key] ? `pics/${key}.${stepImageCache[key]}` : null;
-            else probeStepImage(code, n, false, ext => { st.pic = ext ? `pics/${key}.${ext}` : null; draw(); });
-            if (upVid) st.vid = upVid.url;
-            else if (key in stepVideoCache) st.vid = stepVideoCache[key] ? `pics/${key}.mp4` : null;
-            else probeStepVideo(code, n, false, ok => { st.vid = ok ? `pics/${key}.mp4` : null; draw(); });
+            stepMediaSrc('pic', code, n, src => { st.pic = src; draw(); });
+            stepMediaSrc('vid', code, n, src => { st.vid = src; draw(); });
             draw();
             return wrap;
         }
@@ -2606,8 +2623,9 @@
             if (!task) return;
             const steps = task.steps || [];
             if (!steps.length) { showToast(T('No steps to refresh')); return; }
-            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (k.startsWith(task.code + '_')) delete cache[k];
-            let remaining = steps.length * 2;   // a picture and a video per step
+            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (isTaskMediaKey(k, task.code)) delete cache[k];
+            const prefixes = LANG !== 'en' ? [LANG + '_', ''] : [''];
+            let remaining = steps.length * 2 * prefixes.length;   // a picture and a video per step, per version
             const probed = () => {
                 remaining--;
                 if (remaining === 0 && $('detailOverlay').classList.contains('open') && getDetailTask()?.code === task.code) {
@@ -2616,8 +2634,10 @@
                 }
             };
             steps.forEach((s, i) => {
-                probeStepImage(task.code, i + 1, true, probed);
-                probeStepVideo(task.code, i + 1, true, probed);
+                for (const pre of prefixes) {
+                    probeStepImage(pre + task.code, i + 1, true, probed);
+                    probeStepVideo(pre + task.code, i + 1, true, probed);
+                }
             });
         }
 
@@ -2628,7 +2648,7 @@
             const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
             const i = tasks.findIndex(t => t.code === detailTaskCode);
             if (i !== -1) tasks.splice(i, 1);
-            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (k.startsWith(task.code + '_')) delete cache[k];
+            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (isTaskMediaKey(k, task.code)) delete cache[k];
             notifySitkaTools(); // definition mutation → sync
             closeTaskDetail();
             renderAll();
