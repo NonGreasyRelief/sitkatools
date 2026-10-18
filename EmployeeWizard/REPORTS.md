@@ -124,7 +124,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 | `_EquipmentWizard.rooms.<id>.equipment[].power` | watts × units × hours a day, for the electricity estimate |
 | `_CropLabourWizard.inputs`, `recipes.<id>.inputs` | the price list (fertilizers per litre, supplies per unit) and each recipe's supplies |
 | `_EmployeeWizard.costs` | ⚡ Power & Rates: electricity source (bills / estimate), $/kWh, water $/1,000 L, power bills |
-| `buildings.<id>.monthlyPropertyCost` (SitkaTools Building Manager) | each building's rent and property fees, $ a month |
+| `buildings.<id>.monthlyPropertyCost` (SitkaTools Building Manager) | each building's rent and property fees, $ a month, shared by room lights (or plants — `costs.propertyShare`) |
 | `_CropLabourWizard.taskTypes` | task names and order, and the cost phase of each task |
 
 ### The crop object
@@ -239,7 +239,7 @@ Answers are parsed leniently: `"1,250"`, `"12 kg"` and `"24.0"` all read as numb
 | **Water $** | `water.total` L × water $ per 1,000 L ÷ 1,000 |
 | **Fertilizer $** | `feed.nutrient` mL by product (PaperWizard product link) × the price-list price per litre ÷ 1,000. Products are matched by name, case-insensitive; unlinked or unpriced mL is listed, not guessed. |
 | **Supplies $** | the lot's recipe supplies: qty × (plants started when "per plant") × price |
-| **Property $** | each building's monthly rent and fees (`buildings.<id>.monthlyPropertyCost`), spread evenly over the days of each month (÷ days in that month). Each day's share is split between the crops in the building's rooms that day (`rptCropRoomDays`), by plants. A day with no crop in the building is "not charged to any crop". A summary frozen before property costs existed works its share out from the buildings when shown. |
+| **Property $** | each building's monthly rent and fees (`buildings.<id>.monthlyPropertyCost`), spread evenly over the days of each month (÷ days in that month). Each day's share is split between the building's rooms holding a crop that day (`rptCropRoomDays`), by their **light count** (default) or their **plants** — ⚡ Power & Rates → "Property cost is shared by" (`costs.propertyShare`) — so four equal grow rooms carry a quarter each and a clone room only its few lights. Within a room, crops split it by plants. With lights, a room in use without a light count gets no share (listed under "What's missing"); a day when no room in use has one is shared by plants. A day with no crop in the building is "not charged to any crop". A summary frozen before property costs existed works its share out from the buildings when shown. |
 | **Cost $/g by part** | each part's Σ $ ÷ Σ flower of the harvested crops that have that part (labour = fully loaded) |
 | **Cost / g (all in)** | the sum of the parts that can be priced. A crop's own all-in (sparkline, crop-by-crop chart) uses its direct labour, not the overhead. |
 | **Cost by phase** | each crop's average $/h × its hours per phase. Phase: cloning / veg by the room rules, then the task registry order around `harvest`. |

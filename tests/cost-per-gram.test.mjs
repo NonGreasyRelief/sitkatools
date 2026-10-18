@@ -145,6 +145,26 @@ export async function run(b, BASE) {
     await b.sleep(600);
     r = await costs();
     check('an older summary (no frozen property) gets its property from the buildings', near(r.k.property.cost, propFor(5000)) && r.k.property.days === 41, JSON.stringify(r.k.property));
+
+    // ---- Two crops in Building 1: shared by the rooms' lights (the default), or by plants ----
+    // L300 is in Veg 1 (10 lights) on D20–D40 while L100 is in Grow 1 (20 lights), so L100 carries 2/3 of those days
+    await b.run(main, `DB.data.lots.L300 = { name: 'L300', strain: 'Test Kush', createdDate: '${today(-100)}', vegRoom: 'Veg 1', destRoom: 'Grow 1', currentRoom: 'Veg 1', plantCount: 50 };
+        DB.data.calendarEvents.push({ id: 'ev_l3p', date: '${today(-100)}', title: 'T planting', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'planting' },
+            { id: 'ev_l3t', date: '${today(-79)}', title: 'T transplant', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'transplant' });
+        markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+    const shares = () => b.run(ew, `const M = rptModel(), pm = rptPropertyModel(M.crops), get = id => M.crops.find(c => c.lotId === id);
+        return { L100: pm.byCrop.get('L100'), L300: pm.byCrop.get('L300'), p100: rptCropPlants(get('L100')), p300: rptCropPlants(get('L300')) };`);
+    const span = (from, to, f) => { let t = 0; for (let n = from; n <= to; n++) { const [y, m] = today(-120 + n).split('-').map(Number); t += f(5000 / new Date(y, m, 0).getDate()); } return t; };
+    let sh = await shares();
+    check('lights: L100 in Grow 1 (20 lights) carries 2/3 of the days it shares with L300 in Veg 1 (10 lights)',
+        near(sh.L100?.cost, span(0, 19, v => v) + span(20, 40, v => v * 2 / 3)) && near(sh.L300?.cost, span(20, 40, v => v / 3)) && sh.L300.days === 21, JSON.stringify(sh));
+    await b.run(ew, `document.getElementById('tabPower').click(); document.querySelector('input[name="propertyShare"][value="plants"]').click();`, { user: true });
+    await b.sleep(300);
+    check('Power & Rates saves the property share', (await b.run(main, `return DB.data._EmployeeWizard.costs.propertyShare;`)) === 'plants');
+    sh = await shares();
+    const f100 = sh.p100 / (sh.p100 + sh.p300);
+    check('plants: the shared days split by plants', near(sh.L100?.cost, span(0, 19, v => v) + span(20, 40, v => v * f100)) && near(sh.L300?.cost, span(20, 40, v => v * (1 - f100))), JSON.stringify(sh));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, main);
     return results;

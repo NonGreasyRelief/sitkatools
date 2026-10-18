@@ -123,6 +123,7 @@ Built 2026-10-13 (user decision: its own tab; the office sees everything, a buil
 Built 2026-10-16 for the total cost per gram (user decisions: bills or estimated usage, chosen with a radio; prices and bills saved in Main.json).
 
 - **Electricity cost comes from:** (•) **Power bills** or ( ) **Estimated usage** — `costs.electricity`. Bills: each bill is spread over its days and each day is split between the crops in that building by their estimated use. Estimate: estimated kWh × the rate.
+- **Property cost (rent and fees) is shared by:** (•) **Lights in use** or ( ) **Plants** — `costs.propertyShare` (user decision 2026-10-17: so four rooms running in a building carry a quarter each, not one room the whole bill). Each day a building's monthly cost (set per building in SitkaTools' Building Manager) is split between its rooms holding a crop by their light count or plants, then between a room's crops by plants. The note lists each building's monthly cost.
 - **Electricity rate ($ per kWh)** — used for the estimate; with bills the note shows the bills' average $/kWh. **Water ($ per 1,000 L)** — prices the grow logs' water.
 - **🧾 Power bills:** meter (a building, or "Whole site"), from, to, kWh (optional), amount. Each row shows days and $/kWh and has a ✕ (asks first). A bill overlapping another for the same meter asks before it's added. Below, a strip shows which of the last 12 months the bills cover, per meter (full / part / none).
 - Hidden on building devices with the rest of the office work. Every change calls `notifySitkaTools()`; live updates redraw it while open.
@@ -168,7 +169,7 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
   },
   "crops": { "<lotId>": { "version": 2, "savedAt": "…", "costs": { "…": "frozen non-labour costs" }, "…": "crop summary — schema in REPORTS.md §4" } },
   "settings": { "shiftHours": 8 },
-  "costs": { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4,
+  "costs": { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
              "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
   "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } }
 }
@@ -176,7 +177,7 @@ All data lives in the shared `DB-YY-MM-DD.json` database. EmployeeWizard owns:
 
 - `crops` — saved crop summaries (Reports → Setup & data). They keep a closed-out lot in the report trends, hold hours per person but never wages, and are dropped after 36 months. Created on the first save.
 - `settings` — report settings: the shift length used for roster capacity (default 8 h). Canopy area used to live here as `settings.canopySqFt`; it is now set on the room in SitkaTools' Room Manager (`rooms.<id>.canopySqFt`), and the old value is only a fallback. Created on the first change.
-- `costs` — ⚡ Power & Rates: where electricity cost comes from (`bills` / `estimate`), $/kWh, water $ per 1,000 L, and the power bills (`buildingId` null = whole site). Saved in Main.json (user decision 2026-10-16).
+- `costs` — ⚡ Power & Rates: where electricity cost comes from (`bills` / `estimate`), $/kWh, water $ per 1,000 L, how property cost is shared (`propertyShare`: `lights`, the default, or `plants`), and the power bills (`buildingId` null = whole site). Saved in Main.json (user decision 2026-10-16).
 - `cropCosts` — the labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. It's money, so SitkaTools' split keeps it in **Wages.json** (office only), not Main.json.
 - `crops` and `settings` live in Main.json with the roster (the split keeps everything in `_EmployeeWizard` there except wages and `cropCosts`).
 

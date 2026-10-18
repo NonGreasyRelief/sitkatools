@@ -145,6 +145,10 @@ export async function run(b, BASE) {
     await b.run(ew, `document.getElementById('pwBillFrom').value = '2026-08-01'; document.getElementById('pwBillTo').value = '2026-08-31'; document.getElementById('pwBillAmount').value = '3300'; document.getElementById('pwBillAddBtn').click();`, { user: true });
     await b.sleep(300);
     let costs = await b.run(main, `return DB.data._EmployeeWizard.costs;`);
+    check('property is shared by lights in use by default', (await b.run(ew, `return document.querySelector('input[name="propertyShare"]:checked')?.value;`)) === 'lights');
+    await b.run(ew, `document.querySelector('input[name="propertyShare"][value="plants"]').click();`, { user: true });
+    await b.sleep(200);
+    check('…and picking plants is saved', (await b.run(main, `return DB.data._EmployeeWizard.costs.propertyShare;`)) === 'plants');
     check('Power & Rates saves the source, rates and bills', costs?.electricity === 'bills' && costs.kWhRate === 0.12 && costs.waterPer1000L === 2.5 && costs.bills.length === 2 && costs.bills[0].kWh === 30000 && costs.bills[0].buildingId === 'B1', JSON.stringify(costs));
     check('the bills table lists them with $ per kWh', (await b.run(ew, `return document.getElementById('pwBillTable').innerText;`)).includes('$0.12'));
     await b.run(ew, `document.querySelectorAll('#pwBillTable [data-bill]')[1].click();`, { user: true });

@@ -829,7 +829,7 @@ Built 2026-10-16 (plan approved by the user). The CEO's key number: **all-in cos
 | Water | grow log `water.total` (L) | water $ per 1,000 L (⚡ Power & Rates) |
 | Fertilizer | grow log `feed.nutrient` mL, **by product** (PaperWizard product link on each mL question) | price list, $ per litre (CropLabourWizard → 🧪 Inputs) |
 | Supplies | the lot's recipe supplies, per crop or per plant | price list, $ per unit |
-| Property | the days each crop spends in a building's rooms | the building's monthly rent + property fees (SitkaTools Building Manager), spread over each month's days and shared each day by the crops in the building, by plants |
+| Property | the days each crop spends in a building's rooms | the building's monthly rent + property fees (SitkaTools Building Manager), spread over each month's days and shared each day by the building's rooms holding a crop — by light count (default) or plants (⚡ Power & Rates), so four equal grow rooms carry a quarter each |
 
 - **User decisions (2026-10-16):** light cycles per room (veg 18/6, bloom 12/12 by default); a power bill is split between crops by estimated usage; fertilizer products are linked in PaperWizard's Configure Sheets (the paper form is unchanged); prices, rates and bills live in **Main.json**; EmployeeWizard is shown as the **Labour & Cost Wizard**.
 - **Electricity model:** room by room, day by day. A room's kWh goes to the crops in it that day (split by plants); an empty room — and a "Mother" room, whose lights always run — passes its kWh to the building's crops that day.

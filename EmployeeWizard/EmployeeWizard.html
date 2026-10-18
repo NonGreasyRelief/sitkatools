@@ -1420,6 +1420,12 @@
                 <div class="power-note" id="pwNote"></div>
             </div>
             <div class="report-section power-card">
+                <h3>🏠 Property cost (rent and fees) is shared by</h3>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="lights"> <span><b>Lights in use</b> — each day, a building's cost is split between its rooms holding a crop by their light count, so four equal grow rooms carry a quarter each and a clone room only its few lights.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="plants"> <span><b>Plants</b> — each day, split between the rooms holding a crop by their plant count.</span></label>
+                <div class="power-note" id="pwPropNote"></div>
+            </div>
+            <div class="report-section power-card">
                 <h3>🧾 Power bills</h3>
                 <div class="report-controls">
                     <div class="form-group"><label for="pwBillBuilding">Meter</label><select id="pwBillBuilding"></select></div>
@@ -3891,7 +3897,8 @@
         // ⚡ Power & Rates water rate and CropLabourWizard's price list. Supplies come from the lot's recipe.
         // Property (rent and property fees) is each building's monthly cost, set in SitkaTools' Building Manager
         // (buildings.<id>.monthlyPropertyCost): each month is spread evenly over its days, and each day is shared by the
-        // crops in the building's rooms that day, by plants — the same crops that share the building's power bills.
+        // building's rooms holding a crop that day — by their light count, or by plants (⚡ Power & Rates,
+        // costs.propertyShare) — so four equal grow rooms carry a quarter each (user decision 2026-10-17).
         // =====================================================
         const RPT_COST_PARTS = [['labour', 'Labour', 'var(--rv-blue)'], ['power', 'Electricity', 'var(--rv-yellow)'], ['water', 'Water', 'var(--rv-aqua)'],
             ['fert', 'Fertilizer', 'var(--rv-green)'], ['supplies', 'Supplies', 'var(--rv-violet)'], ['property', 'Property', 'var(--rv-magenta)']];
@@ -3903,6 +3910,7 @@
             return {
                 source: c.electricity === 'bills' ? 'bills' : 'estimate',
                 rate: price(c.kWhRate), waterRate: price(c.waterPer1000L),
+                propertyShare: c.propertyShare === 'plants' ? 'plants' : 'lights',
                 bills: (c.bills || []).filter(b => isDay(b?.from) && isDay(b?.to) && b.to >= b.from && Number(b.amount) > 0),
                 catalog, byName, price,
                 fertPrice: name => { const x = byName[String(name || '').trim().toLowerCase()]; return x && x.kind === 'fertilizer' ? price(x.price) : null; }
@@ -4025,32 +4033,48 @@
             return rptPowerModel([...M.crops, c]).byCrop.get(c.lotId);
         }
 
-        // The property model for a set of crops: { byCrop: Map(lotId → { cost, days }), unallocated: { day: $ }, monthly }.
-        // A building's monthly rent and fees, spread over the days of each month, shared each day by the crops in its
-        // rooms (split by plants). A day with no crop in the building is unallocated: no crop carries it.
+        // The property model for a set of crops: { byCrop: Map(lotId → { cost, days }), unallocated: { day: $ }, monthly,
+        // share, noLights: Set(roomId) }. A building's monthly rent and fees, spread over the days of each month. Each
+        // day it is shared by the building's rooms holding a crop, by their light count ("lights", the default) or by
+        // their plants ("plants"), then between the crops in a room by plants. A room in use with no light count gets
+        // no share (noLights); when no room in use has one, that day is shared by plants. A day with no crop in the
+        // building is unallocated: no crop carries it.
         function rptPropertyModel(crops) {
-            const today = rToday(), rooms = DB.data.rooms || {};
-            const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0 }])), unallocated = {}, monthly = {};
+            const today = rToday(), rooms = DB.data.rooms || {}, share = rptCostConfig().propertyShare;
+            const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0 }])), unallocated = {}, monthly = {}, noLights = new Set();
             for (const [id, b] of Object.entries(DB.data.buildings || {})) { const v = Number(b?.monthlyPropertyCost); if (v > 0) monthly[id] = v; }
             const stays = [];
             for (const c of crops) for (const st of rptCropRoomDays(c)) {
                 const b = rooms[st.roomId]?.buildingId;
-                if (b && monthly[b]) stays.push({ lotId: c.lotId, plants: rptCropPlants(c), b, from: st.from, to: st.to });
+                if (b && monthly[b]) stays.push({ lotId: c.lotId, plants: rptCropPlants(c), b, roomId: st.roomId, from: st.from, to: st.to });
             }
-            if (!stays.length) return { byCrop, unallocated, monthly };
+            if (!stays.length) return { byCrop, unallocated, monthly, share, noLights };
             const start = stays.reduce((m, st) => st.from < m ? st.from : m, stays[0].from);
             const monthDays = d => { const x = parseISO(d); return new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate(); };
+            const plantsIn = m => [...m.values()].reduce((t, n) => t + n, 0);
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const days = monthDays(d);
                 for (const [b, perMonth] of Object.entries(monthly)) {
-                    const amount = perMonth / days, here = new Map();
-                    for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) here.set(st.lotId, (here.get(st.lotId) || 0) + st.plants);
-                    if (!here.size) { unallocated[d] = (unallocated[d] || 0) + amount; continue; }
-                    const plants = [...here.values()].reduce((t, n) => t + n, 0);
-                    for (const [lotId, n] of here) { const o = byCrop.get(lotId); if (!o) continue; o.cost += amount * n / plants; o.days++; }
+                    const amount = perMonth / days, inRoom = new Map();   // roomId → Map(lotId → plants)
+                    for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) {
+                        const m = inRoom.get(st.roomId) || inRoom.set(st.roomId, new Map()).get(st.roomId);
+                        m.set(st.lotId, (m.get(st.lotId) || 0) + st.plants);
+                    }
+                    if (!inRoom.size) { unallocated[d] = (unallocated[d] || 0) + amount; continue; }
+                    let weights = [...inRoom].map(([roomId, m]) => [roomId, m, share === 'lights' ? Number(rooms[roomId]?.lightCount) || 0 : plantsIn(m)]);
+                    let total = weights.reduce((t, [, , w]) => t + w, 0);
+                    if (share === 'lights') {
+                        weights.forEach(([roomId, , w]) => { if (!(w > 0)) noLights.add(roomId); });
+                        if (!(total > 0)) { weights = weights.map(([roomId, m]) => [roomId, m, plantsIn(m)]); total = weights.reduce((t, [, , w]) => t + w, 0); }
+                    }
+                    for (const [, m, w] of weights) {
+                        if (!(w > 0)) continue;
+                        const roomAmount = amount * w / total, pt = plantsIn(m);
+                        for (const [lotId, n] of m) { const o = byCrop.get(lotId); if (!o) continue; o.cost += roomAmount * n / pt; o.days++; }
+                    }
                 }
             }
-            return { byCrop, unallocated, monthly };
+            return { byCrop, unallocated, monthly, share, noLights };
         }
         function rptPropertyFor(M, c) {
             if (M.crops.some(x => x.lotId === c.lotId)) return (M.property || (M.property = rptPropertyModel(M.crops))).byCrop.get(c.lotId);
@@ -5281,12 +5305,14 @@
             const usedBuildings = new Set(cur.flatMap(c => rptCropRoomDays(c).map(st => DB.data.rooms?.[st.roomId]?.buildingId).filter(Boolean)));
             for (const b of usedBuildings) if (!(Number(DB.data.buildings?.[b]?.monthlyPropertyCost) > 0)) miss.push(`${rptBuildingName(b)} has no monthly property cost (rent and fees) — set it in SitkaTools’ Room Manager → Existing Buildings.`);
             const prop = M.property || (M.property = rptPropertyModel(M.crops));
+            for (const id of prop.noLights) if (cur.some(c => rptCropRoomDays(c).some(st => st.roomId === id)))
+                miss.push(`${rptRoomName(id)} has no light count, so its crops carry no property cost while in it — set its lights in SitkaTools’ Room Manager (or share property by plants in ⚡ Power & Rates).`);
             const propIdle = rSum(Object.entries(prop.unallocated).filter(([d]) => d >= M.per.from && d <= M.per.to), ([, v]) => v);
             if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building, so no crop carries it.`);
             const health = miss.length ? `<ul class="rpt-attn">${miss.map(t => `<li><span class="rpt-sev info">ℹ️ Note</span><span>${rEsc(t)}</span></li>`).join('')}</ul>` : rEmpty('Every cost is in.', '');
 
             return `<div class="rpt-grid">` +
-                rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees' }) +
+                rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees, shared by its rooms in use' }) +
                 rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours (no chore or equipment share).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
@@ -5871,7 +5897,7 @@ ${logHtml(M)}
 
         // =====================================================
         // ⚡ Power & Rates — where electricity cost comes from, the rates, and the power bills (office only)
-        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L,
+        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L, propertyShare: 'lights' | 'plants',
         //                           bills: [{ id, buildingId | null (whole site), from, to, kWh, amount }] }
         // Saved in Main.json (user decision 2026-10-16). The Reports turn it into each crop's electricity and water $:
         // estimated kWh × the rate, or the bills split across crops by their estimated use.
@@ -5893,6 +5919,12 @@ ${logHtml(M)}
             if (!DB.data || !$('panePower').classList.contains('active')) return;
             const c = costSettings(), src = electricitySource();
             document.querySelectorAll('input[name="powerSource"]').forEach(r => { r.checked = r.value === src; });
+            const share = c.propertyShare === 'plants' ? 'plants' : 'lights';
+            document.querySelectorAll('input[name="propertyShare"]').forEach(r => { r.checked = r.value === share; });
+            const withCost = Object.values(DB.data.buildings || {}).filter(b => Number(b?.monthlyPropertyCost) > 0);
+            $('pwPropNote').textContent = (withCost.length
+                ? withCost.map(b => `${b.name}: ${pwMoney(Number(b.monthlyPropertyCost))} a month`).join(' · ') + '. '
+                : 'No building has a property cost yet. ') + 'Each building’s monthly cost is set in SitkaTools’ Room Manager → Existing Buildings' + (share === 'lights' ? '; light counts are set on each room there.' : '.');
             if (document.activeElement !== $('pwRate')) $('pwRate').value = c.kWhRate ?? '';
             if (document.activeElement !== $('pwWater')) $('pwWater').value = c.waterPer1000L ?? '';
             const bills = [...(c.bills || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''));
@@ -5930,6 +5962,13 @@ ${logHtml(M)}
             notifySitkaTools();
             renderPowerTab();
             showToast(r.value === 'bills' ? 'Electricity cost now comes from the power bills' : 'Electricity cost now comes from estimated usage');
+        }));
+        document.querySelectorAll('input[name="propertyShare"]').forEach(r => r.addEventListener('change', () => {
+            if (!DB.data || !r.checked) return;
+            ensureCosts().propertyShare = r.value;
+            notifySitkaTools();
+            renderPowerTab();
+            showToast(r.value === 'plants' ? 'Property cost is now shared by plants' : 'Property cost is now shared by lights in use');
         }));
         for (const [id, key, label] of [['pwRate', 'kWhRate', 'Electricity rate'], ['pwWater', 'waterPer1000L', 'Water rate']]) {
             $(id).addEventListener('change', () => {
