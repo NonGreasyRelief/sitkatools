@@ -67,6 +67,22 @@ export async function run(b, BASE) {
     t = await task(b, main, 'wat1');
     check('SitkaTools gets the translations', t.translations?.es === 'Regar las plantas' && t.steps[0].translations?.es === 'Revise las líneas de goteo');
 
+    // ---- 🗣️ Talk: shown in another language, opens Google Translate set to English ⇄ that language ----
+    await b.run(dw, `window.__opened = []; window.open = (u, t, f) => { window.__opened.push([u, t, f]); return null; };`);
+    const talk = () => b.run(dw, `const t = document.getElementById('talkBtn'); return { hidden: t.hidden, text: t.textContent };`);
+    const tk = await talk();
+    check('in Spanish the 🗣️ Hablar button shows', !tk.hidden && tk.text.includes('Hablar'), JSON.stringify(tk));
+    await b.run(dw, `document.getElementById('talkBtn').click();`, { user: true });
+    let opened = await b.run(dw, `return window.__opened;`);
+    check('it opens Google Translate set to English → Spanish, in a new tab',
+        opened.length === 1 && opened[0][0] === 'https://translate.google.com/?sl=en&tl=es&op=translate' && opened[0][1] === '_blank', JSON.stringify(opened));
+    await lang(b, dw, 'zh');
+    await b.run(dw, `document.getElementById('talkBtn').click();`, { user: true });
+    opened = await b.run(dw, `return window.__opened;`);
+    check('in Chinese it opens English → Simplified Chinese (zh-CN)', !!opened[1]?.[0]?.includes('tl=zh-CN'), JSON.stringify(opened));
+    await lang(b, dw, 'en');
+    check('in English the Talk button is hidden', (await talk()).hidden);
+
     // ---- Every language draws without unfilled placeholders; English comes back unchanged ----
     for (const code of ['fr', 'vi', 'zh']) {
         await lang(b, dw, code);

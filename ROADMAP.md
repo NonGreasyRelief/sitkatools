@@ -209,6 +209,12 @@ Agreed with the user on 2026-10-12. It differs from option B above in one way: t
   - Yield, potency and terpene charts by strain and room, weight cascade, harvest forecast. These fill in once the harvest log's questions are tagged with report metrics (PaperWizard → Configure Sheets → Report metric).
   - Crop summaries keep closed-out lots in the trends for 36 months; archived lots can be re-imported.
 
+- **Voice translator in DailyWizard** (looked at 2026-10-17, put off): two microphone buttons in the page, one for the English speaker and one for the worker in the tablet's language, each translated and read aloud.
+  - Built for now as the 🗣️ Talk button, a link to Google Translate set to the language pair; its Conversation mode does this (`DailyWizard/CLAUDE.md` → "🌐 Language").
+  - Speech to text: Chrome's Web Speech API works on Android (Google's servers). Read-aloud: `speechSynthesis`, but voices differ by tablet.
+  - Blocker: translation. Chrome's built-in Translator API is desktop-only. On Android it needs a cloud service (Google Cloud Translation or Microsoft Translator) with billing and a key, and a key in the page can be copied, so it needs a server or IT.
+  - Revisit if Chrome's Translator API reaches Android, or once IT sets up Microsoft's translation and speech services in the tenant (see Phase 3).
+
 ### Phase 3: Live sync (optional, only if wanted)
 
 - Load and save the Phase 1 files directly through Microsoft Graph, with version-tag conflict checks.

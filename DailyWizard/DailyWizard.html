@@ -66,6 +66,7 @@
             gap: 12px;
             flex-wrap: wrap;
         }
+        .talk-btn { min-height: 44px; white-space: nowrap; }
 
         /* ---- Form controls ---- */
         .form-group {
@@ -678,6 +679,8 @@
                 <label for="langSelect" data-t>🌐 Language</label>
                 <select id="langSelect"></select>
             </div>
+            <!-- 🗣️ Talk: Google Translate set to English ⇄ the language on screen (only shown in another language) -->
+            <button type="button" class="btn btn-secondary talk-btn" id="talkBtn" hidden data-t>🗣️ Talk</button>
             <div class="form-group">
                 <label for="buildingSelect" data-t>Building</label>
                 <select id="buildingSelect">
@@ -973,6 +976,22 @@
                 if (!Object.keys(obj.translations).length) delete obj.translations;
             }
         }
+        // 🗣️ Talk (user decision 2026-10-17): opens Google Translate set to English ⇄ the language on screen, in a new
+        // tab (or its app on a tablet that has it). Its Conversation mode gives each person a microphone. It's only a
+        // link: this tool still sends nothing anywhere. An in-page translator would need a translation service that
+        // Android Chrome doesn't have built in (ROADMAP → Phase 2, "Voice translator").
+        const TRANSLATE_CODES = { fr: 'fr', es: 'es', vi: 'vi', zh: 'zh-CN' };
+        const talkUrl = (code = LANG) => `https://translate.google.com/?sl=en&tl=${TRANSLATE_CODES[code]}&op=translate`;
+        function updateTalkBtn() {
+            const btn = $('talkBtn');
+            btn.hidden = !TRANSLATE_CODES[LANG];
+            btn.title = btn.hidden ? '' : T('Opens Google Translate set to English and {language}. Tap Conversation, then each person uses their own microphone.', { language: langInfo().name });
+        }
+        function openTalk() {
+            if (!TRANSLATE_CODES[LANG]) return;
+            window.open(talkUrl(), '_blank', 'noopener');
+            showToast(T('In Google Translate, tap Conversation: one microphone for each person'));
+        }
         // The fixed text in the page (data-t: text, data-t-ph: placeholder); the English is kept in the attribute
         function applyStaticText() {
             document.documentElement.lang = langInfo().locale;
@@ -1001,6 +1020,7 @@
             LANG = code;
             $('langSelect').value = code;
             applyStaticText();
+            updateTalkBtn();
             renderAll();
             if ($('detailOverlay').classList.contains('open')) renderDetail();
             if ($('editorOverlay').classList.contains('open')) relabelEditor();
@@ -3286,6 +3306,13 @@
             "Task added": { fr: "Tâche ajoutée", es: "Tarea añadida", vi: "Đã thêm công việc", zh: "任务已添加" },
             "Steps": { fr: "Étapes", es: "Pasos", vi: "Các bước", zh: "步骤" },
             "🔄 Refresh images": { fr: "🔄 Actualiser les images", es: "🔄 Actualizar imágenes", vi: "🔄 Tải lại hình ảnh", zh: "🔄 刷新图片" },
+            "🗣️ Talk": { fr: "🗣️ Parler", es: "🗣️ Hablar", vi: "🗣️ Nói chuyện", zh: "🗣️ 对话" },
+            "Opens Google Translate set to English and {language}. Tap Conversation, then each person uses their own microphone.": {
+                fr: "Ouvre Google Traduction réglé sur l’anglais et {language}. Touchez Conversation, puis chacun utilise son propre micro.",
+                es: "Abre Google Traductor con inglés y {language}. Toque Conversación y cada persona usa su propio micrófono.",
+                vi: "Mở Google Dịch với tiếng Anh và {language}. Chạm Hội thoại, rồi mỗi người dùng micrô của mình.",
+                zh: "打开已设置为英语和{language}的 Google 翻译。点按「对话」，然后每人使用自己的麦克风。" },
+            "In Google Translate, tap Conversation: one microphone for each person": { fr: "Dans Google Traduction, touchez Conversation : un micro pour chaque personne", es: "En Google Traductor, toque Conversación: un micrófono para cada persona", vi: "Trong Google Dịch, chạm Hội thoại: mỗi người một micrô", zh: "在 Google 翻译中点按「对话」：每人一个麦克风" },
             "📁 Upload image pack": { fr: "📁 Importer un dossier d’images", es: "📁 Subir paquete de imágenes", vi: "📁 Tải lên gói hình ảnh", zh: "📁 上传图片包" },
             "🖼 Upload images / videos": { fr: "🖼 Importer des images / vidéos", es: "🖼 Subir imágenes / vídeos", vi: "🖼 Tải lên hình ảnh / video", zh: "🖼 上传图片 / 视频" },
             "Pick the image pack folder (e.g. from SharePoint). Pictures and videos named like j234_1.jpg or j234_1.mp4 are shown on their steps while this window is open; nothing is uploaded anywhere.": {
@@ -3419,6 +3446,7 @@
                 $('langSelect').appendChild(o);
             }
             $('langSelect').addEventListener('change', () => setLanguage($('langSelect').value));
+            $('talkBtn').addEventListener('click', openTalk);
             $('buildingSelect').addEventListener('change', renderAll);
             $('dateInput').addEventListener('change', renderAll);
             // Move to the new day past midnight: tab shown again, window focused, or once a minute

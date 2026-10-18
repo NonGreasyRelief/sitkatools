@@ -221,6 +221,10 @@ Built 2026-10-17 (user decisions: daily chores only, not crop or equipment task 
   - **+ Add Step** is off in another language: new steps are written in English first, then translated.
   - A step being typed when the language changes is saved in the language it was started in.
 - **The screen's own text** (buttons, labels, section headers, toasts, confirms, the hours and Mark done views, the task editor, emoji categories, the tablet's "Go back to SitkaTools to save" banner) comes from `UI_TEXT` at the end of the script. It is keyed by the English text, with `fr` / `es` / `vi` / `zh` side by side, and `T(english, vars)` looks it up, filling `{placeholders}`. A string missing from `UI_TEXT` shows in English. Dates, weekdays and times follow the language (`toLocaleDateString`; `1 h 30 min`, `1小时30分钟`). English output is exactly as before.
+- **🗣️ Talk** (user decision 2026-10-17): a header button next to the picker, shown only in another language. It opens Google Translate in a new tab, set to English ⇄ the language on screen: `https://translate.google.com/?sl=en&tl=<fr|es|vi|zh-CN>&op=translate`. On a tablet with the Google Translate app, the link may open in the app instead.
+  - A toast says to tap **Conversation**: Google's mode with a microphone for each person, which reads each translation aloud. A link can't open that mode or switch the mic on by itself.
+  - It's only a link: DailyWizard still sends nothing anywhere. It needs internet, and what's said goes to Google.
+  - An in-page two-microphone translator was looked at and put off. Android Chrome has no built-in translation, so it would need a paid cloud service with a key, which means a server or IT (ROADMAP → Phase 2, "Voice translator").
 - **Stays in English:** crop and equipment task titles (they come from other tools), building, room and staff names, task codes, the emoji search keywords (the placeholder says to search in English), and the lost-link cover (a shared snippet, rarely seen).
 - **Translations were written for the tool, not by native speakers.** Have each language checked on the floor and correct `UI_TEXT` where needed.
 - **Adding a language:** add it to `LANGS` (code, its own name, a locale for dates) and a column to every `UI_TEXT` entry.
@@ -464,7 +468,7 @@ Sticky footer per suite convention with one addition for this tool:
 - Single `.html` file, no build step, no external dependencies
 - Runs in browser sandbox (`file://` protocol)
 - Vanilla HTML/CSS/JavaScript only
-- No network calls of any kind
+- No network calls of any kind (the 🗣️ Talk button only opens a link to Google Translate in a new tab)
 - No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage or SitkaTools' shared working copy; saving happens in SitkaTools
 - Reads `calendarEvents`, `rooms`, `buildings`, `lots` (for attribution) and the roster in `_EmployeeWizard.employees` (names for the hours log, `floorManager` for Mark done). Writes `_DailyWizard` (task lists, chore hours, check-offs, adjustments), plus labour entries in the `labour_map` and the floor manager's sign-off (`completed` / `completedBy`) on crop and equipment events (floor fields)
 
