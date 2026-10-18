@@ -72,6 +72,10 @@ Each step in a task's detail view can display a picture, referenced purely by **
 
 - **Naming:** `pics/{code}_{n}.{ext}` where `{code}` is the task's 4-letter code and `{n}` is the step's **1-based position** in the steps array (Step 1 → `j234_1`, Step 2 → `j234_2`). The `pics/` folder lives next to `DailyWizard.html`.
 - **Extension fallback:** for each step, probe `.png` → `.jpg` → `.webp` in order and use the first that loads (photos are usually JPG).
+- **Videos** (added 2026-10-17): a step can also have `pics/{code}_{n}.mp4`. It is probed with a `<video>` element that loads only the metadata (no `fetch()`), and plays in the step with the browser's controls (`playsinline`, nothing autoplays).
+  - When a step has both, the picture shows first, then the video. A step with neither shows `🖼 j234_1.png / .mp4 not found`.
+  - Use **H.264** mp4. A video the browser can't decode (e.g. HEVC from some phones) probes as missing.
+  - Keep videos short and compressed. GitHub refuses files over 100 MB, and every tablet streams the file.
 - **Loading mechanism:** plain `<img src="pics/...">` tags. This works on **both** deployment protocols:
   - **http (GitHub Pages):** normal same-origin loading — `pics/` must be committed to the repo.
   - **file:// (local/offline):** relative image tags load fine from a double-clicked HTML file in Chrome, Firefox, and Safari. The `file://` CORS sandbox blocks *programmatic* access (`fetch()`, XHR) but not tag-based resource loading, so no server is required.
@@ -81,10 +85,10 @@ Each step in a task's detail view can display a picture, referenced purely by **
 - **Manual placement only:** browsers cannot write into `pics/` from the page (no server; the File System Access API is unavailable in Firefox/Safari/iPadOS). The workflow is: manager saves photos as `pics/{code}_{n}.jpg|png` (phone camera → rename/copy, or desktop), opens the task's detail view, and hits Refresh.
 - **Uploading pictures** (built 2026-10-17; user decision: kept only while the window is open). For a copy that isn't run next to its `pics/` folder, such as the online one, the steps view has two buttons:
   - **📁 Upload image pack:** pick a folder, e.g. the pack folder in the SharePoint / OneDrive sync.
-  - **🖼 Upload images:** pick the files themselves. Android Chrome may not offer folder picking, so select all the files in the pack folder this way there.
-  - **Matching:** only the file name counts: `{code}_{n}.png|jpg|jpeg|webp`. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick, png beats jpg beats webp, as in the `pics/` probe. A later pick replaces an earlier picture of the same step.
-  - **Where they go:** they're read into the window as object URLs (`uploadedPics`) and win over `pics/`. They're never stored in the browser or sent anywhere, so a new window needs the pack picked again.
-  - **Feedback:** a toast reports how many loaded, names that don't fit the pattern, and pictures whose code matches no task. A note in the steps view shows how many uploaded pictures are in use.
+  - **🖼 Upload images / videos:** pick the files themselves. Android Chrome may not offer folder picking, so select all the files in the pack folder this way there.
+  - **Matching:** only the file name counts: `{code}_{n}.png|jpg|jpeg|webp` for the picture and `{code}_{n}.mp4` for the video. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick, png beats jpg beats webp, as in the `pics/` probe. A later pick replaces an earlier file of the same step.
+  - **Where they go:** they're read into the window as object URLs (`uploadedPics`, `uploadedVids`) and win over `pics/`. They're never stored in the browser or sent anywhere, so a new window needs the pack picked again.
+  - **Feedback:** a toast reports how many pictures and videos loaded, names that don't fit the pattern, and files whose code matches no task. A note in the steps view shows how many uploaded pictures and videos are in use.
 - **Repo hygiene (GitHub Pages):** recommend resized photos (~1280 px max width, JPG) so committing `pics/` to the repo stays lean.
 
 ## Calendar Event Attribution (Building Resolution)

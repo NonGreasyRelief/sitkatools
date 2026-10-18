@@ -541,6 +541,8 @@
         .step-btn.danger { color: var(--danger); }
 
         .step-img-wrap { margin-top: 10px; }
+        .step-img-wrap > * + * { margin-top: 8px; }
+        .step-video { max-width: 100%; max-height: 360px; border-radius: var(--radius); border: 1px solid var(--border); background: #000; display: block; }
 
         .step-img {
             max-width: 100%;
@@ -785,13 +787,13 @@
                 <div class="steps-toolbar">
                     <span class="steps-title" data-t>Steps</span>
                     <div class="steps-tools">
-                        <button type="button" class="btn btn-secondary db-btn" id="uploadPackBtn" data-t data-t-title title="Pick the image pack folder (e.g. from SharePoint). Pictures named like j234_1.jpg are shown on their steps while this window is open; nothing is uploaded anywhere.">📁 Upload image pack</button>
-                        <button type="button" class="btn btn-secondary db-btn" id="uploadImagesBtn" data-t data-t-title title="Pick picture files named like j234_1.jpg. They're shown on their steps while this window is open; nothing is uploaded anywhere.">🖼 Upload images</button>
+                        <button type="button" class="btn btn-secondary db-btn" id="uploadPackBtn" data-t data-t-title title="Pick the image pack folder (e.g. from SharePoint). Pictures and videos named like j234_1.jpg or j234_1.mp4 are shown on their steps while this window is open; nothing is uploaded anywhere.">📁 Upload image pack</button>
+                        <button type="button" class="btn btn-secondary db-btn" id="uploadImagesBtn" data-t data-t-title title="Pick picture or video files named like j234_1.jpg or j234_1.mp4. They're shown on their steps while this window is open; nothing is uploaded anywhere.">🖼 Upload images / videos</button>
                         <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn" data-t>🔄 Refresh images</button>
                     </div>
                     <!-- Read into this window only (no browser storage); see "Step pictures" in the script -->
                     <input type="file" id="packInput" webkitdirectory multiple hidden>
-                    <input type="file" id="imagesInput" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden>
+                    <input type="file" id="imagesInput" accept="image/png,image/jpeg,image/webp,video/mp4,.png,.jpg,.jpeg,.webp,.mp4" multiple hidden>
                 </div>
                 <div class="uploaded-note" id="uploadedNote" hidden></div>
                 <div id="stepsList"></div>
@@ -2257,84 +2259,123 @@
             tryNext();
         }
 
-        // ---- Uploaded pictures: 📁 Upload image pack (a folder) / 🖼 Upload images (files) ----
+        // ---- Step videos: pics/{code}_{n}.mp4, probed with a <video> element (metadata only, no fetch) ----
+        // A video the browser can't decode (e.g. HEVC from some phones) probes as missing: use H.264 mp4.
+        const stepVideoCache = {};   // `${code}_${n}` → true | false
+        function probeStepVideo(code, n, bust, cb) {
+            const key = `${code}_${n}`;
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.muted = true;
+            let done = false, timer = null;
+            const finish = ok => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                stepVideoCache[key] = ok;
+                v.onloadedmetadata = v.onerror = null;
+                v.removeAttribute('src');
+                cb(ok);
+            };
+            timer = setTimeout(() => finish(false), 10000);
+            v.onloadedmetadata = () => finish(true);
+            v.onerror = () => finish(false);
+            v.src = `pics/${key}.mp4${bust ? `?t=${Date.now()}` : ''}`;
+        }
+
+        // ---- Uploaded pictures and videos: 📁 Upload image pack (a folder) / 🖼 Upload images / videos (files) ----
         // For a copy that isn't run next to its pics/ folder (e.g. the online one): pick the pack folder from the
         // SharePoint / OneDrive sync, or the files themselves. They're read into this window only, never stored or
-        // sent anywhere (user decision 2026-10-17), and win over pics/. Only the file name counts: {code}_{n}.{ext}
-        // (a pack's subfolders are fine). Within one pick, png beats jpg beats webp, as in the pics/ probe; a later
-        // pick replaces an earlier picture of the same step.
+        // sent anywhere (user decision 2026-10-17), and win over pics/. Only the file name counts: {code}_{n}.{ext},
+        // png / jpg / webp for the picture and mp4 for the video (a pack's subfolders are fine). Within one pick, png
+        // beats jpg beats webp, as in the pics/ probe; a later pick replaces an earlier file of the same step.
         const uploadedPics = new Map();   // `${code}_${n}` → { url, file }
-        const PIC_NAME = /^([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp)$/i;
+        const uploadedVids = new Map();   // `${code}_${n}` → { url, file } (mp4)
+        const MEDIA_NAME = /^([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp|mp4)$/i;
         const PIC_RANK = { png: 0, jpg: 1, jpeg: 1, webp: 2 };
         function loadPictureFiles(fileList) {
-            const batch = new Map(), skipped = [];
+            const pics = new Map(), vids = new Map(), skipped = [];
             for (const f of [...(fileList || [])]) {
-                const m = PIC_NAME.exec(f.name);
+                const m = MEDIA_NAME.exec(f.name);
                 if (!m) {
                     if (!/^\./.test(f.name) && !/^(thumbs\.db|desktop\.ini)$/i.test(f.name)) skipped.push(f.name);
                     continue;
                 }
-                const key = `${m[1].toLowerCase()}_${Number(m[2])}`, rank = PIC_RANK[m[3].toLowerCase()];
-                const prev = batch.get(key);
-                if (!prev || rank < prev.rank) batch.set(key, { f, rank });
+                const key = `${m[1].toLowerCase()}_${Number(m[2])}`, ext = m[3].toLowerCase();
+                if (ext === 'mp4') { vids.set(key, { f }); continue; }
+                const rank = PIC_RANK[ext], prev = pics.get(key);
+                if (!prev || rank < prev.rank) pics.set(key, { f, rank });
             }
             const known = new Set(Object.values(DB.dailyBuildings || {}).flatMap(b => (b?.tasks || []).map(t => t.code)));
             const noTask = [];
-            for (const [key, { f }] of batch) {
-                if (uploadedPics.has(key)) URL.revokeObjectURL(uploadedPics.get(key).url);
-                uploadedPics.set(key, { url: URL.createObjectURL(f), file: f.name });
-                if (!known.has(key.split('_')[0])) noTask.push(f.name);
-            }
+            const take = (batch, store) => {
+                for (const [key, { f }] of batch) {
+                    if (store.has(key)) URL.revokeObjectURL(store.get(key).url);
+                    store.set(key, { url: URL.createObjectURL(f), file: f.name });
+                    if (!known.has(key.split('_')[0])) noTask.push(f.name);
+                }
+            };
+            take(pics, uploadedPics);
+            take(vids, uploadedVids);
+            const loaded = pics.size + vids.size;
             const example = `${detailTaskCode || 'j234'}_1.jpg`;
             const list = names => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
-            let msg = batch.size ? T('Loaded {n} pictures', { n: batch.size }) : T('No pictures found — names must look like {example}', { example });
-            if (batch.size && skipped.length) msg += T(' · {n} skipped (names must look like {example}): {files}', { n: skipped.length, example, files: list(skipped) });
+            let msg = !loaded ? T('No pictures found — names must look like {example}', { example })
+                : T('Loaded — pictures: {n}, videos: {v}', { n: pics.size, v: vids.size });
+            if (loaded && skipped.length) msg += T(' · {n} skipped (names must look like {example}): {files}', { n: skipped.length, example, files: list(skipped) });
             if (noTask.length) msg += T(' · {n} match no task: {files}', { n: noTask.length, files: list(noTask) });
             showToast(msg);
             if ($('detailOverlay').classList.contains('open')) renderDetail();
         }
         function renderUploadedNote() {
-            const note = $('uploadedNote');
-            note.hidden = !uploadedPics.size;
-            note.textContent = uploadedPics.size ? T('🖼 {n} uploaded pictures in use — this window only', { n: uploadedPics.size }) : '';
+            const note = $('uploadedNote'), n = uploadedPics.size, v = uploadedVids.size;
+            note.hidden = !(n + v);
+            note.textContent = n + v ? T('🖼 Uploaded in use — pictures: {n}, videos: {v} — this window only', { n, v }) : '';
         }
 
+        // A step's picture and video: uploaded ones first, else pics/{code}_{n}.png|jpg|webp and pics/{code}_{n}.mp4.
+        // Both show when both exist; a step with neither shows what to name the files. Elements are only added, never
+        // redrawn, so a playing video isn't reset when the other probe finishes.
         function makeStepImageWrap(code, n) {
             const wrap = document.createElement('div');
             wrap.className = 'step-img-wrap';
             const key = `${code}_${n}`;
-            const up = uploadedPics.get(key);
-            if (up) {
-                const img = document.createElement('img');
-                img.className = 'step-img';
-                img.src = up.url;
-                img.alt = up.file;
-                wrap.appendChild(img);
-                return wrap;
-            }
-            const fill = (ext) => {
-                wrap.innerHTML = '';
-                if (ext) {
+            const st = { pic: undefined, vid: undefined };   // undefined = still looking, null = none, else the src
+            const draw = () => {
+                if (st.pic && !wrap.querySelector('.step-img')) {
                     const img = document.createElement('img');
                     img.className = 'step-img';
-                    img.src = `pics/${code}_${n}.${ext}`;
-                    img.alt = `${code}_${n}`;
-                    wrap.appendChild(img);
-                } else {
-                    const chip = document.createElement('span');
+                    img.src = st.pic;
+                    img.alt = key;
+                    wrap.prepend(img);
+                }
+                if (st.vid && !wrap.querySelector('.step-video')) {
+                    const v = document.createElement('video');
+                    v.className = 'step-video';
+                    v.src = st.vid;
+                    v.controls = true;
+                    v.preload = 'metadata';
+                    v.setAttribute('playsinline', '');
+                    wrap.appendChild(v);
+                }
+                let chip = wrap.querySelector('.chip.missing');
+                if (st.pic || st.vid) { chip?.remove(); return; }
+                if (!chip) {
+                    chip = document.createElement('span');
                     chip.className = 'chip missing';
-                    chip.textContent = T('🖼 {file} not found', { file: `${code}_${n}.png` });
                     wrap.appendChild(chip);
                 }
+                chip.textContent = st.pic === undefined || st.vid === undefined ? `🖼 ${key}.png …`
+                    : T('🖼 {file} not found', { file: `${key}.png / .mp4` });
             };
-            if (key in stepImageCache) fill(stepImageCache[key]);
-            else {
-                const chip = document.createElement('span');
-                chip.className = 'chip missing';
-                chip.textContent = `🖼 ${code}_${n}.png …`;
-                wrap.appendChild(chip);
-                probeStepImage(code, n, false, (ext) => { if (wrap.isConnected) fill(ext); });
-            }
+            const upPic = uploadedPics.get(key), upVid = uploadedVids.get(key);
+            if (upPic) st.pic = upPic.url;
+            else if (key in stepImageCache) st.pic = stepImageCache[key] ? `pics/${key}.${stepImageCache[key]}` : null;
+            else probeStepImage(code, n, false, ext => { st.pic = ext ? `pics/${key}.${ext}` : null; draw(); });
+            if (upVid) st.vid = upVid.url;
+            else if (key in stepVideoCache) st.vid = stepVideoCache[key] ? `pics/${key}.mp4` : null;
+            else probeStepVideo(code, n, false, ok => { st.vid = ok ? `pics/${key}.mp4` : null; draw(); });
+            draw();
             return wrap;
         }
 
@@ -2565,16 +2606,18 @@
             if (!task) return;
             const steps = task.steps || [];
             if (!steps.length) { showToast(T('No steps to refresh')); return; }
-            for (const k of Object.keys(stepImageCache)) if (k.startsWith(task.code + '_')) delete stepImageCache[k];
-            let remaining = steps.length;
+            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (k.startsWith(task.code + '_')) delete cache[k];
+            let remaining = steps.length * 2;   // a picture and a video per step
+            const probed = () => {
+                remaining--;
+                if (remaining === 0 && $('detailOverlay').classList.contains('open') && getDetailTask()?.code === task.code) {
+                    renderDetail();
+                    showToast(T('Step pictures refreshed'));
+                }
+            };
             steps.forEach((s, i) => {
-                probeStepImage(task.code, i + 1, true, () => {
-                    remaining--;
-                    if (remaining === 0 && $('detailOverlay').classList.contains('open') && getDetailTask()?.code === task.code) {
-                        renderDetail();
-                        showToast(T('Step pictures refreshed'));
-                    }
-                });
+                probeStepImage(task.code, i + 1, true, probed);
+                probeStepVideo(task.code, i + 1, true, probed);
             });
         }
 
@@ -2585,7 +2628,7 @@
             const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
             const i = tasks.findIndex(t => t.code === detailTaskCode);
             if (i !== -1) tasks.splice(i, 1);
-            for (const k of Object.keys(stepImageCache)) if (k.startsWith(task.code + '_')) delete stepImageCache[k];
+            for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (k.startsWith(task.code + '_')) delete cache[k];
             notifySitkaTools(); // definition mutation → sync
             closeTaskDetail();
             renderAll();
@@ -3224,22 +3267,22 @@
             "Steps": { fr: "Étapes", es: "Pasos", vi: "Các bước", zh: "步骤" },
             "🔄 Refresh images": { fr: "🔄 Actualiser les images", es: "🔄 Actualizar imágenes", vi: "🔄 Tải lại hình ảnh", zh: "🔄 刷新图片" },
             "📁 Upload image pack": { fr: "📁 Importer un dossier d’images", es: "📁 Subir paquete de imágenes", vi: "📁 Tải lên gói hình ảnh", zh: "📁 上传图片包" },
-            "🖼 Upload images": { fr: "🖼 Importer des images", es: "🖼 Subir imágenes", vi: "🖼 Tải lên hình ảnh", zh: "🖼 上传图片" },
-            "Pick the image pack folder (e.g. from SharePoint). Pictures named like j234_1.jpg are shown on their steps while this window is open; nothing is uploaded anywhere.": {
-                fr: "Choisissez le dossier d’images (par ex. sur SharePoint). Les images nommées comme j234_1.jpg s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
-                es: "Elija la carpeta de imágenes (p. ej., de SharePoint). Las imágenes con nombres como j234_1.jpg se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
-                vi: "Chọn thư mục hình ảnh (ví dụ trên SharePoint). Hình ảnh đặt tên như j234_1.jpg sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
-                zh: "选择图片文件夹（例如 SharePoint 上的）。名称如 j234_1.jpg 的图片会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
-            "Pick picture files named like j234_1.jpg. They're shown on their steps while this window is open; nothing is uploaded anywhere.": {
-                fr: "Choisissez des images nommées comme j234_1.jpg. Elles s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
-                es: "Elija imágenes con nombres como j234_1.jpg. Se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
-                vi: "Chọn các tệp hình ảnh đặt tên như j234_1.jpg. Chúng sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
-                zh: "选择名称如 j234_1.jpg 的图片文件。它们会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
-            "Loaded {n} pictures": { fr: "{n} images chargées", es: "{n} imágenes cargadas", vi: "Đã tải {n} hình ảnh", zh: "已加载 {n} 张图片" },
+            "🖼 Upload images / videos": { fr: "🖼 Importer des images / vidéos", es: "🖼 Subir imágenes / vídeos", vi: "🖼 Tải lên hình ảnh / video", zh: "🖼 上传图片 / 视频" },
+            "Pick the image pack folder (e.g. from SharePoint). Pictures and videos named like j234_1.jpg or j234_1.mp4 are shown on their steps while this window is open; nothing is uploaded anywhere.": {
+                fr: "Choisissez le dossier d’images (par ex. sur SharePoint). Les images et vidéos nommées comme j234_1.jpg ou j234_1.mp4 s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
+                es: "Elija la carpeta de imágenes (p. ej., de SharePoint). Las imágenes y vídeos con nombres como j234_1.jpg o j234_1.mp4 se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
+                vi: "Chọn thư mục hình ảnh (ví dụ trên SharePoint). Hình ảnh và video đặt tên như j234_1.jpg hoặc j234_1.mp4 sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
+                zh: "选择图片文件夹（例如 SharePoint 上的）。名称如 j234_1.jpg 或 j234_1.mp4 的图片和视频会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "Pick picture or video files named like j234_1.jpg or j234_1.mp4. They're shown on their steps while this window is open; nothing is uploaded anywhere.": {
+                fr: "Choisissez des images ou vidéos nommées comme j234_1.jpg ou j234_1.mp4. Elles s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
+                es: "Elija imágenes o vídeos con nombres como j234_1.jpg o j234_1.mp4. Se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
+                vi: "Chọn các tệp hình ảnh hoặc video đặt tên như j234_1.jpg hoặc j234_1.mp4. Chúng sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
+                zh: "选择名称如 j234_1.jpg 或 j234_1.mp4 的图片或视频文件。它们会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "Loaded — pictures: {n}, videos: {v}": { fr: "Chargé — images : {n}, vidéos : {v}", es: "Cargado — imágenes: {n}, vídeos: {v}", vi: "Đã tải — hình ảnh: {n}, video: {v}", zh: "已加载 — 图片：{n}，视频：{v}" },
+            "🖼 Uploaded in use — pictures: {n}, videos: {v} — this window only": { fr: "🖼 Importés utilisés — images : {n}, vidéos : {v} — dans cette fenêtre seulement", es: "🖼 Subidos en uso — imágenes: {n}, vídeos: {v} — solo en esta ventana", vi: "🖼 Đang dùng tệp đã tải lên — hình ảnh: {n}, video: {v} — chỉ trong cửa sổ này", zh: "🖼 正在使用上传的文件 — 图片：{n}，视频：{v} — 仅限此窗口" },
             "No pictures found — names must look like {example}": { fr: "Aucune image trouvée — les noms doivent ressembler à {example}", es: "No se encontraron imágenes — los nombres deben ser como {example}", vi: "Không tìm thấy hình ảnh — tên tệp phải có dạng {example}", zh: "未找到图片 — 文件名应类似 {example}" },
             " · {n} skipped (names must look like {example}): {files}": { fr: " · {n} ignorés (les noms doivent ressembler à {example}) : {files}", es: " · {n} omitidos (los nombres deben ser como {example}): {files}", vi: " · bỏ qua {n} (tên tệp phải có dạng {example}): {files}", zh: " · 跳过 {n} 个（文件名应类似 {example}）：{files}" },
             " · {n} match no task: {files}": { fr: " · {n} ne correspondent à aucune tâche : {files}", es: " · {n} no corresponden a ninguna tarea: {files}", vi: " · {n} không khớp với công việc nào: {files}", zh: " · {n} 个不对应任何任务：{files}" },
-            "🖼 {n} uploaded pictures in use — this window only": { fr: "🖼 {n} images importées utilisées — dans cette fenêtre seulement", es: "🖼 {n} imágenes subidas en uso — solo en esta ventana", vi: "🖼 Đang dùng {n} hình ảnh đã tải lên — chỉ trong cửa sổ này", zh: "🖼 正在使用 {n} 张上传的图片 — 仅限此窗口" },
             "Delete Task": { fr: "Supprimer la tâche", es: "Eliminar tarea", vi: "Xóa công việc", zh: "删除任务" },
             "Edit Task": { fr: "Modifier la tâche", es: "Editar tarea", vi: "Sửa công việc", zh: "编辑任务" },
             "≈ {h} h labour": { fr: "≈ {h} h de travail", es: "≈ {h} h de trabajo", vi: "≈ {h} giờ công", zh: "≈ {h} 工时" },
