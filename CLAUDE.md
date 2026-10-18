@@ -942,7 +942,7 @@ Any implementation must reproduce this table exactly:
 | CropLabourWizard | `CropLabourWizard/` | Active | Crop labour hour and task tracking |
 | EquipmentWizard | `EquipmentWizard/` | Starting | Equipment maintenance scheduling and tracking |
 | Labour & Cost Wizard (EmployeeWizard) | `EmployeeWizard/` | Starting | Employee roster, work schedules, time-off booking & per-task labour hour tracking; 📜 Labour Log (every hours entry with who, when, how long and the drawn initials); ⚡ Power & Rates (power bills or estimated usage, $/kWh, water rate); 📊 Reports tab (total cost per gram, labour, yield, quality, room and forecast charts — `EmployeeWizard/REPORTS.md`) |
-| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs (saved per day), ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done) |
+| DailyWizard | `DailyWizard/` | Active | Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs (saved per day), ⏱ hours logged on chores and on crop / equipment tasks (name, hours, drawn initials), ⏰ past tasks kept open until the floor manager signs them off (✅ Mark done), and a 🌐 language picker (French, Spanish, Vietnamese, Chinese) with translated chore names and steps |
 | PaperWizard | `PaperWizard/` | Designing | Fill controlled paperwork via wizards; overlay text on just-in-time loaded WebP page images and print |
 
 > **Note:** Planned tools have no implementation or design yet. Do not add speculative details, APIs, or schemas for planned tools until explicitly requested.
@@ -1282,7 +1282,7 @@ function populateRoomSelector() {
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in a headless Firefox. It serves this folder on 127.0.0.1 and drives the browser over WebDriver BiDi, with real clicks, real pen strokes on the initials pad and real right-click save links.
 - Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - The tests use a made-up database (`tests/lib/helpers.mjs` → `fixtureDb()`) and never touch real DB files.
-- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open, ✅ Mark done and saved check-offs; the cost inputs (rooms, equipment power, recipe inputs, light %, power & rates); a hand-worked total cost per gram; and every tool opening without page errors.
+- They cover hours on chores, crop and equipment tasks through to the saved files (single file, split files, tablet tabs); the office and a building logging on the same task; tool windows that lost their link; the Labour Log; DailyWizard's ⏰ Still open, ✅ Mark done, saved check-offs and translations; the cost inputs (rooms, equipment power, recipe inputs, light %, power & rates); a hand-worked total cost per gram; and every tool opening without page errors.
 - Run them before a change to saving, merging or the postMessage protocol goes out.
 
 ### JSON Database

@@ -9,6 +9,7 @@ DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit su
 3. **Check things off.** Every row has a large thumb-friendly checkbox. A tick is **saved for that day** in the building's own file (each new day starts blank), so staff and the floor manager can see on any device what's been done today (see "Check-offs — Saved Per Day").
 4. **Log hours.** Each daily-task row, and each crop (CropLabourWizard) or equipment (EquipmentWizard) task in "Scheduled today" or "⏰ Still open", has a **⏱ Log** button. Staff pick their name, type hours and minutes, and sign with drawn initials. The hours save in the building's own file and feed EmployeeWizard's Tasks tab and Reports (see "⏱ Hours").
 5. **Keep tasks open until they're done.** A building's crop and equipment tasks whose day has passed stay listed under **⏰ Still open** until the floor manager signs them off with **✍️ Mark done**: their name and drawn initials (see "⏰ Still open and ✅ Mark done").
+6. **Speak the worker's language.** A **🌐 Language** picker switches the whole screen to French, Spanish, Vietnamese or Simplified Chinese, and shows each chore's name and steps in that language once the manager has written them (see "🌐 Language").
 
 ### Intended Use
 
@@ -37,7 +38,8 @@ A daily task is a small record stored per building under `_DailyWizard` (full sc
 | `staff` | integer | Number of staff required to do the task. Minimum 1 (e.g., `2`). |
 | `days` | array of int (0–6) | Weekdays the task appears on, using JS `getDay()` values (`0`=Sun … `6`=Sat). Default: all seven `[0,1,2,3,4,5,6]`. |
 | `monthDays` | array of int (1–31) | Optional day-of-month list the task *also* appears on (e.g., `[1, 15]`). Default: `[]`. |
-| `steps` | array of `{ text }` | Step-by-step instructions shown in the task's detail view. Ordered; each step is free-form text. Each step can display a picture via the filename convention (see "Step Pictures") — no picture data is stored in the DB. |
+| `steps` | array of `{ text, translations? }` | Step-by-step instructions shown in the task's detail view. Ordered; each step is free-form text. Each step can display a picture via the filename convention (see "Step Pictures") — no picture data is stored in the DB. `translations` holds the step in other languages (see "🌐 Language"). |
+| `translations` | object, optional | The task's name in other languages: `{ fr: 'Arroser les plantes', es: 'Regar las plantas' }`. Absent until one is written. `name` stays the English master (see "🌐 Language"). |
 
 Task order within a building is the **array order** — no separate sort field. Moving a task up/down rewrites its position in the array.
 
@@ -185,6 +187,27 @@ Built 2026-10-13 (user decisions: Still open only in a single building's view, n
   - Reopening clears `completed` and `completedBy`.
   - A sign-off the office reopens after its day is kept on record in the building's adjustments log, as `{ at, by, date, eventId, title, reopened: <the sign-off> }`. It has no `entry`, so the hours view and the Labour Log skip it.
 
+## 🌐 Language
+
+Built 2026-10-17 (user decisions: daily chores only, not crop or equipment task names; the screen's own buttons and labels translate too; French, Spanish, Vietnamese and Simplified Chinese).
+
+- **The picker:** **🌐 Language** is the first control in the header. It lists English, Français, Español, Tiếng Việt and 中文（简体）, each in its own language. English is the default every time the tool opens. The choice lasts while the window is open; nothing is stored in the browser.
+- **English is the master.** Every task `name` and step `text` stays in English in the DB, and every other tool reads only that. Translations sit next to it and only change what DailyWizard shows:
+  - a task's name: `task.translations[<lang>]`;
+  - a step: `step.translations[<lang>]`.
+  - Language codes are `fr`, `es`, `vi`, `zh`. An empty translation is removed, and an empty `translations` map with it.
+  - They live in the task list, so they save in the building's own file like the rest of it.
+- **What's missing shows in English.** A name or step with no translation in the chosen language shows the English, with a small dashed **EN** tag (tooltip "Not translated yet — showing English"), so the manager can see what's left to translate.
+- **Writing translations** (pick the language first):
+  - **Name:** Add / Edit Task shows a second field, **Name (<language>)**. Blank shows the English name. The first field is then labelled "Name in English" and is still required.
+  - **Steps:** in the task detail view, tapping a step edits its translation, with the English shown under the box. ▲ ▼ 🗑 move or delete the step in every language.
+  - **+ Add Step** is off in another language: new steps are written in English first, then translated.
+  - A step being typed when the language changes is saved in the language it was started in.
+- **The screen's own text** (buttons, labels, section headers, toasts, confirms, the hours and Mark done views, the task editor, emoji categories, the tablet's "Go back to SitkaTools to save" banner) comes from `UI_TEXT` at the end of the script. It is keyed by the English text, with `fr` / `es` / `vi` / `zh` side by side, and `T(english, vars)` looks it up, filling `{placeholders}`. A string missing from `UI_TEXT` shows in English. Dates, weekdays and times follow the language (`toLocaleDateString`; `1 h 30 min`, `1小时30分钟`). English output is exactly as before.
+- **Stays in English:** crop and equipment task titles (they come from other tools), building, room and staff names, task codes, the emoji search keywords (the placeholder says to search in English), and the lost-link cover (a shared snippet, rarely seen).
+- **Translations were written for the tool, not by native speakers.** Have each language checked on the floor and correct `UI_TEXT` where needed.
+- **Adding a language:** add it to `LANGS` (code, its own name, a locale for dates) and a column to every `UI_TEXT` entry.
+
 ## Database Key — `_DailyWizard`
 
 All of this tool's data lives under one top-level key, owned exclusively by DailyWizard:
@@ -203,8 +226,10 @@ All of this tool's data lives under one top-level key, owned exclusively by Dail
             "staff": 1,
             "days": [0, 1, 2, 3, 4, 5, 6],
             "monthDays": [],
+            "translations": { "es": "Regar las plantas" },
             "steps": [
-              { "text": "Check each room's drip lines for pressure before starting." },
+              { "text": "Check each room's drip lines for pressure before starting.",
+                "translations": { "es": "Revise la presión de las líneas de goteo de cada sala antes de empezar." } },
               { "text": "Water in order: G1 → G2 → G3. Log any dry spots on the whiteboard." }
             ]
           },
@@ -298,7 +323,7 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 📋 DailyWizard   [Building ▾] [📅 date]      │  ← sticky header
+│ 📋 DailyWizard [🌐 ▾] [Building ▾] [📅 date] │  ← sticky header
 ├──────────────────────────────────────────────┤
 │ Status bar: 🏢 3 buildings · 📝 12 today · ✅ 4/12 done
 ├──────────────────────────────────────────────┤
@@ -318,6 +343,7 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 ### Header
 
 - **Logo:** `📋 DailyWizard` on the left.
+- **Language selector** (label "🌐 Language"): English, Français, Español, Tiếng Việt, 中文（简体）. See "🌐 Language".
 - **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") the selector holds only that building and is locked.
 - **Date input** (`<input type="date">`): defaults to today, and follows today while it still shows the date it set itself — a tablet left open overnight moves to the new day (checked when the window gets focus, when the tab is shown again, and once a minute). A hand-picked date is left alone. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
 

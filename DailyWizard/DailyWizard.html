@@ -547,6 +547,9 @@
         }
 
         .chip.missing { color: var(--text-secondary); }
+        /* 🌐 A name or step with no translation in the chosen language shows the English, tagged "EN" */
+        .chip.chip-en { border-style: dashed; color: var(--text-secondary); font-size: 0.7rem; letter-spacing: 0.5px; }
+        .step-en-ref { font-size: 0.85rem; color: var(--text-secondary); margin: 6px 0 0 40px; }
 
         .overlay-footer.spread { justify-content: space-between; }
 
@@ -665,13 +668,17 @@
         <span class="logo">📋 DailyWizard</span>
         <div class="header-right">
             <div class="form-group">
-                <label for="buildingSelect">Building</label>
+                <label for="langSelect" data-t>🌐 Language</label>
+                <select id="langSelect"></select>
+            </div>
+            <div class="form-group">
+                <label for="buildingSelect" data-t>Building</label>
                 <select id="buildingSelect">
                     <option value="ALL">— All Buildings —</option>
                 </select>
             </div>
             <div class="form-group">
-                <label for="dateInput">📅 Date</label>
+                <label for="dateInput" data-t>📅 Date</label>
                 <input type="date" id="dateInput">
             </div>
         </div>
@@ -691,8 +698,8 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <button class="btn btn-secondary" id="resetDayBtn" disabled>Reset Day</button>
-        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+        <button class="btn btn-secondary" id="resetDayBtn" disabled data-t>Reset Day</button>
+        <button class="btn btn-secondary" id="closeToolBtn" data-t>Close Tool</button>
     </footer>
 
     <!-- Task Editor Overlay (add / edit) -->
@@ -706,48 +713,53 @@
             <div class="card editor-card">
                 <!-- Emoji picker -->
                 <div class="form-group">
-                    <label>Emoji</label>
+                    <label data-t>Emoji</label>
                     <div class="emoji-picker" id="emojiPicker">
                         <button type="button" class="emoji-current" id="emojiCurrentBtn">📋</button>
                         <div class="emoji-panel" id="emojiPanel" style="display:none;">
-                            <input type="text" id="emojiSearch" placeholder="Search (water, clean, gloves…)">
+                            <input type="text" id="emojiSearch" placeholder="Search (water, clean, gloves…)" data-t-ph>
                             <div class="emoji-tabs" id="emojiTabs"></div>
                             <div class="emoji-grid" id="emojiGrid"></div>
                         </div>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="taskNameInput">Name *</label>
-                    <input type="text" id="taskNameInput" placeholder="e.g., Water plants">
+                    <label for="taskNameInput" data-t>Name *</label>
+                    <input type="text" id="taskNameInput" placeholder="e.g., Water plants" data-t-ph>
+                </div>
+                <!-- 🌐 Shown when a language other than English is picked: the name in that language -->
+                <div class="form-group" id="taskNameTrGroup" hidden>
+                    <label for="taskNameTrInput" id="taskNameTrLabel"></label>
+                    <input type="text" id="taskNameTrInput">
                 </div>
                 <div class="editor-row">
                     <div class="form-group">
-                        <label for="taskMinutesInput">Estimated time (min)</label>
+                        <label for="taskMinutesInput" data-t>Estimated time (min)</label>
                         <input type="number" id="taskMinutesInput" min="5" step="5" value="30">
                     </div>
                     <div class="form-group">
-                        <label for="taskStaffInput">Staff required</label>
+                        <label for="taskStaffInput" data-t>Staff required</label>
                         <input type="number" id="taskStaffInput" min="1" step="1" value="1">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Weekdays</label>
+                    <label data-t>Weekdays</label>
                     <div class="weekday-pills" id="weekdayPills"></div>
                 </div>
                 <div class="form-group">
-                    <label for="monthDaysInput">Also on day(s) of month (1–31, comma-separated)</label>
-                    <input type="text" id="monthDaysInput" placeholder="e.g., 1, 15">
+                    <label for="monthDaysInput" data-t>Also on day(s) of month (1–31, comma-separated)</label>
+                    <input type="text" id="monthDaysInput" placeholder="e.g., 1, 15" data-t-ph>
                     <div class="preset-chips" id="monthDayPresets">
-                        <button type="button" class="chip chip-btn" data-preset="1, 15">1st &amp; 15th</button>
-                        <button type="button" class="chip chip-btn" data-preset="1">1st only</button>
-                        <button type="button" class="chip chip-btn" data-preset="">Clear</button>
+                        <button type="button" class="chip chip-btn" data-preset="1, 15" data-t>1st &amp; 15th</button>
+                        <button type="button" class="chip chip-btn" data-preset="1" data-t>1st only</button>
+                        <button type="button" class="chip chip-btn" data-preset="" data-t>Clear</button>
                     </div>
                 </div>
             </div>
         </div>
         <footer class="overlay-footer">
-            <button class="btn btn-secondary" id="editorCancelBtn">Cancel</button>
-            <button class="btn btn-primary" id="editorSaveBtn">Save Task</button>
+            <button class="btn btn-secondary" id="editorCancelBtn" data-t>Cancel</button>
+            <button class="btn btn-primary" id="editorSaveBtn" data-t>Save Task</button>
         </footer>
     </div>
 
@@ -758,6 +770,7 @@
             <div class="detail-header-title">
                 <span class="detail-emoji" id="detailEmoji"></span>
                 <span class="detail-name" id="detailName"></span>
+                <span class="chip chip-en" id="detailEn" hidden>EN</span>
                 <span class="chip chip-code" id="detailCode"></span>
             </div>
         </header>
@@ -765,15 +778,15 @@
             <div style="width:100%; max-width:720px;">
                 <div class="detail-summary" id="detailSummary"></div>
                 <div class="steps-toolbar">
-                    <span class="steps-title">Steps</span>
-                    <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn">🔄 Refresh images</button>
+                    <span class="steps-title" data-t>Steps</span>
+                    <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn" data-t>🔄 Refresh images</button>
                 </div>
                 <div id="stepsList"></div>
             </div>
         </div>
         <footer class="overlay-footer spread">
-            <button class="btn btn-danger" id="deleteTaskBtn">Delete Task</button>
-            <button class="btn btn-primary" id="editTaskBtn">Edit Task</button>
+            <button class="btn btn-danger" id="deleteTaskBtn" data-t>Delete Task</button>
+            <button class="btn btn-primary" id="editTaskBtn" data-t>Edit Task</button>
         </footer>
     </div>
 
@@ -793,32 +806,32 @@
                 </div>
                 <div class="hours-card">
                     <div class="form-group">
-                        <label for="hoursWho">Who worked on it</label>
+                        <label for="hoursWho" data-t>Who worked on it</label>
                         <select id="hoursWho"></select>
-                        <input type="text" id="hoursOther" placeholder="Name (not on the roster)" autocomplete="off" hidden>
-                        <input type="number" id="hoursWage" placeholder="Their hourly wage, $ (optional — used for labour cost)" min="0" step="0.5" inputmode="decimal" hidden>
+                        <input type="text" id="hoursOther" placeholder="Name (not on the roster)" data-t-ph autocomplete="off" hidden>
+                        <input type="number" id="hoursWage" placeholder="Their hourly wage, $ (optional — used for labour cost)" data-t-ph min="0" step="0.5" inputmode="decimal" hidden>
                     </div>
                     <div class="editor-row">
                         <div class="form-group">
-                            <label for="hoursH">Hours</label>
+                            <label for="hoursH" data-t>Hours</label>
                             <input type="number" id="hoursH" min="0" max="16" step="1" inputmode="numeric" placeholder="0">
                         </div>
                         <div class="form-group">
-                            <label for="hoursM">Minutes</label>
+                            <label for="hoursM" data-t>Minutes</label>
                             <input type="number" id="hoursM" min="0" max="59" step="5" inputmode="numeric" placeholder="0">
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="hoursPad">Your initials — draw them with your finger</label>
+                        <label for="hoursPad" data-t>Your initials — draw them with your finger</label>
                         <canvas id="hoursPad" class="hours-pad"></canvas>
-                        <button type="button" class="btn btn-secondary" id="hoursPadClear">Clear initials</button>
+                        <button type="button" class="btn btn-secondary" id="hoursPadClear" data-t>Clear initials</button>
                     </div>
                 </div>
             </div>
         </div>
         <footer class="overlay-footer spread">
             <span class="hours-note" id="hoursNote"></span>
-            <button class="btn btn-primary" id="hoursAddBtn">Add hours</button>
+            <button class="btn btn-primary" id="hoursAddBtn" data-t>Add hours</button>
         </footer>
     </div>
 
@@ -837,21 +850,21 @@
                 </div>
                 <div class="hours-card" id="doneForm">
                     <div class="form-group">
-                        <label for="doneWho">Floor manager</label>
+                        <label for="doneWho" data-t>Floor manager</label>
                         <select id="doneWho"></select>
                         <span class="hours-note done-who-note" id="doneWhoNote"></span>
                     </div>
                     <div class="form-group">
-                        <label for="donePad">Floor manager’s initials — draw them with your finger</label>
+                        <label for="donePad" data-t>Floor manager’s initials — draw them with your finger</label>
                         <canvas id="donePad" class="hours-pad"></canvas>
-                        <button type="button" class="btn btn-secondary" id="donePadClear">Clear initials</button>
+                        <button type="button" class="btn btn-secondary" id="donePadClear" data-t>Clear initials</button>
                     </div>
                 </div>
             </div>
         </div>
         <footer class="overlay-footer spread">
             <span class="hours-note" id="doneNote"></span>
-            <button class="btn btn-primary" id="doneBtn">✅ Mark done</button>
+            <button class="btn btn-primary" id="doneBtn" data-t>✅ Mark done</button>
         </footer>
     </div>
 
@@ -863,6 +876,8 @@
         // DailyWizard — Daily task list builder & floor view
         // Database Keys: "_DailyWizard" (read/write — task lists and chore hours), "calendarEvents" (read-only),
         //                "_EmployeeWizard.employees" (read-only — roster names for the hours log)
+        // 🌐 Language picker: the screen in English, French, Spanish, Vietnamese or Chinese, plus translated task
+        //    names and steps (task.translations / step.translations — English stays the master)
         // Stage 3: + task editor (add/edit) and full embedded emoji picker
         // Stage 4: + task detail view, inline step editing, step pictures
         // =====================================================
@@ -898,6 +913,89 @@
         };
 
         const $ = id => document.getElementById(id);
+
+        // ---- 🌐 Language (user decision 2026-10-17) ----
+        // English is the master: the DB holds every task name and step in English, and every other tool reads that.
+        // Translations the manager writes sit next to it and only change what this screen shows:
+        //   task.translations = { fr: 'Arroser les plantes', … }   step.translations = { fr: 'Vérifier…', … }
+        // A name or step with no translation in the chosen language shows the English, tagged "EN".
+        // The screen's own words come from UI_TEXT (at the end of this script), keyed by the English text. The choice
+        // lasts while this window is open (no browser storage).
+        const LANGS = [
+            { code: 'en', name: 'English', locale: 'en-CA' },
+            { code: 'fr', name: 'Français', locale: 'fr-CA' },
+            { code: 'es', name: 'Español', locale: 'es' },
+            { code: 'vi', name: 'Tiếng Việt', locale: 'vi' },
+            { code: 'zh', name: '中文（简体）', locale: 'zh-CN' }
+        ];
+        let LANG = 'en';
+        const langInfo = (code = LANG) => LANGS.find(l => l.code === code) || LANGS[0];
+        const uiLocale = () => LANG === 'en' ? [] : langInfo().locale;   // English keeps the browser's own date format
+        // The screen's text in the chosen language; {name} placeholders are filled from vars
+        function T(en, vars) {
+            let s = (LANG !== 'en' && UI_TEXT[en]?.[LANG]) || en;
+            if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? String(vars[k]) : m);
+            return s;
+        }
+        const taskName = task => (LANG !== 'en' && task?.translations?.[LANG]) || task?.name || '';
+        const stepText = step => (LANG !== 'en' && step?.translations?.[LANG]) || step?.text || '';
+        // A task (name) or step (text) that has English but nothing yet in the chosen language
+        const needsTranslation = obj => LANG !== 'en' && !!(obj?.name || obj?.text) && !obj?.translations?.[LANG];
+        function enChip() {
+            const c = document.createElement('span');
+            c.className = 'chip chip-en';
+            c.textContent = 'EN';
+            c.title = T('Not translated yet — showing English');
+            return c;
+        }
+        // Set or clear one language's translation on a task or step (an empty map is dropped)
+        function setTranslation(obj, lang, value) {
+            if (value) (obj.translations || (obj.translations = {}))[lang] = value;
+            else if (obj.translations) {
+                delete obj.translations[lang];
+                if (!Object.keys(obj.translations).length) delete obj.translations;
+            }
+        }
+        // The fixed text in the page (data-t: text, data-t-ph: placeholder); the English is kept in the attribute
+        function applyStaticText() {
+            document.documentElement.lang = langInfo().locale;
+            for (const el of document.querySelectorAll('[data-t]')) {
+                if (!el.dataset.t) el.dataset.t = el.textContent.trim();
+                el.textContent = T(el.dataset.t);
+            }
+            for (const el of document.querySelectorAll('[data-t-ph]')) {
+                if (!el.dataset.tPh) el.dataset.tPh = el.placeholder;
+                el.placeholder = T(el.dataset.tPh);
+            }
+            // The tablet banner comes from the shared working-copy snippet (the same in every tool), so it's
+            // translated from here rather than in the snippet
+            const banner = $('workCopyBanner');
+            if (banner?.firstChild?.nodeType === Node.TEXT_NODE) banner.firstChild.nodeValue = T('📋 Using the database open in SitkaTools. ');
+            if ($('workCopyGoBack')) $('workCopyGoBack').textContent = T('Go back to SitkaTools to save');
+        }
+        function setLanguage(code) {
+            if (!LANGS.some(l => l.code === code) || code === LANG) return;
+            // A step being typed is saved first, in the language it was started in
+            if (document.activeElement?.classList?.contains('step-text-input')) document.activeElement.blur();
+            LANG = code;
+            $('langSelect').value = code;
+            applyStaticText();
+            renderAll();
+            if ($('detailOverlay').classList.contains('open')) renderDetail();
+            if ($('editorOverlay').classList.contains('open')) relabelEditor();
+            if ($('emojiPanel').style.display !== 'none') { buildEmojiTabs(); renderEmojiGrid(); }
+            if (hoursCtx) {
+                const who = $('hoursWho');
+                if (who.options[0]) who.options[0].textContent = T('— Pick your name —');
+                if (who.options.length > 1) who.options[who.options.length - 1].textContent = T('Someone else (not on the roster)…');
+                renderHours();
+            }
+            if (doneCtx) {
+                if ($('doneWho').options[0]) $('doneWho').options[0].textContent = T('— Pick the floor manager —');
+                $('doneWhoNote').textContent = floorManagers().everyone ? T('No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.') : '';
+                renderDone();
+            }
+        }
 
         // ---- Date helpers (local time, YYYY-MM-DD) ----
         function dateToStr(d) {
@@ -1289,7 +1387,7 @@
                 syncOpenDetail();
                 if (hoursCtx) renderHours();
                 if (doneCtx) renderDone();
-                showToast('Database loaded from SitkaTools');
+                showToast(T('Database loaded from SitkaTools'));
             }
 
             // Live DB updates pushed by SitkaTools — refresh non-disruptively
@@ -1311,7 +1409,7 @@
             const date = selectedDateStr(), bids = shownBuildings();
             const count = checkoffCountForDate(date, bids);
             if (!count) return;
-            if (!confirm(`Clear all ${count} check-off(s) for ${date}?`)) return;
+            if (!confirm(T('Clear all {n} check-off(s) for {date}?', { n: count, date: shortDate(date) }))) return;
             for (const k of Object.keys(sessionChecks)) {
                 if (k.startsWith(date + ':')) delete sessionChecks[k];
             }
@@ -1344,7 +1442,7 @@
             if (sel.disabled) {
                 const opt = document.createElement('option');
                 opt.value = own;
-                opt.textContent = `${own} — ${buildings[own]?.name || 'Unnamed'}`;
+                opt.textContent = `${own} — ${buildings[own]?.name || T('Unnamed')}`;
                 sel.appendChild(opt);
                 sel.value = own;
                 return;
@@ -1352,13 +1450,13 @@
 
             const allOpt = document.createElement('option');
             allOpt.value = 'ALL';
-            allOpt.textContent = '— All Buildings —';
+            allOpt.textContent = T('— All Buildings —');
             sel.appendChild(allOpt);
 
             for (const [id, b] of Object.entries(buildings)) {
                 const opt = document.createElement('option');
                 opt.value = id;
-                opt.textContent = `${id} — ${b?.name || 'Unnamed'}`;
+                opt.textContent = `${id} — ${b?.name || T('Unnamed')}`;
                 sel.appendChild(opt);
             }
 
@@ -1367,7 +1465,7 @@
                 if (!buildings[id]) {
                     const opt = document.createElement('option');
                     opt.value = id;
-                    opt.textContent = `${id} — ⚠️ not in database`;
+                    opt.textContent = `${id} — ${T('⚠️ not in database')}`;
                     sel.appendChild(opt);
                 }
             }
@@ -1384,7 +1482,7 @@
 
             if (!dbLoaded) {
                 bar.classList.remove('loaded');
-                text.textContent = 'No database loaded. Waiting for SitkaTools…';
+                text.textContent = T('No database loaded. Waiting for SitkaTools…');
             } else {
                 bar.classList.add('loaded');
                 const n = Object.keys(DB.buildings).length;
@@ -1401,7 +1499,7 @@
                     doneCount += tasks.filter(t => isChecked(checkSpotForTask(bid, t.code), dateStr)).length;
                 }
 
-                text.textContent = `🏢 ${n} building${n === 1 ? '' : 's'} · 📝 ${taskCount} today · ✅ ${doneCount}/${taskCount} done`;
+                text.textContent = T(n === 1 ? '🏢 {n} building · 📝 {tasks} today · ✅ {done}/{tasks} done' : '🏢 {n} buildings · 📝 {tasks} today · ✅ {done}/{tasks} done', { n, tasks: taskCount, done: doneCount });
             }
 
             // Reset Day is disabled when nothing is checked for the selected date
@@ -1493,6 +1591,7 @@
         const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         function shortDate(str) {
             const d = parseDate(str);
+            if (LANG !== 'en') return d.toLocaleDateString(langInfo().locale, { weekday: 'short', day: 'numeric', month: 'short' });
             return `${SHORT_DAYS[d.getDay()]} ${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
         }
 
@@ -1552,8 +1651,9 @@
 
             const name = document.createElement('span');
             name.className = 'task-name';
-            name.textContent = task.name;
+            name.textContent = taskName(task);
             row.appendChild(name);
+            if (needsTranslation(task)) row.appendChild(enChip());
 
             const codeChip = document.createElement('span');
             codeChip.className = 'chip chip-code';
@@ -1574,7 +1674,7 @@
 
             const minChip = document.createElement('span');
             minChip.className = 'chip';
-            minChip.textContent = `⏱ ${task.minutes ?? 0}m`;
+            minChip.textContent = `⏱ ${T('{m}m', { m: task.minutes ?? 0 })}`;
             row.appendChild(minChip);
 
             row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
@@ -1587,14 +1687,14 @@
                 up.className = 'move-btn';
                 up.textContent = '▲';
                 up.disabled = !prevCode;
-                up.title = 'Move up';
+                up.title = T('Move up');
                 up.addEventListener('click', () => moveTask(buildingId, task.code, prevCode));
                 const down = document.createElement('button');
                 down.type = 'button';
                 down.className = 'move-btn';
                 down.textContent = '▼';
                 down.disabled = !nextCode;
-                down.title = 'Move down';
+                down.title = T('Move down');
                 down.addEventListener('click', () => moveTask(buildingId, task.code, nextCode));
                 moveBtns.appendChild(up);
                 moveBtns.appendChild(down);
@@ -1613,7 +1713,7 @@
         // 30 → "30m", 90 → "1h 30m", 480 → "8h" (crop tasks run for hours)
         function fmtMinutes(m) {
             const h = Math.floor(m / 60), r = m % 60;
-            return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+            return h ? (r ? T('{h}h {m}m', { h, m: r }) : T('{h}h', { h })) : T('{m}m', { m: r });
         }
 
         // mode: 'today' (default) — checkable row for the selected date.
@@ -1643,7 +1743,7 @@
 
             const name = document.createElement('span');
             name.className = 'task-name readonly';
-            name.textContent = text || ev.title || '(untitled event)';
+            name.textContent = text || ev.title || T('(untitled event)');
             row.appendChild(name);
 
             // Crop tasks carry CropLabourWizard's labour estimate (per day) — same chips as daily tasks
@@ -1652,13 +1752,13 @@
                 const staffChip = document.createElement('span');
                 staffChip.className = 'chip';
                 staffChip.textContent = `👥 ${est.staff}`;
-                staffChip.title = 'Staff needed (estimate)';
+                staffChip.title = T('Staff needed (estimate)');
                 row.appendChild(staffChip);
 
                 const minChip = document.createElement('span');
                 minChip.className = 'chip';
                 minChip.textContent = `⏱ ${fmtMinutes(est.minutes)}`;
-                minChip.title = 'Estimated time for the day';
+                minChip.title = T('Estimated time for the day');
                 row.appendChild(minChip);
             }
 
@@ -1673,7 +1773,7 @@
                     const late = Math.round((parseDate(selectedDateStr()) - parseDate(due)) / 86400000);
                     const chip = document.createElement('span');
                     chip.className = 'chip chip-overdue';
-                    chip.textContent = `due ${shortDate(due)} · ${late} day${late === 1 ? '' : 's'} overdue`;
+                    chip.textContent = T(late === 1 ? 'due {date} · {n} day overdue' : 'due {date} · {n} days overdue', { date: shortDate(due), n: late });
                     row.appendChild(chip);
                 }
                 // Crop and equipment tasks: hours go on the event's labour_map (see "⏱ Hours"), and the floor
@@ -1707,7 +1807,7 @@
             if (!events.length) return;
             const div = document.createElement('div');
             div.className = 'section-divider';
-            div.textContent = `Scheduled today (${events.length})`;
+            div.textContent = T('Scheduled today ({n})', { n: events.length });
             parent.appendChild(div);
             for (const ev of events) parent.appendChild(makeEventRow(ev));
         }
@@ -1728,15 +1828,15 @@
             if (!evs.length) return;
             const div = document.createElement('div');
             div.className = 'section-divider overdue';
-            div.textContent = `⏰ Still open (${evs.length})`;
-            div.title = 'Tasks whose day has passed and that the floor manager hasn’t marked done yet';
+            div.textContent = T('⏰ Still open ({n})', { n: evs.length });
+            div.title = T('Tasks whose day has passed and that the floor manager hasn’t marked done yet');
             parent.appendChild(div);
             for (const ev of showAllOpen ? evs : evs.slice(0, OPEN_SHOWN)) parent.appendChild(makeEventRow(ev, 'open'));
             if (evs.length > OPEN_SHOWN) {
                 const more = document.createElement('button');
                 more.type = 'button';
                 more.className = 'btn btn-secondary open-more';
-                more.textContent = showAllOpen ? 'Show fewer' : `+ ${evs.length - OPEN_SHOWN} more`;
+                more.textContent = showAllOpen ? T('Show fewer') : T('+ {n} more', { n: evs.length - OPEN_SHOWN });
                 more.addEventListener('click', () => { showAllOpen = !showAllOpen; renderAll(); });
                 parent.appendChild(more);
             }
@@ -1751,7 +1851,7 @@
             if (!evs.length) return;
             const div = document.createElement('div');
             div.className = 'section-divider';
-            div.textContent = `Upcoming (${evs.length})`;
+            div.textContent = T('Upcoming ({n})', { n: evs.length });
             parent.appendChild(div);
             for (const ev of evs) parent.appendChild(makeEventRow(ev, 'upcoming'));
         }
@@ -1904,7 +2004,7 @@
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'emoji-tab' + (i === emojiActiveTab ? ' on' : '');
-                b.textContent = cat.label;
+                b.textContent = T(cat.label);
                 // stopPropagation: this handler rebuilds the tab list (removing the clicked
                 // button from the DOM), which would otherwise make the document-level
                 // outside-click check see a detached target and close the panel.
@@ -1936,7 +2036,7 @@
             if (!count) {
                 const div = document.createElement('div');
                 div.className = 'muted-line';
-                div.textContent = 'No matching emoji.';
+                div.textContent = T('No matching emoji.');
                 grid.appendChild(div);
             }
         }
@@ -1956,6 +2056,7 @@
         const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
         let editorBuildingId = null;
         let editorTaskCode = null; // null = new task
+        let editorLang = 'en';     // the language the editor was opened in — its name field is for that language
 
         // Random 4-char code, globally unique across all buildings (regenerate on collision).
         function generateTaskCode() {
@@ -1979,9 +2080,14 @@
                 ? (DB.dailyBuildings[buildingId]?.tasks || []).find(t => t.code === editorTaskCode)
                 : null;
 
-            $('editorTitle').textContent = task ? `Edit Task — ${task.name}` : 'Add Task';
+            editorLang = LANG;
             setEditorEmoji(task?.emoji || '📋');
             $('taskNameInput').value = task?.name || '';
+            // 🌐 The name in the chosen language (English stays the master, so the English name is still required)
+            $('taskNameTrGroup').hidden = editorLang === 'en';
+            $('taskNameTrLabel').textContent = T('Name in {language}', { language: langInfo(editorLang).name });
+            $('taskNameTrInput').placeholder = T('Leave blank to show the English name');
+            $('taskNameTrInput').value = editorLang !== 'en' ? task?.translations?.[editorLang] || '' : '';
             $('taskMinutesInput').value = task?.minutes ?? 30;
             $('taskStaffInput').value = task?.staff ?? 1;
             $('monthDaysInput').value = (task?.monthDays || []).join(', ');
@@ -1991,20 +2097,27 @@
             const pills = $('weekdayPills');
             pills.innerHTML = '';
             const order = [1, 2, 3, 4, 5, 6, 0];
-            const labels = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 0: 'Sun' };
             for (const d of order) {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'pill' + (days.has(d) ? ' on' : '');
-                b.textContent = labels[d];
+                b.textContent = weekdayShort(d);
                 b.dataset.day = d;
                 b.addEventListener('click', () => b.classList.toggle('on'));
                 pills.appendChild(b);
             }
 
+            relabelEditor();
             closeEmojiPanel();
             $('editorOverlay').classList.add('open');
             $('taskNameInput').focus();
+        }
+
+        // The editor's title and weekday pills in the chosen language (also when the language changes while open)
+        function relabelEditor() {
+            const task = editorTaskCode ? (DB.dailyBuildings[editorBuildingId]?.tasks || []).find(t => t.code === editorTaskCode) : null;
+            $('editorTitle').textContent = task ? T('Edit Task — {name}', { name: taskName(task) }) : T('Add Task');
+            document.querySelectorAll('#weekdayPills .pill').forEach(b => { b.textContent = weekdayShort(Number(b.dataset.day)); });
         }
 
         function closeTaskEditor() {
@@ -2031,12 +2144,13 @@
             const days = [...document.querySelectorAll('#weekdayPills .pill.on')]
                 .map(b => Number(b.dataset.day)).sort((a, b) => a - b);
             const monthDays = parseMonthDays($('monthDaysInput').value);
+            const nameTr = $('taskNameTrInput').value.trim();
 
             // Validation (CLAUDE.md "Task Editor")
-            if (!name) { showToast('Task name is required'); return; }
-            if (Number.isNaN(minutes) || minutes < 5) { showToast('Estimated time must be at least 5 minutes'); return; }
-            if (Number.isNaN(staff) || staff < 1) { showToast('Staff required must be at least 1'); return; }
-            if (!days.length && !monthDays.length) { showToast('Pick at least one weekday or one day-of-month'); return; }
+            if (!name) { showToast(T('Task name is required')); return; }
+            if (Number.isNaN(minutes) || minutes < 5) { showToast(T('Estimated time must be at least 5 minutes')); return; }
+            if (Number.isNaN(staff) || staff < 1) { showToast(T('Staff required must be at least 1')); return; }
+            if (!days.length && !monthDays.length) { showToast(T('Pick at least one weekday or one day-of-month')); return; }
 
             const d = DB.ensureStructure();
             if (!d._DailyWizard.buildings[editorBuildingId]) d._DailyWizard.buildings[editorBuildingId] = { tasks: [] };
@@ -2053,15 +2167,18 @@
                     task.days = days;
                     task.monthDays = monthDays;
                     // steps preserved — edited in the detail view (Stage 4)
+                    if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
                 }
             } else {
-                tasks.push({ code: generateTaskCode(), emoji: editorEmoji, name, minutes, staff, days, monthDays, steps: [] });
+                const task = { code: generateTaskCode(), emoji: editorEmoji, name, minutes, staff, days, monthDays, steps: [] };
+                if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
+                tasks.push(task);
             }
 
             notifySitkaTools(); // definition mutation → sync back to SitkaTools
             closeTaskEditor();
             renderAll();
-            showToast(wasEdit ? 'Task updated' : 'Task added');
+            showToast(wasEdit ? T('Task updated') : T('Task added'));
         }
 
         // ---- Task detail view & step pictures (Stage 4) ----
@@ -2069,6 +2186,8 @@
         let detailTaskCode = null;
 
         const DAY_LABELS = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+        // A weekday's short name (0 = Sun) in the chosen language — 4 Jan 2026 was a Sunday
+        const weekdayShort = d => LANG === 'en' ? DAY_LABELS[d] : new Date(2026, 0, 4 + d).toLocaleDateString(langInfo().locale, { weekday: 'short' });
 
         function ordinal(n) {
             if (n % 100 >= 11 && n % 100 <= 13) return n + 'th';
@@ -2086,17 +2205,18 @@
             const days = [...(task.days || [])];
             const monthDays = [...(task.monthDays || [])].sort((a, b) => a - b);
             const parts = [];
-            if (days.length === 7) parts.push('Every day');
+            if (days.length === 7) parts.push(T('Every day'));
             else if (days.length) {
                 const order = [1, 2, 3, 4, 5, 6, 0]; // display order Mon → Sun
-                parts.push(order.filter(d => days.includes(d)).map(d => DAY_LABELS[d]).join(', '));
+                parts.push(order.filter(d => days.includes(d)).map(weekdayShort).join(', '));
             }
-            if (monthDays.length) {
+            if (monthDays.length && LANG !== 'en') parts.push(T('{list} of each month', { list: monthDays.join(', ') }));
+            else if (monthDays.length) {
                 const list = monthDays.map(ordinal);
                 const head = list.slice(0, -1).join(', ');
                 parts.push(`${head ? head + ' & ' : ''}${list[list.length - 1]} of each month`);
             }
-            return parts.join(' and ');
+            return parts.join(T(' and '));
         }
 
         // ---- Step pictures: pics/{code}_{n}.{ext}, 1-based position, probe png→jpg→webp ----
@@ -2133,7 +2253,7 @@
                 } else {
                     const chip = document.createElement('span');
                     chip.className = 'chip missing';
-                    chip.textContent = `🖼 ${code}_${n}.png not found`;
+                    chip.textContent = T('🖼 {file} not found', { file: `${code}_${n}.png` });
                     wrap.appendChild(chip);
                 }
             };
@@ -2183,7 +2303,9 @@
             if (!task) { closeTaskDetail(); return; }
 
             $('detailEmoji').textContent = task.emoji || '📋';
-            $('detailName').textContent = task.name;
+            $('detailName').textContent = taskName(task);
+            $('detailEn').hidden = !needsTranslation(task);
+            $('detailEn').title = T('Not translated yet — showing English');
             $('detailCode').textContent = task.code;
 
             // Summary block: labour + plain-language recurrence
@@ -2192,11 +2314,11 @@
             const staff = task.staff ?? 1, minutes = task.minutes ?? 0;
             const labour = document.createElement('div');
             labour.className = 'summary-line';
-            labour.textContent = `👥 ${staff} · ⏱ ${minutes}m · ≈ ${((staff * minutes) / 60).toFixed(1)} h labour`;
+            labour.textContent = `👥 ${staff} · ⏱ ${T('{m}m', { m: minutes })} · ${T('≈ {h} h labour', { h: ((staff * minutes) / 60).toFixed(1) })}`;
             sum.appendChild(labour);
             const rec = document.createElement('div');
             rec.className = 'summary-line';
-            rec.textContent = `🔁 ${describeRecurrence(task) || 'Never'}`;
+            rec.textContent = `🔁 ${describeRecurrence(task) || T('Never')}`;
             sum.appendChild(rec);
 
             renderStepsList(task);
@@ -2217,11 +2339,13 @@
             num.textContent = n;
             top.appendChild(num);
 
+            const shown = stepText(steps[index]);
             const text = document.createElement('span');
-            text.className = 'step-text' + (steps[index].text ? '' : ' placeholder');
-            text.textContent = steps[index].text || '(tap to add instruction)';
+            text.className = 'step-text' + (shown ? '' : ' placeholder');
+            text.textContent = shown || T('(tap to add instruction)');
             text.addEventListener('click', () => beginStepEdit(row, task, index));
             top.appendChild(text);
+            if (needsTranslation(steps[index])) top.appendChild(enChip());
 
             const actions = document.createElement('div');
             actions.className = 'step-actions';
@@ -2236,9 +2360,9 @@
                 actions.appendChild(b);
             };
             const bid = detailBuildingId, code = task.code;
-            mkBtn('▲', 'Move step up', index === 0, false, () => moveStep(bid, code, index, -1));
-            mkBtn('▼', 'Move step down', index === steps.length - 1, false, () => moveStep(bid, code, index, +1));
-            mkBtn('🗑', 'Delete step', false, true, () => deleteStep(bid, code, index));
+            mkBtn('▲', T('Move step up'), index === 0, false, () => moveStep(bid, code, index, -1));
+            mkBtn('▼', T('Move step down'), index === steps.length - 1, false, () => moveStep(bid, code, index, +1));
+            mkBtn('🗑', T('Delete step'), false, true, () => deleteStep(bid, code, index));
             top.appendChild(actions);
 
             row.appendChild(top);
@@ -2252,11 +2376,13 @@
             const textEl = rowEl.querySelector('.step-text');
             if (!textEl) return;
 
+            // In another language the tap edits that language's translation; the English is shown under it
+            const lang = LANG;
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'step-text-input';
-            input.value = task.steps[index].text || '';
-            input.placeholder = 'Step instruction…';
+            input.value = lang === 'en' ? task.steps[index].text || '' : task.steps[index].translations?.[lang] || '';
+            input.placeholder = lang === 'en' ? T('Step instruction…') : T('Step in {language}…', { language: langInfo(lang).name });
 
             const bid = detailBuildingId, code = task.code;
             let done = false;
@@ -2267,11 +2393,17 @@
                     const v = input.value.trim();
                     // Look the task up again: a live DB update while typing replaced the `task` captured above
                     const step = (DB.dailyBuildings[bid]?.tasks || []).find(t => t.code === code)?.steps?.[index];
-                    if (!step) showToast('Step not saved — the task was changed elsewhere');
-                    else if (v !== (step.text || '')) {
+                    if (!step) showToast(T('Step not saved — the task was changed elsewhere'));
+                    else if (lang !== 'en') {
+                        if (v !== (step.translations?.[lang] || '')) {
+                            setTranslation(step, lang, v);
+                            notifySitkaTools(); // step mutation → sync
+                            showToast(v ? T('Translation saved') : T('Translation removed — the English shows'));
+                        }
+                    } else if (v !== (step.text || '')) {
                         step.text = v;
                         notifySitkaTools(); // step mutation → sync
-                        showToast(v ? 'Step updated' : 'Step text cleared');
+                        showToast(v ? T('Step updated') : T('Step text cleared'));
                     }
                 }
                 renderDetail();
@@ -2283,6 +2415,12 @@
             });
 
             textEl.replaceWith(input);
+            if (lang !== 'en') {
+                const ref = document.createElement('div');
+                ref.className = 'step-en-ref';
+                ref.textContent = T('English: {text}', { text: task.steps[index].text || '—' });
+                input.closest('.step-top').after(ref);
+            }
             input.focus();
         }
 
@@ -2291,13 +2429,15 @@
             list.innerHTML = '';
             const steps = task.steps || [];
             steps.forEach((s, i) => list.appendChild(makeStepRow(task, i)));
-            if (!steps.length) list.appendChild(mutedLine('No steps yet — add the first one below.'));
+            if (!steps.length) list.appendChild(mutedLine(T('No steps yet — add the first one below.')));
 
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.className = 'btn btn-secondary';
             addBtn.style.minHeight = '48px';
-            addBtn.textContent = '+ Add Step';
+            addBtn.textContent = T('+ Add Step');
+            // New steps are written in English (the master) and translated after
+            addBtn.disabled = LANG !== 'en';
             const bid = detailBuildingId, code = task.code;
             addBtn.addEventListener('click', () => {
                 const cur = findStepTask(bid, code);
@@ -2311,6 +2451,7 @@
                 if (last) beginStepEdit(last, cur, cur.steps.length - 1);
             });
             list.appendChild(addBtn);
+            if (LANG !== 'en') list.appendChild(mutedLine(T('Add new steps in English, then translate them.')));
         }
 
         // Step buttons look their task up again by building + code when tapped: while a step's text
@@ -2335,7 +2476,7 @@
             task.steps.splice(index, 1);
             notifySitkaTools();
             renderDetail();
-            showToast('Step deleted');
+            showToast(T('Step deleted'));
         }
 
         // 🔄 Refresh images: clear this task's probe cache and re-probe with a
@@ -2344,7 +2485,7 @@
             const task = getDetailTask();
             if (!task) return;
             const steps = task.steps || [];
-            if (!steps.length) { showToast('No steps to refresh'); return; }
+            if (!steps.length) { showToast(T('No steps to refresh')); return; }
             for (const k of Object.keys(stepImageCache)) if (k.startsWith(task.code + '_')) delete stepImageCache[k];
             let remaining = steps.length;
             steps.forEach((s, i) => {
@@ -2352,7 +2493,7 @@
                     remaining--;
                     if (remaining === 0 && $('detailOverlay').classList.contains('open') && getDetailTask()?.code === task.code) {
                         renderDetail();
-                        showToast('Step pictures refreshed');
+                        showToast(T('Step pictures refreshed'));
                     }
                 });
             });
@@ -2361,7 +2502,7 @@
         function deleteCurrentTask() {
             const task = getDetailTask();
             if (!task) return;
-            if (!confirm(`Delete task "${task.name}" (${task.code})?\nThis removes it from _DailyWizard.`)) return;
+            if (!confirm(T('Delete task "{name}" ({code})?\nThis removes it from _DailyWizard.', { name: taskName(task), code: task.code }))) return;
             const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
             const i = tasks.findIndex(t => t.code === detailTaskCode);
             if (i !== -1) tasks.splice(i, 1);
@@ -2369,7 +2510,7 @@
             notifySitkaTools(); // definition mutation → sync
             closeTaskDetail();
             renderAll();
-            showToast('Task deleted');
+            showToast(T('Task deleted'));
         }
 
         // ---- ⏱ Hours on chores and on crop / equipment tasks (ROADMAP Phase 1 "Labour in DailyWizard") ----
@@ -2424,7 +2565,7 @@
         const ctxRemoved = ctx => (DB.dailyBuildings[ctx.buildingId]?.adjustments || [])
             .filter(a => a.entry && a.date === ctx.date && (ctx.kind === 'event' ? a.eventId === ctx.eventId : a.code === ctx.code));
         const liveHours = list => list.filter(e => e && !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0);
-        function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? `${hh}h ${mm}m` : `${hh}h`) : `${mm}m`; }
+        function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? T('{h}h {m}m', { h: hh, m: mm }) : T('{h}h', { h: hh })) : T('{m}m', { m: mm }); }
         // Every entry carries an id, so the office's and a building's hours merge entry by entry (SitkaTools)
         function newLabourId() {
             const bytes = crypto.getRandomValues(new Uint8Array(10));
@@ -2441,8 +2582,8 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'hours-btn' + (h > 0 ? ' logged' : '');
-            btn.textContent = h > 0 ? `⏱ ${fmtHoursShort(h)}` : '⏱ Log';
-            btn.title = future ? 'Hours can only be logged for today or earlier' : h > 0 ? 'Hours logged on this — tap to review or add' : 'Log who worked on this and for how long';
+            btn.textContent = h > 0 ? `⏱ ${fmtHoursShort(h)}` : T('⏱ Log');
+            btn.title = future ? T('Hours can only be logged for today or earlier') : h > 0 ? T('Hours logged on this — tap to review or add') : T('Log who worked on this and for how long');
             btn.disabled = future;
             btn.addEventListener('click', (e) => { e.stopPropagation(); openHours(ctx); });
             return btn;
@@ -2454,9 +2595,9 @@
             const who = $('hoursWho');
             who.innerHTML = '';
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
-            add('', '— Pick your name —');
+            add('', T('— Pick your name —'));
             for (const n of rosterNames()) add(n, n);
-            add('__other', 'Someone else (not on the roster)…');
+            add('__other', T('Someone else (not on the roster)…'));
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
@@ -2479,30 +2620,30 @@
             if (ctx.kind === 'chore') {
                 const task = ctxTask(ctx);
                 if (!task) { closeHours(); return; }
-                title = `${task.emoji || '📋'} ${task.name}`;
+                title = `${task.emoji || '📋'} ${taskName(task)}`;
                 est = { staff: task.staff ?? 1, minutes: task.minutes ?? 0 };
             } else {
                 const ev = ctxEvent(ctx);
                 if (!ev) { closeHours(); return; }
                 const { emoji, text } = eventEmojiAndText(ev.title);
-                title = `${emoji} ${text || ev.title || 'Task'}`;
+                title = `${emoji} ${text || ev.title || T('Task')}`;
                 est = eventEstimate(ev);
             }
             $('hoursTitle').textContent = `⏱ ${title}`;
-            $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? ' (today)' : ''} · ` +
-                (est ? `estimate 👥 ${est.staff} × ${fmtMinutes(est.minutes)}` : 'no estimate') +
-                (ctx.kind === 'event' ? ' · these hours also show in the Labour & Cost Wizard’s Tasks tab' : '');
+            $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? T(' (today)') : ''} · ` +
+                (est ? T('estimate 👥 {staff} × {time}', { staff: est.staff, time: fmtMinutes(est.minutes) }) : T('no estimate')) +
+                (ctx.kind === 'event' ? T(' · these hours also show in the Labour & Cost Wizard’s Tasks tab') : '');
             const list = $('hoursList');
             list.innerHTML = '';
             const entries = ctxEntries(ctx), removed = ctxRemoved(ctx);
-            if (!entries.length && !removed.length) list.appendChild(mutedLine('No hours logged for this day yet.'));
+            if (!entries.length && !removed.length) list.appendChild(mutedLine(T('No hours logged for this day yet.')));
             entries.forEach((e, i) => list.appendChild(makeHoursEntry(e, i, null)));
             removed.forEach(a => list.appendChild(makeHoursEntry(a.entry || {}, -1, a)));
             const total = liveHours(entries);
-            $('hoursTotal').textContent = total > 0 ? `Total ${fmtHoursShort(total)}${est ? ` · estimate ${fmtHoursShort(est.staff * est.minutes / 60)}` : ''}` : '';
+            $('hoursTotal').textContent = total > 0 ? T('Total {h}', { h: fmtHoursShort(total) }) + (est ? T(' · estimate {h}', { h: fmtHoursShort(est.staff * est.minutes / 60) }) : '') : '';
             $('hoursNote').textContent = DeviceView.building
-                ? 'You can remove an entry on the day you logged it. After that, ask the office.'
-                : 'Office: an entry removed after its day is kept on record.';
+                ? T('You can remove an entry on the day you logged it. After that, ask the office.')
+                : T('Office: an entry removed after its day is kept on record.');
         }
 
         // One entry; `removal` is its record in the adjustments log when the office removed it
@@ -2511,7 +2652,7 @@
             row.className = 'hours-entry' + (removal || e.removedAt ? ' removed' : '');
             const who = document.createElement('span');
             who.className = 'who';
-            who.textContent = `${e.employee || e.temp || '?'}${e.temp != null ? ' (not on roster)' : ''}`;
+            who.textContent = `${e.employee || e.temp || '?'}${e.temp != null ? T(' (not on roster)') : ''}`;
             const hrs = document.createElement('span');
             hrs.className = 'hrs';
             hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
@@ -2522,17 +2663,17 @@
                 del.type = 'button';
                 del.className = 'hours-del';
                 del.textContent = '✕';
-                del.title = 'Remove this entry';
+                del.title = T('Remove this entry');
                 del.addEventListener('click', () => removeHours(index));
                 row.appendChild(del);
             }
             const when = document.createElement('span');
             when.className = 'when';
-            const stamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            const parts = [e.at ? `Logged ${stamp(e.at)}` : 'Entered in the Labour & Cost Wizard'];
-            if (e.editedAt) parts.push(`signed for ${fmtHoursShort(Number(e.signedHours) || 0)}, changed in the Labour & Cost Wizard ${stamp(e.editedAt)}`);
+            const stamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            const parts = [e.at ? T('Logged {when}', { when: stamp(e.at) }) : T('Entered in the Labour & Cost Wizard')];
+            if (e.editedAt) parts.push(T('signed for {h}, changed in the Labour & Cost Wizard {when}', { h: fmtHoursShort(Number(e.signedHours) || 0), when: stamp(e.editedAt) }));
             const gone = removal?.at || e.removedAt;
-            if (gone) parts.push(`removed by the office ${stamp(gone)}`);
+            if (gone) parts.push(T('removed by the office {when}', { when: stamp(gone) }));
             when.textContent = parts.join(' · ');
             row.appendChild(when);
             return row;
@@ -2544,7 +2685,7 @@
             svg.setAttribute('viewBox', '0 0 100 30');
             svg.setAttribute('preserveAspectRatio', 'none');
             svg.setAttribute('role', 'img');
-            svg.setAttribute('aria-label', `Initials of ${ini?.name || 'unknown'}`);
+            svg.setAttribute('aria-label', T('Initials of {name}', { name: ini?.name || T('unknown') }));
             for (const st of ini?.strokes || []) {
                 const pts = [];
                 for (let i = 0; i + 1 < st.length; i += 2) pts.push(`${(st[i] * 100).toFixed(1)},${(st[i + 1] * 30).toFixed(1)}`);
@@ -2625,12 +2766,12 @@
             const ctx = hoursCtx;
             const whoVal = $('hoursWho').value, isTemp = whoVal === '__other';
             const name = isTemp ? $('hoursOther').value.trim() : whoVal;
-            if (!name) { showToast(isTemp ? 'Type the name of who worked on it' : 'Pick who worked on it'); return; }
+            if (!name) { showToast(isTemp ? T('Type the name of who worked on it') : T('Pick who worked on it')); return; }
             const h = Math.max(0, parseInt($('hoursH').value, 10) || 0), m = Math.max(0, parseInt($('hoursM').value, 10) || 0);
             const hours = h + m / 60;
-            if (hours <= 0) { showToast('Enter the hours and minutes worked'); return; }
-            if (hours > 16) { showToast('That’s more than 16 hours — check the entry'); return; }
-            if (!padStrokes.length) { showToast('Draw your initials to sign the entry'); return; }
+            if (hours <= 0) { showToast(T('Enter the hours and minutes worked')); return; }
+            if (hours > 16) { showToast(T('That’s more than 16 hours — check the entry')); return; }
+            if (!padStrokes.length) { showToast(T('Draw your initials to sign the entry')); return; }
             const wage = isTemp ? parseFloat($('hoursWage').value) : NaN;
             if (ctx.kind === 'chore' && !DB.ensureStructure()._DailyWizard.buildings[ctx.buildingId]) return;
             ctxEntries(ctx, true).push({
@@ -2650,7 +2791,7 @@
             drawPad();
             renderHours();
             renderAll();
-            showToast(`Logged ${fmtHoursShort(hours)} for ${name}`);
+            showToast(T('Logged {h} for {name}', { h: fmtHoursShort(hours), name }));
         }
 
         function removeHours(index) {
@@ -2659,7 +2800,7 @@
             const list = ctxEntries(ctx);
             const e = list[index];
             if (!e || !canRemoveEntry(e)) return;
-            if (!confirm(`Remove ${fmtHoursShort(Number(e.hours) || 0)} logged by ${e.employee || e.temp}?`)) return;
+            if (!confirm(T('Remove {h} logged by {name}?', { h: fmtHoursShort(Number(e.hours) || 0), name: e.employee || e.temp }))) return;
             const sameDay = loggedToday(e);
             list.splice(index, 1);
             if (!sameDay) {
@@ -2676,7 +2817,7 @@
             notifySitkaTools();
             renderHours();
             renderAll();
-            showToast(sameDay ? 'Entry removed' : 'Entry removed — kept on record as an office adjustment');
+            showToast(sameDay ? T('Entry removed') : T('Entry removed — kept on record as an office adjustment'));
         }
 
         // ---- ✅ Mark done — the floor manager signs a crop / equipment task off as done ----
@@ -2690,8 +2831,8 @@
         let doneCtx = null;     // { eventId, buildingId } while the Mark done view is open
         let doneStrokes = [];   // the floor manager's initials being drawn
         const doneEvent = () => doneCtx ? DB.calendarEvents.find(e => e.id === doneCtx.eventId) || null : null;
-        const deviceName = by => by === 'office' ? 'the office' : `the ${DB.buildings[by]?.name || by} device`;
-        const doneStamp = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        const deviceName = by => by === 'office' ? T('the office') : T('the {name} device', { name: DB.buildings[by]?.name || by });
+        const doneStamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
         function floorManagers() {
             const emps = DB.data?._EmployeeWizard?.employees || {};
@@ -2706,9 +2847,9 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'done-btn' + (done ? ' done' : '');
-            btn.textContent = done ? '✅ Done' : '✍️ Mark done';
-            btn.title = done ? (sign?.name ? `Signed off by ${sign.name}${sign.at ? ', ' + doneStamp(sign.at) : ''}` : 'Marked done in SitkaTools or the Labour & Cost Wizard (not signed)')
-                : 'Floor manager: sign this task off as done';
+            btn.textContent = done ? T('✅ Done') : T('✍️ Mark done');
+            btn.title = done ? (sign?.name ? (sign.at ? T('Signed off by {name}, {when}', { name: sign.name, when: doneStamp(sign.at) }) : T('Signed off by {name}', { name: sign.name })) : T('Marked done in SitkaTools or the Labour & Cost Wizard (not signed)'))
+                : T('Floor manager: sign this task off as done');
             btn.disabled = !done && selectedDateStr() > todayStr();
             btn.addEventListener('click', (e) => { e.stopPropagation(); openDone(ev.id, buildingId); });
             return btn;
@@ -2722,9 +2863,9 @@
             const who = $('doneWho');
             who.innerHTML = '';
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
-            add('', '— Pick the floor manager —');
+            add('', T('— Pick the floor manager —'));
             for (const n of fm.names) add(n, n);
-            $('doneWhoNote').textContent = fm.everyone ? 'No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.' : '';
+            $('doneWhoNote').textContent = fm.everyone ? T('No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.') : '';
             renderDone();
             $('doneOverlay').classList.add('open');
             sizePad('donePad');
@@ -2740,17 +2881,17 @@
             const ev = doneEvent();
             if (!ev) { if (doneCtx) closeDone(); return; }
             const { emoji, text } = eventEmojiAndText(ev.title);
-            $('doneTitle').textContent = `✅ ${emoji} ${text || ev.title || 'Task'}`;
+            $('doneTitle').textContent = `✅ ${emoji} ${text || ev.title || T('Task')}`;
             const due = ev.endDate && ev.endDate !== ev.date ? `${shortDate(ev.date)} – ${shortDate(ev.endDate)}` : shortDate(ev.date);
-            $('doneSub').textContent = `${DB.buildings[doneCtx.buildingId]?.name || doneCtx.buildingId} · due ${due}`;
+            $('doneSub').textContent = T('{building} · due {due}', { building: DB.buildings[doneCtx.buildingId]?.name || doneCtx.buildingId, due });
             const status = $('doneStatus');
             status.innerHTML = '';
             const done = ev.completed === true;
             $('doneForm').hidden = done;
             $('doneBtn').hidden = done;
             if (!done) {
-                status.appendChild(mutedLine('Not done yet. The floor manager picks their name and draws their initials to sign it off.'));
-                $('doneNote').textContent = 'Signing it off takes it off ⏰ Still open. Hours can still be logged on it.';
+                status.appendChild(mutedLine(T('Not done yet. The floor manager picks their name and draws their initials to sign it off.')));
+                $('doneNote').textContent = T('Signing it off takes it off ⏰ Still open. Hours can still be logged on it.');
                 return;
             }
             const sign = ev.completedBy;
@@ -2758,7 +2899,7 @@
             row.className = 'hours-entry';
             const who = document.createElement('span');
             who.className = 'who';
-            who.textContent = sign?.name ? `✅ Signed off by ${sign.name}` : '✅ Marked done in SitkaTools or the Labour & Cost Wizard';
+            who.textContent = sign?.name ? T('✅ Signed off by {name}', { name: sign.name }) : T('✅ Marked done in SitkaTools or the Labour & Cost Wizard');
             row.appendChild(who);
             if (sign?.initials?.strokes?.length) row.appendChild(initialsSvg(sign.initials));
             if (canReopen(ev)) {
@@ -2766,26 +2907,26 @@
                 reopen.type = 'button';
                 reopen.className = 'btn btn-secondary';
                 reopen.id = 'doneReopenBtn';
-                reopen.textContent = 'Reopen';
+                reopen.textContent = T('Reopen');
                 reopen.addEventListener('click', reopenDone);
                 row.appendChild(reopen);
             }
             const when = document.createElement('span');
             when.className = 'when';
-            when.textContent = sign?.at ? `${doneStamp(sign.at)} on ${deviceName(sign.by)}` : 'Not signed';
+            when.textContent = sign?.at ? T('{when} on {device}', { when: doneStamp(sign.at), device: deviceName(sign.by) }) : T('Not signed');
             row.appendChild(when);
             status.appendChild(row);
             $('doneNote').textContent = DeviceView.building
-                ? 'You can reopen a sign-off on the day it was made. After that, ask the office.'
-                : 'Office: a sign-off reopened after its day is kept on record.';
+                ? T('You can reopen a sign-off on the day it was made. After that, ask the office.')
+                : T('Office: a sign-off reopened after its day is kept on record.');
         }
 
         function markDone() {
             const ev = doneEvent();
             if (!ev || ev.completed === true || selectedDateStr() > todayStr()) return;
             const name = $('doneWho').value;
-            if (!name) { showToast('Pick the floor manager'); return; }
-            if (!doneStrokes.length) { showToast('The floor manager draws their initials to sign it off'); return; }
+            if (!name) { showToast(T('Pick the floor manager')); return; }
+            if (!doneStrokes.length) { showToast(T('The floor manager draws their initials to sign it off')); return; }
             ev.completed = true;
             ev.completedBy = {
                 name, initials: { name, strokes: doneStrokes.map(st => st.slice()) },
@@ -2794,7 +2935,7 @@
             notifySitkaTools();
             closeDone();
             renderAll();
-            showToast(`Marked done — signed off by ${name}`);
+            showToast(T('Marked done — signed off by {name}', { name }));
         }
 
         function reopenDone() {
@@ -2802,7 +2943,7 @@
             if (!ev || ev.completed !== true || !canReopen(ev)) return;
             const sign = ev.completedBy;
             const { text } = eventEmojiAndText(ev.title);
-            if (!confirm(`Reopen “${text || ev.title || 'this task'}”?${sign?.name ? ` The sign-off by ${sign.name} is removed.` : ''}`)) return;
+            if (!confirm(T('Reopen “{task}”?', { task: text || ev.title || T('this task') }) + (sign?.name ? T(' The sign-off by {name} is removed.', { name: sign.name }) : ''))) return;
             const sameDay = !!sign?.at && dateToStr(new Date(sign.at)) === todayStr();
             ev.completed = false;
             delete ev.completedBy;
@@ -2818,7 +2959,7 @@
             notifySitkaTools();
             renderDone();
             renderAll();
-            showToast(sameDay ? 'Reopened' : 'Reopened — the sign-off is kept on record as an office adjustment');
+            showToast(sameDay ? T('Reopened') : T('Reopened — the sign-off is kept on record as an office adjustment'));
         }
 
         // ---- Views ----
@@ -2835,15 +2976,15 @@
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.className = 'btn btn-primary';
-            addBtn.textContent = '+ Add Task';
+            addBtn.textContent = T('+ Add Task');
             addBtn.addEventListener('click', () => openTaskEditor(buildingId));
             addBar.appendChild(addBtn);
             container.appendChild(addBar);
 
             if (allTasks.length === 0) {
-                container.appendChild(mutedLine(`No daily tasks defined for ${b?.name || buildingId} yet.`));
+                container.appendChild(mutedLine(T('No daily tasks defined for {building} yet.', { building: b?.name || buildingId })));
             } else if (tasks.length === 0) {
-                container.appendChild(mutedLine('No daily tasks scheduled for this date.'));
+                container.appendChild(mutedLine(T('No daily tasks scheduled for this date.')));
             } else {
                 tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true)));
             }
@@ -2876,7 +3017,7 @@
                 section.appendChild(header);
 
                 if (tasks.length === 0) {
-                    section.appendChild(mutedLine('No daily tasks for this date.'));
+                    section.appendChild(mutedLine(T('No daily tasks for this date.')));
                 } else {
                     tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, null, null, false)));
                 }
@@ -2892,7 +3033,7 @@
                 section.className = 'building-section';
                 const header = document.createElement('div');
                 header.className = 'building-section-header muted';
-                header.textContent = '📌 Unassigned / General';
+                header.textContent = T('📌 Unassigned / General');
                 section.appendChild(header);
                 for (const ev of unassigned) section.appendChild(makeEventRow(ev));
                 container.appendChild(section);
@@ -2912,8 +3053,8 @@
                 div.className = 'empty-state';
                 div.innerHTML = `
                     <div class="empty-icon">📂</div>
-                    <div class="empty-title">No database loaded</div>
-                    <div class="empty-sub">Waiting for SitkaTools to deliver the database…</div>
+                    <div class="empty-title">${T('No database loaded')}</div>
+                    <div class="empty-sub">${T('Waiting for SitkaTools to deliver the database…')}</div>
                 `;
                 container.appendChild(div);
                 return;
@@ -2931,11 +3072,199 @@
             renderList();
         }
 
+        // ---- 🌐 The screen's own text in French, Spanish, Vietnamese and Simplified Chinese, keyed by the English ----
+        // Written for this tool, not by a native speaker: have each language checked before relying on it. A string
+        // missing here shows in English. Names (SitkaTools, Labour & Cost Wizard, Floor manager in that tool) stay as they are.
+        const UI_TEXT = {
+            "🌐 Language": { fr: "🌐 Langue", es: "🌐 Idioma", vi: "🌐 Ngôn ngữ", zh: "🌐 语言" },
+            "Building": { fr: "Bâtiment", es: "Edificio", vi: "Tòa nhà", zh: "楼栋" },
+            "📅 Date": { fr: "📅 Date", es: "📅 Fecha", vi: "📅 Ngày", zh: "📅 日期" },
+            "— All Buildings —": { fr: "— Tous les bâtiments —", es: "— Todos los edificios —", vi: "— Tất cả tòa nhà —", zh: "— 所有楼栋 —" },
+            "Unnamed": { fr: "Sans nom", es: "Sin nombre", vi: "Chưa đặt tên", zh: "未命名" },
+            "⚠️ not in database": { fr: "⚠️ absent de la base de données", es: "⚠️ no está en la base de datos", vi: "⚠️ không có trong cơ sở dữ liệu", zh: "⚠️ 不在数据库中" },
+            "Reset Day": { fr: "Réinitialiser la journée", es: "Reiniciar el día", vi: "Đặt lại ngày", zh: "重置当天" },
+            "Close Tool": { fr: "Fermer l’outil", es: "Cerrar la herramienta", vi: "Đóng công cụ", zh: "关闭工具" },
+            "📋 Using the database open in SitkaTools. ": { fr: "📋 Base de données ouverte dans SitkaTools. ", es: "📋 Usando la base de datos abierta en SitkaTools. ", vi: "📋 Đang dùng cơ sở dữ liệu mở trong SitkaTools. ", zh: "📋 正在使用 SitkaTools 中打开的数据库。" },
+            "Go back to SitkaTools to save": { fr: "Retourner à SitkaTools pour enregistrer", es: "Volver a SitkaTools para guardar", vi: "Quay lại SitkaTools để lưu", zh: "返回 SitkaTools 保存" },
+            "Database loaded from SitkaTools": { fr: "Base de données chargée depuis SitkaTools", es: "Base de datos cargada desde SitkaTools", vi: "Đã tải cơ sở dữ liệu từ SitkaTools", zh: "已从 SitkaTools 加载数据库" },
+            "No database loaded. Waiting for SitkaTools…": { fr: "Aucune base de données. En attente de SitkaTools…", es: "No hay base de datos. Esperando a SitkaTools…", vi: "Chưa có cơ sở dữ liệu. Đang chờ SitkaTools…", zh: "未加载数据库。正在等待 SitkaTools…" },
+            "No database loaded": { fr: "Aucune base de données", es: "No hay base de datos", vi: "Chưa có cơ sở dữ liệu", zh: "未加载数据库" },
+            "Waiting for SitkaTools to deliver the database…": { fr: "En attente de la base de données de SitkaTools…", es: "Esperando la base de datos de SitkaTools…", vi: "Đang chờ SitkaTools gửi cơ sở dữ liệu…", zh: "正在等待 SitkaTools 发送数据库…" },
+            "🏢 {n} building · 📝 {tasks} today · ✅ {done}/{tasks} done": { fr: "🏢 {n} bâtiment · 📝 {tasks} aujourd’hui · ✅ {done}/{tasks} faites", es: "🏢 {n} edificio · 📝 {tasks} hoy · ✅ {done}/{tasks} hechas", vi: "🏢 {n} tòa nhà · 📝 {tasks} việc hôm nay · ✅ {done}/{tasks} đã xong", zh: "🏢 {n} 个楼栋 · 📝 今天 {tasks} 项 · ✅ 已完成 {done}/{tasks}" },
+            "🏢 {n} buildings · 📝 {tasks} today · ✅ {done}/{tasks} done": { fr: "🏢 {n} bâtiments · 📝 {tasks} aujourd’hui · ✅ {done}/{tasks} faites", es: "🏢 {n} edificios · 📝 {tasks} hoy · ✅ {done}/{tasks} hechas", vi: "🏢 {n} tòa nhà · 📝 {tasks} việc hôm nay · ✅ {done}/{tasks} đã xong", zh: "🏢 {n} 个楼栋 · 📝 今天 {tasks} 项 · ✅ 已完成 {done}/{tasks}" },
+            "Clear all {n} check-off(s) for {date}?": { fr: "Effacer les {n} cases cochées du {date} ?", es: "¿Borrar las {n} marcas del {date}?", vi: "Xóa tất cả {n} dấu tích của ngày {date}?", zh: "清除 {date} 的全部 {n} 个勾选？" },
+            "+ Add Task": { fr: "+ Ajouter une tâche", es: "+ Añadir tarea", vi: "+ Thêm công việc", zh: "+ 添加任务" },
+            "No daily tasks defined for {building} yet.": { fr: "Aucune tâche quotidienne pour {building} pour l’instant.", es: "Aún no hay tareas diarias para {building}.", vi: "Chưa có công việc hằng ngày cho {building}.", zh: "{building} 还没有每日任务。" },
+            "No daily tasks scheduled for this date.": { fr: "Aucune tâche quotidienne prévue à cette date.", es: "No hay tareas diarias programadas para esta fecha.", vi: "Không có công việc hằng ngày nào cho ngày này.", zh: "这一天没有安排每日任务。" },
+            "No daily tasks for this date.": { fr: "Aucune tâche quotidienne à cette date.", es: "No hay tareas diarias para esta fecha.", vi: "Không có công việc hằng ngày cho ngày này.", zh: "这一天没有每日任务。" },
+            "📌 Unassigned / General": { fr: "📌 Non attribué / Général", es: "📌 Sin asignar / General", vi: "📌 Chưa phân bổ / Chung", zh: "📌 未分配 / 通用" },
+            "Move up": { fr: "Monter", es: "Subir", vi: "Lên", zh: "上移" },
+            "Move down": { fr: "Descendre", es: "Bajar", vi: "Xuống", zh: "下移" },
+            "(untitled event)": { fr: "(événement sans titre)", es: "(evento sin título)", vi: "(sự kiện chưa có tên)", zh: "（无标题事件）" },
+            "Staff needed (estimate)": { fr: "Personnel nécessaire (estimation)", es: "Personal necesario (estimado)", vi: "Số người cần (ước tính)", zh: "所需人数（估计）" },
+            "Estimated time for the day": { fr: "Temps estimé pour la journée", es: "Tiempo estimado para el día", vi: "Thời gian ước tính trong ngày", zh: "当天的预计时间" },
+            "due {date} · {n} day overdue": { fr: "prévu le {date} · {n} jour de retard", es: "para el {date} · {n} día de retraso", vi: "hạn {date} · trễ {n} ngày", zh: "截止 {date} · 逾期 {n} 天" },
+            "due {date} · {n} days overdue": { fr: "prévu le {date} · {n} jours de retard", es: "para el {date} · {n} días de retraso", vi: "hạn {date} · trễ {n} ngày", zh: "截止 {date} · 逾期 {n} 天" },
+            "Scheduled today ({n})": { fr: "Prévu aujourd’hui ({n})", es: "Programado para hoy ({n})", vi: "Lịch hôm nay ({n})", zh: "今天的安排（{n}）" },
+            "⏰ Still open ({n})": { fr: "⏰ Pas encore terminé ({n})", es: "⏰ Aún pendiente ({n})", vi: "⏰ Chưa xong ({n})", zh: "⏰ 尚未完成（{n}）" },
+            "Tasks whose day has passed and that the floor manager hasn’t marked done yet": { fr: "Tâches dont la date est passée et que le superviseur n’a pas encore marquées comme terminées", es: "Tareas cuya fecha ya pasó y que el supervisor aún no ha marcado como hechas", vi: "Công việc đã quá ngày mà tổ trưởng chưa đánh dấu xong", zh: "日期已过、现场主管尚未标记完成的任务" },
+            "Show fewer": { fr: "Afficher moins", es: "Mostrar menos", vi: "Thu gọn", zh: "收起" },
+            "+ {n} more": { fr: "+ {n} de plus", es: "+ {n} más", vi: "+ {n} việc nữa", zh: "+ 另外 {n} 项" },
+            "Upcoming ({n})": { fr: "À venir ({n})", es: "Próximamente ({n})", vi: "Sắp tới ({n})", zh: "即将进行（{n}）" },
+            "Not translated yet — showing English": { fr: "Pas encore traduit — affiché en anglais", es: "Aún sin traducir — se muestra en inglés", vi: "Chưa dịch — đang hiển thị tiếng Anh", zh: "尚未翻译 — 显示英文" },
+            "{h}h {m}m": { fr: "{h} h {m} min", es: "{h} h {m} min", vi: "{h} giờ {m} phút", zh: "{h}小时{m}分钟" },
+            "{h}h": { fr: "{h} h", es: "{h} h", vi: "{h} giờ", zh: "{h}小时" },
+            "{m}m": { fr: "{m} min", es: "{m} min", vi: "{m} phút", zh: "{m}分钟" },
+            "Add Task": { fr: "Ajouter une tâche", es: "Añadir tarea", vi: "Thêm công việc", zh: "添加任务" },
+            "Edit Task — {name}": { fr: "Modifier la tâche — {name}", es: "Editar tarea — {name}", vi: "Sửa công việc — {name}", zh: "编辑任务 — {name}" },
+            "Emoji": { fr: "Émoji", es: "Emoji", vi: "Biểu tượng", zh: "表情符号" },
+            "Search (water, clean, gloves…)": { fr: "Rechercher en anglais (water, clean, gloves…)", es: "Buscar en inglés (water, clean, gloves…)", vi: "Tìm bằng tiếng Anh (water, clean, gloves…)", zh: "用英文搜索（water、clean、gloves…）" },
+            "Smileys": { fr: "Émoticônes", es: "Caras", vi: "Mặt cười", zh: "笑脸" },
+            "People & Hands": { fr: "Personnes et mains", es: "Personas y manos", vi: "Người và bàn tay", zh: "人物和手势" },
+            "Animals & Nature": { fr: "Animaux et nature", es: "Animales y naturaleza", vi: "Động vật và thiên nhiên", zh: "动物和自然" },
+            "Food & Drink": { fr: "Nourriture et boissons", es: "Comida y bebida", vi: "Đồ ăn và thức uống", zh: "食物和饮料" },
+            "Objects": { fr: "Objets", es: "Objetos", vi: "Đồ vật", zh: "物品" },
+            "Activities": { fr: "Activités", es: "Actividades", vi: "Hoạt động", zh: "活动" },
+            "Travel": { fr: "Voyages", es: "Viajes", vi: "Du lịch", zh: "旅行" },
+            "Symbols": { fr: "Symboles", es: "Símbolos", vi: "Ký hiệu", zh: "符号" },
+            "No matching emoji.": { fr: "Aucun émoji trouvé.", es: "No se encontró ningún emoji.", vi: "Không tìm thấy biểu tượng nào.", zh: "没有匹配的表情符号。" },
+            "Name *": { fr: "Nom en anglais *", es: "Nombre en inglés *", vi: "Tên bằng tiếng Anh *", zh: "英文名称 *" },
+            "e.g., Water plants": { fr: "p. ex. Water plants (en anglais)", es: "p. ej. Water plants (en inglés)", vi: "vd: Water plants (tiếng Anh)", zh: "例如：Water plants（英文）" },
+            "Name in {language}": { fr: "Nom ({language})", es: "Nombre ({language})", vi: "Tên ({language})", zh: "名称（{language}）" },
+            "Leave blank to show the English name": { fr: "Laisser vide pour afficher le nom anglais", es: "Déjelo vacío para mostrar el nombre en inglés", vi: "Để trống để hiển thị tên tiếng Anh", zh: "留空则显示英文名称" },
+            "Estimated time (min)": { fr: "Temps estimé (min)", es: "Tiempo estimado (min)", vi: "Thời gian ước tính (phút)", zh: "预计时间（分钟）" },
+            "Staff required": { fr: "Personnel requis", es: "Personal necesario", vi: "Số người cần", zh: "所需人数" },
+            "Weekdays": { fr: "Jours de la semaine", es: "Días de la semana", vi: "Các ngày trong tuần", zh: "星期" },
+            "Also on day(s) of month (1–31, comma-separated)": { fr: "Aussi certains jours du mois (1–31, séparés par des virgules)", es: "También ciertos días del mes (1–31, separados por comas)", vi: "Thêm các ngày trong tháng (1–31, cách nhau bằng dấu phẩy)", zh: "每月另外的日期（1–31，用逗号分隔）" },
+            "e.g., 1, 15": { fr: "p. ex. 1, 15", es: "p. ej. 1, 15", vi: "vd: 1, 15", zh: "例如：1, 15" },
+            "1st & 15th": { fr: "Le 1er et le 15", es: "El 1 y el 15", vi: "Ngày 1 và 15", zh: "1日和15日" },
+            "1st only": { fr: "Le 1er seulement", es: "Solo el 1", vi: "Chỉ ngày 1", zh: "仅1日" },
+            "Clear": { fr: "Effacer", es: "Borrar", vi: "Xóa", zh: "清除" },
+            "Cancel": { fr: "Annuler", es: "Cancelar", vi: "Hủy", zh: "取消" },
+            "Save Task": { fr: "Enregistrer la tâche", es: "Guardar tarea", vi: "Lưu công việc", zh: "保存任务" },
+            "Task name is required": { fr: "Le nom de la tâche (en anglais) est obligatoire", es: "El nombre de la tarea (en inglés) es obligatorio", vi: "Cần nhập tên công việc (tiếng Anh)", zh: "必须填写任务名称（英文）" },
+            "Estimated time must be at least 5 minutes": { fr: "Le temps estimé doit être d’au moins 5 minutes", es: "El tiempo estimado debe ser de al menos 5 minutos", vi: "Thời gian ước tính phải ít nhất 5 phút", zh: "预计时间至少为 5 分钟" },
+            "Staff required must be at least 1": { fr: "Il faut au moins 1 personne", es: "Se necesita al menos 1 persona", vi: "Cần ít nhất 1 người", zh: "所需人数至少为 1" },
+            "Pick at least one weekday or one day-of-month": { fr: "Choisissez au moins un jour de la semaine ou un jour du mois", es: "Elija al menos un día de la semana o un día del mes", vi: "Chọn ít nhất một ngày trong tuần hoặc một ngày trong tháng", zh: "请至少选择一个星期几或每月的某一天" },
+            "Task updated": { fr: "Tâche mise à jour", es: "Tarea actualizada", vi: "Đã cập nhật công việc", zh: "任务已更新" },
+            "Task added": { fr: "Tâche ajoutée", es: "Tarea añadida", vi: "Đã thêm công việc", zh: "任务已添加" },
+            "Steps": { fr: "Étapes", es: "Pasos", vi: "Các bước", zh: "步骤" },
+            "🔄 Refresh images": { fr: "🔄 Actualiser les images", es: "🔄 Actualizar imágenes", vi: "🔄 Tải lại hình ảnh", zh: "🔄 刷新图片" },
+            "Delete Task": { fr: "Supprimer la tâche", es: "Eliminar tarea", vi: "Xóa công việc", zh: "删除任务" },
+            "Edit Task": { fr: "Modifier la tâche", es: "Editar tarea", vi: "Sửa công việc", zh: "编辑任务" },
+            "≈ {h} h labour": { fr: "≈ {h} h de travail", es: "≈ {h} h de trabajo", vi: "≈ {h} giờ công", zh: "≈ {h} 工时" },
+            "Every day": { fr: "Tous les jours", es: "Todos los días", vi: "Hằng ngày", zh: "每天" },
+            "{list} of each month": { fr: "le {list} de chaque mois", es: "el {list} de cada mes", vi: "ngày {list} hằng tháng", zh: "每月{list}日" },
+            " and ": { fr: " et ", es: " y ", vi: " và ", zh: "；" },
+            "Never": { fr: "Jamais", es: "Nunca", vi: "Không bao giờ", zh: "从不" },
+            "🖼 {file} not found": { fr: "🖼 {file} introuvable", es: "🖼 {file} no encontrado", vi: "🖼 Không tìm thấy {file}", zh: "🖼 未找到 {file}" },
+            "(tap to add instruction)": { fr: "(touchez pour ajouter une consigne)", es: "(toque para añadir una instrucción)", vi: "(chạm để thêm hướng dẫn)", zh: "（点击添加说明）" },
+            "Step instruction…": { fr: "Consigne de l’étape…", es: "Instrucción del paso…", vi: "Hướng dẫn của bước…", zh: "步骤说明…" },
+            "Step in {language}…": { fr: "Traduction ({language})…", es: "Traducción ({language})…", vi: "Bản dịch ({language})…", zh: "译文（{language}）…" },
+            "English: {text}": { fr: "Anglais : {text}", es: "Inglés: {text}", vi: "Tiếng Anh: {text}", zh: "英文：{text}" },
+            "Move step up": { fr: "Monter l’étape", es: "Subir el paso", vi: "Đưa bước lên", zh: "上移步骤" },
+            "Move step down": { fr: "Descendre l’étape", es: "Bajar el paso", vi: "Đưa bước xuống", zh: "下移步骤" },
+            "Delete step": { fr: "Supprimer l’étape", es: "Eliminar el paso", vi: "Xóa bước", zh: "删除步骤" },
+            "Step not saved — the task was changed elsewhere": { fr: "Étape non enregistrée — la tâche a été modifiée ailleurs", es: "Paso no guardado — la tarea se cambió en otro lugar", vi: "Chưa lưu bước — công việc đã bị thay đổi ở nơi khác", zh: "步骤未保存 — 该任务已在别处被修改" },
+            "Step updated": { fr: "Étape mise à jour", es: "Paso actualizado", vi: "Đã cập nhật bước", zh: "步骤已更新" },
+            "Step text cleared": { fr: "Texte de l’étape effacé", es: "Texto del paso borrado", vi: "Đã xóa nội dung bước", zh: "步骤内容已清除" },
+            "Translation saved": { fr: "Traduction enregistrée", es: "Traducción guardada", vi: "Đã lưu bản dịch", zh: "译文已保存" },
+            "Translation removed — the English shows": { fr: "Traduction supprimée — l’anglais s’affiche", es: "Traducción eliminada — se muestra el inglés", vi: "Đã xóa bản dịch — hiển thị tiếng Anh", zh: "译文已删除 — 将显示英文" },
+            "No steps yet — add the first one below.": { fr: "Pas encore d’étapes — ajoutez la première ci-dessous.", es: "Aún no hay pasos — añada el primero abajo.", vi: "Chưa có bước nào — hãy thêm bước đầu tiên bên dưới.", zh: "还没有步骤 — 请在下方添加第一步。" },
+            "+ Add Step": { fr: "+ Ajouter une étape", es: "+ Añadir paso", vi: "+ Thêm bước", zh: "+ 添加步骤" },
+            "Add new steps in English, then translate them.": { fr: "Ajoutez les nouvelles étapes en anglais, puis traduisez-les.", es: "Añada los pasos nuevos en inglés y luego tradúzcalos.", vi: "Hãy thêm bước mới bằng tiếng Anh, sau đó dịch.", zh: "请先用英文添加新步骤，再进行翻译。" },
+            "Step deleted": { fr: "Étape supprimée", es: "Paso eliminado", vi: "Đã xóa bước", zh: "步骤已删除" },
+            "No steps to refresh": { fr: "Aucune étape à actualiser", es: "No hay pasos para actualizar", vi: "Không có bước nào để tải lại", zh: "没有可刷新的步骤" },
+            "Step pictures refreshed": { fr: "Images des étapes actualisées", es: "Imágenes de los pasos actualizadas", vi: "Đã tải lại hình các bước", zh: "步骤图片已刷新" },
+            "Delete task \"{name}\" ({code})?\nThis removes it from _DailyWizard.": { fr: "Supprimer la tâche « {name} » ({code}) ?\nElle sera retirée des tâches quotidiennes.", es: "¿Eliminar la tarea «{name}» ({code})?\nSe quitará de las tareas diarias.", vi: "Xóa công việc \"{name}\" ({code})?\nCông việc sẽ bị xóa khỏi danh sách hằng ngày.", zh: "删除任务“{name}”（{code}）？\n它将从每日任务中移除。" },
+            "Task deleted": { fr: "Tâche supprimée", es: "Tarea eliminada", vi: "Đã xóa công việc", zh: "任务已删除" },
+            "⏱ Log": { fr: "⏱ Heures", es: "⏱ Registrar", vi: "⏱ Ghi giờ", zh: "⏱ 记录" },
+            "Hours can only be logged for today or earlier": { fr: "Les heures ne peuvent être saisies que pour aujourd’hui ou avant", es: "Solo se pueden registrar horas de hoy o de días anteriores", vi: "Chỉ có thể ghi giờ cho hôm nay hoặc trước đó", zh: "只能记录今天或之前的工时" },
+            "Hours logged on this — tap to review or add": { fr: "Heures saisies — touchez pour voir ou ajouter", es: "Horas registradas — toque para ver o añadir", vi: "Đã ghi giờ — chạm để xem hoặc thêm", zh: "已记录工时 — 点击查看或添加" },
+            "Log who worked on this and for how long": { fr: "Indiquez qui a travaillé et combien de temps", es: "Registre quién trabajó y cuánto tiempo", vi: "Ghi ai đã làm và làm bao lâu", zh: "记录谁做了这项工作以及用了多长时间" },
+            "Who worked on it": { fr: "Qui a fait ce travail", es: "Quién hizo el trabajo", vi: "Ai đã làm việc này", zh: "谁做了这项工作" },
+            "— Pick your name —": { fr: "— Choisissez votre nom —", es: "— Elija su nombre —", vi: "— Chọn tên của bạn —", zh: "— 选择您的名字 —" },
+            "Someone else (not on the roster)…": { fr: "Quelqu’un d’autre (pas sur la liste)…", es: "Otra persona (no está en la lista)…", vi: "Người khác (không có trong danh sách)…", zh: "其他人（不在名单上）…" },
+            "Name (not on the roster)": { fr: "Nom (pas sur la liste du personnel)", es: "Nombre (no está en la lista del personal)", vi: "Tên (không có trong danh sách nhân viên)", zh: "姓名（不在员工名单上）" },
+            "Their hourly wage, $ (optional — used for labour cost)": { fr: "Salaire horaire, $ (facultatif — pour le coût de la main-d’œuvre)", es: "Salario por hora, $ (opcional — para el costo de mano de obra)", vi: "Lương theo giờ, $ (không bắt buộc — dùng để tính chi phí nhân công)", zh: "时薪，$（可选 — 用于计算人工成本）" },
+            "Hours": { fr: "Heures", es: "Horas", vi: "Giờ", zh: "小时" },
+            "Minutes": { fr: "Minutes", es: "Minutos", vi: "Phút", zh: "分钟" },
+            "Your initials — draw them with your finger": { fr: "Vos initiales — dessinez-les avec le doigt", es: "Sus iniciales — dibújelas con el dedo", vi: "Chữ ký tắt của bạn — vẽ bằng ngón tay", zh: "您的签名（姓名缩写）— 用手指书写" },
+            "Clear initials": { fr: "Effacer les initiales", es: "Borrar iniciales", vi: "Xóa chữ ký", zh: "清除签名" },
+            "Add hours": { fr: "Ajouter les heures", es: "Añadir horas", vi: "Thêm giờ", zh: "添加工时" },
+            "Task": { fr: "Tâche", es: "Tarea", vi: "Công việc", zh: "任务" },
+            " (today)": { fr: " (aujourd’hui)", es: " (hoy)", vi: " (hôm nay)", zh: "（今天）" },
+            "estimate 👥 {staff} × {time}": { fr: "estimation 👥 {staff} × {time}", es: "estimado 👥 {staff} × {time}", vi: "ước tính 👥 {staff} × {time}", zh: "估计 👥 {staff} × {time}" },
+            "no estimate": { fr: "pas d’estimation", es: "sin estimación", vi: "chưa có ước tính", zh: "无估计" },
+            " · these hours also show in the Labour & Cost Wizard’s Tasks tab": { fr: " · ces heures apparaissent aussi dans l’onglet Tasks du Labour & Cost Wizard", es: " · estas horas también aparecen en la pestaña Tasks del Labour & Cost Wizard", vi: " · số giờ này cũng hiện trong thẻ Tasks của Labour & Cost Wizard", zh: " · 这些工时也会显示在 Labour & Cost Wizard 的 Tasks 标签中" },
+            "No hours logged for this day yet.": { fr: "Aucune heure saisie pour ce jour.", es: "Aún no hay horas registradas para este día.", vi: "Chưa ghi giờ cho ngày này.", zh: "这一天还没有记录工时。" },
+            "Total {h}": { fr: "Total {h}", es: "Total {h}", vi: "Tổng {h}", zh: "合计 {h}" },
+            " · estimate {h}": { fr: " · estimation {h}", es: " · estimado {h}", vi: " · ước tính {h}", zh: " · 估计 {h}" },
+            "You can remove an entry on the day you logged it. After that, ask the office.": { fr: "Vous pouvez supprimer une saisie le jour même. Ensuite, demandez au bureau.", es: "Puede quitar un registro el mismo día en que lo hizo. Después, pídalo a la oficina.", vi: "Bạn có thể xóa một mục trong ngày đã ghi. Sau đó, hãy nhờ văn phòng.", zh: "您可以在记录当天删除条目。之后请联系办公室。" },
+            "Office: an entry removed after its day is kept on record.": { fr: "Bureau : une saisie supprimée après son jour reste au dossier.", es: "Oficina: un registro quitado después de su día queda archivado.", vi: "Văn phòng: mục bị xóa sau ngày của nó vẫn được lưu hồ sơ.", zh: "办公室：过了当天才删除的条目会留档。" },
+            " (not on roster)": { fr: " (pas sur la liste)", es: " (no está en la lista)", vi: " (không có trong danh sách)", zh: "（不在名单上）" },
+            "Remove this entry": { fr: "Supprimer cette saisie", es: "Quitar este registro", vi: "Xóa mục này", zh: "删除此条目" },
+            "Logged {when}": { fr: "Saisi le {when}", es: "Registrado el {when}", vi: "Ghi lúc {when}", zh: "记录于 {when}" },
+            "Entered in the Labour & Cost Wizard": { fr: "Saisi dans le Labour & Cost Wizard", es: "Registrado en el Labour & Cost Wizard", vi: "Nhập trong Labour & Cost Wizard", zh: "在 Labour & Cost Wizard 中录入" },
+            "signed for {h}, changed in the Labour & Cost Wizard {when}": { fr: "signé pour {h}, modifié dans le Labour & Cost Wizard le {when}", es: "firmado por {h}, cambiado en el Labour & Cost Wizard el {when}", vi: "đã ký {h}, được sửa trong Labour & Cost Wizard lúc {when}", zh: "签名时为 {h}，于 {when} 在 Labour & Cost Wizard 中修改" },
+            "removed by the office {when}": { fr: "supprimé par le bureau le {when}", es: "quitado por la oficina el {when}", vi: "văn phòng đã xóa lúc {when}", zh: "办公室于 {when} 删除" },
+            "Initials of {name}": { fr: "Initiales de {name}", es: "Iniciales de {name}", vi: "Chữ ký tắt của {name}", zh: "{name} 的签名" },
+            "unknown": { fr: "inconnu", es: "desconocido", vi: "không rõ", zh: "未知" },
+            "Type the name of who worked on it": { fr: "Écrivez le nom de la personne qui a travaillé", es: "Escriba el nombre de quien hizo el trabajo", vi: "Nhập tên người đã làm", zh: "请输入做这项工作的人的名字" },
+            "Pick who worked on it": { fr: "Choisissez qui a travaillé", es: "Elija quién hizo el trabajo", vi: "Chọn người đã làm", zh: "请选择做这项工作的人" },
+            "Enter the hours and minutes worked": { fr: "Entrez les heures et les minutes travaillées", es: "Escriba las horas y los minutos trabajados", vi: "Nhập số giờ và phút đã làm", zh: "请输入工作的小时和分钟" },
+            "That’s more than 16 hours — check the entry": { fr: "Plus de 16 heures — vérifiez la saisie", es: "Son más de 16 horas — revise el registro", vi: "Hơn 16 giờ — hãy kiểm tra lại", zh: "超过 16 小时 — 请检查输入" },
+            "Draw your initials to sign the entry": { fr: "Dessinez vos initiales pour signer", es: "Dibuje sus iniciales para firmar", vi: "Vẽ chữ ký tắt để xác nhận", zh: "请写下签名以确认" },
+            "Logged {h} for {name}": { fr: "{h} saisies pour {name}", es: "Se registraron {h} para {name}", vi: "Đã ghi {h} cho {name}", zh: "已为 {name} 记录 {h}" },
+            "Remove {h} logged by {name}?": { fr: "Supprimer les {h} saisies par {name} ?", es: "¿Quitar las {h} registradas por {name}?", vi: "Xóa {h} do {name} ghi?", zh: "删除 {name} 记录的 {h}？" },
+            "Entry removed": { fr: "Saisie supprimée", es: "Registro quitado", vi: "Đã xóa mục", zh: "条目已删除" },
+            "Entry removed — kept on record as an office adjustment": { fr: "Saisie supprimée — conservée au dossier comme correction du bureau", es: "Registro quitado — queda archivado como ajuste de la oficina", vi: "Đã xóa mục — vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "条目已删除 — 作为办公室调整留档" },
+            "Floor manager": { fr: "Superviseur", es: "Supervisor", vi: "Tổ trưởng", zh: "现场主管" },
+            "Floor manager’s initials — draw them with your finger": { fr: "Initiales du superviseur — dessinez-les avec le doigt", es: "Iniciales del supervisor — dibújelas con el dedo", vi: "Chữ ký tắt của tổ trưởng — vẽ bằng ngón tay", zh: "现场主管签名 — 用手指书写" },
+            "✅ Mark done": { fr: "✅ Marquer comme terminé", es: "✅ Marcar como hecho", vi: "✅ Đánh dấu đã xong", zh: "✅ 标记为完成" },
+            "✅ Done": { fr: "✅ Terminé", es: "✅ Hecho", vi: "✅ Đã xong", zh: "✅ 已完成" },
+            "✍️ Mark done": { fr: "✍️ Terminer", es: "✍️ Marcar hecho", vi: "✍️ Đánh dấu xong", zh: "✍️ 标记完成" },
+            "Signed off by {name}": { fr: "Approuvé par {name}", es: "Aprobado por {name}", vi: "{name} đã ký xác nhận", zh: "由 {name} 签字确认" },
+            "Signed off by {name}, {when}": { fr: "Approuvé par {name}, {when}", es: "Aprobado por {name}, {when}", vi: "{name} đã ký xác nhận, {when}", zh: "由 {name} 于 {when} 签字确认" },
+            "Marked done in SitkaTools or the Labour & Cost Wizard (not signed)": { fr: "Marqué terminé dans SitkaTools ou le Labour & Cost Wizard (non signé)", es: "Marcado como hecho en SitkaTools o en el Labour & Cost Wizard (sin firma)", vi: "Đã đánh dấu xong trong SitkaTools hoặc Labour & Cost Wizard (chưa ký)", zh: "已在 SitkaTools 或 Labour & Cost Wizard 中标记完成（未签字）" },
+            "Floor manager: sign this task off as done": { fr: "Superviseur : approuvez cette tâche comme terminée", es: "Supervisor: apruebe esta tarea como hecha", vi: "Tổ trưởng: ký xác nhận công việc này đã xong", zh: "现场主管：签字确认此任务已完成" },
+            "— Pick the floor manager —": { fr: "— Choisissez le superviseur —", es: "— Elija al supervisor —", vi: "— Chọn tổ trưởng —", zh: "— 选择现场主管 —" },
+            "No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.": { fr: "Aucun superviseur n’est encore défini (Labour & Cost Wizard → employé → Floor manager) : tout le personnel est donc listé.", es: "Aún no hay supervisores definidos (Labour & Cost Wizard → empleado → Floor manager), así que aparece todo el personal.", vi: "Chưa đặt tổ trưởng nào (Labour & Cost Wizard → nhân viên → Floor manager), nên mọi người trong danh sách đều được hiện.", zh: "尚未设置现场主管（Labour & Cost Wizard → 员工 → Floor manager），因此列出名单上的所有人。" },
+            "{building} · due {due}": { fr: "{building} · prévu le {due}", es: "{building} · para el {due}", vi: "{building} · hạn {due}", zh: "{building} · 截止 {due}" },
+            "Not done yet. The floor manager picks their name and draws their initials to sign it off.": { fr: "Pas encore terminé. Le superviseur choisit son nom et dessine ses initiales pour approuver.", es: "Aún no está hecho. El supervisor elige su nombre y dibuja sus iniciales para aprobarlo.", vi: "Chưa xong. Tổ trưởng chọn tên và vẽ chữ ký tắt để xác nhận.", zh: "尚未完成。现场主管选择自己的名字并写下签名来确认。" },
+            "Signing it off takes it off ⏰ Still open. Hours can still be logged on it.": { fr: "Une fois approuvée, la tâche quitte ⏰ Pas encore terminé. On peut encore y saisir des heures.", es: "Al aprobarla, sale de ⏰ Aún pendiente. Todavía se pueden registrar horas.", vi: "Sau khi ký xác nhận, công việc sẽ rời khỏi ⏰ Chưa xong. Vẫn có thể ghi giờ cho việc này.", zh: "签字确认后，它会从 ⏰ 尚未完成 中移除。仍可继续记录工时。" },
+            "✅ Signed off by {name}": { fr: "✅ Approuvé par {name}", es: "✅ Aprobado por {name}", vi: "✅ {name} đã ký xác nhận", zh: "✅ 由 {name} 签字确认" },
+            "✅ Marked done in SitkaTools or the Labour & Cost Wizard": { fr: "✅ Marqué terminé dans SitkaTools ou le Labour & Cost Wizard", es: "✅ Marcado como hecho en SitkaTools o en el Labour & Cost Wizard", vi: "✅ Đã đánh dấu xong trong SitkaTools hoặc Labour & Cost Wizard", zh: "✅ 已在 SitkaTools 或 Labour & Cost Wizard 中标记完成" },
+            "Reopen": { fr: "Rouvrir", es: "Reabrir", vi: "Mở lại", zh: "重新打开" },
+            "{when} on {device}": { fr: "{when} sur {device}", es: "{when} en {device}", vi: "{when} trên {device}", zh: "{when}，在{device}上" },
+            "the office": { fr: "le bureau", es: "la oficina", vi: "văn phòng", zh: "办公室" },
+            "the {name} device": { fr: "l’appareil de {name}", es: "el dispositivo de {name}", vi: "thiết bị {name}", zh: "{name} 的设备" },
+            "Not signed": { fr: "Non signé", es: "Sin firma", vi: "Chưa ký", zh: "未签字" },
+            "You can reopen a sign-off on the day it was made. After that, ask the office.": { fr: "Vous pouvez rouvrir une approbation le jour même. Ensuite, demandez au bureau.", es: "Puede reabrir una aprobación el mismo día. Después, pídalo a la oficina.", vi: "Bạn có thể mở lại xác nhận trong ngày đã ký. Sau đó, hãy nhờ văn phòng.", zh: "您可以在签字当天重新打开。之后请联系办公室。" },
+            "Office: a sign-off reopened after its day is kept on record.": { fr: "Bureau : une approbation rouverte après son jour reste au dossier.", es: "Oficina: una aprobación reabierta después de su día queda archivada.", vi: "Văn phòng: xác nhận bị mở lại sau ngày của nó vẫn được lưu hồ sơ.", zh: "办公室：过了当天才重新打开的签字会留档。" },
+            "Pick the floor manager": { fr: "Choisissez le superviseur", es: "Elija al supervisor", vi: "Chọn tổ trưởng", zh: "请选择现场主管" },
+            "The floor manager draws their initials to sign it off": { fr: "Le superviseur dessine ses initiales pour approuver", es: "El supervisor dibuja sus iniciales para aprobar", vi: "Tổ trưởng vẽ chữ ký tắt để xác nhận", zh: "现场主管需写下签名来确认" },
+            "Marked done — signed off by {name}": { fr: "Terminé — approuvé par {name}", es: "Hecho — aprobado por {name}", vi: "Đã xong — {name} đã ký xác nhận", zh: "已完成 — 由 {name} 签字确认" },
+            "Reopen “{task}”?": { fr: "Rouvrir « {task} » ?", es: "¿Reabrir «{task}»?", vi: "Mở lại \"{task}\"?", zh: "重新打开“{task}”？" },
+            " The sign-off by {name} is removed.": { fr: " L’approbation de {name} sera retirée.", es: " Se quitará la aprobación de {name}.", vi: " Xác nhận của {name} sẽ bị xóa.", zh: "{name} 的签字将被删除。" },
+            "this task": { fr: "cette tâche", es: "esta tarea", vi: "công việc này", zh: "此任务" },
+            "Reopened": { fr: "Rouvert", es: "Reabierto", vi: "Đã mở lại", zh: "已重新打开" },
+            "Reopened — the sign-off is kept on record as an office adjustment": { fr: "Rouvert — l’approbation reste au dossier comme correction du bureau", es: "Reabierto — la aprobación queda archivada como ajuste de la oficina", vi: "Đã mở lại — xác nhận vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "已重新打开 — 签字作为办公室调整留档" }
+        };
+
         // ---- Init ----
         function init() {
             autoDate = todayStr();
             $('dateInput').value = autoDate;
 
+            // 🌐 Language picker: English first, each language under its own name
+            for (const l of LANGS) {
+                const o = document.createElement('option');
+                o.value = l.code;
+                o.textContent = l.name;
+                $('langSelect').appendChild(o);
+            }
+            $('langSelect').addEventListener('change', () => setLanguage($('langSelect').value));
             $('buildingSelect').addEventListener('change', renderAll);
             $('dateInput').addEventListener('change', renderAll);
             // Move to the new day past midnight: tab shown again, window focused, or once a minute
