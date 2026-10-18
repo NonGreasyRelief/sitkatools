@@ -770,6 +770,7 @@ CropLabourWizard's cultivation tasks are **data-driven** via self-contained reci
   - `defaultOffset` — integer days from the reference (clamped −30…+365 on import/save).
   - `hasToggle` / `defaultEnabled` — optional. When `hasToggle` is true the task can be switched off in the preview; `defaultEnabled` sets its initial state (IPM sprays default to `false`).
   - `isLocked` — optional. Locked tasks (e.g., Cutting Clones at Day 0) are not user-editable.
+  - `days` — optional length in days (1–30; blank/absent = 1), set in the recipe editor's **Days** column. Generated events get `endDate = date + days − 1`. The built-in recipe gives both leaf picks `days: 2`. Trim and Harvest ignore it (their length is set in the preview).
   - `roomPhase` — optional. One of `cloning`, `veg`, `flower`. When present, it is written onto generated events and overrides the order-based room split for that task.
   - (recipe level) `inputs` — optional **supplies** the recipe uses up per crop: `[{ inputId, name, unit, qty, per: 'crop' | 'plant' }]`, priced from the shared price list `_CropLabourWizard.inputs` (CropLabourWizard → recipe → 🧪 Inputs). See "Total Cost per Gram".
   - `minutes` / `staff` — optional **labour estimate**, as on DailyWizard tasks: estimated time **per day** in minutes (at least 5; the editor steps by 5) and the staff needed (at least 1; blank = 1). Blank minutes = no estimate. A multi-day task (Trim, multi-day Harvest) needs that much on each of its days. The built-in recipe has none — duplicate it to add them. Written onto generated events as `estStaff` / `estMinutes` (see "Event Contract").
@@ -784,6 +785,7 @@ Enforced on **import** and on **in-wizard save** (the same `validateRecipe()` ru
 - **clone_cut:** must reference `harvest` (it counts back from harvest end).
 - **chain.cloneCutBeforeHarvest:** positive integer when present (written from the `clone_cut` task on save).
 - **minutes / staff (optional):** when present, `minutes` is an integer ≥ 5 and `staff` an integer ≥ 1.
+- **days (optional):** when present, an integer from 1 to 30.
 - **inputs (optional):** an array; each entry has a name, a qty ≥ 0 and `per` of `crop` or `plant`. Import links each to the price list by name (adding unknown ones without a price).
 
 ### Database Keys — `_CropLabourWizard` additions

@@ -58,6 +58,8 @@ for (const m of recipeBlock.matchAll(/\{ name: '([^']*)', emoji: '([^']*)', task
     if (/hasToggle: true/.test(rest)) t.hasToggle = true;
     if (/defaultEnabled: false/.test(rest)) t.defaultEnabled = false;
     if (/isLocked: true/.test(rest)) t.isLocked = true;
+    const days = rest.match(/days: (\d+)/);
+    if (days) t.days = Number(days[1]);
     const e = EST[taskType] || [1, 60];
     t.staff = e[0]; t.minutes = e[1];
     tasks.push(t);

@@ -30,6 +30,7 @@ All day offsets are user-editable in the preview. Changing a reference point's o
 **Multi-day durations:**
 - **Trim length** is user-selectable in the preview (1–30 days, default 7 — `DEFAULT_TRIM_DAYS`). The three trim-anchored tasks (Machine Trim Smalls, Clean Dry Room, Weigh & Ship) are re-based so they always land 1–2 days after trim *ends*, regardless of the chosen length.
 - **Harvest** can optionally span multiple days via a "Multi-day" checkbox in the preview (default length 2 when checked). When multi-day is on, all harvest-referenced tasks measure from the harvest *end* date instead of the start date; when off, behavior is identical to single-day harvest.
+- **Any other task** can run several days through its recipe: the task's optional `days` (1–30, blank = 1), set in the recipe editor's **Days** column (`recipeTaskDays`). The built-in recipe runs both leaf picks (Early and Late Flower Leaf Pick) for **2 days** (user decision 2026-10-17). No task references a leaf pick, so nothing else moves. The length is the recipe's, not adjustable per lot in the preview. Trim and Harvest ignore `days` — their Days cell is disabled because the preview sets their length.
 
 **Post-trim offset convention:** trim-anchored tasks store their `defaultOffset` **relative to a 7-day (default) trim**. `resolveTaskAnchor()` re-bases them at compute time: for a `trim` reference it adds `trimDays − DEFAULT_TRIM_DAYS` to the anchor, so a task defined at +7/+8 always lands 1–2 days after trim *ends* even when the user picks a different trim length. This is why the stored offsets look like "day after trim ends" while remaining correct for any chosen length.
 
@@ -47,7 +48,7 @@ CropLabourWizard appends events to the shared `calendarEvents` array using `"sou
   Room names are stored on the lot (`cloningRoom`, `vegRoom`, `destRoom`) and resolved to room IDs at title-build time. If no room is found for a task's phase, the prefix degrades gracefully: `Strain#Lot number`, or just `Lot number` when strain is also missing.
   - **Projected lots** use a simpler title — Emoji + lot ID + `, task name` (no room-code prefix, since the lot ID already encodes it). See "Calendar Events — `sourceTool: 'CropProjection'`".
 - **Date:** The computed date for the task (`YYYY-MM-DD`)
-- **EndDate:** Set for multi-day events only — always Trim, and Harvest when multi-day is checked. Omitted for single-day events.
+- **EndDate:** Set for multi-day events only — always Trim, Harvest when multi-day is checked, and any task whose recipe gives it `days` > 1 (the leaf picks in the built-in recipe). Omitted for single-day events.
 - **SourceTool:** `"CropLabourWizard"`
 - **LotId:** Always set to the selected lot ID — every event is scoped to a lot
 - **TaskType:** A string identifier for the task (e.g., `"harvest"`, `"trim"`, `"flip"`) used during reconciliation to detect and replace stale schedules
@@ -64,7 +65,7 @@ When a user generates a schedule for a lot, the tool first **removes all existin
 Recipe tasks can carry a labour estimate, the same way DailyWizard tasks do: `minutes` (estimated time **per day**) and `staff` (root `CLAUDE.md` → "Task Recipes"). The built-in recipe has none; duplicate it and fill them in.
 
 - **Recipe editor:** two columns, **Min** (minutes per day, step 5; blank = no estimate) and **Staff** (blank = 1).
-- **Preview:** each task with an estimate shows `👥 2 · ⏱ 1h 30m` after its offset line (`/day` on Trim and multi-day Harvest). Below the list, `⏱ Estimated labour: ≈ N h` totals the enabled tasks (each multi-day task counted over its days) and says how many have no estimate.
+- **Preview:** each task with an estimate shows `👥 2 · ⏱ 1h 30m` after its offset line (`/day` on multi-day tasks: Trim, multi-day Harvest, the 2-day leaf picks). Below the list, `⏱ Estimated labour: ≈ N h` totals the enabled tasks (each multi-day task counted over its days) and says how many have no estimate.
 - **Generated events** get `estStaff` / `estMinutes` from the recipe task (`applyEstimate`). They are **not** carried over by `carryOverAnnotations`, so Generate always writes the current recipe's estimate. `reAnchorProjectedLot`'s shift path refreshes them from the lot's recipe too, so **Project Crop** brings projections up to date.
 - **Saved schedule:** each task shows the same chip next to its type badge, and the summary row adds `⏱ Est. labour: ≈ N h` for the lot.
 - **Recipe list:** a recipe with estimates says `⏱ N with labour estimates`.

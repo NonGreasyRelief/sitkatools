@@ -882,7 +882,7 @@
         .task-table input:focus, .task-table select:focus { outline: none; border-color: var(--accent); }
         .task-table .t-emoji { width: 46px; text-align: center; }
         .task-table .t-type { min-width: 130px; }
-        .task-table .t-offset { width: 72px; }
+        .task-table .t-offset, .task-table .t-days { width: 72px; }
         .task-table .t-ref, .task-table .t-phase { min-width: 96px; }
         .task-table .t-est { width: 70px; }
         /* Narrow windows: the table scrolls sideways rather than squash names and estimates */
@@ -1051,6 +1051,7 @@
                                     <th title="Event tag (snake_case)">Type</th>
                                     <th title="Reference anchor">Ref</th>
                                     <th title="Days from reference">+d</th>
+                                    <th title="How many days the task runs (blank = 1). Trim and Harvest are set in the preview.">Days</th>
                                     <th title="Room phase override (optional)">Phase</th>
                                     <th title="Estimated time per day, in minutes (blank = no estimate)">Min</th>
                                     <th title="Staff needed">Staff</th>
@@ -1244,11 +1245,11 @@
             { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1 },
             // Second week of bloom; toggleable, off by default
             { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
-            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21 },
+            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21, days: 2 },
             // The next lot's Day 0, counted back from harvest end: at −21 the next lot transplants the day
             // after this lot's Tank and Irrigation Line Clean — as tight as the room allows
             { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -21 },
-            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42 },
+            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42, days: 2 },
             // Harvest — user-editable offset from flip (default 63 days = 9 weeks bloom)
             { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63 },
             // Post-harvest tasks (offset from harvest)
@@ -1553,6 +1554,10 @@
                 }
                 if (t.staff != null && (!Number.isInteger(t.staff) || t.staff < 1)) {
                     errors.push(`${label} ${who}: staff must be a whole number, at least 1`);
+                }
+                // Optional length in days (Trim and Harvest set theirs in the preview instead)
+                if (t.days != null && (!Number.isInteger(t.days) || t.days < 1 || t.days > 30)) {
+                    errors.push(`${label} ${who}: days must be a whole number from 1 to 30`);
                 }
             }
             // Mandatory anchor tasks (they drive the other dates)
@@ -2058,6 +2063,9 @@
                     <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
                     <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? 'disabled title="Counted back from harvest — it starts the next lot"' : 'title="Reference anchor"'}>${refOpts}</select></td>
                     <td class="t-offset"><input type="number" class="t-offset" step="1" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
+                    <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
+                        ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length / Multi-day harvest)">'
+                        : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="How many days the task runs (blank = 1)">`}</td>
                     <td class="t-phase"><select class="t-phase" title="Room phase (optional override)">${phaseOpts}</select></td>
                     <td class="t-est"><input type="number" class="t-min" min="5" step="5" value="${Number.isInteger(t.minutes) ? t.minutes : ''}" placeholder="—" title="Estimated minutes per day (blank = no estimate)"></td>
                     <td class="t-est"><input type="number" class="t-staff" min="1" step="1" value="${Number.isInteger(t.minutes) && Number.isInteger(t.staff) ? t.staff : ''}" placeholder="1" title="Staff needed"></td>
@@ -2095,6 +2103,10 @@
                     reference: tr.querySelector('select.t-ref').value,
                     defaultOffset: parseInt(tr.querySelector('input.t-offset').value, 10)
                 };
+                // Length in days: blank or 1 = a one-day task (Trim / Harvest are set in the preview)
+                const daysInput = tr.querySelector('input.t-days');
+                const days = daysInput.disabled ? NaN : parseInt(daysInput.value, 10);
+                if (Number.isFinite(days) && days !== 1) t.days = days;
                 const phase = tr.querySelector('select.t-phase').value;
                 if (phase) t.roomPhase = phase;
                 // Labour estimate: blank minutes = none; blank staff = 1
@@ -2861,19 +2873,23 @@
             return anchors[ref];
         }
 
+        // A recipe task's own length in days (`days`, e.g. the 2-day leaf picks). Trim and Harvest use the preview's
+        // length controls instead, so their `days` is ignored.
+        const recipeTaskDays = def => (def.taskType === 'trim' || def.taskType === 'harvest') ? 1 : clampDuration(def.days, 1);
+
         // End date for multi-day tasks (null for single-day)
         function taskEndDate(def, startDate, isEnabled) {
             if (!isEnabled) return null;
             if (def.taskType === 'trim') return trimDays > 1 ? computeTaskDate(startDate, trimDays - 1) : null;
             if (def.taskType === 'harvest' && harvestMultiDay) return harvestDays > 1 ? computeTaskDate(startDate, harvestDays - 1) : null;
-            return null;
+            return recipeTaskDays(def) > 1 ? computeTaskDate(startDate, recipeTaskDays(def) - 1) : null;
         }
 
         // Whether a task renders as multi-day (drives the amber "multi" badge style)
         function isMultiDayTask(def) {
             if (def.taskType === 'trim') return true;
             if (def.taskType === 'harvest') return harvestMultiDay;
-            return false;
+            return recipeTaskDays(def) > 1;
         }
 
         // =====================================================
@@ -3644,10 +3660,11 @@
                 // Labour estimate from the recipe task (estStaff / estMinutes, per day)
                 applyEstimate(event, def);
 
-                // Multi-day events get endDate (Trim always; Harvest when multi-day is checked)
+                // Multi-day events get endDate (Trim always; Harvest when multi-day is checked; a recipe task with `days`)
                 let endDate = null;
                 if (def.taskType === 'trim' && d.trimDays > 1) endDate = computeTaskDate(startDate, d.trimDays - 1);
                 else if (def.taskType === 'harvest' && d.harvestMultiDay && d.harvestDays > 1) endDate = computeTaskDate(startDate, d.harvestDays - 1);
+                else if (recipeTaskDays(def) > 1) endDate = computeTaskDate(startDate, recipeTaskDays(def) - 1);
                 if (endDate) event.endDate = endDate;
 
                 newEvents.push(event);
