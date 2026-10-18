@@ -35,10 +35,10 @@ Reports is the last tab (**Employees · Tasks · 📜 Labour Log · ⚡ Power & 
 
 | Page | Cards | Needs |
 |---|---|---|
-| **Overview** | 8 KPI tiles, each with a sparkline and a change vs the previous period: flower yield, g/plant, g/sq ft/year, potency, terpenes, **cost / g (all in)** (with its labour · electricity · water · fertilizer · supplies breakdown), labour hours, estimate accuracy. Then **Needs attention**: tasks running over estimate, rooms whose yield is slipping, weeks short of staff, idle flower rooms, past-due tasks, completed tasks with no hours, shipped lots with no weights or no saved summary, and costs the cost per gram leaves out. Each line jumps to its page. | mixed |
+| **Overview** | 8 KPI tiles, each with a sparkline and a change vs the previous period: flower yield, g/plant, g/sq ft/year, potency, terpenes, **cost / g (all in)** (with its labour · electricity · water · fertilizer · supplies · property breakdown), labour hours, estimate accuracy. Then **Needs attention**: tasks running over estimate, rooms whose yield is slipping, weeks short of staff, idle flower rooms, past-due tasks, completed tasks with no hours, shipped lots with no weights or no saved summary, and costs the cost per gram leaves out. Each line jumps to its page. | mixed |
 | **Crop Timeline** | **Crop labour Gantt** for one lot: tasks banded by phase, planned outline against hours logged per day, ✓ done / ⚠ past due, estimate vs actual per task, and a strip of hours per day. **Room schedule Gantt**: every lot's stay in each room, 4 months back to 8 months ahead. Projected TBA lots are hatched; idle flower-room days are amber; BC holidays and today are marked; % in use per flower room. | data exists today |
 | **Labour** | **Where do the hours go?** (Pareto by task, with the estimate as an outline). **Which tasks run over their estimate?** (one dot per crop, the median marked) plus **suggested estimates** once a task has 3+ crops. **What kind of work fills the period?** (crop / chores / equipment, temps' share, logged vs scheduled shift hours). **Labour $ per gram by phase** (waterfall). | today; $/g needs harvest numbers + Wages.json |
-| **💲 Costs** (added 2026-10-16) | Always per gram of flower. **What does a gram of flower cost?** This period against the previous one, stacked labour / electricity / water / fertilizer / supplies. **Cost per gram, crop by crop.** **How much electricity does a crop use?** (kWh per crop: lights, and equipment & shared rooms). **What did the crops use?** (fertilizer by product, supplies, water, electricity, with $). **What's missing from the cost?** (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies, bills not charged to any crop). | harvest numbers + Room Manager / EquipmentWizard power + grow-log tags + price list + ⚡ Power & Rates |
+| **💲 Costs** (added 2026-10-16) | Always per gram of flower. **What does a gram of flower cost?** This period against the previous one, stacked labour / electricity / water / fertilizer / supplies / property (rent and fees, added 2026-10-17). **Cost per gram, crop by crop.** **How much electricity does a crop use?** (kWh per crop: lights, and equipment & shared rooms). **What did the crops use?** (fertilizer by product, supplies, water, electricity, property crop-days, with $). **What's missing from the cost?** (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies, bills not charged to any crop, buildings without a property cost, property cost on days with no crop in the building). | harvest numbers + Room Manager (rooms and buildings) / EquipmentWizard power + grow-log tags + price list + ⚡ Power & Rates |
 | **Yield & Quality** | **Strain scorecard**: yield (per the Per switch) against potency, split into Keep / Potency play / Volume play / Review. **Potency & terpenes by strain** (strip plots). **Weight cascade**: wet → dry → stems & waste → total yield → trim → flower, with flower stacked by grade. **Is any room slipping?** (per the Per switch; per sq ft needs canopy area). **What drives yield?** Pick any per-crop measure against an outcome; one dot per harvested crop, a fitted line, r and n, and "too few crops to tell" below 8. | harvest numbers (+ grow-log tags for the climate measures) |
 | **Rooms & Environment** | **Climate for one lot**: temperature, RH and VPD against target bands, with IPM flag days marked. **Pest heat map**: rooms × last 16 weeks, days flagged, plus a hermaphrodite marker. | grow-log tags |
 | **Forecast** | **Do we have enough people?** Estimated hours for the next 12 weeks (scheduled crops, projected crops, daily chores) against roster capacity. **What will we harvest in the next 6 months?** Expected flower per harvest with a best/worst range from past crops. | today; harvest forecast needs harvest numbers |
@@ -124,6 +124,7 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
 | `_EquipmentWizard.rooms.<id>.equipment[].power` | watts × units × hours a day, for the electricity estimate |
 | `_CropLabourWizard.inputs`, `recipes.<id>.inputs` | the price list (fertilizers per litre, supplies per unit) and each recipe's supplies |
 | `_EmployeeWizard.costs` | ⚡ Power & Rates: electricity source (bills / estimate), $/kWh, water $/1,000 L, power bills |
+| `buildings.<id>.monthlyPropertyCost` (SitkaTools Building Manager) | each building's rent and property fees, $ a month |
 | `_CropLabourWizard.taskTypes` | task names and order, and the cost phase of each task |
 
 ### The crop object
@@ -149,7 +150,8 @@ Once one harvested lot has its weights, the yield tiles, strain scorecard, weigh
   costs: {                                                          // saved summaries only — frozen at save (rptFrozenCosts)
     power: { kWh, lights, equip, cost, source: 'bills' | 'estimate', pctMissingDays },
     water: { L, cost }, fert: { byProduct: { "<product>": { mL, cost } }, unpriced: [], cost },
-    supplies: { items: [{ name, unit, qty, cost }], unpriced: [], cost }, savedAt
+    supplies: { items: [{ name, unit, qty, cost }], unpriced: [], cost },
+    property: { days, cost }, savedAt                               // days: crop-days in a building with a property cost
   }
 }
 ```
@@ -237,6 +239,7 @@ Answers are parsed leniently: `"1,250"`, `"12 kg"` and `"24.0"` all read as numb
 | **Water $** | `water.total` L × water $ per 1,000 L ÷ 1,000 |
 | **Fertilizer $** | `feed.nutrient` mL by product (PaperWizard product link) × the price-list price per litre ÷ 1,000. Products are matched by name, case-insensitive; unlinked or unpriced mL is listed, not guessed. |
 | **Supplies $** | the lot's recipe supplies: qty × (plants started when "per plant") × price |
+| **Property $** | each building's monthly rent and fees (`buildings.<id>.monthlyPropertyCost`), spread evenly over the days of each month (÷ days in that month). Each day's share is split between the crops in the building's rooms that day (`rptCropRoomDays`), by plants. A day with no crop in the building is "not charged to any crop". A summary frozen before property costs existed works its share out from the buildings when shown. |
 | **Cost $/g by part** | each part's Σ $ ÷ Σ flower of the harvested crops that have that part (labour = fully loaded) |
 | **Cost / g (all in)** | the sum of the parts that can be priced. A crop's own all-in (sparkline, crop-by-crop chart) uses its direct labour, not the overhead. |
 | **Cost by phase** | each crop's average $/h × its hours per phase. Phase: cloning / veg by the room rules, then the task registry order around `harvest`. |

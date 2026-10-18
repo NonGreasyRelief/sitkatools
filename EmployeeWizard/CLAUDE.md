@@ -133,7 +133,7 @@ The full spec, the metric list, the definitions and the **harvest-log hook-up st
 
 - **Pages:**
   - **Overview:** 8 KPI tiles (one is **Cost / g (all in)**) and Needs attention.
-  - **💲 Costs:** cost per gram by part (labour, electricity, water, fertilizer, supplies), crop by crop, electricity per crop, inputs used and what's missing — see `REPORTS.md` → Definitions.
+  - **💲 Costs:** cost per gram by part (labour, electricity, water, fertilizer, supplies, property — each building's monthly rent and fees from SitkaTools' Building Manager), crop by crop, electricity per crop, inputs used and what's missing — see `REPORTS.md` → Definitions.
   - **Crop Timeline:** the crop labour Gantt and the room schedule Gantt.
   - **Labour:** hours by task, over/under estimate with suggested estimates, labour mix, $ per gram by phase.
   - **Yield & Quality:** strain scorecard, potency/terpene strips, weight cascade, room trend.

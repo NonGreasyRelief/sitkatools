@@ -1,4 +1,4 @@
-// Cost inputs: room canopy / light wattage / light cycles, equipment power, CropLabourWizard's price list and recipe
+// Cost inputs: room canopy / light wattage / light cycles, building property cost, equipment power, CropLabourWizard's price list and recipe
 // supplies, PaperWizard's light % metric and fertilizer product link, and the Labour & Cost Wizard's Power & Rates tab.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, openTool, leave } from './lib/helpers.mjs';
 
@@ -30,6 +30,19 @@ export async function run(b, BASE) {
     room = await b.run(main, `return DB.data.rooms.R1G1;`);
     check('detail panel edits save on the room', room.lightWattage === 1000 && room.canopySqFt === 1150 && room.vegLightHours === 18 && room.bloomLightHours === 12, JSON.stringify(room));
     check('a room edit marks the DB unsaved', await b.run(main, 'return hasUnsavedChanges;'));
+
+    // ---- Building Manager: property cost a month (rent + fees) on a new building, then edited in its detail panel ----
+    await b.run(main, `
+        document.getElementById('buildingId').value = 'B3'; document.getElementById('buildingName').value = 'Building 3';
+        document.getElementById('buildingPropertyCost').value = '7250.50';
+        BuildingManager.createBuilding();`, { user: true });
+    check('new building keeps its monthly property cost', (await b.run(main, `return DB.data.buildings.B3?.monthlyPropertyCost;`)) === 7250.5);
+    await b.run(main, `BuildingManager.expandedBuildingId = 'B1'; BuildingManager.renderBuildingList();`);
+    await set(b, main, '.building-property-cost[data-building-id="B1"]', '12500');
+    check('detail panel edit saves the property cost', (await b.run(main, `return DB.data.buildings.B1.monthlyPropertyCost;`)) === 12500);
+    check('…and the building list shows it', (await b.run(main, `return document.querySelector('#buildingList .room-item[data-building-id="B1"] .lot-meta').textContent;`)).includes('$12,500.00 / month'));
+    await set(b, main, '.building-property-cost[data-building-id="B3"]', '');
+    check('clearing it leaves no property cost', (await b.run(main, `return DB.data.buildings.B3.monthlyPropertyCost;`)) === null);
 
     // ---- EquipmentWizard: power on a new item, then edited on its card ----
     const eq = await openTool(b, main, 'EquipmentWizard');
@@ -144,6 +157,7 @@ export async function run(b, BASE) {
     const db = await b.run(main, 'return DB.data;');
     const files = await splitFiles(b, main, BASE, db);
     const m = JSON.parse(files['Main.json']);
+    check('Main.json holds the building property cost', m.buildings.B1.monthlyPropertyCost === 12500);
     check('Main.json holds room, equipment, price list and costs', m.rooms.R1G1.lightWattage === 1000 && m.rooms.R1G1.canopySqFt === 1150 &&
         m._EquipmentWizard.rooms.R1G1.equipment.some(e => e.power?.watts === 1100) && Object.keys(m._CropLabourWizard.inputs).length >= 3 && m._EmployeeWizard.costs.bills.length === 1);
     await openSplit(b, main, BASE, 'B1', files);

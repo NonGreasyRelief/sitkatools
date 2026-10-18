@@ -89,7 +89,8 @@ The main tool (`SitkaTools.html`) provides a file import UI so the user can load
       "name": "string",
       "description": "string | null",
       "createdDate": "YYYY-MM-DD",
-      "assignedRooms": ["<RoomID>"]   // rooms in this building (mirrors room.buildingId)
+      "assignedRooms": ["<RoomID>"],  // rooms in this building (mirrors room.buildingId)
+      "monthlyPropertyCost": "number | null" // rent + property fees, $ a month (Building Manager) — cost per gram
     }
   },
   "calendarEvents": [
@@ -454,7 +455,7 @@ Include these styles in SitkaTools.html:
 The central hub with two modes:
 
 1. **Lot Management:** Create new cultivation lots and close out completed lots. Each lot gets a unique ID tracked in the database. The create-lot form assigns all five destination rooms — cloning, veg, flower (destination), **dry**, and **trim** (dry rooms double as trim rooms; the two fields may point at the same or different rooms) — plus a start-room choice (clone room by default, or veg room for purchased clones that skip cloning). The lot's live `currentRoom` starts from that choice and is maintained by PaperWizard when its logs record room moves. Only `destRoom` syncs to `rooms.<roomId>.assignedLots`; the other room fields are names stored on the lot (renaming/deleting a room nulls them out on affected lots).
-2. **Room Manager:** Create rooms (with an optional flowering flag, light count, **watts per light**, **canopy sq ft**, and **veg / bloom light cycles** — 18/6 and 12/12 by default; all editable in the room's detail panel too) and buildings, then assign rooms to buildings. The light and canopy fields feed the Labour & Cost Wizard's Reports (per sq ft, per light, and the electricity estimate). A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically.
+2. **Room Manager:** Create rooms (with an optional flowering flag, light count, **watts per light**, **canopy sq ft**, and **veg / bloom light cycles** — 18/6 and 12/12 by default; all editable in the room's detail panel too) and buildings, then assign rooms to buildings. The light and canopy fields feed the Labour & Cost Wizard's Reports (per sq ft, per light, and the electricity estimate). A room's building is stored on the room itself (`room.buildingId`); each building mirrors its rooms in `building.assignedRooms[]`. The room form includes a "Building" dropdown so a room can be assigned to an existing building at creation time (day 1). Buildings are managed in their own editor below the room editor, styled identically; each has an optional **property cost per month** (rent + property fees — on the create form and editable in the building's detail panel), which the cost per gram shares between the crops in the building.
 3. **Calendar View:** Import the `DB-YY-MM-DD.json` file and render all calendar events from all tools in a unified calendar interface.
 4. **DB Folder Mode (Chrome/Edge):** the **📁 Folder** header button and the start screen open the DB straight from the OneDrive-synced SharePoint folder (`showDirectoryPicker`). Opening loads the newest `DB-YY-MM-DD.json` in the folder, and **💾 Save DB** writes today's `DB-YY-MM-DD.json` back into it with one click. Before writing, Save re-scans the folder. If a newer day's DB file exists, or the file it opened was re-saved from elsewhere (content hash differs), it never overwrites: it asks, then writes a separate `DB-YY-MM-DD-conflict-HHMM.json`. Opening warns about same-day copies such as OneDrive's `DB-YY-MM-DD-PCNAME.json` conflict files. Up to 5 recent folders are remembered (most recent offered first on the start screen; the rest in the 📁 menu). Loading a file with 📂 Load DB switches folder mode off, and Save DB goes back to the download / Save-dialog flow. Browsers without `showDirectoryPicker` never show the folder UI.
 
@@ -475,7 +476,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 | File | Saved by | Holds |
 |---|---|---|
-| `Main.json` | office | lots and crop schedules, rooms/buildings, employee roster **without wages**, crop summaries (with their frozen non-labour costs) and report settings (`_EmployeeWizard.crops` / `.settings`), power bills and rates (`_EmployeeWizard.costs`), recipes and the input price list (`_CropLabourWizard.inputs`), equipment plans and power, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
+| `Main.json` | office | lots and crop schedules, rooms/buildings (with each building's monthly property cost, like the power bills), employee roster **without wages**, crop summaries (with their frozen non-labour costs) and report settings (`_EmployeeWizard.crops` / `.settings`), power bills and rates (`_EmployeeWizard.costs`), recipes and the input price list (`_CropLabourWizard.inputs`), equipment plans and power, general events, paperwork templates (`_PaperWizard.sheets/wizards`), `_fieldStamps` |
 | `Wages.json` | office only (never opened on building devices) | `{ wages: { employeeName: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }`. `cropCosts` is the labour cost frozen with EmployeeWizard's crop summaries: money, so it stays out of Main. |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]` (its daily task list, the chore hours logged there, its saved check-offs per day, and the office's adjustments log), the `_PaperWizard.entries` instances filled there, `_LotTransfers` records, and `_overlays` — that building's updates to office records |
 | `Archive/Lot-<id>-<date>.json` | office (close-out) | everything about a closed lot |
@@ -576,7 +577,7 @@ DB.data.buildings = {
 - A room belongs to at most one building. Assigning a room to a building unassigns it from any other building first; removing it clears `room.buildingId`.
 - The room form has a "Building" dropdown (populated from `DB.data.buildings`) so a room can be assigned to an existing building on day 1. Creating a room with a selected building registers it in that building's `assignedRooms`.
 - Deleting a room removes it from its building's `assignedRooms`; deleting a building nulls out `buildingId` on all of its rooms.
-- Buildings are informational — no other tool currently reads them.
+- Buildings are otherwise informational. The Labour & Cost Wizard's Reports read `monthlyPropertyCost` (rent + property fees, $ a month) for the cost per gram.
 
 ### Projected Lot Map — `_CropLabourWizard.projectedLots`
 
@@ -817,7 +818,7 @@ Generated CropLabourWizard events keep their existing shape and gain one **addit
 
 ## Total Cost per Gram
 
-Built 2026-10-16 (plan approved by the user). The CEO's key number: **all-in cost per gram of flower = labour + electricity + water + fertilizer + supplies**, in the Labour & Cost Wizard's Reports (overview tile **Cost / g (all in)** and the **💲 Costs** page; definitions in `EmployeeWizard/REPORTS.md`).
+Built 2026-10-16 (plan approved by the user). The CEO's key number: **all-in cost per gram of flower = labour + electricity + water + fertilizer + supplies + property** (property added 2026-10-17), in the Labour & Cost Wizard's Reports (overview tile **Cost / g (all in)** and the **💲 Costs** page; definitions in `EmployeeWizard/REPORTS.md`).
 
 | Part | Comes from | Priced with |
 |---|---|---|
@@ -826,10 +827,11 @@ Built 2026-10-16 (plan approved by the user). The CEO's key number: **all-in cos
 | Water | grow log `water.total` (L) | water $ per 1,000 L (⚡ Power & Rates) |
 | Fertilizer | grow log `feed.nutrient` mL, **by product** (PaperWizard product link on each mL question) | price list, $ per litre (CropLabourWizard → 🧪 Inputs) |
 | Supplies | the lot's recipe supplies, per crop or per plant | price list, $ per unit |
+| Property | the days each crop spends in a building's rooms | the building's monthly rent + property fees (SitkaTools Building Manager), spread over each month's days and shared each day by the crops in the building, by plants |
 
 - **User decisions (2026-10-16):** light cycles per room (veg 18/6, bloom 12/12 by default); a power bill is split between crops by estimated usage; fertilizer products are linked in PaperWizard's Configure Sheets (the paper form is unchanged); prices, rates and bills live in **Main.json**; EmployeeWizard is shown as the **Labour & Cost Wizard**.
 - **Electricity model:** room by room, day by day. A room's kWh goes to the crops in it that day (split by plants); an empty room — and a "Mother" room, whose lights always run — passes its kWh to the building's crops that day.
-- **Each part's $/g uses the crops that part can price**, and Costs → "What's missing from the cost?" lists the gaps (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies).
+- **Each part's $/g uses the crops that part can price**, and Costs → "What's missing from the cost?" lists the gaps (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies, buildings without a property cost).
 - **Closed-out lots** keep their non-labour costs frozen in their crop summary (`_EmployeeWizard.crops[lotId].costs`, version 2); labour stays frozen in Wages.json as before.
 
 ## BC Civic Holidays

@@ -367,7 +367,7 @@ for (const [bid, b] of Object.entries(daily)) {
     if (en) Object.assign(en, { signedHours: en.hours, hours: en.hours + 0.5, editedAt: new Date(parseISO(dAdd(TODAY, -1)).getTime() + 10 * 3600000).toISOString(), editedBy: 'office' });
 }
 
-// ---- 8c. Power: equipment ratings (EquipmentWizard), monthly power bills and rates (⚡ Power & Rates) ----
+// ---- 8c. Power: equipment ratings (EquipmentWizard), monthly power bills and rates (⚡ Power & Rates); property costs ----
 // Individual dehumidifiers carry their own watts; the AC and fan groups carry theirs (a group plus its members would
 // count twice). The demo dates all equipment from mid-2023 so the 3 years of crops share the same rooms' power.
 const DEHU_W = [[/506/, 4800], [/Dual 225/, 1700], [/Dual 205/, 1300], [/Dual 105/, 900], [/Anden|Cannadri/, 1000]];
@@ -395,6 +395,9 @@ for (let m = START.slice(0, 7) + '-01'; dMonths(m, 1) <= TODAY; m = dMonths(m, 1
     }
 }
 db._EmployeeWizard.costs = { electricity: 'bills', kWhRate: KWH_RATE, waterPer1000L: 2.4, bills };
+// Rent + property fees per building, $ a month (SitkaTools Building Manager) — the Property part of the cost per gram
+const PROPERTY = { B66D: 16000, B6: 9000 };
+for (const [bid, b] of Object.entries(db.buildings)) b.monthlyPropertyCost = PROPERTY[bid] ?? 6000;
 
 // ---- 9. Booked time off (EmployeeWizard) — shows as dips in roster capacity ----
 for (const [name, from, to] of [['Kasia', '2026-12-21', '2027-01-01'], ['Liam', '2026-11-02', '2026-11-06']]) {

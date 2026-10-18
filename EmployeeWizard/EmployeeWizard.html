@@ -3879,7 +3879,8 @@
         }
 
         // =====================================================
-        // 💲 Total cost per gram — labour + electricity + water + fertilizer + supplies (user decision 2026-10-16)
+        // 💲 Total cost per gram — labour + electricity + water + fertilizer + supplies + property (user decision 2026-10-16;
+        // property added 2026-10-17)
         // Electricity is estimated room by room, day by day — lights × watts per light × the room's veg or bloom hours ×
         // that day's light % (grow-log metric env.lightPct, 100 % when not logged), plus every piece of equipment's
         // watts × units × hours a day — and given to the crops in the room that day, split by plants. A room with no crop
@@ -3888,9 +3889,12 @@
         // "Power bills" spreads each bill evenly over its days and splits each day by those estimates.
         // Water (water.total, L) and fertilizer (feed.nutrient, mL by product) come from the grow logs, priced with the
         // ⚡ Power & Rates water rate and CropLabourWizard's price list. Supplies come from the lot's recipe.
+        // Property (rent and property fees) is each building's monthly cost, set in SitkaTools' Building Manager
+        // (buildings.<id>.monthlyPropertyCost): each month is spread evenly over its days, and each day is shared by the
+        // crops in the building's rooms that day, by plants — the same crops that share the building's power bills.
         // =====================================================
         const RPT_COST_PARTS = [['labour', 'Labour', 'var(--rv-blue)'], ['power', 'Electricity', 'var(--rv-yellow)'], ['water', 'Water', 'var(--rv-aqua)'],
-            ['fert', 'Fertilizer', 'var(--rv-green)'], ['supplies', 'Supplies', 'var(--rv-violet)']];
+            ['fert', 'Fertilizer', 'var(--rv-green)'], ['supplies', 'Supplies', 'var(--rv-violet)'], ['property', 'Property', 'var(--rv-magenta)']];
         function rptCostConfig() {
             const c = DB.data._EmployeeWizard?.costs || {}, catalog = DB.data._CropLabourWizard?.inputs || {};
             const byName = {};
@@ -4021,11 +4025,45 @@
             return rptPowerModel([...M.crops, c]).byCrop.get(c.lotId);
         }
 
+        // The property model for a set of crops: { byCrop: Map(lotId → { cost, days }), unallocated: { day: $ }, monthly }.
+        // A building's monthly rent and fees, spread over the days of each month, shared each day by the crops in its
+        // rooms (split by plants). A day with no crop in the building is unallocated: no crop carries it.
+        function rptPropertyModel(crops) {
+            const today = rToday(), rooms = DB.data.rooms || {};
+            const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0 }])), unallocated = {}, monthly = {};
+            for (const [id, b] of Object.entries(DB.data.buildings || {})) { const v = Number(b?.monthlyPropertyCost); if (v > 0) monthly[id] = v; }
+            const stays = [];
+            for (const c of crops) for (const st of rptCropRoomDays(c)) {
+                const b = rooms[st.roomId]?.buildingId;
+                if (b && monthly[b]) stays.push({ lotId: c.lotId, plants: rptCropPlants(c), b, from: st.from, to: st.to });
+            }
+            if (!stays.length) return { byCrop, unallocated, monthly };
+            const start = stays.reduce((m, st) => st.from < m ? st.from : m, stays[0].from);
+            const monthDays = d => { const x = parseISO(d); return new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate(); };
+            for (let d = start; d <= today; d = dAdd(d, 1)) {
+                const days = monthDays(d);
+                for (const [b, perMonth] of Object.entries(monthly)) {
+                    const amount = perMonth / days, here = new Map();
+                    for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) here.set(st.lotId, (here.get(st.lotId) || 0) + st.plants);
+                    if (!here.size) { unallocated[d] = (unallocated[d] || 0) + amount; continue; }
+                    const plants = [...here.values()].reduce((t, n) => t + n, 0);
+                    for (const [lotId, n] of here) { const o = byCrop.get(lotId); if (!o) continue; o.cost += amount * n / plants; o.days++; }
+                }
+            }
+            return { byCrop, unallocated, monthly };
+        }
+        function rptPropertyFor(M, c) {
+            if (M.crops.some(x => x.lotId === c.lotId)) return (M.property || (M.property = rptPropertyModel(M.crops))).byCrop.get(c.lotId);
+            return rptPropertyModel([...M.crops, c]).byCrop.get(c.lotId);
+        }
+        const rptCropProperty = (c, M) => { const pr = rptPropertyFor(M, c); return { days: pr?.days || 0, cost: pr?.days > 0 ? pr.cost : null }; };
+
         // A crop's non-labour costs. A closed-out lot keeps the costs frozen in its summary. Each part's `cost` is null
         // when it can't be priced (no rate, no logs), so the per-gram figures only use crops that have it.
         // fresh: work them out now even for a closed-out lot (to freeze them)
         function rptCropInputCost(c, M, fresh = false) {
-            if (!fresh && c.closed && c.costs) return c.costs;
+            // Summaries frozen before property costs existed have none: work theirs out from the buildings now
+            if (!fresh && c.closed && c.costs) return c.costs.property !== undefined ? c.costs : { ...c.costs, property: rptCropProperty(c, M) };
             const cfg = rptCostConfig();
             const pw = rptPowerFor(M, c) || { kWh: 0, lights: 0, equip: 0, cost: null, pctMissing: 0 };
             const hasPower = pw.kWh > 0 || (cfg.source === 'bills' && pw.cost > 0);
@@ -4052,7 +4090,7 @@
             }
             const supplyCosts = items.map(x => x.cost).filter(v => v != null);
             const supplies = { items, unpriced: unpricedSupplies, cost: supplyCosts.length ? rSum(supplyCosts) : null };
-            return { power, water, fert, supplies };
+            return { power, water, fert, supplies, property: rptCropProperty(c, M) };
         }
         // Frozen with a crop summary (in Main.json, like the price list): the non-labour costs as they stood
         function rptFrozenCosts(c, M) {
@@ -4063,13 +4101,14 @@
                 water: { L: k.water.L, cost: r2(k.water.cost) },
                 fert: { byProduct: Object.fromEntries(Object.entries(k.fert.byProduct).map(([n, x]) => [n, { mL: x.mL, cost: r2(x.cost) }])), unpriced: k.fert.unpriced, cost: r2(k.fert.cost) },
                 supplies: { items: k.supplies.items.map(x => ({ ...x, cost: r2(x.cost) })), unpriced: k.supplies.unpriced, cost: r2(k.supplies.cost) },
+                property: { days: k.property.days, cost: r2(k.property.cost) },
                 savedAt: new Date().toISOString()
             };
         }
         // One crop's cost per part, in $ (labour = its direct labour cost, null without wages)
         function rptCropCostParts(c, M) {
             const k = rptCropInputCost(c, M), lab = rptCropCost(c);
-            return { labour: lab && lab.missing === 0 && lab.cost > 0 ? lab.cost : null, power: k.power.cost, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost };
+            return { labour: lab && lab.missing === 0 && lab.cost > 0 ? lab.cost : null, power: k.power.cost, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost, property: k.property.cost };
         }
         // $ per gram for a set of harvested crops: each part over the crops that have it; all in = their sum.
         // Labour is the fully loaded figure from rptAgg (chores and equipment hours included).
@@ -5138,7 +5177,7 @@
                 }
                 s1 += pg.allIn != null ? rT(x + 8, y + 22, rMoney(pg.allIn), 'rv-val') : rT(X0 + 8, y + 22, 'no costed crops', 'rv-axs');
             });
-            const breakdown = a.costPG.allIn != null || b.costPG.allIn != null ? rSvg(W, 150, s1, 'Cost per gram, this period and the previous one') : rEmpty('No costed harvests in this period yet.', 'Needs flower weights plus at least one cost: wages, power, water rate, fertilizer prices or recipe supplies.');
+            const breakdown = a.costPG.allIn != null || b.costPG.allIn != null ? rSvg(W, 150, s1, 'Cost per gram, this period and the previous one') : rEmpty('No costed harvests in this period yet.', 'Needs flower weights plus at least one cost: wages, power, water rate, fertilizer prices, recipe supplies or building property costs.');
             const breakdownTable = { cols: [{ h: 'Part' }, { h: 'Previous $/g', n: 1 }, { h: 'This period $/g', n: 1 }, { h: 'Change', n: 1 }],
                 rows: [...RPT_COST_PARTS.map(([k, l]) => [l, b.costPG[k] != null ? rMoney(b.costPG[k], 3) : '—', a.costPG[k] != null ? rMoney(a.costPG[k], 3) : '—',
                     a.costPG[k] != null && b.costPG[k] ? rPct(a.costPG[k] / b.costPG[k] - 1) : '—']),
@@ -5195,19 +5234,21 @@
 
             // 4. Inputs used by the crops harvested in the period
             const fert = {}, sup = {};
-            let waterL = 0, waterCost = 0, kWh = 0, kWhCost = 0;
+            let waterL = 0, waterCost = 0, kWh = 0, kWhCost = 0, propDays = 0, propCost = 0;
             for (const c of cur) {
                 const k = rptCropInputCost(c, M);
                 for (const [n, x] of Object.entries(k.fert.byProduct)) { const t = fert[n] || (fert[n] = { mL: 0, cost: 0, priced: true }); t.mL += x.mL; if (x.cost != null) t.cost += x.cost; else t.priced = false; }
                 for (const x of k.supplies.items) { const t = sup[x.name] || (sup[x.name] = { qty: 0, unit: x.unit, cost: 0, priced: true }); t.qty += x.qty; if (x.cost != null) t.cost += x.cost; else t.priced = false; }
                 if (k.water.L > 0) { waterL += k.water.L; waterCost += k.water.cost || 0; }
                 if (k.power.kWh > 0) { kWh += k.power.kWh; kWhCost += k.power.cost || 0; }
+                if (k.property?.cost > 0) { propDays += k.property.days || 0; propCost += k.property.cost; }
             }
             const usedRows = [
                 ...Object.entries(fert).sort().map(([n, x]) => [`🧪 ${n}`, `${rN(x.mL / 1000, 1)} L`, x.priced ? rMoney(x.cost) : 'no price']),
                 ...Object.entries(sup).sort().map(([n, x]) => [`📦 ${n}`, `${rN(x.qty, x.qty < 10 ? 1 : 0)} ${x.unit}`, x.priced ? rMoney(x.cost) : 'no price']),
                 ...(waterL > 0 ? [['💧 Water', `${rN(waterL, 0)} L`, cfg.waterRate != null ? rMoney(waterCost) : 'no rate']] : []),
-                ...(kWh > 0 ? [['⚡ Electricity', `${rN(kWh, 0)} kWh`, rMoney(kWhCost)]] : [])
+                ...(kWh > 0 ? [['⚡ Electricity', `${rN(kWh, 0)} kWh`, rMoney(kWhCost)]] : []),
+                ...(propCost > 0 ? [['🏠 Property (rent & fees)', `${rN(propDays, 0)} crop-day${propDays === 1 ? '' : 's'}`, rMoney(propCost)]] : [])
             ];
             const usedBody = usedRows.length ? `<div class="rpt-tbl">${rTable({ cols: [{ h: 'Input' }, { h: 'Used', n: 1 }, { h: 'Cost', n: 1 }], rows: usedRows })}</div>` : rEmpty('Nothing used yet in this period.', '');
 
@@ -5237,14 +5278,19 @@
             if (noSup) miss.push(`${noSup} crop${noSup === 1 ? '’s recipe lists' : 's’ recipes list'} no supplies — add them in CropLabourWizard → recipe → 🧪 Inputs.`);
             const unpricedSup = [...new Set(cur.flatMap(c => rptCropInputCost(c, M).supplies.unpriced))];
             if (unpricedSup.length) miss.push(`Supplies without a price: ${unpricedSup.join(', ')}.`);
+            const usedBuildings = new Set(cur.flatMap(c => rptCropRoomDays(c).map(st => DB.data.rooms?.[st.roomId]?.buildingId).filter(Boolean)));
+            for (const b of usedBuildings) if (!(Number(DB.data.buildings?.[b]?.monthlyPropertyCost) > 0)) miss.push(`${rptBuildingName(b)} has no monthly property cost (rent and fees) — set it in SitkaTools’ Room Manager → Existing Buildings.`);
+            const prop = M.property || (M.property = rptPropertyModel(M.crops));
+            const propIdle = rSum(Object.entries(prop.unallocated).filter(([d]) => d >= M.per.from && d <= M.per.to), ([, v]) => v);
+            if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building, so no crop carries it.`);
             const health = miss.length ? `<ul class="rpt-attn">${miss.map(t => `<li><span class="rpt-sev info">ℹ️ Note</span><span>${rEsc(t)}</span></li>`).join('')}</ul>` : rEmpty('Every cost is in.', '');
 
             return `<div class="rpt-grid">` +
-                rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer and supplies, divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe' }) +
+                rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees' }) +
                 rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours (no chore or equipment share).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
-                rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water and electricity for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates' }) +
-                rCard({ wide: true, title: 'What’s missing from the cost?', sub: 'Fill these in and the cost per gram covers more of what a gram really costs.', body: health, source: 'Room Manager · EquipmentWizard · PaperWizard tags · CropLabourWizard price list · ⚡ Power & Rates' }) +
+                rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
+                rCard({ wide: true, title: 'What’s missing from the cost?', sub: 'Fill these in and the cost per gram covers more of what a gram really costs.', body: health, source: 'Room Manager (rooms and buildings) · EquipmentWizard · PaperWizard tags · CropLabourWizard price list · ⚡ Power & Rates' }) +
                 `</div>`;
         }
 
@@ -5276,7 +5322,7 @@
             if (extra.length) M.crops = [...M.crops, ...extra];
             for (const c of list) {
                 ew.crops[c.lotId] = rptSummaryOf(c);
-                ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer and supplies as they stood
+                ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer, supplies and property as they stood
                 const k = costs ? rptCropCost(c) : null;
                 if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt };
             }

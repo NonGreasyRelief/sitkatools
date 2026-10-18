@@ -68,7 +68,8 @@ export async function run(b, BASE) {
     const ew = await openTool(b, main, 'EmployeeWizard');
     const costs = () => b.run(ew, `const M = rptModel(), c = M.crops.find(c => c.lotId === 'L100');
         return { k: rptCropInputCost(c, M), parts: rptCropCostParts(c, M), pg: rptCostPerGram(M, [c], rptAgg(M, [c], '2000-01-01', '2100-01-01').loaded),
-            flower: c.weights.flower, una: (M.power || rptPowerModel(M.crops)).unallocated };`);
+            flower: c.weights.flower, una: (M.power || rptPowerModel(M.crops)).unallocated,
+            propIdle: Object.values((M.property || rptPropertyModel(M.crops)).unallocated).reduce((t, v) => t + v, 0) };`);
 
     // ---- Estimated usage at $0.10 / kWh ----
     let r = await costs();
@@ -111,17 +112,39 @@ export async function run(b, BASE) {
     check('💲 Costs page draws its cards, no NaN/undefined', page.includes('What does a gram of flower cost?') && page.includes('What did the crops use?') && !/NaN|undefined|Infinity/.test(page));
     check('…lists inputs used (Activator, Core, Peat puck, water, electricity)', ['Activator', 'Core', 'Peat puck', 'Water', 'Electricity'].every(w => page.includes(w)));
     check('…and notes the missing light %', page.includes('Light % wasn’t logged on 31 crop-days'));
+    check('…and that Building 1 has no property cost yet', page.includes('Building 1 has no monthly property cost'));
+
+    // ---- Property: $3,000 a month for Building 1, shared by the crops in its rooms that day ----
+    // The crop is in Building 1 from Day 0 (clone room) to the end of harvest (D40): 41 days, each $3,000 ÷ its month's days
+    const propFor = monthly => { let t = 0; for (let n = 0; n <= 40; n++) { const [y, m] = today(-120 + n).split('-').map(Number); t += monthly / new Date(y, m, 0).getDate(); } return t; };
+    const expProp = propFor(3000), allInBefore = r.pg.allIn;
+    await b.run(main, `DB.data.buildings.B1.monthlyPropertyCost = 3000; markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+    r = await costs();
+    check(`property: 41 days of $3,000 a month ($${expProp.toFixed(2)})`, near(r.k.property.cost, expProp) && r.k.property.days === 41, JSON.stringify(r.k.property));
+    check('property per gram, and in the all-in', near(r.pg.property, expProp / 10000) && near(r.pg.allIn, allInBefore + expProp / 10000), JSON.stringify({ p: r.pg.property, all: r.pg.allIn }));
+    check('property on days with no crop in the building is not charged to any crop', r.propIdle > 0, r.propIdle);
+    await b.run(ew, `document.querySelector('#rptPages button[data-page="costs"]').click();`, { user: true });
+    const page2 = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
+    check('💲 Costs page lists property, no NaN/undefined', page2.includes('Property (rent & fees)') && page2.includes('41 crop-days') && !page2.includes('Building 1 has no monthly property cost') && !/NaN|undefined|Infinity/.test(page2));
+    check('…and notes the property cost no crop carries', page2.includes('of property cost fell on days with no crop in the building'));
 
     // ---- Closed out: the summary keeps its costs even when the rates change ----
     await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'L100')]);`);
     await b.sleep(300);
     const frozen = await b.run(main, `return DB.data._EmployeeWizard.crops.L100.costs;`);
-    check('the summary freezes the costs (power $4,100, water $2.50, fertilizer $13, supplies $43)', frozen?.power?.cost === 4100 && frozen.water.cost === 2.5 && frozen.fert.cost === 13 && frozen.supplies.cost === 43, JSON.stringify(frozen && { p: frozen.power, w: frozen.water }));
+    check('the summary freezes the costs (power $4,100, water $2.50, fertilizer $13, supplies $43, property)', frozen?.power?.cost === 4100 && frozen.water.cost === 2.5 && frozen.fert.cost === 13 && frozen.supplies.cost === 43 &&
+        near(frozen.property?.cost, Math.round(expProp * 100) / 100) && frozen.property.days === 41, JSON.stringify(frozen && { p: frozen.power, w: frozen.water, pr: frozen.property }));
     await b.run(main, `delete DB.data.lots.L100; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'L100');
-        DB.data._EmployeeWizard.costs.electricity = 'estimate'; DB.data._EmployeeWizard.costs.waterPer1000L = 10; markUnsaved(); await WorkCopy.flush();`);
+        DB.data._EmployeeWizard.costs.electricity = 'estimate'; DB.data._EmployeeWizard.costs.waterPer1000L = 10; DB.data.buildings.B1.monthlyPropertyCost = 5000; markUnsaved(); await WorkCopy.flush();`);
     await b.sleep(600);
     r = await costs();
-    check('a closed-out lot keeps its frozen costs after the rates change', near(r.k.power.cost, 4100) && near(r.k.water.cost, 2.5), JSON.stringify({ p: r.k.power.cost, w: r.k.water.cost }));
+    check('a closed-out lot keeps its frozen costs after the rates change', near(r.k.power.cost, 4100) && near(r.k.water.cost, 2.5) && near(r.k.property.cost, Math.round(expProp * 100) / 100), JSON.stringify({ p: r.k.power.cost, w: r.k.water.cost, pr: r.k.property }));
+    // A summary frozen before property costs existed works its share out from the buildings
+    await b.run(main, `delete DB.data._EmployeeWizard.crops.L100.costs.property; markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+    r = await costs();
+    check('an older summary (no frozen property) gets its property from the buildings', near(r.k.property.cost, propFor(5000)) && r.k.property.days === 41, JSON.stringify(r.k.property));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, main);
     return results;
