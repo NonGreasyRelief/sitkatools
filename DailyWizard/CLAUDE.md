@@ -79,6 +79,12 @@ Each step in a task's detail view can display a picture, referenced purely by **
 - **Refresh:** browsers cache failed image loads, so the detail view includes a **🔄 Refresh images** button that re-probes all steps (bumps a cache-busting query string — harmless on `file://`, useful on http).
 - **Positional binding:** pictures bind to step *position*, not identity. Reordering or deleting steps shifts which picture appears where; the manager renames files if they want a different mapping. This keeps the schema free of any picture field.
 - **Manual placement only:** browsers cannot write into `pics/` from the page (no server; the File System Access API is unavailable in Firefox/Safari/iPadOS). The workflow is: manager saves photos as `pics/{code}_{n}.jpg|png` (phone camera → rename/copy, or desktop), opens the task's detail view, and hits Refresh.
+- **Uploading pictures** (built 2026-10-17; user decision: kept only while the window is open). For a copy that isn't run next to its `pics/` folder, such as the online one, the steps view has two buttons:
+  - **📁 Upload image pack:** pick a folder, e.g. the pack folder in the SharePoint / OneDrive sync.
+  - **🖼 Upload images:** pick the files themselves. Android Chrome may not offer folder picking, so select all the files in the pack folder this way there.
+  - **Matching:** only the file name counts: `{code}_{n}.png|jpg|jpeg|webp`. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick, png beats jpg beats webp, as in the `pics/` probe. A later pick replaces an earlier picture of the same step.
+  - **Where they go:** they're read into the window as object URLs (`uploadedPics`) and win over `pics/`. They're never stored in the browser or sent anywhere, so a new window needs the pack picked again.
+  - **Feedback:** a toast reports how many loaded, names that don't fit the pattern, and pictures whose code matches no task. A note in the steps view shows how many uploaded pictures are in use.
 - **Repo hygiene (GitHub Pages):** recommend resized photos (~1280 px max width, JPG) so committing `pics/` to the repo stays lean.
 
 ## Calendar Event Attribution (Building Resolution)
@@ -197,10 +203,12 @@ Built 2026-10-17 (user decisions: daily chores only, not crop or equipment task 
   - a step: `step.translations[<lang>]`.
   - Language codes are `fr`, `es`, `vi`, `zh`. An empty translation is removed, and an empty `translations` map with it.
   - They live in the task list, so they save in the building's own file like the rest of it.
-- **What's missing shows in English.** A name or step with no translation in the chosen language shows the English, with a small dashed **EN** tag (tooltip "Not translated yet — showing English"), so the manager can see what's left to translate.
+- **What's missing:**
+  - A task **name** with no translation in the chosen language shows the English, with a small dashed **EN** tag (tooltip "Not translated yet — showing English").
+  - A **step** with none shows **blank** (user decision 2026-10-17), so the floor only ever reads a real translation. Its number, picture and ▲ ▼ 🗑 stay. The empty, dashed line is where you tap to paste the translation. Switching language shows each language's own steps.
 - **Writing translations** (pick the language first):
   - **Name:** Add / Edit Task shows a second field, **Name (<language>)**. Blank shows the English name. The first field is then labelled "Name in English" and is still required.
-  - **Steps:** in the task detail view, tapping a step edits its translation, with the English shown under the box. ▲ ▼ 🗑 move or delete the step in every language.
+  - **Steps:** in the task detail view, tapping a step (or an untranslated step's blank line) edits its translation, with the English shown under the box while you type. Clearing it makes the step blank again in that language. ▲ ▼ 🗑 move or delete the step in every language.
   - **+ Add Step** is off in another language: new steps are written in English first, then translated.
   - A step being typed when the language changes is saved in the language it was started in.
 - **The screen's own text** (buttons, labels, section headers, toasts, confirms, the hours and Mark done views, the task editor, emoji categories, the tablet's "Go back to SitkaTools to save" banner) comes from `UI_TEXT` at the end of the script. It is keyed by the English text, with `fr` / `es` / `vi` / `zh` side by side, and `T(english, vars)` looks it up, filling `{placeholders}`. A string missing from `UI_TEXT` shows in English. Dates, weekdays and times follow the language (`toLocaleDateString`; `1 h 30 min`, `1小时30分钟`). English output is exactly as before.

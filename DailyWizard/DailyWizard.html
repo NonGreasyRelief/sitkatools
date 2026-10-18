@@ -483,6 +483,9 @@
             margin-bottom: 12px;
         }
 
+        .steps-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+        .uploaded-note { color: var(--accent); font-size: 0.85rem; margin: -4px 0 12px; }
+
         .steps-title {
             font-size: 0.8rem;
             text-transform: uppercase;
@@ -516,6 +519,7 @@
 
         .step-text { flex: 1; font-size: 0.95rem; cursor: pointer; min-width: 0; min-height: 48px; display: flex; align-items: center; } /* tablet touch target */
         .step-text.placeholder { color: var(--text-secondary); font-style: italic; }
+        .step-text.blank { border-bottom: 1px dashed var(--border); } /* untranslated step: no text, still tappable */
 
         .step-text-input { flex: 1; min-width: 0; }
 
@@ -780,8 +784,16 @@
                 <div class="detail-summary" id="detailSummary"></div>
                 <div class="steps-toolbar">
                     <span class="steps-title" data-t>Steps</span>
-                    <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn" data-t>🔄 Refresh images</button>
+                    <div class="steps-tools">
+                        <button type="button" class="btn btn-secondary db-btn" id="uploadPackBtn" data-t data-t-title title="Pick the image pack folder (e.g. from SharePoint). Pictures named like j234_1.jpg are shown on their steps while this window is open; nothing is uploaded anywhere.">📁 Upload image pack</button>
+                        <button type="button" class="btn btn-secondary db-btn" id="uploadImagesBtn" data-t data-t-title title="Pick picture files named like j234_1.jpg. They're shown on their steps while this window is open; nothing is uploaded anywhere.">🖼 Upload images</button>
+                        <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn" data-t>🔄 Refresh images</button>
+                    </div>
+                    <!-- Read into this window only (no browser storage); see "Step pictures" in the script -->
+                    <input type="file" id="packInput" webkitdirectory multiple hidden>
+                    <input type="file" id="imagesInput" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden>
                 </div>
+                <div class="uploaded-note" id="uploadedNote" hidden></div>
                 <div id="stepsList"></div>
             </div>
         </div>
@@ -919,7 +931,8 @@
         // English is the master: the DB holds every task name and step in English, and every other tool reads that.
         // Translations the manager writes sit next to it and only change what this screen shows:
         //   task.translations = { fr: 'Arroser les plantes', … }   step.translations = { fr: 'Vérifier…', … }
-        // A name or step with no translation in the chosen language shows the English, tagged "EN".
+        // A name with no translation in the chosen language shows the English, tagged "EN". A step with none is left
+        // blank (user decision 2026-10-17), so the floor only reads real translations until one is pasted in.
         // The screen's own words come from UI_TEXT (at the end of this script), keyed by the English text. The choice
         // lasts while this window is open (no browser storage).
         const LANGS = [
@@ -939,7 +952,8 @@
             return s;
         }
         const taskName = task => (LANG !== 'en' && task?.translations?.[LANG]) || task?.name || '';
-        const stepText = step => (LANG !== 'en' && step?.translations?.[LANG]) || step?.text || '';
+        // A step in the chosen language only: no English fallback (an untranslated step shows blank)
+        const stepText = step => LANG === 'en' ? step?.text || '' : step?.translations?.[LANG] || '';
         // A task (name) or step (text) that has English but nothing yet in the chosen language
         const needsTranslation = obj => LANG !== 'en' && !!(obj?.name || obj?.text) && !obj?.translations?.[LANG];
         function enChip() {
@@ -963,6 +977,10 @@
             for (const el of document.querySelectorAll('[data-t]')) {
                 if (!el.dataset.t) el.dataset.t = el.textContent.trim();
                 el.textContent = T(el.dataset.t);
+            }
+            for (const el of document.querySelectorAll('[data-t-title]')) {
+                if (!el.dataset.tTitle) el.dataset.tTitle = el.title;
+                el.title = T(el.dataset.tTitle);
             }
             for (const el of document.querySelectorAll('[data-t-ph]')) {
                 if (!el.dataset.tPh) el.dataset.tPh = el.placeholder;
@@ -2239,10 +2257,61 @@
             tryNext();
         }
 
+        // ---- Uploaded pictures: 📁 Upload image pack (a folder) / 🖼 Upload images (files) ----
+        // For a copy that isn't run next to its pics/ folder (e.g. the online one): pick the pack folder from the
+        // SharePoint / OneDrive sync, or the files themselves. They're read into this window only, never stored or
+        // sent anywhere (user decision 2026-10-17), and win over pics/. Only the file name counts: {code}_{n}.{ext}
+        // (a pack's subfolders are fine). Within one pick, png beats jpg beats webp, as in the pics/ probe; a later
+        // pick replaces an earlier picture of the same step.
+        const uploadedPics = new Map();   // `${code}_${n}` → { url, file }
+        const PIC_NAME = /^([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp)$/i;
+        const PIC_RANK = { png: 0, jpg: 1, jpeg: 1, webp: 2 };
+        function loadPictureFiles(fileList) {
+            const batch = new Map(), skipped = [];
+            for (const f of [...(fileList || [])]) {
+                const m = PIC_NAME.exec(f.name);
+                if (!m) {
+                    if (!/^\./.test(f.name) && !/^(thumbs\.db|desktop\.ini)$/i.test(f.name)) skipped.push(f.name);
+                    continue;
+                }
+                const key = `${m[1].toLowerCase()}_${Number(m[2])}`, rank = PIC_RANK[m[3].toLowerCase()];
+                const prev = batch.get(key);
+                if (!prev || rank < prev.rank) batch.set(key, { f, rank });
+            }
+            const known = new Set(Object.values(DB.dailyBuildings || {}).flatMap(b => (b?.tasks || []).map(t => t.code)));
+            const noTask = [];
+            for (const [key, { f }] of batch) {
+                if (uploadedPics.has(key)) URL.revokeObjectURL(uploadedPics.get(key).url);
+                uploadedPics.set(key, { url: URL.createObjectURL(f), file: f.name });
+                if (!known.has(key.split('_')[0])) noTask.push(f.name);
+            }
+            const example = `${detailTaskCode || 'j234'}_1.jpg`;
+            const list = names => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
+            let msg = batch.size ? T('Loaded {n} pictures', { n: batch.size }) : T('No pictures found — names must look like {example}', { example });
+            if (batch.size && skipped.length) msg += T(' · {n} skipped (names must look like {example}): {files}', { n: skipped.length, example, files: list(skipped) });
+            if (noTask.length) msg += T(' · {n} match no task: {files}', { n: noTask.length, files: list(noTask) });
+            showToast(msg);
+            if ($('detailOverlay').classList.contains('open')) renderDetail();
+        }
+        function renderUploadedNote() {
+            const note = $('uploadedNote');
+            note.hidden = !uploadedPics.size;
+            note.textContent = uploadedPics.size ? T('🖼 {n} uploaded pictures in use — this window only', { n: uploadedPics.size }) : '';
+        }
+
         function makeStepImageWrap(code, n) {
             const wrap = document.createElement('div');
             wrap.className = 'step-img-wrap';
             const key = `${code}_${n}`;
+            const up = uploadedPics.get(key);
+            if (up) {
+                const img = document.createElement('img');
+                img.className = 'step-img';
+                img.src = up.url;
+                img.alt = up.file;
+                wrap.appendChild(img);
+                return wrap;
+            }
             const fill = (ext) => {
                 wrap.innerHTML = '';
                 if (ext) {
@@ -2322,6 +2391,7 @@
             rec.textContent = `🔁 ${describeRecurrence(task) || T('Never')}`;
             sum.appendChild(rec);
 
+            renderUploadedNote();
             renderStepsList(task);
         }
 
@@ -2342,11 +2412,19 @@
 
             const shown = stepText(steps[index]);
             const text = document.createElement('span');
-            text.className = 'step-text' + (shown ? '' : ' placeholder');
-            text.textContent = shown || T('(tap to add instruction)');
+            if (shown) {
+                text.className = 'step-text';
+                text.textContent = shown;
+            } else if (LANG === 'en') {
+                text.className = 'step-text placeholder';
+                text.textContent = T('(tap to add instruction)');
+            } else {
+                // Not translated yet: blank (no English) until a translation is pasted in; tapping it opens the box
+                text.className = 'step-text blank';
+                text.title = T('Not translated yet — tap to paste the translation');
+            }
             text.addEventListener('click', () => beginStepEdit(row, task, index));
             top.appendChild(text);
-            if (needsTranslation(steps[index])) top.appendChild(enChip());
 
             const actions = document.createElement('div');
             actions.className = 'step-actions';
@@ -2399,7 +2477,7 @@
                         if (v !== (step.translations?.[lang] || '')) {
                             setTranslation(step, lang, v);
                             notifySitkaTools(); // step mutation → sync
-                            showToast(v ? T('Translation saved') : T('Translation removed — the English shows'));
+                            showToast(v ? T('Translation saved') : T('Translation removed — the step shows blank'));
                         }
                     } else if (v !== (step.text || '')) {
                         step.text = v;
@@ -3145,6 +3223,23 @@
             "Task added": { fr: "Tâche ajoutée", es: "Tarea añadida", vi: "Đã thêm công việc", zh: "任务已添加" },
             "Steps": { fr: "Étapes", es: "Pasos", vi: "Các bước", zh: "步骤" },
             "🔄 Refresh images": { fr: "🔄 Actualiser les images", es: "🔄 Actualizar imágenes", vi: "🔄 Tải lại hình ảnh", zh: "🔄 刷新图片" },
+            "📁 Upload image pack": { fr: "📁 Importer un dossier d’images", es: "📁 Subir paquete de imágenes", vi: "📁 Tải lên gói hình ảnh", zh: "📁 上传图片包" },
+            "🖼 Upload images": { fr: "🖼 Importer des images", es: "🖼 Subir imágenes", vi: "🖼 Tải lên hình ảnh", zh: "🖼 上传图片" },
+            "Pick the image pack folder (e.g. from SharePoint). Pictures named like j234_1.jpg are shown on their steps while this window is open; nothing is uploaded anywhere.": {
+                fr: "Choisissez le dossier d’images (par ex. sur SharePoint). Les images nommées comme j234_1.jpg s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
+                es: "Elija la carpeta de imágenes (p. ej., de SharePoint). Las imágenes con nombres como j234_1.jpg se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
+                vi: "Chọn thư mục hình ảnh (ví dụ trên SharePoint). Hình ảnh đặt tên như j234_1.jpg sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
+                zh: "选择图片文件夹（例如 SharePoint 上的）。名称如 j234_1.jpg 的图片会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "Pick picture files named like j234_1.jpg. They're shown on their steps while this window is open; nothing is uploaded anywhere.": {
+                fr: "Choisissez des images nommées comme j234_1.jpg. Elles s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.",
+                es: "Elija imágenes con nombres como j234_1.jpg. Se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
+                vi: "Chọn các tệp hình ảnh đặt tên như j234_1.jpg. Chúng sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
+                zh: "选择名称如 j234_1.jpg 的图片文件。它们会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "Loaded {n} pictures": { fr: "{n} images chargées", es: "{n} imágenes cargadas", vi: "Đã tải {n} hình ảnh", zh: "已加载 {n} 张图片" },
+            "No pictures found — names must look like {example}": { fr: "Aucune image trouvée — les noms doivent ressembler à {example}", es: "No se encontraron imágenes — los nombres deben ser como {example}", vi: "Không tìm thấy hình ảnh — tên tệp phải có dạng {example}", zh: "未找到图片 — 文件名应类似 {example}" },
+            " · {n} skipped (names must look like {example}): {files}": { fr: " · {n} ignorés (les noms doivent ressembler à {example}) : {files}", es: " · {n} omitidos (los nombres deben ser como {example}): {files}", vi: " · bỏ qua {n} (tên tệp phải có dạng {example}): {files}", zh: " · 跳过 {n} 个（文件名应类似 {example}）：{files}" },
+            " · {n} match no task: {files}": { fr: " · {n} ne correspondent à aucune tâche : {files}", es: " · {n} no corresponden a ninguna tarea: {files}", vi: " · {n} không khớp với công việc nào: {files}", zh: " · {n} 个不对应任何任务：{files}" },
+            "🖼 {n} uploaded pictures in use — this window only": { fr: "🖼 {n} images importées utilisées — dans cette fenêtre seulement", es: "🖼 {n} imágenes subidas en uso — solo en esta ventana", vi: "🖼 Đang dùng {n} hình ảnh đã tải lên — chỉ trong cửa sổ này", zh: "🖼 正在使用 {n} 张上传的图片 — 仅限此窗口" },
             "Delete Task": { fr: "Supprimer la tâche", es: "Eliminar tarea", vi: "Xóa công việc", zh: "删除任务" },
             "Edit Task": { fr: "Modifier la tâche", es: "Editar tarea", vi: "Sửa công việc", zh: "编辑任务" },
             "≈ {h} h labour": { fr: "≈ {h} h de travail", es: "≈ {h} h de trabajo", vi: "≈ {h} giờ công", zh: "≈ {h} 工时" },
@@ -3164,7 +3259,8 @@
             "Step updated": { fr: "Étape mise à jour", es: "Paso actualizado", vi: "Đã cập nhật bước", zh: "步骤已更新" },
             "Step text cleared": { fr: "Texte de l’étape effacé", es: "Texto del paso borrado", vi: "Đã xóa nội dung bước", zh: "步骤内容已清除" },
             "Translation saved": { fr: "Traduction enregistrée", es: "Traducción guardada", vi: "Đã lưu bản dịch", zh: "译文已保存" },
-            "Translation removed — the English shows": { fr: "Traduction supprimée — l’anglais s’affiche", es: "Traducción eliminada — se muestra el inglés", vi: "Đã xóa bản dịch — hiển thị tiếng Anh", zh: "译文已删除 — 将显示英文" },
+            "Translation removed — the step shows blank": { fr: "Traduction supprimée — l’étape s’affiche vide", es: "Traducción eliminada — el paso se muestra en blanco", vi: "Đã xóa bản dịch — bước này để trống", zh: "译文已删除 — 此步骤显示为空白" },
+            "Not translated yet — tap to paste the translation": { fr: "Pas encore traduit — touchez pour coller la traduction", es: "Aún sin traducir — toque para pegar la traducción", vi: "Chưa dịch — chạm để dán bản dịch", zh: "尚未翻译 — 点击粘贴译文" },
             "No steps yet — add the first one below.": { fr: "Pas encore d’étapes — ajoutez la première ci-dessous.", es: "Aún no hay pasos — añada el primero abajo.", vi: "Chưa có bước nào — hãy thêm bước đầu tiên bên dưới.", zh: "还没有步骤 — 请在下方添加第一步。" },
             "+ Add Step": { fr: "+ Ajouter une étape", es: "+ Añadir paso", vi: "+ Thêm bước", zh: "+ 添加步骤" },
             "Add new steps in English, then translate them.": { fr: "Ajoutez les nouvelles étapes en anglais, puis traduisez-les.", es: "Añada los pasos nuevos en inglés y luego tradúzcalos.", vi: "Hãy thêm bước mới bằng tiếng Anh, sau đó dịch.", zh: "请先用英文添加新步骤，再进行翻译。" },
@@ -3297,6 +3393,10 @@
             });
             $('deleteTaskBtn').addEventListener('click', deleteCurrentTask);
             $('refreshImagesBtn').addEventListener('click', refreshStepImages);
+            for (const [btn, input] of [['uploadPackBtn', 'packInput'], ['uploadImagesBtn', 'imagesInput']]) {
+                $(btn).addEventListener('click', () => { $(input).value = ''; $(input).click(); });
+                $(input).addEventListener('change', () => loadPictureFiles($(input).files));
+            }
 
             // ⏱ Hours on chores
             wirePad();

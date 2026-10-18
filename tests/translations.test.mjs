@@ -46,10 +46,22 @@ export async function run(b, BASE) {
     // Step: tapping it in Spanish edits the Spanish; new steps are added in English only
     await b.run(dw, `openTaskDetail('B1', 'wat1');`);
     check('in Spanish, + Add Step is off (new steps are written in English)', await b.run(dw, `return [...document.querySelectorAll('#stepsList button')].find(x => x.textContent.includes('Añadir paso')).disabled;`));
+    const blankStep = () => b.run(dw, `return !!document.querySelector('#stepsList .step-text.blank') && !document.querySelector('#stepsList .chip-en');`);
+    let steps = await text(b, dw, 'stepsList');
+    check('in Spanish, a step with no translation shows blank (no English, no EN tag)', !steps.includes('Check the drip lines') && await blankStep(), steps.slice(0, 160));
     await editStep(b, dw, 0, 'Revise las líneas de goteo');
     t = await task(b, dw, 'wat1');
     check('the Spanish step is saved next to the English', t.steps[0].text === 'Check the drip lines' && t.steps[0].translations?.es === 'Revise las líneas de goteo', JSON.stringify(t.steps[0]));
     check('the detail view shows the Spanish step', (await text(b, dw, 'stepsList')).includes('Revise las líneas de goteo'));
+    // Switching language with the steps open: each language shows only its own steps
+    await lang(b, dw, 'fr');
+    steps = await text(b, dw, 'stepsList');
+    check('in French (not translated yet) the step is blank — no English, no Spanish', !steps.includes('Check the drip lines') && !steps.includes('Revise') && await blankStep(), steps.slice(0, 160));
+    await lang(b, dw, 'en');
+    steps = await text(b, dw, 'stepsList');
+    check('in English the step shows the English', steps.includes('Check the drip lines') && !steps.includes('Revise'));
+    await lang(b, dw, 'es');
+    check('back in Spanish the Spanish step is there', (await text(b, dw, 'stepsList')).includes('Revise las líneas de goteo'));
     await b.run(dw, `closeTaskDetail();`);
     await b.sleep(400);
     t = await task(b, main, 'wat1');
