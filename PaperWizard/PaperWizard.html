@@ -5829,15 +5829,16 @@
                 for (const f of bySlot.values()) voidTail.add(f.id);
             }
             const voidRecOf = row => (inst.changes || []).find(c => c.kind === 'void' && c.row === row.id) || { by: null, date: String(row.void).slice(0, 10) };
-            // A corrected box: the current value first at the box's own size, then each old value struck out
-            // (newest first), small, with the date and the drawn initials laid over it
+            // A corrected box: the current value first at the box's own size, then beside it a small stack about
+            // as tall: the value it replaced struck out, over the date with the drawn initials laid on it. Only the latest change prints; every
+            // change is in the 📝 Change log (user decision 2026-10-19)
             const corrStamp = c => `<span class="cs"><span class="cdt">${escapeHtml(fmtYYYYMMDD(c.date || ''))}</span>${corrInitialsSvg(c.by)}</span>`;
             const corrRow = (text, c) => `<span class="cr">${text != null ? `<s class="cv">${escapeHtml(text)}</s>` : ''}${c ? corrStamp(c) : ''}</span>`;
 
             // One overlay span for a field at normalized y. `extra` = { corr, voidRec, tail }: the box's
-            // corrections (each old value prints struck out, small, with the date and initials, after the
-            // current value) and, for a deleted entry, its record (the value prints struck out; `tail` =
-            // this box carries the date and initials).
+            // corrections (the latest old value prints struck out, small, with the date and initials, after
+            // the current value) and, for a deleted entry, its record (the value prints struck out; `tail` =
+            // this box carries the date and initials; the deletion is its latest change, so nothing else prints).
             const overlaySpan = (f, y, val, extra = null) => {
                 const left = f.x * 100, top = y * 100, w = f.w * 100, h = f.h * 100;
                 const corr = extra?.corr || [];
@@ -5859,8 +5860,9 @@
                 }
                 const parts = [voidRec ? `<span class="cn"><s>${escapeHtml(val.text)}</s></span>` : `<span class="cn">${escapeHtml(val.text)}</span>`];
                 if (voidRec && extra.tail) parts.push(corrRow(null, voidRec));
-                for (const c of corr.slice().reverse()) parts.push(corrRow(c.from || 'N/A', c));
-                // Printed in the box exactly as configured (its x, y, w, h); the old values wrap onto the next
+                const latest = corr[corr.length - 1];
+                if (latest && !voidRec) parts.push(corrRow(latest.from || 'N/A', latest));
+                // Printed in the box exactly as configured (its x, y, w, h); the old value wraps onto the next
                 // line when there's no room beside the current one
                 return `<span class="ov ov-corr" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${parts.join(' ')}</span>`;
             };
@@ -5981,10 +5983,10 @@
   .ov-corr { line-height: 0; }
   .ov-corr .cn { line-height: 1.15; }
   .ov-corr s { text-decoration: line-through; text-decoration-thickness: 0.08em; }
-  .ov-corr .cr { display: inline-block; white-space: nowrap; font-size: 0.55em; line-height: 1; }
-  .ov-corr .cs { position: relative; display: inline-block; font-size: 0.72em; }
-  .ov-corr .cv + .cs { margin-left: 0.3em; }
-  .ov-corr .ci { position: absolute; left: 50%; top: 50%; height: 1.9em; width: ${(1.9 * CORR_INITIALS_ASPECT).toFixed(2)}em; transform: translate(-50%, -50%); overflow: visible; }
+  .ov-corr .cr { display: inline-block; white-space: nowrap; font-size: 0.42em; line-height: 1.05; text-align: left; }
+  .ov-corr .cv, .ov-corr .cs { display: block; }
+  .ov-corr .cs { position: relative; font-size: 0.86em; }
+  .ov-corr .ci { position: absolute; left: 50%; top: 50%; height: 1.6em; width: ${(1.6 * CORR_INITIALS_ASPECT).toFixed(2)}em; transform: translate(-50%, -50%); overflow: visible; }
   .ov-corr.measuring .ci { display: none; }
   .ov-corr.fitted { overflow: visible; }
   .ci polyline { fill: none; stroke: #000; stroke-width: 0.9; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
@@ -5997,16 +5999,16 @@
   <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span>${nChanges ? `<span class="pp-corr">✏️ ${nChanges} change${nChanges === 1 ? '' : 's'} on file for this page — see 📝 Change log</span>` : ''}<button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
   ${pages}
   <script>
-  // A corrected box: the current value keeps its full size. When the old values don't fit beside or below it,
-  // they shrink (in small steps, not below 4.5 pt). The initials float over the date and may spill past the
+  // A corrected box: the current value keeps its full size. When the old value doesn't fit beside or below it,
+  // it shrinks (in small steps, not below 4 pt). The initials float over the date and may spill past the
   // box, so they're left out of the measuring. Anything still too big shows past the edge rather than being cut off.
   (function () {
-    var min = 4.5 * 96 / 72;
+    var min = 4 * 96 / 72;
     var fits = function (el) { return el.scrollHeight <= el.clientHeight + 0.5 && el.scrollWidth <= el.clientWidth + 0.5; };
     document.querySelectorAll('.ov-corr').forEach(function (el) {
       var fs = parseFloat(getComputedStyle(el).fontSize);
       var olds = el.querySelectorAll('.cr');
-      var k = 0.55, kMin = Math.min(k, min / fs);
+      var k = 0.42, kMin = Math.min(k, min / fs);
       el.classList.add('measuring');
       for (var i = 0; i < 40 && !fits(el) && k > kMin; i++) {
         k = Math.max(kMin, k * 0.95);

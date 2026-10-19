@@ -1,6 +1,6 @@
 // PaperWizard corrections (QAP traceability): once a day, page or entry is on file, changing it asks for a name,
-// drawn initials and a reason; the printed page shows the new value at full size, then the old value small and struck
-// out, with the date and the drawn initials over it; and every change is in the change log. Also: "Start on a chosen
+// drawn initials and a reason; the printed page shows the new value at full size, then a small stack beside it: the old
+// value struck out, over the date with the drawn initials on it; and every change is in the change log. Also: "Start on a chosen
 // day" defaults to the date the lot was created.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today } from './lib/helpers.mjs';
 
@@ -227,8 +227,8 @@ export async function run(b, BASE) {
             oldFs: Math.max(0, ...[...el.querySelectorAll('.cr')].map(c => parseFloat(getComputedStyle(c).fontSize))),
             fitted: el.classList.contains('fitted'), text: el.textContent };`);
     const t1 = await read('tp1');
-    check('day 1 Temp prints the current value first, then both old values struck out (newest first)', t1?.corr && t1.lines.length === 3 && t1.lines[0] === '26' && t1.struck.join() === '25,24.5', JSON.stringify(t1));
-    check('each struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini >= 4 && t1.lines[1].includes(ymd(T)) && t1.lines[2].includes(ymd(T)), JSON.stringify(t1?.lines));
+    check('day 1 Temp, changed twice: the current value first, then only the latest old value struck out', t1?.corr && t1.lines.length === 2 && t1.lines[0] === '26' && t1.struck.join() === '25', JSON.stringify(t1));
+    check('the struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini > 0 && t1.lines[1].includes(ymd(T)), JSON.stringify(t1?.lines));
     check('the current value keeps the box\'s full size; the old values print small', t1?.fitted && Math.abs(t1.fs - 13.33) < 0.05 && t1.nowFs === t1.fs && t1.oldFs > 0 && t1.oldFs <= t1.fs * 0.56, JSON.stringify(t1));
     const c1b = await read('ct1'), c2b = await read('ct2'), c4b = await read('ct4');
     check('plant counts: day 1 corrected, day 2 carried forward, day 4 (not on file) just prints', c1b?.struck.join() === '100' && c1b.lines[0] === '90'
@@ -248,6 +248,7 @@ export async function run(b, BASE) {
     check('📝 Change log lists every change, newest first (9)', log.rows.length === 9 && log.btn.includes('(9)') && log.rows[0][3].includes('Master grower signature'), JSON.stringify(log.rows.map(r => r[3])));
     const d1Short = await b.run(pw, `return fmtShort('${D1}');`);
     check('each row has when, where, what, who (with initials) and why', log.rows.some(r => r[2] === d1Short && r[3].includes('Temp') && r[3].includes('24.5') && r[4].includes('WT') && r[5] === 'Typing error') && log.ini > 0);
+    check('both of day 1 Temp\'s changes are in it (only the latest prints)', log.rows.filter(r => r[2] === d1Short && r[3].includes('Temp')).length === 2, JSON.stringify(log.rows.filter(r => r[2] === d1Short).map(r => r[3])));
     check('carried-forward and constant changes say so', log.rows.some(r => r[3].includes('carried forward from')) && log.rows.some(r => r[2].includes('Every page')));
     const before = new Set((await b.contexts()).map(c => c.context));
     await b.run(pw, `document.getElementById('chgPrintBtn').click();`, { user: true });
@@ -353,16 +354,18 @@ export async function run(b, BASE) {
                 oldAfter: el.querySelector('.cv').getBoundingClientRect().left > el.querySelector('.cn').getBoundingClientRect().right
                     || el.querySelector('.cv').getBoundingClientRect().top > el.querySelector('.cn').getBoundingClientRect().top + 5,
                 over: (() => { const d = el.querySelector('.cdt').getBoundingClientRect(), i = el.querySelector('.ci').getBoundingClientRect(), v = el.querySelector('.cv').getBoundingClientRect();
-                    return i.left < d.right && i.right > d.left && i.top < d.bottom && i.bottom > d.top && d.left >= v.right; })() }; };
+                    return i.left < d.right && i.right > d.left && i.top < d.bottom && i.bottom > d.top && d.top >= v.bottom - 1 && Math.abs(d.left - v.left) < 1; })(),
+                stackH: el.querySelector('.cr').getBoundingClientRect().height }; };
         return { ph: g('ph3'), ec: g('ec3') };`);
     const { ph, ec } = cell;
     check('pH and EC each print the old value struck out and the new one', ph.struck.join() === '5.8' && ph.now === '6.0' && ec.struck.join() === '1.2' && ec.now === '1.4', JSON.stringify(cell));
-    check('the old value comes after the new one, then the date with the drawn initials over it',
+    check('after the new value: the old value struck out, stacked over the date with the drawn initials on it',
         ph.oldAfter && ec.oldAfter && ph.over && ec.over, JSON.stringify(cell));
+    check('the stack is about as tall as the new value', [ph, ec].every(x => x.stackH >= x.fs * 0.7 && x.stackH <= x.fs * 0.95), JSON.stringify([ph.stackH, ec.stackH, ph.fs]));
     check('each prints exactly in its own box, whatever lines or grey blocks the form has',
         Math.abs(ph.top - 32) < 0.01 && Math.abs(ph.bot - 34.6) < 0.01 && Math.abs(ec.top - 34.8) < 0.01 && Math.abs(ec.bot - 37.4) < 0.01 && ph.px.bot <= ec.px.top + 0.5, JSON.stringify(cell));
-    check('both fit their box: the new values at full size, the old ones small but no less than 4.5 pt', ph.fits && ec.fits && ph.nowFs === ph.fs && ec.nowFs === ec.fs
-        && ph.oldFs < ph.fs * 0.6 && ec.oldFs < ec.fs * 0.6 && ph.oldFs >= 5.99 && ec.oldFs >= 5.99, JSON.stringify(cell));
+    check('both fit their box: the new values at full size, the old ones small but no less than 4 pt', ph.fits && ec.fits && ph.nowFs === ph.fs && ec.nowFs === ec.fs
+        && ph.oldFs < ph.fs * 0.5 && ec.oldFs < ec.fs * 0.5 && ph.oldFs >= 5.3 && ec.oldFs >= 5.3, JSON.stringify(cell));
     await b.send('browsingContext.close', { context: pop });
 
     // ---- Drawn initials need the typed initials too ----
