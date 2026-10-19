@@ -61,6 +61,12 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
             await send('input.performActions', { context, actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
             return box;
         },
+        // Real key presses into the focused element. Special keys use WebDriver codes, e.g. '' Home, '' Enter.
+        async keys(context, text) {
+            const actions = [];
+            for (const ch of text) actions.push({ type: 'keyDown', value: ch }, { type: 'keyUp', value: ch });
+            await send('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions }] });
+        },
         async close() { try { await send('session.end', {}); } catch (_) {} ws.close(); }
     };
     return api;

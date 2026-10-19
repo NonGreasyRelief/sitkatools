@@ -256,5 +256,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables and corrections, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

@@ -77,7 +77,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 ## PaperWizard
 
 - 2026-10-19 · corrections & change log for the QAP — reason required (tap chips), dates yyyy/mm/dd, signed logs can be corrected and are flagged, change log prints from its own button
-- 2026-10-19 · a correction's initials and date may wrap below the old value
+- 2026-10-19 · corrections print the new value first at full size, then the old value small and struck out, with the date and the initials drawn over it
+- 2026-10-19 · number answers take digits and one decimal point; plant counts digits only
 - 2026-10-19 · correction room is the box as configured, not read from the page image
 - 2026-10-19 · nothing prints beside a tick box; its correction details are in the change log only
 - 2026-10-19 · typed initials required with drawn initials (runner, repeating entries, Initialize quiz, strike pad)

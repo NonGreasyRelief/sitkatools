@@ -1,7 +1,7 @@
 // PaperWizard corrections (QAP traceability): once a day, page or entry is on file, changing it asks for a name,
-// drawn initials and a reason; the printed page shows the old value struck out with the initials and date, the new
-// value below it; and every change is in the change log. Also: "Start on a chosen day" defaults to the date the lot
-// was created.
+// drawn initials and a reason; the printed page shows the new value at full size, then the old value small and struck
+// out, with the date and the drawn initials over it; and every change is in the change log. Also: "Start on a chosen
+// day" defaults to the date the lot was created.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today } from './lib/helpers.mjs';
 
 export const title = 'PaperWizard corrections: struck-out values, initials, change log';
@@ -223,19 +223,21 @@ export async function run(b, BASE) {
     const read = (fid) => b.run(pop, `const el = document.querySelector('.ov[data-fid="${fid}"]'); if (!el) return null;
         return { corr: el.classList.contains('ov-corr'), lines: [...el.querySelectorAll('.cr, .cn')].map(l => l.textContent.replace(/\\s+/g, ' ').trim()), struck: [...el.querySelectorAll('s')].map(s => s.textContent),
             ini: el.querySelectorAll('.ci polyline').length, fs: parseFloat(getComputedStyle(el).fontSize), fits: el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1,
+            nowFs: el.querySelector('.cn') ? parseFloat(getComputedStyle(el.querySelector('.cn')).fontSize) : null,
+            oldFs: Math.max(0, ...[...el.querySelectorAll('.cr')].map(c => parseFloat(getComputedStyle(c).fontSize))),
             fitted: el.classList.contains('fitted'), text: el.textContent };`);
     const t1 = await read('tp1');
-    check('day 1 Temp prints both old values struck out, then the current one', t1?.corr && t1.struck.join() === '24.5,25' && t1.lines.length === 3 && t1.lines[2] === '26', JSON.stringify(t1));
-    check('each struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini >= 4 && t1.lines[0].includes(ymd(T)) && t1.lines[1].includes(ymd(T)), JSON.stringify(t1?.lines));
-    check('the corrected box shrinks its text to fit', t1?.fitted && t1.fs < 13.3 && (t1.fits || t1.fs <= 6.7), JSON.stringify(t1));
+    check('day 1 Temp prints the current value first, then both old values struck out (newest first)', t1?.corr && t1.lines.length === 3 && t1.lines[0] === '26' && t1.struck.join() === '25,24.5', JSON.stringify(t1));
+    check('each struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini >= 4 && t1.lines[1].includes(ymd(T)) && t1.lines[2].includes(ymd(T)), JSON.stringify(t1?.lines));
+    check('the current value keeps the box\'s full size; the old values print small', t1?.fitted && Math.abs(t1.fs - 13.33) < 0.05 && t1.nowFs === t1.fs && t1.oldFs > 0 && t1.oldFs <= t1.fs * 0.56, JSON.stringify(t1));
     const c1b = await read('ct1'), c2b = await read('ct2'), c4b = await read('ct4');
-    check('plant counts: day 1 corrected, day 2 carried forward, day 4 (not on file) just prints', c1b?.struck.join() === '100' && c1b.lines[1] === '90'
-        && c2b?.struck.join() === '99' && c2b.lines[1] === '89' && !c4b?.corr && c4b?.text === '87', JSON.stringify([c1b?.lines, c2b?.lines, c4b?.text]));
+    check('plant counts: day 1 corrected, day 2 carried forward, day 4 (not on file) just prints', c1b?.struck.join() === '100' && c1b.lines[0] === '90'
+        && c2b?.struck.join() === '99' && c2b.lines[0] === '89' && !c4b?.corr && c4b?.text === '87', JSON.stringify([c1b?.lines, c2b?.lines, c4b?.text]));
     const cb = await b.run(pop, `const struck = [...document.querySelectorAll('.ov-cb.struck')];
         return { struck: struck.length, top: struck[0] ? Math.round(parseFloat(struck[0].style.top)) : null, text: struck[0]?.textContent, beside: document.querySelectorAll('.ov-cbn').length };`);
     check('Crop OK? box: the old ✕ struck out inside the box, nothing printed beside it', cb.struck === 1 && cb.top === 20 && cb.text === '✕' && cb.beside === 0, JSON.stringify(cb));
     const sub = await read('subl');
-    check('the constant prints its old value struck out, then the new one', sub?.struck.join() === 'SL-1' && sub.lines[1] === 'SL-2', JSON.stringify(sub));
+    check('the constant prints the new value, then the old one struck out', sub?.struck.join() === 'SL-1' && sub.lines[0] === 'SL-2', JSON.stringify(sub));
     check('the toolbar notes the changes on file (not printed)', (await b.run(pop, `return document.querySelector('.pp-corr')?.textContent || '';`)).includes('changes on file'));
     await b.send('browsingContext.close', { context: pop });
 
@@ -296,10 +298,10 @@ export async function run(b, BASE) {
         const blob = await new Promise(r => c.toBlob(r, 'image/webp')); await loadPrintDocument([new File([blob], 'harv-p1.webp', { type: 'image/webp' })]);`);
     pop = await popup('harv', T);
     const [hp, w1, t2, w2, t3] = [await read('hpl'), await read('we1'), await read('to2'), await read('we2'), await read('to3')];
-    check('page answer: 42 struck out, 40 below', hp?.struck.join() === '42' && hp.lines[1] === '40', JSON.stringify(hp?.lines));
-    check('entry 1: 10 struck out, 11 below', w1?.struck.join() === '10' && w1.lines[1] === '11', JSON.stringify(w1?.lines));
+    check('page answer: 40, then 42 struck out', hp?.struck.join() === '42' && hp.lines[0] === '40', JSON.stringify(hp?.lines));
+    check('entry 1: 11, then 10 struck out', w1?.struck.join() === '10' && w1.lines[0] === '11', JSON.stringify(w1?.lines));
     check('deleted entry 2: every value struck out, initials and date once at the end of the row', t2?.struck.join() === 'T2' && t2.ini === 0 && t2.lines.length === 1
-        && w2?.struck.join() === '20' && w2.ini > 0 && w2.lines[0].includes(ymd(T)) && w2.lines.length === 1, JSON.stringify([t2, w2]));
+        && w2?.struck.join() === '20' && w2.ini > 0 && w2.lines.length === 2 && w2.lines[0] === '20' && w2.lines[1].includes(ymd(T)), JSON.stringify([t2, w2]));
     check('entry 3 prints in the next row as usual', !t3?.corr && t3?.text === 'T3');
     await b.send('browsingContext.close', { context: pop });
 
@@ -337,7 +339,7 @@ export async function run(b, BASE) {
         o?.changes.join() === `edit:temp2:${D1}:20→20.5` && nw?.changes.includes(`edit:temp2:${D3}:22→22.5`) && nw?.changes.includes(`carried:phs2:${D3}:Bloom→Harvesting`) && nw.changes.length === 2,
         JSON.stringify([o?.changes, nw?.changes]));
 
-    // ---- pH over EC in one cell: each correction wraps and uses the free space around its box ----
+    // ---- pH over EC in one cell: each prints in its own box, the current value at full size ----
     await b.run(pw, `await openRunner('L100', 'glog', '${D1}', '${D3}'); Object.assign(runnerCtx.draft, { phq: '6.0', ecq: '1.4' });
         runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();`);
     await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
@@ -347,16 +349,20 @@ export async function run(b, BASE) {
     const cell = await b.run(pop, `const g = id => { const el = document.querySelector('.ov[data-fid="' + id + '"]'); const r = el.getBoundingClientRect();
             return { top: parseFloat(el.style.top), bot: parseFloat(el.style.top) + parseFloat(el.style.height), px: { top: r.top, bot: r.bottom }, fs: parseFloat(getComputedStyle(el).fontSize),
                 fits: el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1, struck: [...el.querySelectorAll('s')].map(s => s.textContent),
-                now: el.querySelector('.cn')?.textContent, dateBelow: el.querySelector('.cdt').offsetTop > el.querySelector('.cv').offsetTop + 1,
-                iniBeside: el.querySelector('.cs').offsetTop <= el.querySelector('.cv').offsetTop + 1, dash: getComputedStyle(el.querySelector('.cd')).display !== 'none' }; };
+                now: el.querySelector('.cn')?.textContent, nowFs: parseFloat(getComputedStyle(el.querySelector('.cn')).fontSize), oldFs: parseFloat(getComputedStyle(el.querySelector('.cv')).fontSize),
+                oldAfter: el.querySelector('.cv').getBoundingClientRect().left > el.querySelector('.cn').getBoundingClientRect().right
+                    || el.querySelector('.cv').getBoundingClientRect().top > el.querySelector('.cn').getBoundingClientRect().top + 5,
+                over: (() => { const d = el.querySelector('.cdt').getBoundingClientRect(), i = el.querySelector('.ci').getBoundingClientRect(), v = el.querySelector('.cv').getBoundingClientRect();
+                    return i.left < d.right && i.right > d.left && i.top < d.bottom && i.bottom > d.top && d.left >= v.right; })() }; };
         return { ph: g('ph3'), ec: g('ec3') };`);
     const { ph, ec } = cell;
     check('pH and EC each print the old value struck out and the new one', ph.struck.join() === '5.8' && ph.now === '6.0' && ec.struck.join() === '1.2' && ec.now === '1.4', JSON.stringify(cell));
-    check('the date goes onto the line under the old number; the initials stay beside it when they fit (with the dash), else go below too (without)',
-        ph.dateBelow && ec.dateBelow && ph.iniBeside === ph.dash && ec.iniBeside === ec.dash, JSON.stringify(cell));
+    check('the old value comes after the new one, then the date with the drawn initials over it',
+        ph.oldAfter && ec.oldAfter && ph.over && ec.over, JSON.stringify(cell));
     check('each prints exactly in its own box, whatever lines or grey blocks the form has',
         Math.abs(ph.top - 32) < 0.01 && Math.abs(ph.bot - 34.6) < 0.01 && Math.abs(ec.top - 34.8) < 0.01 && Math.abs(ec.bot - 37.4) < 0.01 && ph.px.bot <= ec.px.top + 0.5, JSON.stringify(cell));
-    check('both fit their box, at no less than 5 pt', ph.fits && ec.fits && ph.fs >= 6.66 && ec.fs >= 6.66, JSON.stringify([ph.fs, ec.fs]));
+    check('both fit their box: the new values at full size, the old ones small but no less than 4.5 pt', ph.fits && ec.fits && ph.nowFs === ph.fs && ec.nowFs === ec.fs
+        && ph.oldFs < ph.fs * 0.6 && ec.oldFs < ec.fs * 0.6 && ph.oldFs >= 5.99 && ec.oldFs >= 5.99, JSON.stringify(cell));
     await b.send('browsingContext.close', { context: pop });
 
     // ---- Drawn initials need the typed initials too ----

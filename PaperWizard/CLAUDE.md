@@ -142,7 +142,7 @@ The ordered questions that fill a sheet's non-auto-filled boxes: `{ id (4 chars)
 |---|---|
 | `id` | 4 chars, unique in the wizard. |
 | `label` | The question shown. |
-| `type` | `'text' \| 'number' \| 'select' \| 'initials' \| 'plant-count' \| 'phase' \| 'room'`. New types need no migration. |
+| `type` | `'text' \| 'number' \| 'select' \| 'initials' \| 'plant-count' \| 'phase' \| 'room'`. New types need no migration. A `number` answer takes digits and one decimal point only, and a `plant-count` digits only (`wireNumberCtl`: letters, spaces and a second point are dropped as typed or pasted; a trailing point goes and ".5" reads "0.5" on leaving the box or pressing Enter). |
 | `options[]` | For `select`; ignored for `phase`. |
 | `rowScoped` | `true` = one answer per day row; `false` = one per instance. |
 | `repeating` | Event / one-shot sheets; text / number / select / initials only. One answer per repeating entry, stored in `inst.rows`. Ignored on daily-weekly sheets. See "Repeating Rows". |
@@ -313,12 +313,12 @@ A value on file that is changed keeps its old value on the printed page, struck 
 - **Record** (`inst.changes[]`, `constantChanges[]`): `{ id: 'ch…', at: ISO, date: YYYY-MM-DD, kind, day, row, entry?, where?, q, label, from, to, by: { name, strokes }, reason, via?, constant? }`.
   - `kind`: `edit` (the user changed it), `carried` (a save changed it on another day), `void` (an entry deleted), `removed` (a filed day or entry no longer on any page), `signature`.
   - Strokes are rounded to 3 decimals; each record keeps its own copy.
-- **Print:** each box's `edit` / `carried` records (`boxCorrections`) print oldest first, then the current value on its own line. Each record is `~~old~~ – [drawn initials] yyyy/mm/dd`, wrapped to the box's width: the initials stay beside the struck value when they fit, else go to the line below (without the dash); the date likewise.
-  - The initials are 1 line high (pad shape `CORR_INITIALS_ASPECT`, 2.5 : 1), the size of the value. A blank that was filled in prints a struck `N/A`.
-  - **Room = the box as configured** (`x`, `y`, `w`, `h`) — never read from the page image, so shading or lines on a form don't change it. A correction needs about three lines, so give a box that may be corrected that room in Configure Sheets (resizing a day-1 box resizes its column). An uncorrected value prints at the box's top, so a taller box doesn't move it. For pH over EC in one cell, each box can take half the cell.
-  - The text shrinks only when the lines don't fit (a popup script, 3 % steps, not below 5 pt). What still doesn't fit shows past the edge, never cut off.
+- **Print:** a corrected box prints the **current value first, at the box's own size**, so the real data reads clearly. Then each `edit` / `carried` record (`boxCorrections`), newest first: `~~old~~ yyyy/mm/dd`, small (0.55 × the box's size; the date 0.72 × that), with the drawn initials laid over the date. The old values go beside the current one when they fit, else wrap onto the next line, which is only as tall as the small text.
+  - The initials float over the date, 1.9 × the date's height (pad shape `CORR_INITIALS_ASPECT`, 2.5 : 1). A blank that was filled in prints a struck `N/A`.
+  - **Room = the box as configured** (`x`, `y`, `w`, `h`) — never read from the page image, so shading or lines on a form don't change it. Give a box that may be corrected a little width beside its value, or a second small line, in Configure Sheets (resizing a day-1 box resizes its column). An uncorrected value prints at the box's top, so a taller box doesn't move it. For pH over EC in one cell, each box can take half the cell.
+  - Only the old values shrink when they don't fit (a popup script, 5 % steps, not below 4.5 pt), never the current value. The initials are left out of the measuring (they may spill past the box). What still doesn't fit shows past the edge, never cut off.
   - A **tick box** that lost its ✕ prints the ✕ struck through, inside the box. Nothing prints beside a tick box (it would cover the form's label), so its initials, date and reason are in the change log only; the runner's "On file as …" note and the correction pad say so (`printsAsCheckbox`).
-  - A **deleted entry** prints every value struck through, with the initials and date once, after the row's right-most text box.
+  - A **deleted entry** prints every value struck through at full size, with the date and initials once, after the row's right-most text box.
   - The popup toolbar (not printed) says "✏️ N changes on file for this page".
 - **Filing Cabinet:**
   - a page with changes shows **✏️ N**, which opens its change log. It turns amber with "· changed after signing" when a change is newer than the master grower's signature (signing again clears it);

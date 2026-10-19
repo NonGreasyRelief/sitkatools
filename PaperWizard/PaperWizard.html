@@ -4247,6 +4247,57 @@
             return steps;
         }
 
+        // ---- Number answers ----
+        // A number answer takes digits and one decimal point only; a plant count takes digits only.
+        // A text box (not type="number", which lets letters through in Firefox and reads "6.5.2" as
+        // blank) cleaned on every input, so typing, pasting and dropping are all covered.
+        function numberCtlAttrs(whole) {
+            return `type="text" inputmode="${whole ? 'numeric' : 'decimal'}" autocomplete="off" spellcheck="false" data-num="${whole ? 'whole' : 'dec'}"`;
+        }
+        function cleanNumberText(s, whole, dotTaken = false) {
+            let out = '', dot = whole || dotTaken;
+            for (const ch of String(s)) {
+                if (ch >= '0' && ch <= '9') out += ch;
+                else if (ch === '.' && !dot) { out += ch; dot = true; }
+            }
+            return out;
+        }
+        // A finished answer: a trailing point goes, and ".5" reads "0.5"
+        function tidyNumberText(s) {
+            let v = String(s);
+            if (v.endsWith('.')) v = v.slice(0, -1);
+            if (v.startsWith('.')) v = '0' + v;
+            return v;
+        }
+        // Wire before the box's own listeners, so they read the cleaned value. Only the newly typed
+        // or pasted text is cleaned: a second point is dropped, never the one already there.
+        function wireNumberCtl(el) {
+            if (!el || !el.dataset.num) return;
+            const whole = el.dataset.num === 'whole';
+            let last = cleanNumberText(el.value, whole);
+            el.addEventListener('input', () => {
+                const v = el.value;
+                if (v === cleanNumberText(v, whole)) { last = v; return; }
+                let p = 0;
+                while (p < v.length && p < last.length && v[p] === last[p]) p++;
+                let s = 0;
+                while (s < v.length - p && s < last.length - p && v[v.length - 1 - s] === last[last.length - 1 - s]) s++;
+                const head = v.slice(0, p), tail = v.slice(v.length - s);
+                const added = cleanNumberText(v.slice(p, v.length - s), whole, (head + tail).includes('.'));
+                el.value = last = head + added + tail;
+                el.setSelectionRange(p + added.length, p + added.length);
+            });
+            const tidy = () => {
+                const t = tidyNumberText(el.value);
+                if (t === el.value) return false;
+                el.value = last = t;
+                return true;
+            };
+            el.addEventListener('change', tidy);
+            // Enter saves or moves on without a blur: tidy first, and tell the box's own listeners
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && tidy()) el.dispatchEvent(new Event('input')); });
+        }
+
         // ---- Entries steps (repeating tables) ----
         // ctx.rep[tableKey] = { entries, edit, form, base, saved } per table: the table's entries being
         // edited (all tables' entries go back to inst.rows on Save), the form for the next entry (or the
@@ -4391,7 +4442,7 @@
                 if (q.type === 'select') {
                     ctl = `<select class="ent-ctl ent-focus" data-qid="${q.id}"><option value="">— select —</option>${(q.options || []).map(o => `<option value="${escapeHtml(o)}"${o === form[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
                 } else if (q.type === 'number') {
-                    ctl = `<input type="number" step="any" inputmode="decimal" class="ent-ctl ent-focus" data-qid="${q.id}" value="${val}">`;
+                    ctl = `<input ${numberCtlAttrs(false)} class="ent-ctl ent-focus" data-qid="${q.id}" value="${val}">`;
                 } else {
                     ctl = `<input type="text" class="ent-ctl ent-focus" data-qid="${q.id}" value="${val}">`;
                 }
@@ -4438,6 +4489,7 @@
             const qs = t.qs;
             const ov = $('wizOverlay');
             ov.querySelectorAll('.ent-ctl').forEach(el => {
+                wireNumberCtl(el);
                 const set = () => { ts.form[el.dataset.qid] = el.value; };
                 el.addEventListener('input', set);
                 el.addEventListener('change', set);
@@ -5174,7 +5226,7 @@
                         .concat(rooms.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
                 } else if (q.type === 'number' || q.type === 'plant-count') {
-                    ctl = `<input type="number" step="any" id="wizCtl" value="${val}">`;
+                    ctl = `<input ${numberCtlAttrs(q.type === 'plant-count')} id="wizCtl" value="${val}">`;
                 } else {
                     ctl = `<input type="text" id="wizCtl" value="${val}">`;
                 }
@@ -5283,6 +5335,7 @@
                 });
             } else {
                 const ctlEl = $('wizCtl');
+                wireNumberCtl(ctlEl);
                 const showWas = () => { const w = $('wizWas'); if (w) w.innerHTML = runnerWasHtml(ctx, q); };
                 ctlEl.addEventListener('input', () => {
                     ctx.draft[q.id] = ctlEl.value;
@@ -5776,15 +5829,15 @@
                 for (const f of bySlot.values()) voidTail.add(f.id);
             }
             const voidRecOf = row => (inst.changes || []).find(c => c.kind === 'void' && c.row === row.id) || { by: null, date: String(row.void).slice(0, 10) };
-            // A struck value, then its initials and date: each goes beside the one before when it fits, else
-            // onto the line below (the dash goes when the initials do); the current value last, on its own line
-            const corrRow = (text, c) => `<span class="cr"><span class="cv"><s>${escapeHtml(text)}</s></span>${c
-                ? ` <span class="cs"><span class="cd">– </span>${corrInitialsSvg(c.by)}</span> <span class="cdt">${escapeHtml(fmtYYYYMMDD(c.date || ''))}</span>` : ''}</span>`;
+            // A corrected box: the current value first at the box's own size, then each old value struck out
+            // (newest first), small, with the date and the drawn initials laid over it
+            const corrStamp = c => `<span class="cs"><span class="cdt">${escapeHtml(fmtYYYYMMDD(c.date || ''))}</span>${corrInitialsSvg(c.by)}</span>`;
+            const corrRow = (text, c) => `<span class="cr">${text != null ? `<s class="cv">${escapeHtml(text)}</s>` : ''}${c ? corrStamp(c) : ''}</span>`;
 
             // One overlay span for a field at normalized y. `extra` = { corr, voidRec, tail }: the box's
-            // corrections (each old value prints struck out, with the initials and date, above the
+            // corrections (each old value prints struck out, small, with the date and initials, after the
             // current value) and, for a deleted entry, its record (the value prints struck out; `tail` =
-            // this box carries the initials and date).
+            // this box carries the date and initials).
             const overlaySpan = (f, y, val, extra = null) => {
                 const left = f.x * 100, top = y * 100, w = f.w * 100, h = f.h * 100;
                 const corr = extra?.corr || [];
@@ -5804,11 +5857,12 @@
                 if (!corr.length && !voidRec) {
                     return `<span class="ov" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
                 }
-                const lines = corr.map(c => corrRow(c.from || 'N/A', c));
-                lines.push(voidRec ? corrRow(val.text, extra.tail ? voidRec : null) : `<span class="cn">${escapeHtml(val.text)}</span>`);
-                // Printed in the box exactly as configured (its x, y, w, h) — make a box big enough in Configure
-                // Sheets for a correction to sit comfortably; a value that isn't corrected prints at its top as before
-                return `<span class="ov ov-corr" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${lines.join('')}</span>`;
+                const parts = [voidRec ? `<span class="cn"><s>${escapeHtml(val.text)}</s></span>` : `<span class="cn">${escapeHtml(val.text)}</span>`];
+                if (voidRec && extra.tail) parts.push(corrRow(null, voidRec));
+                for (const c of corr.slice().reverse()) parts.push(corrRow(c.from || 'N/A', c));
+                // Printed in the box exactly as configured (its x, y, w, h); the old values wrap onto the next
+                // line when there's no room beside the current one
+                return `<span class="ov ov-corr" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${parts.join(' ')}</span>`;
             };
 
             // Overlay spans for one page. `copy` = which copy of the repeating page (0 = the first),
@@ -5924,14 +5978,16 @@
   .ov-strike { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   .ov-strike line { stroke: #000; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
   .ov-strike-txt, .ov-strike-date { position: absolute; transform: translate(-50%, -50%); color: #000; font-weight: 700; white-space: nowrap; }
-  .ov-corr { line-height: 1.05; }
-  .ov-corr .cr, .ov-corr .cn { display: block; }
-  .ov-corr .cv, .ov-corr .cs, .ov-corr .cdt { display: inline-block; white-space: nowrap; }
-  .ov-corr .cs.wrapped .cd { display: none; }
-  .ov-corr s { text-decoration: line-through; text-decoration-thickness: 0.07em; }
+  .ov-corr { line-height: 0; }
+  .ov-corr .cn { line-height: 1.15; }
+  .ov-corr s { text-decoration: line-through; text-decoration-thickness: 0.08em; }
+  .ov-corr .cr { display: inline-block; white-space: nowrap; font-size: 0.55em; line-height: 1; }
+  .ov-corr .cs { position: relative; display: inline-block; font-size: 0.72em; }
+  .ov-corr .cv + .cs { margin-left: 0.3em; }
+  .ov-corr .ci { position: absolute; left: 50%; top: 50%; height: 1.9em; width: ${(1.9 * CORR_INITIALS_ASPECT).toFixed(2)}em; transform: translate(-50%, -50%); overflow: visible; }
+  .ov-corr.measuring .ci { display: none; }
   .ov-corr.fitted { overflow: visible; }
-  .ci { display: inline-block; height: 1em; width: ${CORR_INITIALS_ASPECT}em; vertical-align: -0.2em; overflow: visible; }
-  .ci polyline { fill: none; stroke: #000; stroke-width: 1.1; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+  .ci polyline { fill: none; stroke: #000; stroke-width: 0.9; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
   .ov-cb.struck::after { content: ''; position: absolute; left: -15%; right: -15%; top: 50%; border-top: 1.5px solid #000; }
   .pp-corr { font-size: 12px; color: #92400e; }
   @page { size: ${W}in ${H}in; margin: 0; }
@@ -5941,23 +5997,22 @@
   <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span>${nChanges ? `<span class="pp-corr">✏️ ${nChanges} change${nChanges === 1 ? '' : 's'} on file for this page — see 📝 Change log</span>` : ''}<button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
   ${pages}
   <script>
-  // A corrected box holds several lines, which wrap to its width. When they don't fit the box, the text shrinks
-  // (in small steps, not below 5 pt). Anything still too big shows past the edge rather than being cut off.
+  // A corrected box: the current value keeps its full size. When the old values don't fit beside or below it,
+  // they shrink (in small steps, not below 4.5 pt). The initials float over the date and may spill past the
+  // box, so they're left out of the measuring. Anything still too big shows past the edge rather than being cut off.
   (function () {
-    var min = 5 * 96 / 72;
+    var min = 4.5 * 96 / 72;
     var fits = function (el) { return el.scrollHeight <= el.clientHeight + 0.5 && el.scrollWidth <= el.clientWidth + 0.5; };
     document.querySelectorAll('.ov-corr').forEach(function (el) {
       var fs = parseFloat(getComputedStyle(el).fontSize);
-      for (var i = 0; i < 80 && !fits(el) && fs > min; i++) {
-        fs = Math.max(min, fs * 0.97);
-        el.style.fontSize = fs + 'px';
+      var olds = el.querySelectorAll('.cr');
+      var k = 0.55, kMin = Math.min(k, min / fs);
+      el.classList.add('measuring');
+      for (var i = 0; i < 40 && !fits(el) && k > kMin; i++) {
+        k = Math.max(kMin, k * 0.95);
+        olds.forEach(function (c) { c.style.fontSize = k + 'em'; });
       }
-      // Initials that went onto the line below their struck value lose the dash, and stay below (a line break,
-      // so the narrower initials don't jump back up)
-      el.querySelectorAll('.cs').forEach(function (s) {
-        var v = s.previousElementSibling;
-        if (v && s.offsetTop > v.offsetTop + 1) { s.classList.add('wrapped'); s.parentNode.insertBefore(document.createElement('br'), s); }
-      });
+      el.classList.remove('measuring');
       el.classList.add('fitted');
     });
   })();
