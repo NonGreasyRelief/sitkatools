@@ -907,16 +907,60 @@
         /* Above the wizard runner (z-200) — it opens while the runner is still on screen. */
         .strike-overlay {
             position: fixed; inset: 0; z-index: 250; background: rgba(4, 8, 16, 0.72);
-            display: flex; align-items: center; justify-content: center; padding: 16px;
+            display: flex; overflow-y: auto; padding: 16px;
         }
+        /* margin: auto centres the card, and lets a card taller than the screen scroll (not cut off) */
         .strike-card {
             background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-            box-shadow: var(--shadow); width: 100%; max-width: 420px; padding: 18px 16px;
+            box-shadow: var(--shadow); width: 100%; max-width: 420px; padding: 18px 16px; margin: auto;
         }
         .strike-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 6px; }
         .strike-sub { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.5; margin-bottom: 12px; }
         .strike-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
         .strike-foot .spacer { flex: 1; }
+
+        /* ---- Corrections on paperwork that's on file, and the change log ---- */
+        .wiz-onfile {
+            background: rgba(243, 156, 18, 0.12); border: 1px solid var(--warning); border-radius: 6px;
+            color: var(--text-primary); font-size: 0.82rem; line-height: 1.45; padding: 8px 10px; margin-bottom: 10px;
+        }
+        .wiz-was { color: var(--warning); font-size: 0.8rem; margin-top: 6px; }
+        .wiz-was:empty { display: none; }
+        .wiz-hist { color: var(--text-secondary); font-size: 0.75rem; margin-top: 4px; }
+        .ini-view {
+            display: block; width: 70%; margin: 0 auto 10px; aspect-ratio: 3; background: var(--input-bg);
+            border: 1px solid var(--border); border-radius: 6px;
+        }
+        .ini-view polyline, .chg-ini polyline { fill: none; stroke: var(--text-primary); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+        .ent-row.void .ent-vals { text-decoration: line-through; color: var(--text-secondary); }
+        .ent-tag { font-size: 0.72rem; color: var(--warning); white-space: nowrap; }
+        .corr-card { max-width: 480px; }
+        .sig-pad.corr-pad { width: 70%; margin: 0 auto; }
+        .corr-list { max-height: 9.5em; overflow-y: auto; margin: 0 0 10px; padding: 6px 10px; background: var(--input-bg);
+            border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; line-height: 1.5; }
+        .corr-list s { color: var(--text-secondary); }
+        .corr-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+        .corr-reason { background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary);
+            font-size: 0.8rem; padding: 6px 12px; cursor: pointer; min-height: 34px; }
+        .corr-reason:hover, .corr-reason.on { border-color: var(--accent); color: var(--accent); }
+        .corr-label { display: block; font-size: 0.82rem; color: var(--text-secondary); margin: 8px 0 4px; }
+        .corr-card .sig-name { margin-bottom: 4px; }
+        .cab-changes { min-height: 30px; padding: 2px 10px; font-size: 0.78rem; border-radius: 6px; cursor: pointer; white-space: nowrap;
+            background: none; border: 1px solid var(--warning); color: var(--warning); }
+        .cab-changes.after-sign { background: var(--warning); color: #4a2c00; }
+        .cab-changelog { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; border-radius: 6px; cursor: pointer;
+            background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+        .cab-changelog:hover { border-color: var(--accent); }
+        .chg-card { max-width: 980px; }
+        .chg-scroll { max-height: 62vh; overflow: auto; }
+        .chg-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .chg-table th { text-align: left; color: var(--text-secondary); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-card); }
+        .chg-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .chg-table s { color: var(--text-secondary); }
+        .chg-ini { display: inline-block; width: 48px; height: 19px; vertical-align: middle; margin-right: 4px; }
+        .chg-note { color: var(--text-secondary); font-size: 0.75rem; }
+        .chg-filter { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px; }
+        .chg-filter button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.82rem; text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -2467,7 +2511,8 @@
             const tables = repeatTables(sheet, wizardForSheet(sheetId));
             if (!tables.length) return [];
             const { per } = splitRows(tables, inst?.rows);
-            return tables.filter((t, i) => !per[i].length).map(t => tables.length > 1 ? `no entries yet (${t.label})` : 'no entries yet');
+            // A deleted entry (struck out on the page) doesn't count
+            return tables.filter((t, i) => !per[i].some(r => !r?.void)).map(t => tables.length > 1 ? `no entries yet (${t.label})` : 'no entries yet');
         }
 
         function newRowId() {
@@ -2691,6 +2736,286 @@
         }
 
         // =====================================================
+        // Corrections on paperwork that's on file (QAP traceability, user decision 2026-10-19)
+        // A value is "on file" once it was saved as part of a complete entry:
+        //   - a daily log's day, once saved with every answer and the day's drawn initials;
+        //   - a page's own (header) answers, once every one of them is answered;
+        //   - a repeating-table entry, once the log was saved with it;
+        //   - a 📌 constant value, once saved (not blank).
+        // From then on a change is a correction. Save asks for a name, drawn initials and a reason; the
+        // printed page shows the old value struck out with those initials and the date, the new value
+        // below it; and every change is kept in the page's change log (inst.changes, and
+        // entries[lot][sheet].constantChanges for constants). A deleted entry stays on the page struck
+        // out (row.void) and stops counting in Reports. On-file initials can't be redrawn.
+        // =====================================================
+        const CORRECTION_REASONS = ['Typing error', 'Wrong reading', 'Entered on the wrong day', 'Wrong box'];
+        const CORR_INITIALS_ASPECT = 2.5;                 // the pad's shape: correction initials print 1 line high, 2.5 wide
+        const CORR_KINDS = new Set(['edit', 'carried']);  // changes that print struck out in the value's box
+
+        function newChangeId() {
+            let s = 'ch';
+            for (let i = 0; i < 8; i++) s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+            return s;
+        }
+
+        // A stored answer as corrections compare and print it ('' when blank). Drawn initials aren't
+        // compared: on-file initials can't be changed.
+        const corrVal = v => (v === null || v === undefined || typeof v === 'object') ? '' : String(v).trim();
+
+        // Phase and room answers compare the way the rollover does (form words, any case)
+        function sameAnswer(q, a, b) {
+            if (q?.type === 'phase') return normalizeStage(a) === normalizeStage(b);
+            if (q?.type === 'room') return a.toLowerCase() === b.toLowerCase();
+            return a === b;
+        }
+
+        // A correction keeps its own copy of the drawn initials, rounded to keep the file small
+        const roundStrokes = strokes => (strokes || []).map(st => st.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000]));
+
+        // Is this day of a daily log on file?
+        function dayOnFile(inst, ds, sheetId) {
+            if (!inst || !ds) return false;
+            return dayAnswered(inst, ds, sheetId) || (inst.changes || []).some(c => !c.row && c.day === ds && c.kind !== 'signature');
+        }
+
+        // The page's own questions: not per day, not per entry, not constants
+        function headerQuestions(sheetId) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            const cids = new Set(constantQuestionIds(sheetId));
+            return (wizardForSheet(sheetId)?.questions || []).filter(q => !q.rowScoped && !isRepeatingQ(sheet, q) && !cids.has(q.id));
+        }
+
+        // Are the page's own answers on file? (all answered, or already corrected once)
+        function headerOnFile(inst, sheetId) {
+            if (!inst) return false;
+            const qs = headerQuestions(sheetId);
+            if (!qs.length) return false;
+            return qs.every(q => hasAnswer(inst.header, q.id))
+                || (inst.changes || []).some(c => !c.row && c.day == null && CORR_KINDS.has(c.kind));
+        }
+
+        // Is the runner question's answer on file in its page as saved?
+        function runnerScopeOnFile(ctx, q) {
+            if (!ctx?.inst || ctx.mode === 'init' || !q) return false;
+            if (!DB.paperWizard?.entries?.[ctx.lotId]?.[ctx.sheetId]?.instances?.[ctx.key]) return false;   // not saved yet
+            return q.rowScoped ? dayOnFile(ctx.inst, ctx.day, ctx.sheetId) : headerOnFile(ctx.inst, ctx.sheetId);
+        }
+
+        // Does this question print only as tick boxes? A changed tick box shows the old ✕ struck out in its box;
+        // its initials and date are kept in the change log only (a note beside the box would cover the form's label).
+        function printsAsCheckbox(sheetId, qid) {
+            const fs = (DB.paperWizard?.sheets?.[sheetId]?.fields || []).filter(f => f.questionId === qid);
+            return fs.length > 0 && fs.every(f => f.checkbox);
+        }
+
+        // A repeating entry's number in its table (1, 2, 3 …) and the table's label ("page 3")
+        function entryPlace(sheet, wiz, rows, row) {
+            const tables = repeatTables(sheet, wiz);
+            const { per } = splitRows(tables, rows);
+            for (let i = 0; i < tables.length; i++) {
+                const at = per[i].indexOf(row);
+                if (at >= 0) return { entry: at + 1, where: tables.length > 1 ? tables[i].label : '' };
+            }
+            return { entry: null, where: '' };
+        }
+
+        // What a save changed in values that were on file. `before` is a copy of the sheet's pages taken
+        // before the save, `after` the pages now. Days a re-page moved to a new page are followed by date.
+        // `edited` = { key, day }: what the user changed; anything else changed by the save was carried
+        // forward from it (a backfilled plant count, a re-paged phase / room).
+        function findCorrections(sheetId, before, after, edited) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            const wiz = wizardForSheet(sheetId);
+            if (!sheet || !wiz) return [];
+            const cids = new Set(constantQuestionIds(sheetId));
+            const tracked = (wiz.questions || []).filter(q => !cids.has(q.id) && q.type !== 'initials');
+            const dayQs = tracked.filter(q => q.rowScoped);
+            const headQs = tracked.filter(q => !q.rowScoped && !isRepeatingQ(sheet, q));
+            const repQs = tracked.filter(q => isRepeatingQ(sheet, q));
+            const bInsts = before?.instances || {}, aInsts = after?.instances || {};
+            const kindOf = (key, day) => (key === edited.key && (day == null || day === edited.day)) ? 'edit' : 'carried';
+            const summary = (qs, row) => qs.map(q => corrVal(row?.[q.id])).filter(Boolean).join(' · ');
+            const out = [];
+            for (const [bKey, bInst] of Object.entries(bInsts)) {
+                if (!bInst) continue;
+                const aInst = aInsts[bKey] || null;
+                // Days
+                for (const ds of Object.keys(bInst.days || {}).sort()) {
+                    if (!dayOnFile(bInst, ds, sheetId)) continue;
+                    let aKey = aInst?.days?.[ds] ? bKey : null;
+                    if (!aKey) aKey = Object.keys(aInsts).find(k => !bInsts[k] && aInsts[k]?.days?.[ds]) || null;   // re-paged
+                    if (!aKey) {
+                        const home = aInst ? bKey : (aInsts[edited.key] ? edited.key : Object.keys(aInsts)[0]);
+                        if (home) out.push({ key: home, day: ds, kind: 'removed', label: `Day ${fmtShort(ds)}`, from: summary(dayQs, bInst.days[ds]), to: '' });
+                        continue;
+                    }
+                    const bRow = bInst.days[ds], aRow = aInsts[aKey].days[ds];
+                    for (const q of dayQs) {
+                        const from = corrVal(bRow?.[q.id]), to = corrVal(aRow?.[q.id]);
+                        if (!sameAnswer(q, from, to)) out.push({ key: aKey, day: ds, q, label: q.label, from, to, kind: kindOf(bKey, ds) });
+                    }
+                }
+                if (!aInst) continue;
+                // The page's own answers
+                if (headerOnFile(bInst, sheetId)) {
+                    for (const q of headQs) {
+                        const from = corrVal(bInst.header?.[q.id]), to = corrVal(aInst.header?.[q.id]);
+                        if (!sameAnswer(q, from, to)) out.push({ key: bKey, day: null, q, label: q.label, from, to, kind: kindOf(bKey, null) });
+                    }
+                }
+                // Repeating entries: every saved one is on file
+                for (const bRow of Array.isArray(bInst.rows) ? bInst.rows : []) {
+                    if (!bRow?.id || bRow.void) continue;
+                    const aRow = (aInst.rows || []).find(r => r?.id === bRow.id);
+                    const place = entryPlace(sheet, wiz, bInst.rows, bRow);
+                    const label = `Entry ${place.entry ?? '?'}`;
+                    if (!aRow || aRow.void) {
+                        out.push({ key: bKey, row: bRow.id, entry: place.entry, where: place.where, kind: aRow ? 'void' : 'removed', label, from: summary(repQs, bRow), to: '' });
+                        continue;
+                    }
+                    for (const q of repQs) {
+                        if (!(q.id in bRow) && !(q.id in aRow)) continue;
+                        const from = corrVal(bRow[q.id]), to = corrVal(aRow[q.id]);
+                        if (from !== to) out.push({ key: bKey, row: bRow.id, entry: place.entry, where: place.where, q, label: q.label, from, to, kind: 'edit' });
+                    }
+                }
+            }
+            for (const p of out) if (p.q && printsAsCheckbox(sheetId, p.q.id)) p.cb = true;
+            return out;
+        }
+
+        // Write the changes into the pages' change logs, signed with the drawn initials and reason.
+        // A deleted entry is marked void (it stays on the page struck out).
+        function recordCorrections(sheetData, pending, drawn, edited) {
+            const at = new Date().toISOString(), date = todayStr();
+            const by = { name: drawn.name, strokes: roundStrokes(drawn.strokes) };
+            for (const p of pending) {
+                const inst = sheetData?.instances?.[p.key];
+                if (!inst) continue;
+                if (!inst.changes) inst.changes = [];
+                const rec = { id: newChangeId(), at, date, kind: p.kind, day: p.day ?? null, row: p.row ?? null, q: p.q?.id ?? null,
+                    label: p.label, from: p.from, to: p.to, by, reason: drawn.reason };
+                if (p.entry != null) rec.entry = p.entry;
+                if (p.where) rec.where = p.where;
+                if (p.kind === 'carried' && edited?.day) rec.via = edited.day;
+                inst.changes.push(rec);
+                if (p.kind === 'void') {
+                    const r = (inst.rows || []).find(x => x?.id === p.row);
+                    if (r) r.void = at;
+                }
+            }
+        }
+
+        // One change as a line of text (the correction pad and the change log)
+        function changeWhere(c) {
+            if (c.kind === 'signature') return 'Signature';
+            if (c.constant) return 'Every page (constant)';
+            if (c.row) return `Entry ${c.entry ?? '?'}${c.where ? ' · ' + c.where : ''}`;
+            if (c.day) return fmtShort(c.day);
+            return 'Page';
+        }
+
+        function changeWhatHtml(c) {
+            const b = v => v ? escapeHtml(v) : '<i>blank</i>';
+            if (c.kind === 'void') return `Entry ${c.entry ?? '?'}${c.where ? ' · ' + escapeHtml(c.where) : ''} deleted: <s>${b(c.from)}</s>`;
+            if (c.kind === 'removed') return `${escapeHtml(c.label || 'Entry')} removed: <s>${b(c.from)}</s>`;
+            if (c.kind === 'signature') return `${escapeHtml(c.label || 'Signature')}: <s>${b(c.from)}</s> → ${b(c.to)}`;
+            const via = c.kind === 'carried' ? ` <span class="chg-note">(carried forward${c.via ? ' from ' + fmtShort(c.via) : ''})</span>` : '';
+            return `${escapeHtml(c.label || '')}: <s>${b(c.from)}</s> → ${b(c.to)}${via}`;
+        }
+
+        // Drawn initials as a small inline SVG (the printed page and the change log)
+        function corrInitialsSvg(by, cls = 'ci') {
+            const polys = ((by && by.strokes) || []).filter(st => st.length >= 2)
+                .map(st => `<polyline points="${st.map(p => `${(p[0] * 100).toFixed(1)},${(p[1] * 100).toFixed(1)}`).join(' ')}"/>`).join('');
+            if (!polys) return escapeHtml(by?.name || '');
+            return `<svg class="${cls}" viewBox="0 0 100 100" preserveAspectRatio="none">${polys}</svg>`;
+        }
+
+        // The correction pad: lists the changes, asks for a reason, a name and drawn initials. Resolves to
+        // { name, strokes, reason }, or null when cancelled (or the DB was replaced while it was open).
+        function captureCorrection(pending) {
+            return new Promise((resolve) => {
+                const ov = document.createElement('div');
+                ov.className = 'strike-overlay';
+                ov.id = 'corrOverlay';
+                const lines = pending.map(p => `<div>${p.kind === 'void' || p.kind === 'removed' ? '' : `${escapeHtml(changeWhere(p))} · `}${changeWhatHtml(p)}</div>`).join('');
+                ov.innerHTML = `
+                    <div class="strike-card corr-card">
+                        <div class="strike-title">✏️ Correction — ${pending.length} change${pending.length === 1 ? '' : 's'} to paperwork on file</div>
+                        <div class="strike-sub">The old value${pending.length === 1 ? ' stays' : 's stay'} on the page, struck out, with your initials and today's date (${escapeHtml(fmtYYYYMMDD(todayStr()))}).${pending.some(p => p.cb)
+                            ? ' Tick boxes show only the old ✕ struck out — their initials and date are kept in the 📝 Change log.' : ''}</div>
+                        <div class="corr-list" id="corrList">${lines}</div>
+                        <label class="corr-label" for="corrReason">Reason for the change</label>
+                        <div class="corr-reasons">${CORRECTION_REASONS.map(r => `<button type="button" class="corr-reason" data-r="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}</div>
+                        <input type="text" id="corrReason" class="sig-name" placeholder="Why it changed">
+                        <label class="corr-label" for="corrName">Your name / initials</label>
+                        <input type="text" id="corrName" class="sig-name" placeholder="Name / initials">
+                        <label class="corr-label">Draw your initials</label>
+                        <div class="sig-pad-wrap"><canvas id="corrPad" class="sig-pad corr-pad"></canvas></div>
+                        <div class="strike-foot">
+                            <button type="button" class="btn btn-secondary" id="corrClearBtn">🧹 Clear</button>
+                            <span class="spacer"></span>
+                            <button type="button" class="btn btn-secondary" id="corrCancelBtn">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="corrOkBtn">💾 Save correction</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(ov);
+                const dataAtOpen = DB.data;   // a live update from SitkaTools replaces DB.data
+                const strokes = [];
+                const pad = initDrawPad('corrPad', CORR_INITIALS_ASPECT, strokes);
+                const reasonEl = $('corrReason');
+                ov.querySelectorAll('.corr-reason').forEach(btn => btn.addEventListener('click', () => {
+                    reasonEl.value = btn.dataset.r;
+                    ov.querySelectorAll('.corr-reason').forEach(x => x.classList.toggle('on', x === btn));
+                }));
+                reasonEl.addEventListener('input', () => ov.querySelectorAll('.corr-reason').forEach(x => x.classList.toggle('on', x.dataset.r === reasonEl.value)));
+                $('corrClearBtn').addEventListener('click', () => { strokes.length = 0; if (pad) pad.clear(); });
+                $('corrCancelBtn').addEventListener('click', () => { ov.remove(); resolve(null); });
+                $('corrOkBtn').addEventListener('click', () => {
+                    const reason = reasonEl.value.trim();
+                    const name = $('corrName').value.trim();
+                    if (!reason) { showToast('Give a reason for the change'); reasonEl.focus(); return; }
+                    if (!name) { showToast('Type your name or initials'); $('corrName').focus(); return; }
+                    if (!strokes.length) { showToast('Draw your initials first'); return; }
+                    ov.remove();
+                    if (DB.data !== dataAtOpen) {
+                        alert('SitkaTools updated the database while this was open, so nothing was recorded. Please try again.');
+                        resolve(null);
+                        return;
+                    }
+                    resolve({ name, strokes, reason });
+                });
+            });
+        }
+
+        // A page's change log as it prints: its own changes, plus the lot's constant changes on a daily
+        // log (a constant prints on every page)
+        function pageChangeList(lotId, sheetId, inst) {
+            const sd = DB.paperWizard?.entries?.[lotId]?.[sheetId];
+            const consts = DB.paperWizard?.sheets?.[sheetId]?.cadence === 'daily-weekly' ? (sd?.constantChanges || []) : [];
+            return (inst?.changes || []).concat(consts);
+        }
+
+        // Was anything on the page changed after the master grower signed it?
+        function changedAfterSigning(inst, list) {
+            const sig = inst?.signature;
+            if (!sig || !(sig.strokes || []).length) return false;
+            return list.some(c => c.kind !== 'signature' && (sig.at ? c.at > sig.at : (c.date || '') > (sig.date || '')));
+        }
+
+        // The corrections that print in a box, oldest first: a constant's, an entry's, a day's or the page's
+        function boxCorrections(sd, inst, f, dayDate, rowId) {
+            if (!f.questionId) return [];
+            if (f.constant) return (sd?.constantChanges || []).filter(c => c.q === f.questionId && CORR_KINDS.has(c.kind));
+            if (f.source) return [];
+            const list = inst?.changes || [];
+            if (rowId) return list.filter(c => c.row === rowId && c.q === f.questionId && CORR_KINDS.has(c.kind));
+            if (f.row || f.dayGroup) return list.filter(c => !c.row && c.day === dayDate && c.q === f.questionId && CORR_KINDS.has(c.kind));
+            return list.filter(c => !c.row && c.day == null && c.q === f.questionId && CORR_KINDS.has(c.kind));
+        }
+
+        // =====================================================
         // Grow logs started mid-crop, and backfilled changes
         // - A lot whose earlier paperwork is still on paper can start its first daily log on a
         //   chosen day, with a chosen phase / plant count / room. Days before that are marked
@@ -2817,12 +3142,14 @@
             for (const [ds, row] of plan.moved) rows.set(ds, { ...row });
             const dates = [...rows.keys()].sort();
             const newKeys = [];
+            const srcOf = new Map();   // rebuilt page → the original page its header came from
             let page = null;
             for (const ds of dates) {
                 if (!page || ds > addDaysStr(page.key, 6)) {
                     const src = coverOf(ds);
                     page = { key: ds, inst: { phase: src.phase ?? null, room: src.room ?? null, header: {}, days: {},
                         phaseChangeDate: null, strikeInitials: null, snapshots: {}, signature: null, completedAt: null, printedAt: null } };
+                    srcOf.set(page.inst, src);
                     for (const ch of changes) page.inst[ch.field] = ch.newValue;
                     for (const [qid, v] of Object.entries(src.header || {})) {
                         const q = wiz.questions.find(x => x.id === qid);
@@ -2849,6 +3176,25 @@
                     page.inst.phaseChangeDate = addDaysStr(plan.stop.key, -1);
                     page.inst.strikeInitials = drawn ? { name: drawn.name, strokes: drawn.strokes } : (lastOrig.strikeInitials || null);
                 }
+            }
+            // Change history goes with the days: a moved day's corrections go to the page it is on now, and
+            // a page that was rebuilt passes its page-level corrections to the pages made from it.
+            const rebuilt = newKeys.map(k => sheetData.instances[k]).filter(Boolean);
+            for (const o of originals) {
+                const list = o.inst.changes || [];
+                if (!list.length) continue;
+                const kept = sheetData.instances[o.key] === o.inst;
+                const stay = [];
+                for (const c of list) {
+                    if (kept && (c.day == null || c.day <= day)) { stay.push(c); continue; }
+                    let dests = c.day ? rebuilt.filter(p => p.days?.[c.day]) : rebuilt.filter(p => srcOf.get(p) === o.inst);
+                    if (!dests.length) {
+                        if (kept) { stay.push(c); continue; }
+                        dests = rebuilt.slice(0, 1);
+                    }
+                    dests.forEach((d, i) => { (d.changes ||= []).push(i ? JSON.parse(JSON.stringify(c)) : c); });
+                }
+                if (kept) o.inst.changes = stay;
             }
             for (const k of new Set([key, ...newKeys])) {
                 if (!sheetData.instances[k]) continue;
@@ -2988,6 +3334,10 @@
             const lot = DB.lots[lotId];
             if (!sheet || !lot) return;
             const today = todayStr();
+            // The log usually starts when the lot did: the date the lot was created (today if that's
+            // missing or still ahead)
+            const created = /^\d{4}-\d{2}-\d{2}$/.test(lot.createdDate || '') ? lot.createdDate : '';
+            const startDefault = created && created <= today ? created : today;
             const curPhase = currentLotPhase(lotId);
             const curRoom = currentLotRoom(lotId);
             const rooms = pickableRoomNames(curRoom).sort((a, b) => a.localeCompare(b));
@@ -3002,7 +3352,7 @@
                     <div class="wiz-head"><span class="wiz-title">📅 Start ${escapeHtml(sheet.name || sheetId)} on a chosen day</span></div>
                     <div class="wiz-body">
                         <div class="startlog-grid">
-                            <label>First day of the log<input type="date" class="sig-name" id="startLogDate" max="${today}" value="${today}"></label>
+                            <label>First day of the log<input type="date" class="sig-name" id="startLogDate" max="${today}" value="${startDefault}"></label>
                             <label>Phase<select class="sig-name" id="startLogPhase">
                                 ${phases.map(p => `<option value="${escapeHtml(p)}"${p === curPhase ? ' selected' : ''}>${escapeHtml(p.charAt(0).toUpperCase() + p.slice(1))}</option>`).join('')}
                             </select></label>
@@ -3382,7 +3732,7 @@
             // one-shot / event progress.
             const qids = instanceQuestionIds(sheetId);
             const answered = qids.filter(qid => hasAnswer(inst.header, qid)).length;
-            const nRows = repeatingQuestions(sheetId).length ? (inst.rows || []).length : null;
+            const nRows = repeatingQuestions(sheetId).length ? (inst.rows || []).filter(r => !r?.void).length : null;
             if (answered === 0 && !nRows) return { text: '— not started', cls: '' };
             const parts = [];
             if (qids.length) parts.push(`${answered}/${qids.length} fields`);
@@ -3670,6 +4020,18 @@
             return `<button type="button" class="cab-sign" data-sign="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(title)}">✍️ Sign</button>`;
         }
 
+        // ✏️ N on a page with changes on file — opens the change log for that page. Amber when something
+        // changed after the master grower signed it.
+        function changesChipHtml({ lotId, sheetId, key }) {
+            const inst = DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[key];
+            if (!inst) return '';
+            const list = pageChangeList(lotId, sheetId, inst);
+            if (!list.length) return '';
+            const after = changedAfterSigning(inst, list);
+            const title = `${list.length} change${list.length === 1 ? '' : 's'} on file — open the change log${after ? ' · changed after the master grower signed it' : ''}`;
+            return `<button type="button" class="cab-changes${after ? ' after-sign' : ''}" data-changes="1" data-plot="${escapeHtml(lotId)}" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(title)}">✏️ ${list.length}${after ? ' · changed after signing' : ''}</button>`;
+        }
+
         // One cabinet leaf row. `label` must be pre-escaped HTML.
         function cabLeaf(label, status, opts = {}) {
             const refCls = opts.ref ? ' ref' : '';
@@ -3679,6 +4041,7 @@
             return `<div class="cab-leaf${refCls}">
                 <span class="cab-label">${label}</span>
                 ${from}
+                ${opts.print ? changesChipHtml(opts.print) : ''}
                 ${printBtn}
                 <span class="cab-status ${status.cls}">${status.text}</span>
             </div>`;
@@ -3689,6 +4052,7 @@
             return `<div class="cab-leaf" data-fill="1" data-sheet="${escapeHtml(sheetId)}" data-key="${escapeHtml(key)}">
                 <span class="cab-label">${label}</span>
                 <button type="button" class="cab-fill">Fill</button>
+                ${changesChipHtml({ lotId: lotId || activeLotId, sheetId, key })}
                 ${signatureButtonHtml({ lotId: lotId || activeLotId, sheetId, key })}
                 ${printButtonHtml({ lotId: lotId || activeLotId, sheetId, key })}
                 <span class="cab-status ${status.cls}">${status.text}</span>
@@ -3880,7 +4244,7 @@
         // A blank form for the next entry. Same-as-last questions start from the previous entry
         // (initials: the name only — strokes are always drawn fresh); prefill bindings apply too.
         function freshEntryForm(ctx, ts, qs) {
-            const last = ts.entries[ts.entries.length - 1] || null;
+            const last = [...ts.entries].reverse().find(r => !r.void) || null;
             const form = {};
             for (const q of qs) {
                 if (q.type === 'initials') {
@@ -3915,6 +4279,9 @@
             const tables = repeatTables(sheet, wizardForSheet(ctx.sheetId));
             ctx.rep = null;
             ctx.repRest = [];
+            // Entries saved with the log are on file: changing or deleting one is a correction
+            const saved = DB.paperWizard.entries?.[ctx.lotId]?.[ctx.sheetId]?.instances?.[ctx.key] === ctx.inst;
+            ctx.repFiled = new Set(saved ? (ctx.inst?.rows || []).map(r => r?.id).filter(Boolean) : []);
             if (!tables.length) return;
             const { per, rest } = splitRows(tables, ctx.inst?.rows);
             ctx.rep = {};
@@ -3980,7 +4347,9 @@
             const ts = ctx.rep[t.key];
             const qs = t.qs;
             const n = ts.entries.length;
+            const nVoid = ts.entries.filter(r => r.void).length;
             const editing = ts.edit != null && !!ts.entries[ts.edit];
+            const editingFiled = editing && ctx.repFiled?.has(ts.entries[ts.edit].id);
             const form = ts.form;
             const mand = q => q.mandatory ? '<span class="wiz-mandatory" title="Every entry needs this answer">⚠️ Mandatory</span>' : '';
             const fields = qs.map(q => {
@@ -4010,7 +4379,7 @@
                 return `<div class="ent-field"><label>${escapeHtml(q.label)}${mand(q)}</label><div class="wiz-q-ctl">${ctl}</div></div>`;
             }).join('');
             const cap = t.page != null && t.perPage
-                ? `${n} entr${n === 1 ? 'y' : 'ies'} · page ${t.page} prints ${tableCopies(t, n)}× (${t.perPage} rows per page)`
+                ? `${n - nVoid} entr${n - nVoid === 1 ? 'y' : 'ies'}${nVoid ? ` (+ ${nVoid} deleted, struck out)` : ''} · page ${t.page} prints ${tableCopies(t, n)}× (${t.perPage} rows per page)`
                 : '⚠️ These questions aren\'t bound to repeating rows on the form yet — entries are kept but won\'t print (Configure Sheets → 🔁 Group as repeating rows).';
             const cell = (q, row) => {
                 const v = row[q.id];
@@ -4020,17 +4389,20 @@
             };
             const list = n
                 ? ts.entries.map((row, i) => ({ row, i })).reverse().map(({ row, i }) => `
-                    <div class="ent-row${i === ts.edit ? ' editing' : ''}">
+                    <div class="ent-row${i === ts.edit ? ' editing' : ''}${row.void ? ' void' : ''}">
                         <span class="ent-n">${i + 1}</span>
                         <span class="ent-vals" title="${escapeHtml(qs.map(q => `${q.label}: ${cell(q, row)}`).join('\n'))}">${escapeHtml(qs.map(q => cell(q, row)).join(' · '))}</span>
-                        <button type="button" class="ent-btn ent-edit" data-i="${i}" title="Change this entry">✎</button>
-                        <button type="button" class="ent-btn ent-del" data-i="${i}" title="Delete this entry">🗑</button>
+                        ${row.void === 'pending'
+                            ? `<span class="ent-tag">deleted on Save</span><button type="button" class="ent-btn ent-undo" data-i="${i}" title="Keep this entry">↩</button>`
+                            : row.void ? '<span class="ent-tag">deleted</span>'
+                            : `<button type="button" class="ent-btn ent-edit" data-i="${i}" title="Change this entry">✎</button>
+                        <button type="button" class="ent-btn ent-del" data-i="${i}" title="Delete this entry">🗑</button>`}
                     </div>`).join('')
                 : '<p class="wiz-hint">No entries yet — fill in the first one above.</p>';
             return `
                 <div class="wiz-q-label">🔁 Entries <span class="ent-where">${escapeHtml(t.label)}</span></div>
                 <div class="ent-form">
-                    <div class="ent-form-title">${editing ? `✎ Changing entry ${ts.edit + 1}` : `Entry ${n + 1}`}</div>
+                    <div class="ent-form-title">${editing ? `✎ Changing entry ${ts.edit + 1}${editingFiled ? ' — on file: the change is a correction' : ''}` : `Entry ${n + 1}`}</div>
                     ${fields}
                     <div class="ent-actions">
                         <button type="button" class="btn btn-primary" id="entAddBtn">${editing ? '💾 Update entry' : '＋ Add entry'}</button>
@@ -4088,7 +4460,7 @@
             });
             ov.querySelectorAll('.ent-edit').forEach(b => b.addEventListener('click', () => {
                 const i = Number(b.dataset.i);
-                if (!ts.entries[i]) return;
+                if (!ts.entries[i] || ts.entries[i].void) return;
                 if (entryFormDirty(ts) && !confirm('Drop the entry you were typing and change this one instead?')) return;
                 ts.edit = i;
                 resetEntryForm(ctx, ts, qs, ts.entries[i]);
@@ -4096,10 +4468,25 @@
             }));
             ov.querySelectorAll('.ent-del').forEach(b => b.addEventListener('click', () => {
                 const i = Number(b.dataset.i);
-                if (!ts.entries[i] || !confirm(`Delete entry ${i + 1}? The entries after it move up one row.`)) return;
+                const row = ts.entries[i];
+                if (!row || row.void) return;
+                if (ctx.repFiled?.has(row.id)) {
+                    // On file: it stays on the page struck out, with initials and date, and stops counting
+                    if (!confirm(`Entry ${i + 1} is on file. Deleting it keeps it on the page, struck out, with your initials and today's date, and Reports stop counting it.\n\nDelete entry ${i + 1}?`)) return;
+                    row.void = 'pending';
+                    if (ts.edit === i) { ts.edit = null; resetEntryForm(ctx, ts, qs); }
+                    renderRunner();
+                    return;
+                }
+                if (!confirm(`Delete entry ${i + 1}? The entries after it move up one row.`)) return;
                 ts.entries.splice(i, 1);
                 if (ts.edit === i) { ts.edit = null; resetEntryForm(ctx, ts, qs); }
                 else if (ts.edit != null && ts.edit > i) ts.edit--;
+                renderRunner();
+            }));
+            ov.querySelectorAll('.ent-undo').forEach(b => b.addEventListener('click', () => {
+                const row = ts.entries[Number(b.dataset.i)];
+                if (row?.void === 'pending') delete row.void;
                 renderRunner();
             }));
             focusables[0]?.focus();
@@ -4118,6 +4505,9 @@
             const draft = {};
             const prefilled = {};
             const sheet = DB.paperWizard.sheets[sheetId];
+            // A day or page on file keeps its saved blanks: a prefill there would read as a correction
+            const dayFiled = !!day && dayOnFile(inst, day, sheetId);
+            const headFiled = headerOnFile(inst, sheetId);
             for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (isRepeatingQ(sheet, q)) continue;   // answered per entry (the Entries step)
                 if (q.type === 'initials') {
@@ -4130,7 +4520,7 @@
                     continue;
                 }
                 let v = q.rowScoped ? (inst.days?.[day]?.[q.id] ?? null) : (inst.header?.[q.id] ?? null);
-                if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom) {
+                if ((v === null || v === undefined || String(v).trim() === '') && q.prefillFrom && !(q.rowScoped ? dayFiled : headFiled)) {
                     v = runnerPrefill(q, backfill);
                     prefilled[q.id] = v;
                 }
@@ -4340,7 +4730,7 @@
             renderRunner();
         }
 
-        function saveInitConstants() {
+        async function saveInitConstants() {
             const ctx = runnerCtx;
             if (readOnlyHere(ctx.lotId)) return; // a live update may have made the lot read-only here
             // Mandatory questions must be answered before the quiz can save — same rule as
@@ -4352,6 +4742,21 @@
                     ? !(v && Array.isArray(v.strokes) && v.strokes.length)
                     : String(v ?? '').trim() === '';
                 if (empty) { showToast(`"${s.q.label}" is mandatory — answer it before saving`); return; }
+            }
+            // A constant saved before (not blank) is on file: changing it is a correction, initialled
+            // and dated, and it prints struck out on every page of the form
+            const pending = [];
+            for (const s of ctx.steps) {
+                if (s.q.type === 'initials') continue;
+                const from = corrVal(lotConstants(ctx.lotId, s.sheetId)?.[s.q.id]);
+                const to = String(ctx.draft[s.q.id] ?? '').trim();
+                if (from && from !== to) pending.push({ sheetId: s.sheetId, q: s.q, label: s.q.label, from, to, kind: 'edit', constant: true });
+            }
+            let drawn = null;
+            if (pending.length) {
+                drawn = await captureCorrection(pending);
+                if (!drawn) { showToast('Correction cancelled — nothing was saved'); return; }
+                if (runnerCtx !== ctx || readOnlyHere(ctx.lotId)) return;
             }
             for (const s of ctx.steps) {
                 let v = ctx.draft[s.q.id];
@@ -4370,10 +4775,20 @@
                 if (!sd.constants) sd.constants = {};
                 sd.constants[s.q.id] = v;
             }
+            if (drawn) {
+                const at = new Date().toISOString(), date = todayStr();
+                const by = { name: drawn.name, strokes: roundStrokes(drawn.strokes) };
+                for (const p of pending) {
+                    const sd = DB.paperWizard.entries[ctx.lotId][p.sheetId];
+                    (sd.constantChanges ||= []).push({ id: newChangeId(), at, date, kind: 'edit', constant: true, day: null, row: null,
+                        q: p.q.id, label: p.label, from: p.from, to: p.to, by, reason: drawn.reason });
+                }
+            }
             notifySitkaTools();
             closeRunner();
             renderAll();
-            showToast('Constant values saved — they print on every page of this form');
+            showToast('Constant values saved — they print on every page of this form'
+                + (pending.length ? ` · ${pending.length} correction${pending.length === 1 ? '' : 's'} recorded` : ''));
         }
 
         // Generic stylus draw-pad: pointer-captured strokes stored as normalized [x,y] arrays
@@ -4521,11 +4936,29 @@
                 if (!inst) { closeSignatureModal(); renderAll(); showToast('This log is no longer on file — nothing saved'); return; }
                 const nameEl = $('sigName2');
                 const strokes = sigModalCtx.strokes;
-                // Stamp the signature date (local YYYY-MM-DD) on every save — re-signing
-                // updates it; clearing removes it. Feeds the `signature.date` binding.
+                const name = String(nameEl?.value || '').trim();
+                const prev = inst.signature;
+                // Nothing redrawn or renamed: the signature and its date stay as they are
+                if (prev && strokes.length && (prev.name || '') === name && JSON.stringify(prev.strokes) === JSON.stringify(strokes)) {
+                    closeSignatureModal();
+                    showToast('Signature unchanged');
+                    return;
+                }
+                // Stamp the signature date (local YYYY-MM-DD) and time when it's drawn — re-signing
+                // updates them; clearing removes them. Feeds the `signature.date` binding.
+                const at = new Date().toISOString();
                 inst.signature = (strokes && strokes.length)
-                    ? { name: String(nameEl?.value || '').trim(), strokes, date: todayStr() }
+                    ? { name, strokes, date: todayStr(), at }
                     : null;
+                // Replacing or clearing a signature goes in the page's change log
+                if (prev && (prev.strokes || []).length) {
+                    (inst.changes ||= []).push({ id: newChangeId(), at, date: todayStr(), kind: 'signature', day: null, row: null, q: null,
+                        label: 'Master grower signature',
+                        from: `${prev.name || '—'}${prev.date ? ' · ' + fmtYYYYMMDD(prev.date) : ''}`,
+                        to: inst.signature ? `${name || '—'} · ${fmtYYYYMMDD(todayStr())}` : 'cleared',
+                        by: inst.signature ? { name, strokes: roundStrokes(strokes) } : null,
+                        reason: inst.signature ? 'Signed again' : 'Signature cleared' });
+                }
                 evaluateCompletion(sheetId, key, inst);
                 notifySitkaTools();
                 closeSignatureModal();
@@ -4545,6 +4978,29 @@
             // Match the box's on-paper pixel aspect ratio so initials print undistorted.
             const ar = f ? boxPrintAspect(sheet, f) : 3;
             initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
+        }
+
+        // The runner question's answer as saved (corrections compare against it)
+        function runnerSavedAnswer(ctx, q) {
+            return corrVal(q.rowScoped ? ctx.inst?.days?.[ctx.day]?.[q.id] : ctx.inst?.header?.[q.id]);
+        }
+
+        // Under an answer that's on file: what it was, once it's been changed
+        function runnerWasHtml(ctx, q) {
+            const saved = runnerSavedAnswer(ctx, q);
+            const now = String(ctx.draft[q.id] ?? '').trim();
+            if (sameAnswer(q, saved, now)) return '';
+            if (printsAsCheckbox(ctx.sheetId, q.id)) return `✏️ On file as <b>${saved ? escapeHtml(saved) : 'blank'}</b> — saving strikes out the old ✕ on the page; your initials and the date go in the 📝 Change log.`;
+            return `✏️ On file as <b>${saved ? escapeHtml(saved) : 'blank'}</b> — saving strikes it out on the page, with your initials and today's date.`;
+        }
+
+        // Earlier corrections of this answer
+        function runnerHistHtml(ctx, q) {
+            const list = (ctx.inst?.changes || []).filter(c => c.q === q.id && !c.row && CORR_KINDS.has(c.kind)
+                && (q.rowScoped ? c.day === ctx.day : c.day == null));
+            if (!list.length) return '';
+            return `<div class="wiz-hist">Changed before: ${list.map(c =>
+                `<s>${escapeHtml(c.from || 'blank')}</s> → ${escapeHtml(c.to || 'blank')} · ${escapeHtml(c.by?.name || '')} · ${escapeHtml(fmtYYYYMMDD(c.date))}`).join('; ')}</div>`;
         }
 
         // Rebuild ONLY the Next/Save footer slot (and wire its buttons) based on the
@@ -4622,11 +5078,28 @@
                     <div class="wiz-hint">Answers are saved per day — pick a day, answer, then Save.</div>`;
             }
 
+            // On file: a change is a correction (the old value stays on the page, struck out). Drawn
+            // initials on file are shown, not redrawn.
+            const filed = !isInit && q.type !== 'entries' && runnerScopeOnFile(ctx, q);
+            const initLocked = filed && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0;
+            let onFileHtml = '';
+            if (!isInit && q.type === 'entries') {
+                if (ctx.repFiled?.size) onFileHtml = `<div class="wiz-onfile">✏️ Saved entries are on file. Changing or deleting one keeps the old values on the page, struck out, with your initials and today's date.</div>`;
+            } else if (filed) {
+                onFileHtml = `<div class="wiz-onfile">✏️ ${q.rowScoped ? 'This day is' : 'This page is'} on file. A change keeps the old value on the page, struck out, with your initials and today's date.</div>`;
+            }
+
             // Question step body. An initials question renders a draw pad. The master grower's
             // signature is never a wizard step — it is captured only via the cabinet ✍️ Sign button.
             let bodyInner;
             if (q.type === 'entries') {
                 bodyInner = entriesStepHtml(ctx, sheet, q.table);
+            } else if (initLocked) {
+                const d = ctx.draft[q.id];
+                bodyInner = `
+                <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}</div>
+                ${corrInitialsSvg(d, 'ini-view')}
+                <div class="wiz-hint" style="margin-bottom:10px;">🔒 ${escapeHtml(d.name || 'Initialled')} — drawn when this ${q.rowScoped ? 'day' : 'page'} was filled in. They stay as they are; a correction is initialled when you save it.</div>`;
             } else if (q.type === 'initials') {
                 const d = ctx.draft[q.id] || { name: '', strokes: [] };
                 bodyInner = `
@@ -4682,6 +5155,7 @@
                 bodyInner = `
                 <div class="wiz-q-label">${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
                 <div class="wiz-q-ctl">${ctl}</div>
+                ${filed ? `<div class="wiz-was" id="wizWas">${runnerWasHtml(ctx, q)}</div>${runnerHistHtml(ctx, q)}` : ''}
                 ${strikeHint}
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
@@ -4704,6 +5178,7 @@
             <div class="wiz-body">
                 ${isInit ? '<div class="wiz-hint">These values are set once per lot and print on every page of this form — re-run any time to change them.</div>' : ''}
                 ${dayChipsHtml}
+                ${onFileHtml}
                 ${bodyInner}
             </div>
             <div class="wiz-foot">
@@ -4742,6 +5217,8 @@
 
             if (q.type === 'entries') {
                 wireEntriesStep(ctx, sheet, q.table);
+            } else if (initLocked) {
+                // nothing to wire: on-file initials are shown, not redrawn
             } else if (q.type === 'initials') {
                 initQuestionInitialsPad(ctx, q);
                 // A mandatory initials question unlocks Next/Save as soon as the first stroke
@@ -4767,14 +5244,16 @@
                 });
             } else {
                 const ctlEl = $('wizCtl');
+                const showWas = () => { const w = $('wizWas'); if (w) w.innerHTML = runnerWasHtml(ctx, q); };
                 ctlEl.addEventListener('input', () => {
                     ctx.draft[q.id] = ctlEl.value;
                     // A mandatory question's Next/Save button appears/disappears as the answer
                     // is typed. Update ONLY the footer slot — a full renderRunner() would rebuild
                     // this input and reset its caret to position 0, reversing typed text.
                     if (q.mandatory) updateRunnerFooter();
+                    showWas();
                 });
-                ctlEl.addEventListener('change', () => { ctx.draft[q.id] = ctlEl.value; });
+                ctlEl.addEventListener('change', () => { ctx.draft[q.id] = ctlEl.value; showWas(); });
                 // Enter advances to the next question (or saves on the last one) — same rules
                 // as clicking Next: blocked while a mandatory question is unanswered.
                 ctlEl.addEventListener('keydown', (e) => {
@@ -4830,6 +5309,10 @@
                 if (empty) { showToast(`"${q.label}" is mandatory — answer it before saving`); return; }
             }
             const pw = DB.paperWizard;
+            // The sheet's pages as they were before this save: what was on file, and what Cancel at the
+            // correction pad puts back (see confirmCorrections below)
+            const sdBefore = JSON.parse(JSON.stringify(pw.entries?.[ctx.lotId]?.[ctx.sheetId] || null));
+            const ctxInstBefore = JSON.stringify(ctx.inst || null);
             if (!pw.entries[ctx.lotId]) pw.entries[ctx.lotId] = {};
             if (!pw.entries[ctx.lotId][ctx.sheetId]) pw.entries[ctx.lotId][ctx.sheetId] = { instances: {} };
             const sheetData = pw.entries[ctx.lotId][ctx.sheetId];
@@ -4872,6 +5355,29 @@
                 if (backup.rows === undefined) delete inst.rows; else inst.rows = backup.rows;
                 inst.signature = backup.signature;
             };
+
+            // Corrections: values that were on file and changed in this save — and anything the save
+            // carried forward from them — need a name, drawn initials and a reason. Asked once everything
+            // else is settled; Cancel puts the sheet's pages and the lot back as they were before Save
+            // (nothing saved, the runner stays open with its draft). Returns how many changes were
+            // recorded, or null when cancelled.
+            const confirmCorrections = async () => {
+                const sd = pw.entries[ctx.lotId]?.[ctx.sheetId];
+                const pending = findCorrections(ctx.sheetId, sdBefore, sd, { key: ctx.key, day: ctx.day });
+                if (!pending.length) return 0;
+                const drawn = await captureCorrection(pending);
+                if (!drawn) {
+                    if (backup.lot && lotRec) Object.assign(lotRec, backup.lot);
+                    if (sdBefore) pw.entries[ctx.lotId][ctx.sheetId] = sdBefore;
+                    else delete pw.entries[ctx.lotId][ctx.sheetId];
+                    ctx.inst = DB.paperWizard.entries?.[ctx.lotId]?.[ctx.sheetId]?.instances?.[ctx.key] || JSON.parse(ctxInstBefore) || ctx.inst;
+                    showToast('Correction cancelled — nothing was saved');
+                    return null;
+                }
+                recordCorrections(sd, pending, drawn, { key: ctx.key, day: ctx.day });
+                return pending.length;
+            };
+            const corrNote = n => n ? ` · ${n} correction${n === 1 ? '' : 's'} recorded` : '';
 
             // Write-back is a property of the question TYPE (implicit — no writesTo field).
             const phaseQ = wiz.questions.find(q => q.type === 'phase');
@@ -4940,12 +5446,14 @@
             if (sheet.cadence === 'daily-weekly' && ctx.day && isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)) {
                 const done = await applyBackfill(ctx, wiz, inst, backup);
                 if (!done) { restoreBackup(); return; } // cancelled — nothing saved, runner stays open
+                const nCorr = await confirmCorrections();
+                if (nCorr === null) return;
                 captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
                 evaluateCompletion(ctx.sheetId, ctx.key, inst);
                 notifySitkaTools();
                 closeRunner();
                 renderAll();
-                showToast(done.message);
+                showToast(done.message + corrNote(nCorr));
                 return;
             }
 
@@ -4998,6 +5506,8 @@
                 // move-day row — that day was also kept in the previous room.
                 if (phaseChanged && roomChanged && roomQ?.rowScoped && prevRoom && inst.days?.[moveDay]) inst.days[moveDay][roomQ.id] = prevRoom;
             }
+            const nCorr = await confirmCorrections();
+            if (nCorr === null) return;
 
             captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
             evaluateCompletion(ctx.sheetId, ctx.key, inst);
@@ -5009,21 +5519,21 @@
             closeRunner();
             renderAll();
             if (rolled && phaseChanged && roomChanged) {
-                showToast(`Entry saved · phase change to ${rolled.value} + room change to ${nvRoom} recorded`);
+                showToast(`Entry saved · phase change to ${rolled.value} + room change to ${nvRoom} recorded` + corrNote(nCorr));
                 if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
             } else if (rolled) {
-                showToast(phaseChanged
+                showToast((phaseChanged
                     ? `Entry saved · phase change to ${rolled.value} recorded`
-                    : `Entry saved · room change to ${rolled.value} recorded`);
+                    : `Entry saved · room change to ${rolled.value} recorded`) + corrNote(nCorr));
                 // Double entry on the move day: offer to run that day's entry on the fresh page.
                 if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
             } else if (plantZero) {
-                showToast('Entry saved · all plants removed — log struck out');
+                showToast('Entry saved · all plants removed — log struck out' + corrNote(nCorr));
             } else if (rqs.length) {
-                const n = (inst.rows || []).length;
-                showToast(`Saved · ${n} entr${n === 1 ? 'y' : 'ies'}`);
+                const n = (inst.rows || []).filter(r => !r?.void).length;
+                showToast(`Saved · ${n} entr${n === 1 ? 'y' : 'ies'}` + corrNote(nCorr));
             } else {
-                showToast('Entry saved');
+                showToast('Entry saved' + corrNote(nCorr));
             }
         }
 
@@ -5216,17 +5726,51 @@
                 copiesOf.set(t.page, Math.max(copiesOf.get(t.page) || 1, tableCopies(t, tableRows[i].length)));
             });
             const pageCount = printDoc.pages.reduce((sum, _, i) => sum + (copiesOf.get(i + 1) || 1), 0);
+            const sd = DB.paperWizard.entries?.[lotId]?.[sheetId] || null;
+            // A deleted entry's initials and date print once, after the value in the row's right-most text box
+            const voidTail = new Set();
+            for (const t of tables) {
+                const bySlot = new Map();
+                for (const [fid, slot] of t.slotOf) {
+                    const f = (sheet.fields || []).find(x => x.id === fid);
+                    const fq = f && wiz.questions.find(x => x.id === f.questionId);
+                    if (!f || f.checkbox || f.source || !fq || fq.type === 'initials') continue;
+                    const cur = bySlot.get(slot);
+                    if (!cur || f.x > cur.x) bySlot.set(slot, f);
+                }
+                for (const f of bySlot.values()) voidTail.add(f.id);
+            }
+            const voidRecOf = row => (inst.changes || []).find(c => c.kind === 'void' && c.row === row.id) || { by: null, date: String(row.void).slice(0, 10) };
+            const corrTail = c => ` – ${corrInitialsSvg(c.by)} ${escapeHtml(fmtYYYYMMDD(c.date || ''))}`;
 
-            // One overlay span for a field at normalized y.
-            const overlaySpan = (f, y, val) => {
+            // One overlay span for a field at normalized y. `extra` = { corr, voidRec, tail }: the box's
+            // corrections (each old value prints struck out, with the initials and date, above the
+            // current value) and, for a deleted entry, its record (the value prints struck out; `tail` =
+            // this box carries the initials and date).
+            const overlaySpan = (f, y, val, extra = null) => {
                 const left = f.x * 100, top = y * 100, w = f.w * 100, h = f.h * 100;
+                const corr = extra?.corr || [];
+                const voidRec = extra?.voidRec || null;
                 if (f.checkbox) {
                     // Square box sized to the field's height in inches (the placed box over the form's checkbox).
                     const boxIn = Math.max(0.08, f.h * H);
-                    return `<span class="ov-cb${val.checked ? ' on' : ''}" style="left:${left}%;top:${top}%;width:${boxIn}in;height:${boxIn}in;${val.checked ? `font-size:${(boxIn * 0.72).toFixed(3)}in;` : ''}">${val.checked ? '✕' : ''}</span>`;
+                    // A box that lost its ✕ in a correction (or on a deleted entry) prints the ✕ struck out, inside
+                    // the box. Nothing prints beside it — that would cover the form's label — so a tick box's
+                    // initials and date are in the change log only (user decision 2026-10-19).
+                    const cv = f.checkValue || '';
+                    const on = val.checked && !voidRec;
+                    const struck = !on && (val.checked || corr.some(c => checkboxMatches(c.from, cv)));
+                    return `<span class="ov-cb${on ? ' on' : ''}${struck ? ' struck' : ''}" style="left:${left}%;top:${top}%;width:${boxIn}in;height:${boxIn}in;${on || struck ? `font-size:${(boxIn * 0.72).toFixed(3)}in;` : ''}">${on || struck ? '✕' : ''}</span>`;
                 }
                 const fs = (f.fontSize ?? 10) / 72;
-                return `<span class="ov" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
+                if (!corr.length && !voidRec) {
+                    return `<span class="ov" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
+                }
+                const lines = corr.map(c => `<span class="cl"><s>${escapeHtml(c.from || 'N/A')}</s>${corrTail(c)}</span>`);
+                lines.push(voidRec
+                    ? `<span class="cl"><s>${escapeHtml(val.text)}</s>${extra.tail ? corrTail(voidRec) : ''}</span>`
+                    : `<span class="cl">${escapeHtml(val.text)}</span>`);
+                return `<span class="ov ov-corr" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${lines.join('')}</span>`;
             };
 
             // Overlay spans for one page. `copy` = which copy of the repeating page (0 = the first),
@@ -5248,7 +5792,12 @@
                             if (rec && Array.isArray(rec.strokes) && rec.strokes.length) html += strokesSvgHtml(f, rec);
                             continue;
                         }
-                        html += overlaySpan(f, f.y, printRepeatValue(sheet, sheetId, inst, lotId, key, f, entry, n + 1, pageInfo));
+                        const extra = entry ? {
+                            corr: boxCorrections(sd, inst, f, null, entry.id),
+                            voidRec: entry.void && f.questionId && (!f.source || f.checkbox) ? voidRecOf(entry) : null,
+                            tail: voidTail.has(f.id)
+                        } : null;
+                        html += overlaySpan(f, f.y, printRepeatValue(sheet, sheetId, inst, lotId, key, f, entry, n + 1, pageInfo), extra);
                         continue;
                     }
                     // Initials box: the field is bound to a question of type 'initials'. The drawn
@@ -5267,16 +5816,17 @@
                         // Daily-entry group member: prints on its OWN day, at its OWN placed
                         // position — no cloning, no pitch math. What you slid is what prints.
                         const dayDate = addDaysStr(key, (f.day || 1) - 1);
-                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate, pageInfo));
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate, pageInfo), { corr: boxCorrections(sd, inst, f, dayDate, null) });
                     } else if (f.row && dayRows) {
                         // Legacy row field (pre-grouping sheet): clone down by the stored pitch.
                         for (const r of dayRows) {
                             const lf = r.fields.find(x => x.id === f.id);
                             if (!lf) continue;
-                            html += overlaySpan(lf, lf.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, addDaysStr(key, r.day - 1), pageInfo));
+                            const dayDate = addDaysStr(key, r.day - 1);
+                            html += overlaySpan(lf, lf.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, dayDate, pageInfo), { corr: boxCorrections(sd, inst, f, dayDate, null) });
                         }
                     } else {
-                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, null, pageInfo));
+                        html += overlaySpan(f, f.y, printFieldValue(sheet, sheetId, inst, lotId, key, f, null, pageInfo), { corr: boxCorrections(sd, inst, f, null, null) });
                     }
                 }
                 if (sheet.signature && (sheet.signature.page ?? 1) === pageNum) html += sigSvgHtml(sheet.signature, inst.signature);
@@ -5317,6 +5867,7 @@
             }).join('');
 
             const title = `${sheet.name || sheetId} — ${lotId} · ${fmtMMDD(key)}`;
+            const nChanges = pageChangeList(lotId, sheetId, inst).length;
             const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
   * { box-sizing: border-box; }
@@ -5335,12 +5886,34 @@
   .ov-strike { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   .ov-strike line { stroke: #000; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
   .ov-strike-txt, .ov-strike-date { position: absolute; transform: translate(-50%, -50%); color: #000; font-weight: 700; white-space: nowrap; }
+  .ov-corr .cl { display: block; white-space: nowrap; }
+  .ov-corr s { text-decoration: line-through; text-decoration-thickness: 0.07em; }
+  .ov-corr.fitted { overflow: visible; }
+  .ci { display: inline-block; height: 1em; width: ${CORR_INITIALS_ASPECT}em; vertical-align: -0.2em; overflow: visible; }
+  .ci polyline { fill: none; stroke: #000; stroke-width: 1.1; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+  .ov-cb.struck::after { content: ''; position: absolute; left: -15%; right: -15%; top: 50%; border-top: 1.5px solid #000; }
+  .pp-corr { font-size: 12px; color: #92400e; }
   @page { size: ${W}in ${H}in; margin: 0; }
   @media print { .pp-toolbar { display: none; } .pp-page { margin: 0; } }
 </style></head>
 <body>
-  <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span><button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
+  <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span>${nChanges ? `<span class="pp-corr">✏️ ${nChanges} change${nChanges === 1 ? '' : 's'} on file for this page — see 📝 Change log</span>` : ''}<button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
   ${pages}
+  <script>
+  // Corrected boxes hold several lines: shrink each one's text until it fits its box (not below 5 pt);
+  // anything still too big shows past the box edge rather than being cut off
+  (function () {
+    var min = 5 * 96 / 72;
+    document.querySelectorAll('.ov-corr').forEach(function (el) {
+      var fs = parseFloat(getComputedStyle(el).fontSize);
+      for (var i = 0; i < 80 && fs > min && (el.scrollHeight > el.clientHeight + 0.5 || el.scrollWidth > el.clientWidth + 0.5); i++) {
+        fs = Math.max(min, fs * 0.94);
+        el.style.fontSize = fs + 'px';
+      }
+      el.classList.add('fitted');
+    });
+  })();
+  <\/script>
 </body></html>`;
 
             const win = window.open('', '_blank', 'width=1000,height=1200');
@@ -5589,12 +6162,14 @@
                 }
                 initBtnHtml = `<button type="button" class="cab-initbtn${unset ? ' pending' : ''}" id="cabInitBtn" title="${unset ? `${unset} constant value(s) not yet set` : 'All constant values set — re-run to change them'}">📋 Initialize paperwork</button>`;
             }
+            const nLotChanges = lotChangeRecords(activeLotId).length;
             panel.innerHTML = `
                 <div class="cab-head">🗄️ ${escapeHtml(activeLotId)}${strain} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}${totalMissing ? ` · <span style="color:var(--warning)">⚠️ ${totalMissing} missing</span>` : ''}${lot ? '' : '<div class="cab-sub">Lot no longer in database — history kept for reference.</div>'}</div>
                 ${elsewhere ? `<div class="cab-warn">${escapeHtml(elsewhere.banner)}</div>` : ''}
                 <div class="cab-toolbar">
                     <button type="button" class="cab-loaddoc" id="cabLoadDocBtn">📂 Load document</button>
                     ${initBtnHtml}
+                    <button type="button" class="cab-changelog" id="cabChangeLogBtn" title="Every change made to this lot's paperwork after it was on file">📝 Change log${nLotChanges ? ` (${nLotChanges})` : ''}</button>
                     ${printDocChip}
                 </div>
                 ${Object.keys(pw.sheets || {}).length === 0 ? '<div class="cab-hint">No sheets configured yet — load a document and configure it in the <b>Configure Sheets</b> tab.</div>' : ''}
@@ -5627,6 +6202,133 @@
             $('cabLoadDocBtn').addEventListener('click', () => $('printImportInput').click());
             // Initialize paperwork quiz — sets this lot's constant values (lot-level storage).
             $('cabInitBtn')?.addEventListener('click', () => openInitQuiz(activeLotId));
+            // The change log: the whole lot's, or one page's from its ✏️ chip
+            $('cabChangeLogBtn').addEventListener('click', () => openChangeLog(activeLotId));
+            panel.querySelectorAll('[data-changes]').forEach(btn => btn.addEventListener('click', () =>
+                openChangeLog(btn.dataset.plot, { sheetId: btn.dataset.sheet, key: btn.dataset.key })));
+        }
+
+        // ---- Change log (corrections to paperwork on file) ----
+        // Every change on a lot's paperwork, newest first: corrections, entries deleted, values carried
+        // forward, constants changed, signatures replaced. Read-only; printable for the QAP.
+        function pageLabelFor(sheetId, key) {
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet || !key || key === 'single') return '';
+            return sheet.cadence === 'daily-weekly' ? `${fmtShort(key)}–${fmtShort(addDaysStr(key, 6))}` : fmtShort(key);
+        }
+
+        function lotChangeRecords(lotId) {
+            const out = [];
+            for (const [sheetId, sd] of Object.entries(DB.paperWizard?.entries?.[lotId] || {})) {
+                if (!sd || typeof sd !== 'object') continue;
+                const doc = DB.paperWizard.sheets?.[sheetId]?.name || sheetId;
+                for (const c of sd.constantChanges || []) out.push({ c, sheetId, key: null, doc, page: 'every page' });
+                for (const [key, inst] of Object.entries(sd.instances || {})) {
+                    for (const c of inst?.changes || []) out.push({ c, sheetId, key, doc, page: pageLabelFor(sheetId, key) });
+                }
+            }
+            return out.sort((a, b) => String(b.c.at || '').localeCompare(String(a.c.at || '')));
+        }
+
+        // When a change was made, in local time: yyyy/mm/dd hh:mm
+        function changeWhen(c) {
+            const d = new Date(c.at || '');
+            const hm = isNaN(d) ? '' : ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            return fmtYYYYMMDD(c.date || '') + hm;
+        }
+
+        // The log's rows; `only` = { sheetId, key } limits it to one page (its constants too)
+        function changeLogRows(lotId, only) {
+            return lotChangeRecords(lotId).filter(r => !only || (r.sheetId === only.sheetId && (r.key === only.key
+                || (r.key === null && DB.paperWizard.sheets?.[r.sheetId]?.cadence === 'daily-weekly'))));
+        }
+
+        function changeLogTableHtml(rows, iniCls) {
+            return `<table class="chg-table"><thead><tr><th>When</th><th>Document</th><th>Where</th><th>Change</th><th>By</th><th>Reason</th></tr></thead><tbody>${
+                rows.map(({ c, doc, page }) => `<tr>
+                    <td>${escapeHtml(changeWhen(c))}</td>
+                    <td>${escapeHtml(doc)}${page ? `<div class="chg-note">${escapeHtml(page)}</div>` : ''}</td>
+                    <td>${escapeHtml(changeWhere(c))}</td>
+                    <td>${changeWhatHtml(c)}</td>
+                    <td>${c.by ? `${corrInitialsSvg(c.by, iniCls)}${escapeHtml(c.by.name || '')}` : '—'}</td>
+                    <td>${escapeHtml(c.reason || '')}</td></tr>`).join('')}</tbody></table>`;
+        }
+
+        function closeChangeLog() {
+            $('chgOverlay')?.remove();
+            document.removeEventListener('keydown', changeLogEsc);
+        }
+        function changeLogEsc(e) { if (e.key === 'Escape') closeChangeLog(); }
+
+        function openChangeLog(lotId, only = null) {
+            closeChangeLog();
+            const rows = changeLogRows(lotId, only);
+            const ov = document.createElement('div');
+            ov.className = 'wiz-overlay';
+            ov.id = 'chgOverlay';
+            ov.addEventListener('mousedown', e => { if (e.target === ov) closeChangeLog(); });
+            const pageName = only ? `${DB.paperWizard.sheets?.[only.sheetId]?.name || only.sheetId}${pageLabelFor(only.sheetId, only.key) ? ' · ' + pageLabelFor(only.sheetId, only.key) : ''}` : '';
+            ov.innerHTML = `
+                <div class="wiz-card chg-card">
+                    <div class="wiz-head">
+                        <span class="wiz-title">📝 Change log — ${escapeHtml(lotId)}</span>
+                        <span class="wiz-prog">${rows.length} change${rows.length === 1 ? '' : 's'}</span>
+                        <button type="button" class="wiz-close" id="chgCloseBtn" title="Close">✕</button>
+                    </div>
+                    <div class="wiz-body">
+                        ${only ? `<div class="chg-filter">Showing ${escapeHtml(pageName)} only · <button type="button" id="chgAllBtn">Show the whole lot</button></div>` : ''}
+                        <div class="chg-scroll">${rows.length ? changeLogTableHtml(rows, 'chg-ini') : '<p class="wiz-hint">No changes recorded — nothing on file has been changed.</p>'}</div>
+                    </div>
+                    <div class="wiz-foot">
+                        <span class="spacer"></span>
+                        <button type="button" class="btn btn-secondary" id="chgPrintBtn"${rows.length ? '' : ' disabled'}>🖨️ Print change log</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(ov);
+            document.addEventListener('keydown', changeLogEsc);
+            $('chgCloseBtn').addEventListener('click', closeChangeLog);
+            $('chgAllBtn')?.addEventListener('click', () => openChangeLog(lotId));
+            $('chgPrintBtn').addEventListener('click', () => printChangeLog(lotId, only, pageName));
+        }
+
+        // The change log in a light, print-ready window (like the form's print popup)
+        function printChangeLog(lotId, only, pageName) {
+            const rows = changeLogRows(lotId, only);
+            const lot = DB.lots[lotId];
+            const now = new Date();
+            const stamp = `${fmtYYYYMMDD(todayStr())} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const title = `Change log — ${lotId}${lot?.strain ? ' ' + lot.strain : ''}${pageName ? ' — ' + pageName : ''}`;
+            const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  .pp-toolbar { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #f3f4f6; border-bottom: 1px solid #d1d5db; }
+  .pp-print-btn { margin-left: auto; font-size: 14px; font-weight: 700; padding: 6px 16px; border: none; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+  main { padding: 0.4in; }
+  h1 { font-size: 16pt; margin: 0 0 4pt; }
+  .sub { font-size: 9pt; color: #374151; margin-bottom: 12pt; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th, td { border: 1px solid #9ca3af; padding: 4pt 5pt; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; }
+  tr { page-break-inside: avoid; }
+  .chg-note { color: #4b5563; font-size: 8pt; }
+  .pi { display: inline-block; width: 40pt; height: 16pt; vertical-align: middle; margin-right: 3pt; }
+  .pi polyline { fill: none; stroke: #000; stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+  @page { size: letter landscape; margin: 0.3in; }
+  @media print { .pp-toolbar { display: none; } main { padding: 0; } }
+</style></head><body>
+  <div class="pp-toolbar"><b>📝 ${escapeHtml(title)}</b><button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
+  <main>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="sub">Every change made to this paperwork after it was on file, newest first · ${rows.length} change${rows.length === 1 ? '' : 's'} · printed ${escapeHtml(stamp)}</div>
+    ${changeLogTableHtml(rows, 'pi')}
+  </main>
+</body></html>`;
+            const win = window.open('', '_blank', 'width=1100,height=900');
+            if (!win) { showToast('Popup blocked — allow popups to print'); return; }
+            win.document.open();
+            win.document.write(html);
+            win.document.close();
         }
 
         let configureRenderKey = '';

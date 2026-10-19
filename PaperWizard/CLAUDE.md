@@ -93,7 +93,7 @@ At render time each group member prints on **its own day at its own placed posit
 An **initials** question is a wizard question whose `type` is `'initials'`. Instead of a text/number/select control, the runner shows a **canvas draw pad** (the shared draw-pad machinery) sized to the bound field's aspect ratio, plus a name/initials input. Whoever fills it draws their initials with a stylus; the strokes are stored as normalized `[x, y]` point arrays (same vector format as the signature — no image). This is an accountability record: every person who touches a day leaves a mark that prints in the box on the controlled form.
 
 - **Configure:** place a box over the form's initials spot and bind it to a question of type **✍️ initials** via the Field properties panel ("Filled by question"). The editor shows a ✍️ badge on the bound box, derived from the binding — there is no per-field flag. To make it a **per-day** sign-off on a weekly sheet, place the box as part of the day-1 row, group it (🔗) so it clones to all 7 days, and mark the question **row-scoped**; each day's clone then carries its own pad and prints that day's strokes.
-- **Fill:** the initials question is a normal step in the wizard — place it last for an end-of-day sign-off. The person draws their initials; saving stores them on **that specific day** (row-scoped) or the instance (one-shot/event). Re-opening repaints what was drawn, so it can be corrected or re-signed. An empty pad on save clears the answer (`null`).
+- **Fill:** the initials question is a normal step in the wizard — place it last for an end-of-day sign-off. The person draws their initials; saving stores them on **that specific day** (row-scoped) or the instance (one-shot/event). Re-opening a day that isn't complete yet repaints what was drawn, so it can be redrawn. Once the day is **on file** (see "Corrections & Change Log") its initials are shown locked: a correction is initialled on the correction pad instead. An empty pad on save clears the answer (`null`).
 - **Storage:** the answer lives in the normal answer slot — `days[YYYY-MM-DD][questionId]` for a row-scoped question, `header[questionId]` otherwise — as `{ name, strokes } | null`. There is no separate per-day initials structure.
 - **Print:** each box prints its bound question's strokes as an inline SVG polyline at the box's placed position (a group member prints its own day's strokes). A box with no strokes prints empty.
 - **Completion:** a row-scoped initials question counts like any other row-scoped question — a day is "answered" only once its strokes are present (`hasAnswer` treats the `{strokes}` object as answered when non-empty). The leaf's progress chip and the runner's day chips reflect this.
@@ -161,7 +161,7 @@ A sheet may have signature boxes (`signature`: normalized `x/y/w/h` + optional l
 3. At print time the popup renders the strokes as an inline **SVG polyline** positioned over the page image at the box location, scaled to the box's rendered size. The signer's typed name is *not* printed unless a field is bound to it — the stroke is the signature.
 4. **Signature date:** saving the signature also stamps `inst.signature.date` with the local date (YYYY-MM-DD) — re-signing updates it, clearing the pad removes it. A field bound to the `signature.date` auto-fill binding prints that date as **yyyy/mm/dd** (resolved live at print time, never snapshotted; N/A until signed), so the form carries the sign-off date with zero questions.
 
-Re-signing replaces the stored strokes. An instance without a signature (when the sheet defines one) can still be printed — the signature box simply prints empty and the Print tooltip notes "signature missing".
+Re-signing replaces the stored strokes and goes in the page's change log (`kind: 'signature'`, old signer and date → new, or "cleared"). Saving without redrawing or renaming changes nothing (the date stays). The signature also stores `at` (ISO time), so the cabinet can flag a page **changed after signing**. An instance without a signature (when the sheet defines one) can still be printed — the signature box simply prints empty and the Print tooltip notes "signature missing".
 
 **Shared draw-pad machinery:** this canvas pad is the single generic pointer-captured drawing surface used by all three drawn-ink features — the end-of-log **signature**, the **initials question** (see "Initials Question Type"), and the phase/room-change **strike-out initials** (see "Phase & Room Change"). All store the same normalized-stroke vector format and print through the same SVG-polyline overlay path.
 
@@ -216,15 +216,16 @@ An instance stores:
 | `room` | string \| null | Snapshot of `lot.currentRoom` at instance creation — daily-weekly sheets only. A room change mid-window rolls the log over exactly like a phase change (see "Phase & Room Change"); a closed log keeps its original room even after the lot moves on. |
 | `header` | map `questionId → value` | Instance-level (non-row) answers. |
 | `days` | map `YYYY-MM-DD → { questionId → value, confirmed?: string[] }` | Per-day answers for row-scoped questions. A row-scoped **initials** question stores its `{ name, strokes }` object here (see "Initials Question Type"). `confirmed` is the list of non-initials row-scoped question ids the user has saved this day's entry with — blank-but-confirmed fields count as filled for completion (see "Completion Rules"); initials are never in it. |
-| `rows` | array, optional | The repeating tables' entries, table by table, each in order: `[{ id, <questionId>: value, … }]` (8-char `id`; initials as `{ name, strokes } \| null`). Only on sheets with repeating questions. A table's entry n prints in its n-th row slot. See "Repeating Rows". |
+| `rows` | array, optional | The repeating tables' entries, table by table, each in order: `[{ id, <questionId>: value, …, void? }]` (8-char `id`; initials as `{ name, strokes } \| null`). Only on sheets with repeating questions. A table's entry n prints in its n-th row slot. `void` (ISO time) marks an entry deleted after it was on file: it keeps its slot, prints struck out, and counts nowhere. See "Repeating Rows". |
 | `phaseChangeDate` | `YYYY-MM-DD` \| null | Set when the lot moved to a new phase **or room** mid-window — or when all plants were removed (plant count 0) (see "Phase & Room Change"). Rows after this date are struck through at render time and no longer require entries. |
 | `strikeInitials` | `{ name, strokes }` \| string \| null | The confirmer's **drawn** strike-out initials — captured on a stylus pad when the early end was confirmed (see "Phase & Room Change"). Printed as an SVG polyline **above** the strike line (the date prints below it). Required for the instance to *complete*; without them a struck-through instance can still be printed, but the strike line simply doesn't render. *Legacy:* instances saved before drawn capture store a plain typed string; print falls back to rendering that string centered in the box. |
 | `snapshots` | map `binding → value` | Save-time binding values (see "Auto-Fill Bindings"). Captured at instance creation and refreshed on every entry save; this — not the live DB — is what prints. |
-| `signature` | `{ name, strokes: [[x,y,…], …], date?: YYYY-MM-DD } \| null` | Captured signature (normalized points). `date` is stamped automatically when the signature is saved via the ✍️ Sign button (re-signing updates it; clearing removes it) and feeds the `signature.date` binding. Legacy signatures without a `date` print N/A in bound boxes until re-signed. |
+| `signature` | `{ name, strokes: [[x,y,…], …], date?: YYYY-MM-DD, at?: ISO } \| null` | Captured signature (normalized points). `date` is stamped automatically when the signature is saved via the ✍️ Sign button (re-signing updates it; clearing removes it) and feeds the `signature.date` binding; `at` is the time, for "changed after signing". Legacy signatures without a `date` print N/A in bound boxes until re-signed. |
+| `changes` | array, optional | The page's **change log**: every correction to a value that was on file, entries deleted, values carried forward, signatures replaced — see "Corrections & Change Log". |
 | `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
 | `printedAt` | ISO string \| null | Set after a successful print-popup render (informational; re-printing always allowed). |
 
-A daily-weekly sheet's entry object may also carry **`paperBefore`** (`YYYY-MM-DD`, set by "Start on a chosen day" — days before it are on paper) and **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
+A daily-weekly sheet's entry object may also carry **`paperBefore`** (`YYYY-MM-DD`, set by "Start on a chosen day" — days before it are on paper), **`constantChanges`** (the change log of its constants — see "Corrections & Change Log") and **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
 
 ### Filing Cabinet (lot paperwork tree)
 
@@ -299,7 +300,7 @@ When a lot moves Clone → Veg → Bloom — or when it **moves rooms** (e.g. in
 
 ### Starting a Log Mid-Crop (earlier paperwork on paper)
 
-The facility is moving from paper, so a lot's early grow logs may only exist on paper. For a lot with **no daily log yet** for a daily-weekly sheet, that sheet's cabinet section shows **📅 Start on a chosen day…**. Its dialog asks for the first day (on or before today), the starting **phase**, **plant count** and **room**:
+The facility is moving from paper, so a lot's early grow logs may only exist on paper. For a lot with **no daily log yet** for a daily-weekly sheet, that sheet's cabinet section shows **📅 Start on a chosen day…**. Its dialog asks for the first day (on or before today; it opens on the **date the lot was created**, or today when that is missing or still ahead — user decision 2026-10-19), the starting **phase**, **plant count** and **room**:
 
 - The lot's live `stage` / `currentRoom` / `plantCount` are set to those values (PaperWizard's write-back permission), so the new page and the mismatch checks agree. The phase list also offers the lot's current stage, preselected, when it is outside the form's vocabulary (drying / curing), and `stage` is only written when a different phase is picked.
 - `entries[lotId][sheetId].paperBefore = <date>` marks the days before as on paper: grow-log coverage starts at the later of the planting date and `paperBefore`, so those days are never flagged as missing.
@@ -348,7 +349,7 @@ Built 2026-10-16 for the harvest log: page 3 records a wet weight per tote on ha
 - **Filling (Entries steps):** each table gets **one** runner step, placed where its first question sits (`runnerSteps`), headed "🔁 Entries · page 3" (plus "· table 2" when a page holds several):
   - a form with the table's questions and **＋ Add entry**. Enter moves to the next typing box; Enter on the last adds the entry. Mandatory answers are checked per entry;
   - a choice question with up to 5 options (`ENTRY_TAP_MAX`) shows as **tap buttons**; tapping the picked one again clears it. Longer lists stay a drop-down;
-  - the entries so far, newest first, each with **✎** (load it into the form → 💾 Update entry) and **🗑** (asks; later entries move up);
+  - the entries so far, newest first, each with **✎** (load it into the form → 💾 Update entry) and **🗑** (asks; later entries move up). An entry already saved with the log is **on file**: changing it is a correction, and 🗑 marks it "deleted on Save" (**↩** undoes that) — it stays in its row, struck out, and later entries don't move up (see "Corrections & Change Log");
   - "N entries · page 3 prints 2× (20 rows per page)", or a warning when the table's questions aren't bound to repeating rows;
   - a new entry starts from the previous one for **⏪ same-as-last** questions (initials: the name only — strokes are drawn fresh) and from `prefillFrom` otherwise.
   - **Save** (labelled **💾 Save log**) writes every table's entries to `inst.rows`. An entry still typed in any table's form is added first; if it can't be (a mandatory answer missing) the runner shows that form and nothing is saved.
@@ -359,13 +360,51 @@ Built 2026-10-16 for the harvest log: page 3 records a wet weight per tote on ha
 - **Reports:** the Labour & Cost Wizard reads `inst.rows` like any other answers (dated by the instance), so a summed metric such as `harvest.wetWeight` or `harvest.dryWeight` adds every entry (`EmployeeWizard/REPORTS.md`). A Net column tagged dry weight sums every bin — flower, trim and other alike.
 - SitkaTools' split files treat a page as a whole, so `rows` needs nothing there.
 
+### Corrections & Change Log (QAP traceability)
+
+Built 2026-10-19 for the QAP (user decisions: a reason is required, with tap-to-fill choices; dates print `yyyy/mm/dd`; a signed log can still be corrected and is flagged; the change log prints from its own button, not with the form).
+
+- **On file:** a value is on file once it was saved as part of a complete entry. From then on a change is a correction:
+  - a daily log's **day**, once saved with every answer and the day's drawn initials (`dayAnswered`, or the day already has a correction — `dayOnFile`);
+  - a page's own (**header**) answers, once every one of them is answered (`headerOnFile`);
+  - a **repeating entry**, once the log was saved with it;
+  - a 📌 **constant**, once saved (not blank).
+
+  Days and pages still being filled in change freely, as before.
+- **The runner:**
+  - an on-file step says so ("✏️ This day is on file…", "✏️ This page is on file…", "✏️ Saved entries are on file…");
+  - a changed answer shows "✏️ On file as 24.5 — saving strikes it out…", and earlier corrections of it are listed under it;
+  - the day's drawn initials are shown locked (🔒), never redrawn;
+  - prefills don't fill a saved blank on an on-file day (it would read as a change).
+- **Saving (`saveRunnerEntry`):** the sheet's pages are copied before the save (`sdBefore`). After everything else (backfill prompts, strike-out initials), `findCorrections` compares before and after. Days that a re-page moved are followed by date. When anything on file changed, the **correction pad** (`captureCorrection`) opens:
+  - It lists each change (`Oct 14 · Temp: ~~24.5~~ → 25`; knock-ons say "carried forward").
+  - It requires a reason (chips: Typing error, Wrong reading, Entered on the wrong day, Wrong box), a name and drawn initials.
+  - **Cancel** puts the sheet's pages and the lot back exactly as before Save. Nothing is saved, and the runner stays open with its draft. A live DB update while the pad is open cancels the same way.
+  - The Initialize quiz (`saveInitConstants`) does the same for constants, into `constantChanges`.
+- **Knock-ons:** a backfilled plant count that shifts later counts records each shifted day that was on file as `carried` (with `via` = the edited day). A re-page (`applyRepage`) moves each day's change history to the page the day lands on. A rebuilt page gets the page-level history of the page its header came from. Days on file whose phase / room the re-page changes are recorded as carried.
+- **Record** (`inst.changes[]`, `constantChanges[]`): `{ id: 'ch…', at: ISO, date: YYYY-MM-DD, kind, day, row, entry?, where?, q, label, from, to, by: { name, strokes }, reason, via?, constant? }`.
+  - `kind` is one of: `edit` (the user changed it), `carried` (a save changed it on another day), `void` (an entry deleted), `removed` (a filed day or entry no longer on any page), `signature`.
+  - Strokes are rounded to 3 decimals; each record keeps its own copy.
+- **Print:** each box's `edit` / `carried` records (`boxCorrections`) print oldest first, each on its own line, ending with the current value: `~~old~~ – [drawn initials] yyyy/mm/dd`.
+  - The initials are 1 line high (pad shape `CORR_INITIALS_ASPECT` 2.5:1), the same size as the value. A blank that was filled in prints a struck `N/A`.
+  - A corrected box shrinks its text to fit (a script in the popup, not below 5 pt). What still doesn't fit shows past the edge, never cut off.
+  - A **tick box** that lost its ✕ prints the ✕ struck through, inside the box. Nothing prints beside a tick box (it would cover the form's label), so its initials, date and reason are in the change log only (user decision 2026-10-19). The runner's "On file as …" note and the correction pad say so (`printsAsCheckbox`).
+  - A **deleted entry** prints every value struck through, with the initials and date once, after the row's right-most text box.
+  - The popup toolbar (not printed) says "✏️ N changes on file for this page".
+- **Filing Cabinet:**
+  - A page with changes shows **✏️ N**, which opens the change log for that page. It turns amber with "· changed after signing" when a change is newer than the master grower's signature (signing again clears it).
+  - The toolbar's **📝 Change log (N)** lists every change on the lot, newest first: when, document and page, where, the change, who (drawn initials + name) and why.
+  - **🖨️ Print change log** opens a light, print-ready table (Letter landscape) for the QAP.
+- **Reports:** the Labour & Cost Wizard skips `void` entries; corrected values count as they are now.
+- **Not tracked:** auto-filled boxes (dates, lot #, strain, plants removed) aren't typed by anyone, so they print what they are. On-file initials can't change. The change log records changes made in PaperWizard; it can't stop the JSON file being edited by hand (SharePoint's version history covers that).
+
 ### Completion Rules
 
 - **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question — including any row-scoped **initials** question, which counts only once its strokes are drawn (see "Initials Question Type") — and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. Completion drives the leaf's status chip (`✓ complete`, `4/7 days`, `3/5 · phase change Sep 24`) and the Print tooltip — **not** the button: 🖨️ Print is clickable whenever an entry exists and the page set is loaded, so a partial week can be printed on demand (missing fields print N/A).
   - **Blank-but-confirmed counts:** when the user saves a day's entry, every non-initials row-scoped question is recorded in that day's `confirmed` list — so an intentionally left-blank box (e.g. an empty comments field) still counts as filled out for that day, and the progress chip advances (`3/7` → `4/7`). **Initials are never waived** — a row-scoped initials question always requires drawn strokes regardless of confirm; it is excluded from `confirmed`. The list is merged across saves (once confirmed, stays counted even if a later re-save leaves the box blank). Printing is unaffected: a blank-but-confirmed field still prints `N/A`.
 - **`one-shot`:** complete when all instance-level questions are answered (+ signature if defined).
 - **`event`:** complete when its questions are answered (+ signature if defined) — each event is a self-contained sheet.
-- **Repeating questions** (one-shot / event): **every repeating table** also needs at least one entry. Each entry's mandatory answers are checked when it is added. The leaf shows `1/1 fields · 12 entries`; the Print / Sign tooltips list "no entries yet (page 2)".
+- **Repeating questions** (one-shot / event): **every repeating table** also needs at least one entry (a deleted, struck-out entry doesn't count). Each entry's mandatory answers are checked when it is added. The leaf shows `1/1 fields · 12 entries`; the Print / Sign tooltips list "no entries yet (page 2)".
 
 Completion is re-evaluated after every save; it is never stored as a flag, only `completedAt`.
 
@@ -656,3 +695,4 @@ Decisions made during design (2026-09-24, updated 2026-09-26) — already folded
 17. **Constant / header fields (2026-10):** values that are fixed for a whole lot's paper chain (e.g. substrate lot on the grow-log) are set once via the cabinet's 📋 Initialize paperwork quiz and stored at **lot+sheet level** (`entries[lotId][sheetId].constants`), not per instance — so they persist across every weekly page and survive phase/room rollovers. Constant questions are excluded from the daily runner; print reads the lot-level value (constant is the first branch in `printFieldValue`, so a constant box inside a day group prints the same value on every day). **Daily-weekly sheets only** — one-shot/event sheets have no chain to share across, so the flag is not offered for them.
 18. **Signature date (2026-10):** saving the master grower's signature via the cabinet leaf's ✍️ Sign button stamps `inst.signature.date` (local YYYY-MM-DD); re-signing updates it, clearing removes it. The new `signature.date` auto-fill binding prints it as **yyyy/mm/dd**, resolved live from `inst.signature` at print time and never snapshotted (like `day.date`) — a bound box prints N/A until the log is signed.
 19. **Repeating rows (2026-10-16):** event / one-shot sheets can hold tables that take any number of entries (the harvest log's wet and dry weights). Questions ticked 🔁 Repeating are filled on a quick-entry Entries step per table (short choice lists as tap buttons) and stored in `inst.rows`; a table's page prints again each time its rows are full. Tables are worked out from the bindings; a sheet may have several, each on one page. Checkbox settings follow down a column like the bindings. See "Repeating Rows".
+20. **Corrections & change log (2026-10-19):** the QAP asked for traceability. A value on file that is changed keeps its old value on the printed page, struck out, with the person's drawn initials and the date (`yyyy/mm/dd`), the new value below; a reason is required; every change is in the page's change log (📝 Change log, printable). Deleted entries stay struck out. A signed log can be corrected and is flagged "changed after signing". See "Corrections & Change Log".
