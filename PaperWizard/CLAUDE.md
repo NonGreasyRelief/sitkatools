@@ -1,699 +1,424 @@
 # PaperWizard — Tool Context
 
-## What This Tool Does
+PaperWizard fills the facility's **controlled paper forms** (propagation worksheet, weekly grow-logs, room cleans, IPM, harvest, drying and trim logs). Click-through wizards capture the answers. The print popup overlays them on the form's WebP page images, and the user prints from the browser. Suite rules (single file, launched from SitkaTools, postMessage, UI standards) are in the root `CLAUDE.md`.
 
-PaperWizard is a **controlled paperwork fill & print tool** for the SitkaGit suite. Licensed cultivation requires paper records — propagation worksheets, weekly grow-logs, room-clean logs, IPM logs, harvest logs — to be filled out and kept on file. PaperWizard replaces the handwriting: it provides quick click-through multi-question wizards that capture daily paperwork answers, then renders the facility's **controlled form page images (WebP)** with the captured text overlaid in pre-configured positions. The user prints the browser view of the filled form; the printed page is a properly completed controlled document.
+Two tabs:
 
-The tool has two top-level tabs:
+1. **Filing Cabinet** (default) — the active lot's paperwork tree (see "Filing Cabinet").
+2. **Configure Sheets** — load a form's page images, place boxes over them, bind boxes to DB values or questions, and build the sheet's wizard. The toolbar lists saved sheets (pick one to edit, 🗑 deletes, 📤 / 📥 export / import a sheet's configuration). For a saved sheet, a **Document** dropdown files it in the cabinet.
 
-1. **Filing Cabinet** (default, first page) — the active lot's filing cabinet as a tree view of every document in its file: the propagation worksheet, pre-move-in room cleans (sourced from the previous occupant's file), one grow-log per week of the crop (typically 10–14), IPM log entries, and the harvest log. Each leaf is an instance with its status; a leaf opens its wizard or, once complete, its print popup.
-2. **Configure Sheets** — load a controlled form's page images, place text boxes over them, bind boxes to auto-fill values from the main DB, and build the multi-question wizard for that sheet. The toolbar also lists every saved sheet (pick one to open its configuration for editing; 🗑 deletes it), and for a selected saved sheet a **Document** dropdown assigns it to a filing-cabinet document (Grow-Log / Propagation work sheet / Harvest Log / IPM Log / Cleaning form).
-
-**Everything about every sheet is designed in the Configure Sheets tab at runtime.** The tool ships with zero pre-configured sheets and hard-codes none — sheet layouts, field positions, auto-fill bindings, and wizards are all data stored under `_PaperWizard`. Adding a new controlled form to the facility = export its pages as WebP images, load them once, place boxes, build its wizard. No code changes.
+- **Nothing is hard-coded.** No sheet ships in code. Layouts, bindings and wizards are all data under `_PaperWizard`. A new form = export its pages as WebP, load them, place boxes, build the wizard.
+- **Not in scope:** creating or changing `calendarEvents`; printing directly (always the user in the popup's print dialog).
+- **Use:** floor staff fill today's entry from the cabinet (⏪ Same as last time pre-fills most answers); a manager prints at any time; a manager configures each form once.
 
 ### The Golden Rule — Never Store the Page Images
 
-PaperWizard **never stores controlled page image files** — not in the database, not in browser storage, nowhere. The database stores only:
-
-- the **expected page-image base name**, which doubles as the sheet's unique identifier (e.g. `grow-log-p1.webp`, `grow-log-p2.webp` → sheet id `grow-log`), and
-- the **normalized geometry** of every text box / signature box on each page.
-
-The actual page images are loaded **just-in-time** through a **"Load document"** multi-file picker, in exactly two situations:
-
-1. **Configure Sheets tab:** the page images must be loaded before boxes can be placed over them (and before any print action is available).
-2. **Print time:** the user uploads the page set just in time to get filled. The tool validates that the uploaded files form a complete, correctly-named page set for the configured sheet id, then opens the print popup.
-
-A naming or completeness mismatch means the wrong form revision is being used — the tool rejects it with a clear error (wrong base name, missing page number, duplicate page, non-image file). Controlled documents are versioned by file name; this check is what keeps a renamed/revised form from silently filling the wrong layout.
-
-**Page naming convention:** each page of a controlled form is exported as a WebP named `<base>-pN.webp` (e.g. `grow-log-p1.webp`, `grow-log-p2.webp`). All pages of one sheet share the same base name and are numbered consecutively from 1 with no gaps. The base name becomes the sheet id.
-
-### Intended Use
-
-- **Daily (floor staff, tablet or desktop):** open PaperWizard — the active lot's filing cabinet is already on screen. Tap the leaf that needs today's entry (e.g. "Grow-Log — Sep 21–27: 4/7 days"), answer a handful of questions (with **"⏪ Same as last time"** pre-filling most of them from yesterday), sign if required, done in under a minute.
-- **Weekly / on completion (manager):** the grow-log's **🖨️ Print** button is available at all times — as soon as an entry exists and the matching page set is loaded this session, clicking it opens a popup window showing each page image with all text overlaid in place plus a print button. An incomplete instance prints too (unanswered fields show N/A / empty boxes); the button's tooltip lists what's still missing so the user knows the copy isn't final. The user hits print and files the paper.
-- **Setup (manager, once per form):** in Configure Sheets, export the controlled form's pages as WebP (`<base>-pN.webp`), load them, drag boxes over every fill-in spot, bind header boxes to lot keys (strain, lot #, dates…), drop a signature box, then build the wizard's question list. Save — the sheet is live for every lot.
-
-### What This Tool Is NOT
-
-- It does **not** store, cache, or embed any page image content — only the expected base name and normalized box geometry.
-- It does **not** create or modify `calendarEvents`. (It may *read* CropLabourWizard events in the future to surface "room clean due" prompts — out of scope for v1.)
-- It does **not** auto-print or send anything to a printer directly — printing is always the user pressing print in the popup's browser print dialog.
-- It does **not** pre-configure any sheet. The initial sheet set (below) is *what the manager will configure*, not what ships in code.
+- Page images are **never stored** — not in the DB, not in browser storage. The DB holds only the page-image base name (= the sheet id) and the normalized box geometry.
+- Images load just in time through **Load document** (a multi-file `<input type="file" accept=".webp,image/webp" multiple>`, in both tabs): in Configure Sheets before any box can be placed, and at print time.
+- **Naming:** `<base>-pN.webp`, numbered from 1 with no gaps; the base name is the sheet id. `parsePageFiles` rejects, with an error naming the file: non-WebP files, mixed base names, missing or duplicate page numbers. A mismatch means the wrong form revision.
+- In Configure, loading a new base name starts a new sheet; one matching a saved sheet opens it (confirm if it already has fields).
+- Files are held in memory only, as blob URLs. They are revoked when the tool closes, a new document loads, or the popup closes.
+- A sheet with no page set loaded this session shows "⚠️ needs document" in the cabinet, and its Print is disabled.
 
 ## Core Concepts
 
 ### Sheet (layout)
 
-A **sheet** is one configured controlled form. Its id **is the expected page-image base name** (e.g. pages `grow-log-p1.webp`… → sheet id `grow-log`). A sheet stores:
-
-| Field | Type | Notes |
-|---|---|---|
-| `name` | string | Human label shown in the Filing Cabinet ("Weekly Grow-Log"). |
-| `orientation` | `'portrait' \| 'landscape'` | How the page is displayed in Configure and in the print popup. Auto-derived from the first page image's pixel dimensions (width > height → landscape). |
-| `pageWidthIn` / `pageHeightIn` | number | Physical page size in inches, automatically set to North American Letter (8.5 × 11, rotated for landscape). Used for print sizing and point-based font scaling; no manual input. Retained in stored sheet data for compatibility. |
-| `pageCount` | number | Number of pages in the form (= number of page images loaded at configure time). |
-| `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` | How sheet *instances* are formed (see "Entry & Instance"). Grow-log = `daily-weekly`; propagation worksheet = `one-shot`; room-clean / IPM / harvest = `event`. |
-| `document` | `'grow-log' \| 'propagation' \| 'harvest' \| 'ipm' \| 'drying-log' \| 'trim-log' \| 'room-clean-clone' \| 'room-clean-veg' \| 'room-clean-grow' \| 'room-clean-dry' \| 'room-clean-trim'` \| null | Explicit filing-cabinet assignment, set in the Configure Sheets toolbar's **Document** dropdown (shown when a saved sheet is selected). Values are cabinet section keys — the five per-room cleaning-form values all file under the Room Cleans sections (`sheetSection()` maps them to `room-clean`). Null = unassigned (heuristics apply). Persisted immediately on change — not gated on 💾 Save. Legacy sheets may hold the old single `'room-clean'` value; those still file under Room Cleans and their room role is inferred from name keywords. |
-| `fields[]` | array | Text boxes (below). Daily-weekly sheets have **no grid** — their day rows are explicit daily-entry groups of fields (see "Day rows"). |
-| `signature` | object \| null | Signature box geometry + config (below). |
+| Field | Notes |
+|---|---|
+| `name` | Label in the cabinet. |
+| `orientation` | `'portrait' \| 'landscape'`, from the first page image (width > height → landscape). |
+| `pageWidthIn` / `pageHeightIn` | Always US Letter (8.5 × 11, rotated for landscape), set automatically. Used for print size and pt font scaling. |
+| `pageCount` | Pages loaded at configure time. |
+| `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` (see "Entry & Instance"). |
+| `document` | Cabinet assignment from the **Document** dropdown: `grow-log`, `propagation`, `harvest`, `ipm`, `drying-log`, `trim-log`, `room-clean-clone` / `-veg` / `-grow` / `-dry` / `-trim`, or null. The five clean values file under Room Cleans (`sheetSection()` maps them to `room-clean`). Saved on change, not on 💾 Save. Null = filed by the heuristics in `sheetSection()` (cadence, then name keywords). A legacy `'room-clean'` value still files under Room Cleans, with its room role inferred from name keywords. |
+| `fields[]` | Boxes (below). |
+| `signature` | Signature box or null (see "Signature Box & Capture"). |
 
 ### Field (text box)
 
-Each field is a rectangle placed over a page image in the Configure tab:
+| Field | Notes |
+|---|---|
+| `id` | 4 chars from the suite `CODE_ALPHABET`; unique in the sheet, immutable. |
+| `label` | Editor label and tooltip; never printed. |
+| `x`, `y`, `w`, `h` | Top-left and size as 0–1 fractions of page width / height. |
+| `fontSize` | pt at 100 % print scale. |
+| `align` | `'left' \| 'center' \| 'right'`. |
+| `source` | Auto-fill binding (see "Auto-Fill Bindings"), or null when a question fills it. |
+| `questionId` | When `source` is null, the question that fills the box — **the only binding point** (questions carry no target). Set in Field properties → "Filled by question". A group member gets that day's / that entry's answer. |
+| `dayGroup` / `day` | Group id (4 chars) and row number (1 = the placed first row). Null for header / one-shot / event fields. |
+| `repeat` | Repeating-row member (event / one-shot sheets): `dayGroup` is the row group, `day` the row. See "Repeating Rows". |
+| `constant` | Constant field (daily-weekly only). See "Constant / Header Fields". |
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | string (4 chars) | Unique within the sheet, from the suite `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`). Immutable after creation. |
-| `label` | string | Editor label ("Strain Name") — shown in Configure and as a tooltip; never printed. |
-| `x`, `y` | number 0–1 | Normalized position of the box's top-left corner, as a fraction of page width / height. Scale-independent — the same layout renders correctly at any display size. |
-| `w`, `h` | number 0–1 | Normalized box width / height. |
-| `fontSize` | number (pt) | Font size in points at 100% print scale; converted to px via `pageWidthIn`/`pageHeightIn`. |
-| `align` | `'left' \| 'center' \| 'right'` | Horizontal text alignment inside the box. |
-| `source` | string \| null | Auto-fill binding (below). `null` means the field is filled by a wizard question instead. **Group-level:** setting it on one member sets it on every day of that column. |
-| `questionId` | string \| null | When `source` is null, the id of the wizard question whose answer fills this field — **the sole binding point** (questions carry no target of their own). Assigned in the Field properties panel's "Filled by question" dropdown. A daily-entry group member receives *that day's* answer to the question. **Group-level:** the binding is anchored on the column's day-1 box and repeats to every day; editing it from *any* member of the column propagates to all days. |
-| `day` | number \| 1 | The day row this box belongs to (1 = the manually placed first row; 2..N = the other members of its daily-entry group). Only meaningful when `dayGroup` is set. |
-| `dayGroup` | string (4 chars) \| null | Daily-entry group id — boxes sharing an id form one column of the weekly table and **move together as a single block** in the editor. `null` for header/one-shot/event fields. |
-| `repeat` | boolean, default false | **Repeating row** member (event / one-shot sheets) — the box belongs to a repeating table whose rows take one entry each; `dayGroup` is then the row group and `day` the row number. See "Repeating Rows". |
-| `constant` | boolean, default false | **Constant (header) field** — set once per lot via the cabinet's "Initialize paperwork" quiz instead of by the daily runner. Only offered when the sheet's cadence is `daily-weekly`; mutually exclusive with `source` (picking either clears the other). Must be bound to a question (`questionId`) to do anything. See "Constant / Header Fields". |
-| *(initials box)* | derived | A field is an **initials box** when it is bound (via `questionId`) to a wizard question of type `'initials'` — there is no per-field flag. The editor shows a ✍️ badge on such boxes, derived from the binding. See "Initials Question Type". |
+- A box is an **initials box** when its question has type `initials` (✍️ badge, derived — there is no flag).
+- Bindings, checkbox settings and size are **per column** in day rows and repeating rows (`cfgColumnOf`, see "Repeating Rows" → Column edits). A binding is anchored on row 1 and can be edited from any member.
+- Deleting a question clears its id from every field bound to it. Deleting or ungrouping boxes takes their bindings with them; surviving day-1 boxes keep theirs.
 
-**Day rows (daily-entry groups):** a weekly sheet's main section has one row per day (7 rows for the grow-log). There is **no grid, no pitch, no auto-positioning** — every day's boxes are real, individually placed fields. The workflow in Configure Sheets:
+**Day rows (daily-entry groups):** a weekly sheet has one row per day, with no grid or pitch math — every day's boxes are real, placed fields.
 
-1. Place the **day-1** boxes manually over the form's first day row (one box per column; several can stack inside one row at different heights — the grow-log's "Daily crop monitoring" cell holds four checkboxes, one per question).
-2. **Multi-select** all of them (Shift-click each, or Shift-drag a marquee over the row).
-3. Hit **🔗 Group as daily entry** in the Field properties panel — the tool copies the selection into real fields for days 2..N (asked how many days; default 7), offset by the measured pitch between day 1 and day 2 (or the tallest box's height if unmeasurable). Each clone carries a `D2`..`DN` badge.
-4. **Slide the group into position** — dragging *any* member moves the whole group as one block; hold **Ctrl/⌘** to move just that day's row (all boxes on the same day in the group), or **Alt/⌥** to move just that one box, for exact per-row placement. ✂️ Ungroup removes the day 2..N boxes and keeps day 1 — it also clears `dayGroup` from the surviving day-1 boxes so they stop moving together.
+1. Place the **day-1** boxes over the first day row. Several can stack in one cell (the grow-log's "Daily crop monitoring" holds four checkboxes).
+2. Multi-select them (Shift-click, or Shift-drag a marquee).
+3. **🔗 Group as daily entry** (Field properties) asks how many days (default 7) and copies the selection to days 2..N, offset by the pitch measured between day 1 and day 2 (or the tallest box's height). Badges `D2`…`DN`.
+4. Dragging any member moves the whole group; **Ctrl/⌘** moves that day's row; **Alt/⌥** moves one box. **✂️ Ungroup** removes days 2..N and clears `dayGroup` on day 1.
 
-At render time each group member prints on **its own day at its own placed position** — what you slid is what prints; there is no clone math left to get wrong. Bindings (auto-fill source, wizard question) are **group-level**: they apply to every day of the column. The question binding is assigned from the field side — select any member of the column in the Field properties panel and pick its question in "Filled by question"; the choice propagates to all days (anchored on day 1). The wizard builder shows each question's binding as a read-only indicator only. The header section is made of ungrouped fields. This is what lets one wizard "fill a sheet's main section (not the header) over the course of several days."
-
-*Legacy sheets* configured before this system (fields with `row: true` + a stored `rowGrid`) still print via the old clone-down fallback so existing forms keep working; re-saving them in the editor migrates nothing automatically — group their day-1 boxes to move to the new system.
+Each member prints on its own day at its own placed position. Header boxes are ungrouped. *Legacy:* fields with `row: true` + `rowGrid` still print by the old clone-down; nothing migrates automatically — group their day-1 boxes to switch.
 
 ### Initials Question Type (drawn sign-off)
 
-An **initials** question is a wizard question whose `type` is `'initials'`. Instead of a text/number/select control, the runner shows a **canvas draw pad** (the shared draw-pad machinery) sized to the bound field's aspect ratio, plus a name/initials input. Whoever fills it draws their initials with a stylus; the strokes are stored as normalized `[x, y]` point arrays (same vector format as the signature — no image). This is an accountability record: every person who touches a day leaves a mark that prints in the box on the controlled form.
-
-- **Configure:** place a box over the form's initials spot and bind it to a question of type **✍️ initials** via the Field properties panel ("Filled by question"). The editor shows a ✍️ badge on the bound box, derived from the binding — there is no per-field flag. To make it a **per-day** sign-off on a weekly sheet, place the box as part of the day-1 row, group it (🔗) so it clones to all 7 days, and mark the question **row-scoped**; each day's clone then carries its own pad and prints that day's strokes.
-- **Fill:** the initials question is a normal step in the wizard — place it last for an end-of-day sign-off. The person draws their initials **and types them** — drawn initials without the typed initials hold Next / Save, mandatory or not ("✍️ Type your initials to continue"; user decision 2026-10-19). The same goes for initials on a repeating entry, in the Initialize quiz and on the strike-out pad. Initials left as they were saved need nothing new (older entries may have no typed name); saving stores them on **that specific day** (row-scoped) or the instance (one-shot/event). Re-opening a day that isn't complete yet repaints what was drawn, so it can be redrawn. Once the day is **on file** (see "Corrections & Change Log") its initials are shown locked: a correction is initialled on the correction pad instead. An empty pad on save clears the answer (`null`).
-- **Storage:** the answer lives in the normal answer slot — `days[YYYY-MM-DD][questionId]` for a row-scoped question, `header[questionId]` otherwise — as `{ name, strokes } | null`. There is no separate per-day initials structure.
-- **Print:** each box prints its bound question's strokes as an inline SVG polyline at the box's placed position (a group member prints its own day's strokes). A box with no strokes prints empty.
-- **Completion:** a row-scoped initials question counts like any other row-scoped question — a day is "answered" only once its strokes are present (`hasAnswer` treats the `{strokes}` object as answered when non-empty). The leaf's progress chip and the runner's day chips reflect this.
-- **"⏪ Same as last time"** never copies drawn initials — each person draws their own.
-- **Who signs what:** floor staff initial their own day via an initials question; the **master grower's signature** (the sheet's `signature` box) is a separate, whole-log sign-off captured **only** via the filing-cabinet leaf's orange ✍️ Sign button — later, when he reviews the paperwork at the end of a crop. The daily wizard NEVER prompts for it and saving a day's entry never touches it. The two are independent systems.
+- A question of `type: 'initials'` shows a draw pad (the shared draw pad, sized to the bound box's aspect ratio) and a typed-initials input. Strokes are normalized `[x, y]` point arrays — no image.
+- **Configure:** bind a box to an initials question. For a per-day sign-off, put the box in the day-1 row, group it, and make the question row-scoped.
+- **Typed initials are required:** drawn initials without typed initials hold Next / Save, mandatory or not ("✍️ Type your initials to continue"). Same on a repeating entry, in the Initialize quiz and on the strike-out pad. Initials left as they were saved need nothing new (older entries may have no name).
+- **Storage:** the normal answer slot — `days[YYYY-MM-DD][questionId]` (row-scoped) or `header[questionId]` — as `{ name, strokes } | null`. An empty pad on save stores `null`.
+- Re-opening a day that isn't complete repaints its strokes so they can be redrawn. Once the day is on file the initials are locked; a correction is initialled on the correction pad (see "Corrections & Change Log").
+- **Print:** an SVG polyline in the box (a group member prints its own day's strokes); empty without strokes.
+- **Completion:** answered only once strokes exist (`hasAnswer`) — never waived (see "Completion Rules").
+- ⏪ Same as last time never copies drawn initials.
+- **Who signs what:** floor staff initial their own day with initials questions. The master grower's **signature** is a separate whole-log sign-off (see "Signature Box & Capture").
 
 ### Constant / Header Fields (set once per lot)
 
-A **constant field** is a box whose value is fixed for the whole life of a lot's paper chain — e.g. the substrate lot on a daily grow-log: different per crop, tracked as plain text, with no DB source to auto-fill from. Instead of answering it every day (or never), the user sets it **once, before the first day**, and it prints on every page of the chain.
+A box whose value is fixed for a lot's whole paper chain and has no DB source (e.g. the substrate lot on a grow-log).
 
-- **Configure:** in the Field properties panel (daily-weekly sheets only) check **📌 Constant field** on a box bound to a question. The editor shows a gold 📌 badge on such boxes; the wizard builder's binding indicator notes "constant — set via Initialize paperwork, skipped by the daily runner". The flag is **mutually exclusive with `source`** in both directions (picking a source clears the flag; checking the flag clears the source). A constant field must be question-bound — an unflagged/unbound box does nothing.
-- **Initialize paperwork quiz:** the Filing Cabinet toolbar has a **📋 Initialize paperwork** button (visible when the active lot has at least one daily-weekly sheet with constant fields). It runs a step-through quiz in the same runner card UI as the daily wizard — one step per constant question across all of the lot's daily-weekly sheets, grouped by sheet ("Constant N of M") — but with **no day chips and no instance**. Text/number/select questions render their normal controls; an initials-type constant question renders the draw pad. On save the values are written to `entries[lotId][sheetId].constants` (below) and a toast confirms. The button is **always re-runnable** — re-running pre-fills the current values so they can be edited. If no constant fields exist, clicking it shows a hint to flag a box in Configure Sheets.
-- **Storage:** lot+sheet level — `entries[lotId][sheetId].constants` (a map `questionId → value`, sibling to `instances`). This is deliberately **not** per-instance: the values persist across every weekly instance in the chain and survive phase/room rollovers (a fresh instance reads the same constants). Initials-type constants store `{ name, strokes } | null` like any other initials answer; text values are trimmed strings. The path is created lazily on first save — a sheet with no instances yet still gets one.
-- **Daily runner exclusion:** constant questions are **filtered out of the daily runner** (and from "⏪ Same as last time", progress, and completion math) — they are never asked day by day. If *every* question on a daily-weekly sheet is constant, opening its leaf shows a toast pointing at the Initialize button instead of an empty wizard.
-- **Print:** in `printFieldValue` the constant check is the **first** branch (before source and before the dayGroup/row branch) — so a constant box inside a daily-entry group prints the one lot-level value on **every day**, not that day's answer. Unset constants print `N/A` like any other empty field, and the Print tooltip lists "N constant value(s) unset" as an informational blocker (printing is still allowed).
-- **Scope:** daily-weekly sheets only — one-shot and event sheets have no chain to share a value across, so the flag is not offered for them.
+- **Configure:** **📌 Constant field** in Field properties, daily-weekly sheets only (one-shot / event sheets have no chain). Gold 📌 badge; the wizard builder notes "constant — set via Initialize paperwork". Exclusive with `source` both ways (setting one clears the other). Must be question-bound to do anything.
+- **📋 Initialize paperwork** (cabinet toolbar, between Load document and the print chip; shown when the lot has a daily-weekly sheet with constant fields) runs a quiz in the runner card: one step per constant question across all the lot's daily-weekly sheets, grouped by sheet ("Constant N of M"), with no day chips and no instance. Initials constants use the pad. Always re-runnable; it pre-fills the current values. While any value is unset the button shows ⚠️ and its tooltip counts them; once all are set it reads "re-run to change them". With no constant fields it hints to flag a box in Configure Sheets.
+- **Storage:** `entries[lotId][sheetId].constants` (`questionId → value`, sibling of `instances`), shared by every instance in the chain and kept through rollovers. Text is trimmed; initials are `{ name, strokes } | null`. Created on first save, even before any instance exists.
+- **Not in the daily runner:** constants are left out of the runner, ⏪ Same as last time, progress and completion. If every question on a sheet is constant, opening its leaf toasts to use Initialize.
+- **Print:** the constant check is the **first** branch in `printFieldValue` (before source and day group), so a constant box inside a day group prints the lot value on every day. Unset prints `N/A`; the Print tooltip lists "N constant value(s) unset" (printing still allowed).
 
 ### Write-Back Question Types (plant count, phase, room)
 
-Three question types exist specifically to write back to the main DB (see "Write-Back to the Main DB"). The write-back is **implicit by type** — there is no per-question setting (the old `writesTo` field was removed): a plant-count question always writes `lot.plantCount`, a phase question always writes `lot.stage`, and a room question always writes `lot.currentRoom`. Switching a question's type changes (or removes) its write-back automatically, so the special behavior can never be configured on a plain text/number/select.
+The write-back is a property of the **type** — no per-question setting (saving a wizard drops any stale `writesTo` from old data). Changing the type changes or removes it. All three work row-scoped or instance-level, and none can be repeating.
 
-- **🌱 Plant count (`type: 'plant-count'`):** renders as a number input in the runner. Works at either scope — row-scoped (per-day count, the usual grow-log case) or instance-level. On save, if the recorded value differs from `DB.lots[lotId].plantCount`, PaperWizard updates the lot record and calls `notifySitkaTools()`. Same value = no write; per-day entries keep the full history either way. A count that **drops to 0** (all plants removed) additionally strikes out the open log on that day — same drawn-initials capture, but **no fresh page** is started (there is nothing left to grow). Only a *drop* to zero triggers it; re-saving an already-closed log at 0 does not roll over again.
-- **🔄 Phase (`type: 'phase'`):** renders as a drop-down of the **fixed phase vocabulary** — `Cloning / Mother / Vegetation / Bloom / Harvesting` (the form's words for the DB's lowercase stages, via the same bridge as `lot.stage` bindings). No custom options list. The answer is compared against the lot's **live `stage` in the main DB** (`currentLotPhase`) — not a walk-back through saved answers:
-  - A pick **different from the lot's current phase** means the lot changed phase: on save, PaperWizard writes the new phase back to `lot.stage` and — *after that day's full entry has been saved* — strikes out this log (`phaseChangeDate` = **the entry's own day**, so a backfilled entry strikes out and starts the new page on that past day) and starts a **fresh 7-day page on the same day** (see "Phase & Room Change").
-  - A pick **equal to the current phase** just records it for the day — this is how the fresh log's first day carries the new phase in the double entry without triggering another rollover.
-  - Works at either scope; instance-level answers store in the header, row-scoped per day.
-- **🏠 Room (`type: 'room'`):** renders as a select over the facility's known room names (every room in the main DB, sorted). Works at either scope with exactly the same comparison and rollover rules as Phase — the answer is compared against the lot's **live `currentRoom`** (`currentLotRoom`); a different pick writes `lot.currentRoom` back and triggers the same save-first strike-out rollover (see "Phase & Room Change").
-  - **Same-save double change:** when *both* phase and room change in one save, a single strike-out records both — the fresh log carries the new phase *and* the new room, and both write-backs fire. No second rollover runs (it would create a phantom zero-day log).
+- **🌱 Plant count (`plant-count`):** number input; writes `lot.plantCount` (see "Write-Back to the Main DB"). A count that **drops to 0** also strikes out the open log on that day (drawn initials, no fresh page). Only a drop triggers it; re-saving a closed log at 0 does not.
+- **🔄 Phase (`phase`):** a select over the fixed vocabulary `Cloning / Mother / Vegetation / Bloom / Harvesting` (the form's words for the DB stages, `STAGE_TO_FORM`); no custom options. Compared with the lot's **live** stage (`currentLotPhase`), never with saved answers.
+  - Different → writes `lot.stage` and, after the day's whole entry is saved, strikes out the log and starts a fresh page on the entry's own day (see "Phase & Room Change").
+  - Equal → just records the day. This is how the fresh log's first day carries the new phase without another rollover.
+- **🏠 Room (`room`):** a select over every room name in the DB, sorted (a building device offers only its own rooms — see "Relationship to SitkaTools"). Same rules against the live `currentRoom` (`currentLotRoom`); writes `lot.currentRoom`.
 
 ### Auto-Fill Bindings
 
-A field's `source` can bind it to a value derived from the main DB, so headers fill themselves with zero questions. v1 binding set:
-
 | Binding | Resolves to |
 |---|---|
-| `lot.name` | Lot id / lot # (e.g. `LOT-001`) |
-| `lot.strain` | Strain name |
-| `lot.stage` | Phase (Clone / Veg / Bloom) — snapshotted at save time; PaperWizard writes it back when a grow-log entry records a phase change |
-| `lot.plantCount` | Plant count — snapshotted at save time; set to the starting count at lot creation, updated by PaperWizard whenever a grow-log entry records a different count |
-| `lot.parentLotId` | Parent lot # for sub-lots/split lots (null for new lots) |
-| `lot.createdDate` | Lot creation date (`YYYY-MM-DD`) |
-| `lot.destRoom` / `lot.vegRoom` / `lot.cloningRoom` | Room names stored on the lot |
-| `lot.dryRoom` / `lot.trimRoom` | Dry / trim room names stored on the lot (dry rooms double as trim rooms; the two fields may point at the same or different rooms, and each has its own clean form) |
-| `lot.currentRoom` | The lot's current room (live) — set at creation from the start-room choice, updated by PaperWizard when a log entry records a room change |
-| `instance.phase` | Phase snapshot captured when a daily-weekly instance was created (grow-log header — see "Phase & Room Change") |
-| `sheet.periodStart` / `sheet.periodEnd` | The instance's window dates (e.g. grow-log week start/end) |
-| `day.date` | The date of the current day-row (`MM/DD`) — daily-entry group members only. Derived per member at print time from the instance key + the member's `day`; **never snapshotted** (it is a function of the row, not of DB state). This is what fills the grow-log's Date column with zero questions. |
-| `day.plantsRemoved` | Plants removed on the current day-row: **yesterday's plant count − today's**, clamped at 0 — daily-entry group members only. Derived per member at print time from the saved 🌱 plant-count answers; **never snapshotted** (like `day.date`). "Today" must be an explicit answer *on that day* (no walk-back — falling back to an earlier day's count would understate removals); "yesterday" walks back through this instance's days, then earlier instances at a chain start. Prints `N/A` when today's count is unanswered or no prior count exists (e.g. the window's first day). Requires a row-scoped plant-count question on the sheet's wizard. |
-| `entry.number` | The entry's number (1, 2, 3 …) on a **repeating row** — it keeps counting on each extra copy of the page (21, 22 … on the second copy of a 20-row page). Print-time only. |
-| `page.number` / `page.count` | This page's number in the printout, and how many pages the printout has — the extra copies of a repeating page count. For a form's "Page _ of _". Print-time only. |
-| `signature.date` | The date the instance was signed, formatted **yyyy/mm/dd** — stamped automatically when the master grower saves his signature via the cabinet leaf's ✍️ Sign button (re-signing updates it; clearing the pad removes it). Resolved live from `inst.signature.date` at print time and **never snapshotted**; prints `N/A` until the log is signed. Bind a header box to it to put the sign-off date on the form with zero questions. |
+| `lot.name` | Lot # |
+| `lot.strain` | Strain |
+| `lot.stage` | Phase, in the form's words |
+| `lot.plantCount` | The lot's live plant count |
+| `lot.parentLotId` | Parent lot # for sub-lots (null for new lots) |
+| `lot.createdDate` | Creation date |
+| `lot.destRoom` / `lot.vegRoom` / `lot.cloningRoom` / `lot.dryRoom` / `lot.trimRoom` | Room names on the lot (dry and trim may be the same room; each has its own clean form) |
+| `lot.currentRoom` | The room this log was kept in: the instance's own `room`, else the live lot (print time, never snapshotted) |
+| `lot.roomDesignation` / `lot.roomBuilding` | The designation / building id of that same room (print time, never snapshotted) |
+| `lot.lotNumber` | The lot number only (strain prefix stripped) |
+| `year.current` | Last digit of the year, at save time |
+| `instance.phase` | The instance's phase snapshot |
+| `sheet.periodStart` / `sheet.periodEnd` | The instance's window dates |
+| `day.date` | The day row's date, `MM/DD` (group members only) |
+| `day.plantsRemoved` | Yesterday's count − today's, at least 0 (group members only; needs a row-scoped plant-count question). Today must be an explicit answer on that day (a walk-back would understate removals); yesterday walks back through this instance, then earlier instances at a chain start. `N/A` when either is missing. |
+| `entry.number` | Entry number on a repeating row, counting on across copies (21, 22 … on a 20-row page's second copy) |
+| `page.number` / `page.count` | This page's number and the printout's page total, extra copies included ("Page _ of _") |
+| `signature.date` | Date signed, `yyyy/mm/dd`; `N/A` until signed |
 
-**Source of plant count & parent lot #:** SitkaTools already stores both on the lot record at creation time (`plantCount`, `parentLotId`) — no schema change needed for auto-fill. **Pending SitkaTools change (not PaperWizard):** the parent-lot picker is currently a dropdown of existing lots; it should also accept manual free-text entry so a lot can be created from a parent that isn't in the system.
-
-**Plant count is a live value:** `lot.plantCount` holds the *current* count — SitkaTools sets it to the starting count at lot creation, and PaperWizard updates it whenever a grow-log entry records a different count (see "Write-Back to the Main DB"). The per-day entries keep the full count history; the main DB always shows the latest.
-
-**Bindings resolve at save time, not render time.** When an instance is created — and again on every entry saved to it — the tool resolves every binding used by that sheet against the current DB and stores the results on the instance (`snapshots`, see "Entry & Instance"). The exceptions are `day.date`, `day.plantsRemoved`, and `signature.date`, which are derived at print time and never snapshotted. At render/print time the popup prints the **stored snapshot**; it never re-resolves live values. This is deliberate policy: paperwork is a historical record, and plants keep transitioning phases while their paper trail is still being printed. A completed Veg grow-log must keep printing "Veg" in its header long after the lot has moved to Bloom; a propagation worksheet must keep printing the plant count that was true when it was saved. (An instance saved before this rule existed has no `snapshots` — for those, render time falls back to resolving live.)
+- **Snapshot at save time:** creating an instance, and every entry save, resolves every binding the sheet uses into `inst.snapshots`. Print uses the snapshot, never live values — paperwork is a historical record (a Veg log keeps printing "Veg" after the lot moves to Bloom).
+- **Never snapshotted (print time):** `day.date`, `day.plantsRemoved`, `signature.date`, `entry.number`, `page.number`, `page.count`, and the room bindings (`lot.currentRoom`, `lot.roomDesignation`, `lot.roomBuilding`), which print the log's own `inst.room` so a struck-out page keeps its old room.
+- An instance without `snapshots` falls back to live resolution.
+- So a one-shot sheet can bind a live value and keep printing it as captured (the propagation worksheet's starting count via `lot.plantCount`). Use `prefillFrom` for values that need a person to confirm them.
+- **Pending SitkaTools change (not PaperWizard):** the parent-lot picker should also accept free text, for a parent that isn't in the system.
 
 ### Signature Box & Capture
 
-A sheet may have signature boxes (`signature`: normalized `x/y/w/h` + optional label like "Initials"). Signing flow:
-
-1. The filing-cabinet leaf's orange **✍️ Sign** button opens a signature-only modal: a **canvas pad** sized to the box's aspect ratio, plus a text input for the signer's name/initials. This is the ONLY capture path — the wizard runner has no signature step (the master grower signs at end-of-crop review, not during daily fill-out); saving a day's entry leaves any existing signature untouched.
-2. Capture uses pointer events; each stroke is stored as an array of `[x, y]` points **normalized 0–1 within the signature box**. No image is generated or stored — strokes are pure vector data (small: a few dozen points per stroke).
-3. At print time the popup renders the strokes as an inline **SVG polyline** positioned over the page image at the box location, scaled to the box's rendered size. The signer's typed name is *not* printed unless a field is bound to it — the stroke is the signature.
-4. **Signature date:** saving the signature also stamps `inst.signature.date` with the local date (YYYY-MM-DD) — re-signing updates it, clearing the pad removes it. A field bound to the `signature.date` auto-fill binding prints that date as **yyyy/mm/dd** (resolved live at print time, never snapshotted; N/A until signed), so the form carries the sign-off date with zero questions.
-
-Re-signing replaces the stored strokes and goes in the page's change log (`kind: 'signature'`, old signer and date → new, or "cleared"). Saving without redrawing or renaming changes nothing (the date stays). The signature also stores `at` (ISO time), so the cabinet can flag a page **changed after signing**. An instance without a signature (when the sheet defines one) can still be printed — the signature box simply prints empty and the Print tooltip notes "signature missing".
-
-**Shared draw-pad machinery:** this canvas pad is the single generic pointer-captured drawing surface used by all three drawn-ink features — the end-of-log **signature**, the **initials question** (see "Initials Question Type"), and the phase/room-change **strike-out initials** (see "Phase & Room Change"). All store the same normalized-stroke vector format and print through the same SVG-polyline overlay path.
+- `signature` = normalized `x / y / w / h` + optional label.
+- Captured **only** by the cabinet leaf's orange **✍️ Sign** button: a modal with a pad sized to the box and a name input. The master grower signs at end-of-crop review. The runner has no signature step, and saving a day never touches the signature.
+- Strokes are normalized 0–1 within the box and print as an SVG polyline scaled to it. The typed name prints only if a box is bound to it.
+- Saving stamps `inst.signature.date` (local `YYYY-MM-DD`, feeds `signature.date`) and `at` (ISO, for "changed after signing"). Re-signing updates them; clearing the pad removes them. Saving without redrawing or renaming changes nothing.
+- Re-signing replaces the strokes and adds a `kind: 'signature'` change (old signer and date → new, or "cleared").
+- An unsigned instance still prints (empty box; tooltip "signature missing"). A legacy signature without `date` prints `N/A` in `signature.date` boxes until re-signed.
+- **Shared draw pad:** the signature, initials questions and strike-out initials use one pointer-captured pad, one stroke format and one SVG-polyline print path.
 
 ### Wizard
 
-A **wizard** is the ordered question list that fills a sheet's non-auto-filled fields. One wizard per sheet is the norm (the schema allows several, each referencing a `sheetId`). The fill engine in the main app is fully data-driven: it renders whatever questions the configured wizard declares — string input, number input, or simple multiple choice — and needs no per-sheet code. Every document in the filing cabinet is answerable purely from its saved sheet + wizard configuration.
+The ordered questions that fill a sheet's non-auto-filled boxes: `{ id (4 chars), sheetId, name, questions[] }`. Normally one per sheet (the schema allows several). The fill engine is data-driven — no per-sheet code.
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | string (4 chars) | Unique wizard id. |
-| `sheetId` | string | The sheet (page-image base name) this wizard fills. |
-| `name` | string | Display label ("Grow-Log Daily Entry"). |
-| `questions[]` | array | Ordered steps (below). |
+| Question field | Notes |
+|---|---|
+| `id` | 4 chars, unique in the wizard. |
+| `label` | The question shown. |
+| `type` | `'text' \| 'number' \| 'select' \| 'initials' \| 'plant-count' \| 'phase' \| 'room'`. New types need no migration. |
+| `options[]` | For `select`; ignored for `phase`. |
+| `rowScoped` | `true` = one answer per day row; `false` = one per instance. |
+| `repeating` | Event / one-shot sheets; text / number / select / initials only. One answer per repeating entry, stored in `inst.rows`. Ignored on daily-weekly sheets. See "Repeating Rows". |
+| `sameAsLast` | Offer ⏪ Same as last time. |
+| `mandatory` | While unanswered: Next / Save hidden (Back stays), Enter doesn't advance, a toast names it. Runner and Initialize quiz. |
+| `prefillFrom` | Binding that pre-fills the input on open; the user can edit, and the stored answer is what prints. |
+| `metric` | Report tag (text / number / select) for the Labour & Cost Wizard's Reports, e.g. `harvest.wetWeight`, `env.temp`, `ipm.pests`. Set from **Report metric**; cleared on a type change. PaperWizard never reads it. `REPORT_METRIC_GROUPS` must match EmployeeWizard's `REPORT_METRICS` (`EmployeeWizard/REPORTS.md`). Plant-count questions feed reports untagged. |
+| `metricUnit` | `'g' \| 'kg' \| 'lb' \| 'F' \| 'C'` for weight / temperature metrics (**Answered in**); reports convert to g / °F. |
+| `metricProduct` | `feed.nutrient` only: `{ name }` (always this product) or `{ from: questionId }` (that day's answer to another question; a "No" answer leaves it unlinked). The **Product** row shows only for `feed.nutrient`; changing metric or type clears it. The name must match CropLabourWizard's price list. |
 
-Each question:
+A question's box binding is derived from the fields; one no field references is notes-only (stored, printed nowhere). Its write-back is derived from its type.
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | string (4 chars) | Unique within the wizard. |
-| `label` | string | The question shown to the user ("Temp high (°C)?"). |
-| `type` | `'text' \| 'number' \| 'select' \| 'initials' \| 'plant-count' \| 'phase' \| 'room'` | Input control — **string input**, **number input**, **simple multiple choice** (fixed options list), **✍️ initials** (a draw pad that stores `{name, strokes}`; see "Initials Question Type"), **🌱 plant count** (number input whose answer writes back to `lot.plantCount` — see "Write-Back to the Main DB"), **🔄 phase** (select over the fixed phase vocabulary, whose answer writes back to `lot.stage` and drives the phase-change rollover), or **🏠 room** (select over the facility's room names, whose answer writes back to `lot.currentRoom` and drives the same rollover). New types can be added to the schema later without a migration. |
-| `options[]` | array of strings | For `select`. Ignored for `phase` — its options are the fixed vocabulary (below), not a custom list. |
-| *(binding)* | derived | A question fills whichever field(s) carry its id in `questionId` — the binding is assigned from the field side (Field properties → "Filled by question"), never from the question. A question no field references is notes-only (its answer stores but prints nowhere). |
-| `rowScoped` | boolean | `true` = the answer is captured **per day row** (daily wizard on a weekly sheet); `false` = one answer for the whole instance (header/one-shot). |
-| `repeating` | boolean, optional | **🔁 Repeating (one answer per entry)** — event / one-shot sheets only, and only for text / number / select / initials questions. Answered once per entry of the repeating table its boxes belong to, and stored in `inst.rows`, not the header. Ignored on daily-weekly sheets. See "Repeating Rows". |
-| `sameAsLast` | boolean | Offer the **"⏪ Same as last time"** action for this question. For `rowScoped` questions it copies the *previous day's* answer; for instance-level questions it copies the previous instance's answer. Default on for most daily questions. |
-| `mandatory` | boolean, default false | **Mandatory response** — while this question has no answer, the runner hides the Next / Save button (Back stays available) and Enter does not advance; a toast names the missing question. An initials question counts as answered only once strokes are drawn. Applies in both the daily runner and the Initialize paperwork quiz. |
-| *(write-back)* | derived | Plant-count / phase / room questions **implicitly** write back to `lot.plantCount` / `lot.stage` / `lot.currentRoom` — a property of the type, with no per-question setting (see "Write-Back to the Main DB"). The old `writesTo` field was removed. |
-| `prefillFrom` | binding string \| null | Optional — pre-fills the input with the resolved binding value when the wizard opens (e.g. "Starting plant count" pre-filled from `lot.plantCount`). The user can still edit; the stored answer is what prints. |
-| `metric` | string, optional | **Report metric** — tags a text / number / select question so EmployeeWizard's 📊 Reports tab can find its answers (e.g. `harvest.wetWeight`, `harvest.bigs`, `env.temp`, `ipm.pests`). Set from the question card's **Report metric** drop-down; changing the question to another type clears it. PaperWizard itself never reads it. The vocabulary (`REPORT_METRIC_GROUPS`) must match EmployeeWizard's `REPORT_METRICS` — list and rules in `EmployeeWizard/REPORTS.md`. 🌱 plant-count questions feed the reports without a tag. |
-| `metricUnit` | `'g' \| 'kg' \| 'lb' \| 'F' \| 'C'`, optional | The unit the answer is given in, for weight and temperature metrics (**Answered in** picker). Reports convert to grams / °F. |
-| `metricProduct` | `{ name }` \| `{ from: questionId }`, optional | On a `feed.nutrient` (fertilizer mL) question only: which product the amount is, so the Labour & Cost Wizard can price it. **Always this product** (`{ name: 'Activator' }`) or **the answer to another question** (`{ from: '6p8t' }` — e.g. "Core or Fade?" answered that day; a "No" answer leaves it unlinked). Set in the question card's **Product** row, which shows only for `feed.nutrient`; changing the metric or type clears it. The name must match the product's name in CropLabourWizard's price list. |
+**⏪ Same as last time** pre-fills and never saves. Row-scoped: the previous day; instance-level: the previous instance; at the start of a new page it reaches back into the previous page. Disabled when there's nothing to copy. It never copies phase / room questions (copying the old log's move-day value could re-trigger a rollover) or drawn initials.
 
-**"Same as last time" semantics:** it pre-fills the form — it never auto-saves. The user still reviews and confirms. If there is no previous day/instance, the button is disabled.  The button will pull from last week's 7-day sheet to get "Last time" when a
-a new sheet starts in a chain of sheets. **Phase / room change questions are never auto-copied** — they are deliberate change actions, and copying the old log's stamped move-day value onto the fresh log's first day could silently re-trigger a rollover. Everything else (including on the fresh page after a phase/room change) still copies normally.
-
-**Fill flow (the runner):** opening a daily-weekly leaf runs a step-through card, not one big form. For a given day the steps are: **each wizard question in order (an initials question renders its draw pad).** Constant questions (fields flagged 📌) are **excluded** — they are set once per lot via the Initialize paperwork quiz and never asked day by day (see "Constant / Header Fields"). There is **no signature step** — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button at end-of-crop review, never during daily fill-out. Day chips across the top let the user jump between days; each day's answers — including any drawn initials — are saved per day / per instance on **Save**.
+**Runner:** a card stepping through the questions (Next / Back), day chips to jump between days, ⏪ in the card header when a visible question has `sameAsLast`. Enter advances (saves on the last), subject to `mandatory`; on an initials step, Enter in the name field does the same once strokes are drawn. Constant questions are left out, and there is no signature step. **Save** stores per day / per instance.
 
 ### Entry & Instance (filled data)
 
-Filled answers live per **lot → sheet → instance**:
+Path: `entries[lotId][sheetId].instances[key]`.
 
-- **`one-shot` sheets** (propagation worksheet): a single instance per lot, anchored to lot creation.
-- **`daily-weekly` sheets** (grow-log): one instance per rolling 7-day window. The window is **not** a fixed calendar week — it starts on the day of the first daily entry saved for that window (`periodStart` = first entry date, `periodEnd` = +6 days). Instances are created on demand: saving a day's entry with no open instance starts one; an entry 7+ days after `periodStart` (or after a phase change) starts the next.
-- **`event` sheets** (room clean, IPM, harvest): one instance per triggering event/date; the instance key is the event date.
+- **`one-shot`:** one instance per lot, anchored to lot creation.
+- **`daily-weekly`:** one per rolling 7-day window — not calendar weeks. `periodStart` = the first entry saved for it (the key), `periodEnd` = +6 days. Saving with no open instance starts one; an entry 7+ days after `periodStart`, or after a phase / room change, starts the next.
+- **`event`:** one per event; key = the event date.
 
-An instance stores:
+| Instance field | Notes |
+|---|---|
+| `phase` / `room` | Daily-weekly: snapshots of `lot.stage` / `lot.currentRoom` at creation. A closed log keeps them. |
+| `header` | Instance-level answers (`questionId → value`). |
+| `days` | `YYYY-MM-DD → { questionId → value }`. Saving a day stores every row-scoped question, blank ones as `''`; a key being present is what counts as confirmed for completion (see "Completion Rules"). |
+| `rows` | Repeating entries `[{ id, <questionId>: value, …, void? }]` — see "Repeating Rows". |
+| `phaseChangeDate` | Day the log ended early (phase or room change, or plants to 0). Later rows strike through and need no entries. |
+| `strikeInitials` | `{ name, strokes } \| null`. Needed for completion; without it the strike line doesn't print. *Legacy:* a plain string prints as centred text in the initials box. |
+| `snapshots` | `binding → value` (see "Auto-Fill Bindings"). |
+| `signature` | `{ name, strokes, date?, at? } \| null`. |
+| `changes` | The page's change log (see "Corrections & Change Log"). |
+| `completedAt` | Set when the completion rule is met. |
+| `printedAt` | Set after a print render; informational. |
 
-| Field | Type | Notes |
-|---|---|---|
-| `phase` | string \| null | Snapshot of `lot.stage` at instance creation — daily-weekly sheets only. The grow-log header prints this, so a closed (old-phase) log keeps its original phase even after the lot moves on. |
-| `room` | string \| null | Snapshot of `lot.currentRoom` at instance creation — daily-weekly sheets only. A room change mid-window rolls the log over exactly like a phase change (see "Phase & Room Change"); a closed log keeps its original room even after the lot moves on. |
-| `header` | map `questionId → value` | Instance-level (non-row) answers. |
-| `days` | map `YYYY-MM-DD → { questionId → value, confirmed?: string[] }` | Per-day answers for row-scoped questions. A row-scoped **initials** question stores its `{ name, strokes }` object here (see "Initials Question Type"). `confirmed` is the list of non-initials row-scoped question ids the user has saved this day's entry with — blank-but-confirmed fields count as filled for completion (see "Completion Rules"); initials are never in it. |
-| `rows` | array, optional | The repeating tables' entries, table by table, each in order: `[{ id, <questionId>: value, …, void? }]` (8-char `id`; initials as `{ name, strokes } \| null`). Only on sheets with repeating questions. A table's entry n prints in its n-th row slot. `void` (ISO time) marks an entry deleted after it was on file: it keeps its slot, prints struck out, and counts nowhere. See "Repeating Rows". |
-| `phaseChangeDate` | `YYYY-MM-DD` \| null | Set when the lot moved to a new phase **or room** mid-window — or when all plants were removed (plant count 0) (see "Phase & Room Change"). Rows after this date are struck through at render time and no longer require entries. |
-| `strikeInitials` | `{ name, strokes }` \| string \| null | The confirmer's **drawn** strike-out initials — captured on a stylus pad when the early end was confirmed (see "Phase & Room Change"). Printed as an SVG polyline **above** the strike line (the date prints below it). Required for the instance to *complete*; without them a struck-through instance can still be printed, but the strike line simply doesn't render. *Legacy:* instances saved before drawn capture store a plain typed string; print falls back to rendering that string centered in the box. |
-| `snapshots` | map `binding → value` | Save-time binding values (see "Auto-Fill Bindings"). Captured at instance creation and refreshed on every entry save; this — not the live DB — is what prints. |
-| `signature` | `{ name, strokes: [[x,y,…], …], date?: YYYY-MM-DD, at?: ISO } \| null` | Captured signature (normalized points). `date` is stamped automatically when the signature is saved via the ✍️ Sign button (re-signing updates it; clearing removes it) and feeds the `signature.date` binding; `at` is the time, for "changed after signing". Legacy signatures without a `date` print N/A in bound boxes until re-signed. |
-| `changes` | array, optional | The page's **change log**: every correction to a value that was on file, entries deleted, values carried forward, signatures replaced — see "Corrections & Change Log". |
-| `completedAt` | ISO string \| null | Set when the completion rule is satisfied. |
-| `printedAt` | ISO string \| null | Set after a successful print-popup render (informational; re-printing always allowed). |
-
-A daily-weekly sheet's entry object may also carry **`paperBefore`** (`YYYY-MM-DD`, set by "Start on a chosen day" — days before it are on paper), **`constantChanges`** (the change log of its constants — see "Corrections & Change Log") and **`constants`** — a map `questionId → value` sibling to `instances`, holding the lot-level values for that sheet's constant fields (see "Constant / Header Fields"). It is created lazily by the Initialize paperwork quiz and shared by every instance in the chain.
+Next to `instances`, a daily-weekly entry may hold `constants` (see "Constant / Header Fields"), `constantChanges` (see "Corrections & Change Log") and `paperBefore` (see "Starting a Log Mid-Crop").
 
 ### Filing Cabinet (lot paperwork tree)
 
-The first page of the tool is the **filing cabinet**: a tree view of every document in the active lot's file. The cabinet is a pure *view* — computed from `entries`, the lot record, and configured sheets; it stores nothing of its own. One cabinet per lot; the header's lot selector switches cabinets. A lot that no longer exists in `DB.lots` (closed/orphaned) still gets a cabinet so its paper history stays browsable and printable.
+A pure view over `entries`, the lot record and the sheets — it stores nothing. One per lot, switched by the header's lot selector. A lot that is no longer in `DB.lots` keeps its entries and still gets a cabinet, so its paper history stays printable. Only Grow Logs is open by default.
 
-The tree has seven sections in fixed order (plus a catch-all "Other" when unclassified sheets exist):
+Sections, in this order (`CAB_SECTIONS`), plus **Other** when unclassified sheets exist:
 
-```
-🗄️ LOT-001 Purple Haze — 18 documents · ⚠️ 1 missing
-├─▸ 📁 Propagation
-├─▾ 📁 Room Cleans (pre-move-in)
-│   ├─ 🧼 Clone Room · Sep 12 · from LOT-000 ... ✓ on file
-│   ├─ 🧼 Veg Room · Sep 15 · from LOT-000 ..... ✓ on file
-│   ├─ 🧼 Grow Room ............................ ⚠️ missing
-│   ├─ 🧼 Dry Room ............................. — not assigned
-│   └─ 🧼 Trim Room ............................ — not assigned
-├─▾ 📁 Room Cleans (post-usage)
-│   ├─ 🧼 Clone Room · Sep 12 ................... ✓ complete
-│   └─ 📅 New clean · Veg Room .................. ⏳ due
-├─▾ 📁 Grow Logs (12)
-│   ├─ 📗 Sep 21–27 · Veg ...................... 4/7 days
-│   ├─ 📗 Sep 28 – Oct 4 · Veg ................. ✓ complete
-│   └─ ⋮ one node per weekly instance, oldest first
-├─▸ 📁 IPM Log
-├─▸ 📁 Harvest
-├─▸ 📁 Drying Logs
-└─▸ 📁 Trim Logs
-```
+- **Grow Logs** — one node per daily-weekly instance, oldest first, labelled with its window and phase.
+  - **Coverage:** when `_tool_CropLabourWizard.plantingDate` is on file, every day from planting (or `paperBefore`, if later) through today must be inside some window. Uncovered runs show as dashed **🌱 Backfill** leaves ("⚠️ 7 days no log", counted as missing); tapping one starts a 7-day window on the run's first day.
+  - Without `plantingDate`: a banner ("run it through the CropLabourWizard first") and no coverage check. "📅 Start new week" still appears when today is outside every window.
+- **Propagation** — the lot's one-shot worksheet.
+- **Room Cleans (pre-move-in)** — always lists Clone · Veg · Grow · Dry · Trim, mapped to `cloningRoom` / `vegRoom` / `destRoom` / `dryRoom` / `trimRoom`. An assigned room shows a read-only reference to the newest qualifying clean (from the previous occupant's entries, tagged "from LOT-000"); an unassigned room shows "— not assigned"; a room with no qualifying clean shows ⚠️ (informational, blocks nothing).
+- **Room Cleans (post-usage)** — this lot's own clean forms, one per room role, using the sheet assigned to that role (`room-clean-clone` … `room-clean-trim`); "⚠️ no form configured" otherwise. Event instances keyed by clean date, plus "📅 New clean · {room}" when today has none. These are what the next occupant references. Legacy clean sheets whose role can't be inferred file here as catch-all leaves.
+- **IPM Log** — one node per IPM event.
+- **Harvest** — the harvest log instance(s).
+- **Drying Logs / Trim Logs** — daily-weekly sections (`drying-log` / `trim-log`) with the same rolling windows and "📅 Start new week" as Grow Logs, but no planting-date coverage.
+- Every event sheet outside the room cleans (IPM / Harvest / Other) gets a "📅 New entry · {sheet}" leaf when today has no instance; its Fill starts today's. Not shown on a lot that is read-only on this device.
 
-- **Propagation** — the lot's one-shot propagation worksheet instance.
-- **Room Cleans (pre-move-in)** — proof that each room was cleaned *before this lot moved in*. The tree always lists all five rooms — **Clone · Veg · Grow · Dry · Trim** — mapped to the lot's `cloningRoom` / `vegRoom` / `destRoom` / `dryRoom` / `trimRoom`. For each assigned room, the cabinet shows a read-only reference node to the most recent qualifying clean on file (filled under the **previous occupant's** entries, tagged "from LOT-000"); an unassigned room renders as a neutral "— not assigned" leaf; an assigned room with no qualifying clean renders as a ⚠️ warning leaf — informational, never blocks other sheets.
-- **Room Cleans (post-usage)** — this lot's *own* fillable clean forms, one per room role. Each role uses the cleaning sheet configured for it (the Document dropdown's per-room values: `room-clean-clone` … `room-clean-trim`); a role with no configured form shows "⚠️ no form configured". Instances are `event` sheets keyed by clean date, plus a "📅 New clean · {room}" leaf when today has no instance yet. These owned instances are exactly what the *next* occupant's pre-move-in tree references. (Legacy cleaning sheets whose room role can't be inferred from their Document value or name keywords file here as catch-all leaves.)
-- **Grow Logs** — one node per `daily-weekly` instance, oldest first, labeled with its window and phase snapshot. A full crop runs 10–14 weeks, so this section typically holds 10–14 nodes.
-  - **Coverage from the planting date:** when the lot was configured in CropLabourWizard (`_tool_CropLabourWizard.plantingDate` on file), every day from planting through today must sit inside some instance's active window. Uncovered days are grouped into runs and rendered as dashed **🌱 Backfill** leaves (e.g. "Backfill Jun 05–Jun 11 · ⚠️ 7 days no log") that count as missing in the section header; tapping one starts a fresh 7-day window on the run's first day so the gap can be filled in.
-  - **Unconfigured lot:** when the lot has no `plantingDate` on file, the cabinet shows a warning banner — "run it through the CropLabourWizard first" — and coverage checking is skipped (the generic "📅 Start new week" leaf still appears when today is outside every window).
-- **IPM Log** — one node per IPM event instance (application date).
-- **Harvest** — the lot's harvest log instance(s); empty until harvest.
-- **Starting an event entry (IPM / Harvest / Other):** each configured `event` sheet outside the room cleans also gets a "📅 New entry · {sheet name}" leaf when today has no instance yet (like "📅 New clean"); its Fill starts today's instance. Not shown on a lot that is read-only on this building device.
-- **Drying Logs / Trim Logs** — `daily-weekly` sections for the post-harvest paperwork: the daily drying log and the daily trim log, each one node per 7-day window like Grow Logs. They file under their Document assignment (`drying-log` / `trim-log`) and use the same rolling-window + "📅 Start new week" machinery; they have **no** planting-date coverage rule (that applies to grow-logs only).
+**Pre-move-in clean sourcing:** a clean is an `event` instance under the lot that did it, with the room name in its header and the clean date as key. The cabinet scans every lot's clean instances for the room name and takes the newest one on or before this lot's move-in to that room. Move-in date:
 
-**Pre-move-in clean sourcing rule:** a room-clean instance is an `event` sheet stored under the lot that performed the clean, with the room name in its header and the clean date as its instance key. To populate a lot's pre-move-in tree, the cabinet scans *all lots'* room-clean instances for a matching room name and picks the most recent one dated **on or before this lot's move-in date** to that room:
+1. from the logs: the first day any daily-weekly log's 🏠 Room answer equals that room (`firstRoomEntryDate`);
+2. else by phase: clone = `lot.createdDate`, veg = `periodStart` of the first Veg instance, grow = of the first Bloom instance;
+3. else today.
 
-- **Log-derived dates win:** when the lot's grow logs record a 🏠 Room question, the move-in date is the first day any daily-weekly log's room answer equals that room (`firstRoomEntryDate`) — the paper trail is the source of truth.
-- **Phase fallback:** without log evidence, clone = `lot.createdDate`; veg = `periodStart` of the lot's first grow-log instance with phase Veg; grow = `periodStart` of the first Bloom instance.
-- If nothing qualifies yet, "move-in" falls back to today — any earlier clean of that room qualifies.
+It is matched at view time — no link is stored on either side. Reference nodes print but can't be filled.
 
-The match is derived at view time from (room name, date) — no link field is stored on either side. Reference nodes open the same print popup as owned instances but offer no fill action; the data lives in the other lot's file.
-
-**Leaf status:** every leaf shows one of — `✓ complete` (completion rule met), progress (`4/7 days`), `⏳ due`, `⚠️ missing` (expected document absent), or `— not started`. Section headers aggregate counts ("14 documents · 1 missing").
-
-**📋 Initialize paperwork button:** the cabinet toolbar (between Load document and the print chip) shows this button when the active lot has at least one daily-weekly sheet with constant fields (see "Constant / Header Fields"). It opens the initialize quiz for that lot. While any constant value is unset the button carries a ⚠️ marker and its tooltip says how many are missing; once all are set it reads "re-run to change them".
+Tapping a leaf opens its wizard, or its print popup once complete. **Leaf status:** `✓ complete`, progress (`4/7 days`, `3/5 · phase change Sep 24`), `⏳ due`, `⚠️ missing`, or `— not started`; section headers total them. **🖨️ Print** works once an entry exists and the page set is loaded, complete or not; its tooltip lists what's missing (days, signature, strike initials, unset constants, entries).
 
 ### Phase & Room Change (grow-log rollover)
 
-When a lot moves Clone → Veg → Bloom — or when it **moves rooms** (e.g. into the dry room after harvest) — its open daily-weekly log rolls over. Both changes use the exact same machinery: one shared rollover core (`dailyRollover`) parameterized by which tracked value changed.
+A phase change (Clone → Veg → Bloom) or a room move (e.g. into the dry room) rolls the open daily-weekly log over. Both use one core, `dailyRollover`.
 
-1. **Detection / recording:** each change can originate in either direction. If the lot's live `stage` (changed in SitkaTools) no longer matches the open instance's stored `phase`, PaperWizard prompts to confirm the move ("Lot is now in Bloom — close this grow-log?"); likewise, if the lot's live `currentRoom` no longer matches the open instance's stored `room`, it prompts ("Lot is now in Dry Room 1 — close this log?"). Alternatively the change is recorded directly in the daily wizard via a Phase question (`type: 'phase'`, `writesTo: 'lot.stage'`) or a Room question (`type: 'room'`, `writesTo: 'lot.currentRoom'`): the answer is compared against the lot's **live value in the main DB** (not a walk-back through saved answers), and a different pick writes the new value back to the main DB (see "Write-Back to the Main DB").
-   - **Declining the prompt** ("Lot is now in Bloom — close this grow-log?" → Cancel, or Cancel at the strike initials) opens the runner normally, with the Phase question prefilled from the lot's **live** phase instead of the page's — so a plain save records the day without reading as a change back (no stage write, no strike-out).
-   - **Save-first strike-out:** the user fills out that day's *entire* row before the sheet is struck through. On save, the day's full entry is persisted first (including the change question), then — if a change was recorded — the drawn-initials capture opens and confirmation records `phaseChangeDate` = **the entry's own day** (a backfilled entry strikes out on that past day; the strike-out and the fresh page both land there) **and captures the confirmer's drawn strike-out initials** on the old instance, then creates a fresh instance carrying the new value. Cancelling at the initials prompt rolls the whole save back — nothing is saved, no write-backs fire, and the runner stays open with its draft intact.
-   - **Drawn capture (not a typed prompt):** confirming opens a modal with a stylus pad (the shared draw-pad machinery) + a name input — "Strike-out initials — {newValue}". The confirmer *draws* their initials and types them; an empty pad or an empty name is rejected ("Draw your initials first", "Type your initials as well as drawing them") and Cancel aborts the whole change with no changes. The result is stored as `strikeInitials = { name, strokes }` on the old instance (legacy instances may hold a plain string — print falls back to centered text).
-2. **Double entry on the move day:** both instances carry an entry for the move date — one *full* entry under the old value (old sheet), one to be filled in under the new value (new sheet, whose first entry is that day). The new instance's `periodStart` is the move date and its header carries the new value. With a **row-scoped** question this is automatic: the old log's move-day row is stamped with the *previous* value (the user filled that day out fully under the old phase/room before the strike-out), and the fresh 7-day page starts on the **same day** — its move-day row is left for the user to walk the wizard through a second time, answering every question uniquely under the new value. "⏪ Same as last time" stays available on that fresh entry for the unchanged questions (phase/room change questions are never auto-copied — they are deliberate actions).
-   - **Cross-snapshot stamping:** a phase change doesn't move the lot, and a room change doesn't change its phase — so every fresh instance carries *both* snapshots: the rollover stamps the other value onto the new instance (from the old instance's snapshot, or from `lot.currentRoom` / `lot.stage` when absent).
-   - **Same-save double change:** if both questions change in one save, a single strike-out records both — the fresh log carries the new phase *and* the new room, and both write-backs fire. No second rollover runs (it would create a phantom zero-day log). The old log's move-day row keeps the previous phase *and* the previous room (row-scoped questions).
-3. **Strike-through on the old sheet:** when a 7-day grow-log ends early, policy is a **diagonal strike-out across the remaining day rows, with the confirmer's initials above the line and the change date below it**. Those rows no longer require entries — the old instance completes when all days from `periodStart` through `phaseChangeDate` are filled (+ signature if defined).
+1. **Detection:**
+   - **Changed in SitkaTools:** the lot's live `stage` / `currentRoom` no longer matches the newest instance's `phase` / `room` → prompt "Lot is now in Bloom — close this grow-log?". Confirming rolls over without writing anything back. Declining (or Cancel at the strike initials) opens the runner with the Phase question prefilled from the **live** phase, so a plain save is not a change. Older pages never prompt.
+   - **Recorded in the wizard:** a Phase or Room answer that differs from the live value (see "Write-Back Question Types").
+2. **Save first, then strike:** the day's whole entry (change question included) is saved; then the strike-initials pad opens. Confirming sets `phaseChangeDate` = **the entry's own day** (a backfilled entry strikes out and starts the new page on that past day), stores `strikeInitials` on the old instance, and creates the fresh instance. Cancel at the pad rolls the whole save back: nothing saved, no write-backs, the runner stays open with its draft.
+   - The pad ("Strike-out initials — {newValue}") needs drawn **and** typed initials ("Draw your initials first", "Type your initials as well as drawing them").
+3. **Double entry on the move day:** the fresh instance's `periodStart` is the move day and its header carries the new value. The old log's move-day row keeps the previous value (it was filled before the strike); the fresh page's move-day row is filled again under the new value — the save flow offers to run it. ⏪ copies the unchanged questions.
+   - **Cross-snapshot:** the fresh instance also carries the value that didn't change (from the old instance, or `lot.stage` / `lot.currentRoom` when absent).
+   - **Same-save double change:** one strike-out records both; the fresh log carries the new phase and the new room, both write-backs fire, and no second rollover runs (it would make a phantom zero-day log). The old move-day row keeps both previous values.
+4. **Strike-out policy:** a diagonal across the remaining day rows, the confirmer's initials above the line and the change date below. Those rows need no entries.
 
-   **Strike-out computation:** the overlay is derived, never stored. A pure function takes the instance (`phaseChangeDate`, `strikeInitials`) plus the sheet's explicit day-row geometry (the daily-entry groups' placed boxes — no pitch math) and returns, **per page**:
-   - **struck rows** — every day row whose date (instance key + member's `day` − 1) is after `phaseChangeDate`;
-   - **the diagonal** — one line from the top-right corner of the first struck row to the bottom-left corner of the last struck row, in normalized page coordinates;
-   - **label positions** — an `initialsRect` (a wide/short box centered just above the line's midpoint) for the drawn strike initials, and a date position centered just below it.
+**Strike-out computation** (derived, never stored): a pure function of `phaseChangeDate`, `strikeInitials` and the placed day-row boxes returns, **per page**:
 
-   A multi-page daily form (e.g. a two-page grow-log whose second page is also daily repeating) gets the **same strike-out on every page that has struck rows** — each page's remaining day rows are crossed by their own diagonal with the initials above and the change date below, computed in that page's coordinates. The same computation feeds the print popup (SVG overlay) and any on-screen preview, so what prints is exactly what was computed from the saved data. The drawn `strikeInitials` render as an SVG polyline inside `initialsRect`; a legacy string renders as centered text in the same rect.
+- struck rows — every day row dated (key + `day` − 1) after `phaseChangeDate`;
+- the diagonal — from the top-right of the first struck row to the bottom-left of the last, in normalized page coordinates;
+- `initialsRect` (wide, short, centred just above the line's midpoint) for the initials, and the date position just below.
+
+Every page with struck rows gets its own strike-out. Print and preview use the same computation.
 
 ### Starting a Log Mid-Crop (earlier paperwork on paper)
 
-The facility is moving from paper, so a lot's early grow logs may only exist on paper. For a lot with **no daily log yet** for a daily-weekly sheet, that sheet's cabinet section shows **📅 Start on a chosen day…**. Its dialog asks for the first day (on or before today; it opens on the **date the lot was created**, or today when that is missing or still ahead — user decision 2026-10-19), the starting **phase**, **plant count** and **room**:
+For a lot with **no daily log yet** on a daily-weekly sheet, the section shows **📅 Start on a chosen day…**. The dialog asks for the first day (on or before today; it opens on the lot's creation date, or today when that is missing or still ahead), the starting **phase**, **plant count** and **room**:
 
-- The lot's live `stage` / `currentRoom` / `plantCount` are set to those values (PaperWizard's write-back permission), so the new page and the mismatch checks agree. The phase list also offers the lot's current stage, preselected, when it is outside the form's vocabulary (drying / curing), and `stage` is only written when a different phase is picked.
-- `entries[lotId][sheetId].paperBefore = <date>` marks the days before as on paper: grow-log coverage starts at the later of the planting date and `paperBefore`, so those days are never flagged as missing.
-- The first page is created on that date with the chosen phase/room; a row-scoped plant-count question gets the starting count on day 1, and the wizard opens on that day.
-- Lots without paper history keep starting at day 1 as before.
+- The lot's live `stage` / `currentRoom` / `plantCount` are set to those values, so the new page and the mismatch checks agree. The phase list also offers the lot's current stage, preselected, when it is outside the form's vocabulary (drying / curing); `stage` is written only when a different phase is picked.
+- `entries[lotId][sheetId].paperBefore = <date>` marks earlier days as on paper: coverage starts at the later of the planting date and `paperBefore`.
+- The first page starts on that date with the chosen phase / room; a row-scoped plant-count question gets the starting count on day 1, and the wizard opens on that day.
 
 ### Backfilled Changes (propagation)
 
-Saving a day that is **followed by later entries or pages** (`isBackfillDay`) takes the backfill path (`applyBackfill`) instead of the normal write-backs. Changes are compared with what **that day** said before (or the page's phase/room), not the lot's live values. Every confirmation — and the strike initials — is collected **before** anything beyond the day itself changes; Cancel restores the day exactly as it was.
+Saving a day that is **followed by later entries or pages** (`isBackfillDay`) takes the backfill path (`applyBackfill`) instead of the normal write-backs. Changes are compared with what **that day** said before (or the page's phase / room), not with the lot's live values. Every confirmation — and the strike initials — is collected **before** anything beyond the day itself changes; Cancel restores the day exactly.
 
-- **Plant count (row-scoped):** the difference (new − old) is applied to every later recorded count in **unsigned** logs, so later culls stay correct (540→538 becomes 500→498). Later pages count from the edited date itself — after a phase/room change the move day is on both pages, so editing the old page's move-day row also corrects the new page's row for that date. "Cancel" saves the day only. Every unsigned later page's `lot.plantCount` snapshot moves by the same amount, even before it has rows.
-- **Phase / room:** the log is struck out on that day (drawn initials, `phaseChangeDate` = the day, its row stamped with the old value) and the unsigned pages after it are **re-paged**: their days move onto fresh 7-day pages starting on that day under the new value, and later answers that still carry the old value are updated. A later page that already holds the new value (a change recorded late) merges in. On the log's first day there is nothing to strike — the page switches to the new value in place.
-- **Stops:** propagation never changes a log the master grower has **signed**, and re-paging also stops at a page recording a different change. If the last rebuilt page would run into the page it stopped at, it is struck where it ends (on the linked change day, or the day before a signed log).
-- **Live lot values:** a backfilled day never drags the lot backwards. `lot.plantCount` always follows the newest recorded day in the chain; `lot.stage` / `lot.currentRoom` take the new value only when re-paging reached the end of the chain.
-- **Reprint:** pages that were already printed are named in the toast so they can be reprinted.
-- Opening an older page (one with a later page after it) never shows the "Lot is now in … — close this log?" prompt; that check only applies to the newest page.
-- **Prefill on a backfilled day:** a question left blank on that day is prefilled from the page, not the live lot — plant count from the last count recorded before that day, phase / room from the page's `phase` / `room` — so just saving it is never read as a change. The newest day keeps the live prefill.
+- **Plant count (row-scoped):** the difference (new − old) is applied to every later recorded count in **unsigned** logs, so later culls stay right (540→538 becomes 500→498). Later pages count from the edited date itself: after a phase / room change the move day is on both pages, so editing the old page's move-day row also corrects the new page's row for that date. "Cancel" saves the day only. Every unsigned later page's `lot.plantCount` snapshot moves by the same amount, even before it has rows.
+- **Phase / room:** the log is struck out on that day (drawn initials, `phaseChangeDate` = the day, its row stamped with the old value) and the unsigned pages after it are **re-paged**: their days move onto fresh 7-day pages starting that day under the new value, and later answers still carrying the old value are updated. A later page that already holds the new value (a change recorded late) merges in. On a log's first day there's nothing to strike — the page switches to the new value in place.
+- **Stops:** propagation never changes a log the master grower has **signed**, and re-paging stops at a page recording a different change. If the last rebuilt page would run into the page it stopped at, it is struck where it ends (on the linked change day, or the day before a signed log).
+- **Live lot values:** a backfilled day never drags the lot backwards. `lot.plantCount` follows the newest recorded day in the chain; `lot.stage` / `lot.currentRoom` take the new value only when re-paging reached the end of the chain.
+- **Reprint:** the toast names pages that were already printed.
+- Opening an older page (one with a later page after it) never shows the "Lot is now in … — close this log?" prompt; only the newest page is checked.
+- **Prefill on a backfilled day:** a question blank on that day is prefilled from the page, not the live lot — plant count from the last count recorded before that day, phase / room from the page's `phase` / `room` — so just saving it is never read as a change. The newest day keeps the live prefill.
 
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
-PaperWizard is the **only tool in the suite allowed to modify another tool's data**. The permission is narrow and fixed: it may write exactly three fields on a lot record — `plantCount`, `stage`, and `currentRoom`. No other field, no other tool. Everything else remains read-only.
+PaperWizard is the only tool allowed to write another tool's data, and only three lot fields: `plantCount`, `stage`, `currentRoom` (root `CLAUDE.md` → "Shared Database", Ownership). Every write calls `notifySitkaTools()` and travels in the normal full-DB `sitkaGit_db_update`.
 
-Write-backs are driven by wizard questions carrying a `writesTo` binding (see the question table above). The three dedicated question types — **🌱 plant count**, **🔄 phase**, and **🏠 room** (see "Write-Back Question Types") — lock their `writesTo` to the matching target, so the write-back is a property of the type:
-
-- **Plant count (`lot.plantCount`):** any plant-count question (row-scoped or instance-level) whose saved value differs from `DB.lots[lotId].plantCount` updates the lot record and calls `notifySitkaTools()` — on the newest day of the chain. A backfilled day instead re-derives the live count from the newest recorded day (see "Backfilled Changes"). Same value = no write. The lot's count follows the most recently saved entry; per-day entries remain the full paper trail. A count that **drops to 0** (all plants removed) additionally strikes out the open log on that day — drawn initials, no fresh page.
-- **Phase (`lot.stage`):** any phase question (instance-level or row-scoped) whose answer differs from the lot's **live `stage`** triggers the standard rollover (strike-through + new instance, see above) **and** writes the new phase to `DB.lots[lotId].stage` + `notifySitkaTools()`. The write-back fires in the save-first flow (entry saved, then strike-out confirmed), and the save flow offers to run the move-day entry for the new instance — producing the double entry on the move day.
-- **Room (`lot.currentRoom`):** any room question whose answer differs from the lot's **live `currentRoom`** triggers the same rollover **and** writes the new room to `DB.lots[lotId].currentRoom` + `notifySitkaTools()`. When a phase rollover already ran in the same save, the fresh log carries the new room (absorbed by the rollover core) and only the write-back fires — no second strike-out.
-
-All three write-backs travel over the standard postMessage channel (the full-DB `sitkaGit_db_update` payload) — no protocol change; SitkaTools auto-refreshes as it does for any subtool update. The reverse direction still works: if the stage or currentRoom was changed *in* SitkaTools, PaperWizard's mismatch detection prompts and rolls over without writing anything back (the main DB is already correct).
-
-Because bindings snapshot at save time (see "Auto-Fill Bindings"), a one-shot sheet may bind directly to a live value and still print it *as captured* — e.g. starting plant count on the propagation worksheet binds to `lot.plantCount` and keeps printing the creation-time count on every re-print, because the snapshot was taken when the worksheet was saved. `prefillFrom` questions remain the tool for values that need human confirmation before they go on file.
+- **Plant count:** a saved value on the newest day of the chain that differs from `lot.plantCount` updates it (same value = no write). A backfilled day re-derives it from the newest recorded day (see "Backfilled Changes"). SitkaTools sets the starting count at lot creation; the per-day entries are the history.
+- **Phase / room:** an answer different from the live `stage` / `currentRoom` triggers the rollover and writes the new value. When a phase rollover already ran in the same save, the room only writes back (no second strike-out).
+- Starting a log mid-crop writes all three (see "Starting a Log Mid-Crop").
+- A change made in SitkaTools is caught by the mismatch prompt and rolls over without writing back (see "Phase & Room Change").
 
 ### Repeating Rows (tables that run over several pages)
 
-Built 2026-10-16 for the harvest log: page 3 records a wet weight per tote on harvest day, often more than the page has rows, and a later page records dry weights per bin (user decisions: a quick-entry card for the entries; several tables per sheet; tap buttons for short choice lists).
+For forms like the harvest log: a wet weight per tote on harvest day (often more entries than the page has rows) and dry weights per bin on a later page.
 
-- **Configure (event / one-shot sheets):** set up the table's **first row** — every column, checkboxes too (bindings, "checked when value equals") — select those boxes (Shift-click or Shift-drag) and hit **🔁 Group as repeating rows** in the Field properties panel. It asks how many rows the page holds (2–100) and creates rows 2..N as real boxes (`repeat: true`, `dayGroup` = group id, `day` = row number; badges `R2`…`RN`). Moving works like day rows: plain drag moves the whole group, **Ctrl/⌘** one row, **Alt/⌥** one box. ✂️ Ungroup keeps row 1. Weekly sheets keep **🔗 Group as daily entry** instead.
-  - **Column edits:** a box's question, auto-fill source, ☑ checkbox flag, "checked when value equals" and **size** all follow down its column (`cfgColumnOf`), for day rows too — fixing row 1 after grouping fixes every row. Resizing (corner / edge handles, or W / H in Field properties) gives every box in the column the same width and height, each staying in its own row; dragging the top or left edge moves them all by the same amount. **Alt/⌥**-drag a handle to resize just that one box (user decision 2026-10-19). A column is the same x in every row, and boxes stacked at one x in a row (the grow log's Core / Grow, Hand / Wand / Emitter) are separate columns, matched by their place in the stack. Re-spacing a group (🔗 Group as daily entry on boxes already grouped) and the pitch it measures use the same columns, so stacked boxes keep their own heights.
-- **Questions:** tick **🔁 Repeating (one answer per entry)** on the questions that fill the rows (text, number, select or ✍️ initials; never plant count / phase / room). Bind each row-1 box as usual. On event / one-shot sheets the "Row-scoped (per day)" box is hidden unless a question already has it. The builder warns when a repeating question is bound outside the rows, or a plain question is bound to them.
-  - **Tick-a-box columns** (e.g. Flower / Trim / Other): one select question with those options, bound to three checkbox boxes in the row, each "checked when value equals" its word. The matching box prints ✕.
-- **Tables (`repeatTables`)** are worked out from the bindings — nothing to name or number:
-  - a table = a set of repeating rows plus the repeating questions bound to them. Row groups that share a question are one table: a table split into **side-by-side halves** fills the left group, then the right (left to right, then top to bottom);
+- **Configure (event / one-shot sheets):** set up the table's **first row** — every column, checkboxes too (bindings, "checked when value equals") — select those boxes and hit **🔁 Group as repeating rows** (Field properties). It asks how many rows the page holds (2–100) and creates rows 2..N as real boxes (`repeat: true`, `dayGroup` = group id, `day` = row; badges `R2`…`RN`). Moving works like day rows (plain drag = the group, **Ctrl/⌘** = one row, **Alt/⌥** = one box); ✂️ Ungroup keeps row 1. Weekly sheets use 🔗 Group as daily entry instead.
+  - **Column edits:** a box's question, source, ☑ checkbox flag, "checked when value equals" and **size** follow down its column (`cfgColumnOf`), for day rows too — fixing row 1 after grouping fixes every row. Resizing (corner / edge handles, or W / H) gives every box in the column the same width and height, each staying in its own row; dragging the top or left edge moves them all by the same amount. **Alt/⌥**-drag a handle to resize one box. A column is the same x in every row; boxes stacked at one x in a row (the grow-log's Core / Grow, Hand / Wand / Emitter) are separate columns, matched by their place in the stack. Re-spacing a group (🔗 on boxes already grouped) and the pitch it measures use the same columns, so stacked boxes keep their own heights.
+- **Questions:** tick **🔁 Repeating (one answer per entry)** on the questions that fill the rows, and bind each row-1 box as usual. On event / one-shot sheets the "Row-scoped (per day)" box is hidden unless a question already has it. The builder warns when a repeating question is bound outside the rows, or a plain question to them.
+  - **Tick-a-box columns** (e.g. Flower / Trim / Other): one select question bound to three checkbox boxes in the row, each "checked when value equals" its word; the matching box prints ✕.
+- **Tables (`repeatTables`)** come from the bindings — nothing to name:
+  - a table = a set of repeating rows plus the repeating questions bound to them. Row groups that share a question are one table; a table in **side-by-side halves** fills the left group, then the right;
   - a repeating question bound to no rows (notes only) joins the table of the nearest bound repeating question before it in the wizard (else after it);
   - row groups with no repeating question aren't a table and print nothing;
-  - a sheet can have **several tables**, on different pages or the same one. Each table's boxes must all be on **one page** — Save refuses otherwise ("has rows on pages 2 and 3").
-- **Filling (Entries steps):** each table gets **one** runner step, placed where its first question sits (`runnerSteps`), headed "🔁 Entries · page 3" (plus "· table 2" when a page holds several):
+  - a sheet may have **several tables**, on one page or different pages, but each table's boxes must be on **one page** — Save refuses otherwise ("has rows on pages 2 and 3").
+- **Filling — the Entries step:** each table gets **one** runner step, where its first question sits (`runnerSteps`), headed "🔁 Entries · page 3" (plus "· table 2" when a page has several):
   - a form with the table's questions and **＋ Add entry**. Enter moves to the next typing box; Enter on the last adds the entry. Mandatory answers are checked per entry;
   - a choice question with up to 5 options (`ENTRY_TAP_MAX`) shows as **tap buttons**; tapping the picked one again clears it. Longer lists stay a drop-down;
-  - the entries so far, newest first, each with **✎** (load it into the form → 💾 Update entry) and **🗑** (asks; later entries move up). An entry already saved with the log is **on file**: changing it is a correction, and 🗑 marks it "deleted on Save" (**↩** undoes that) — it stays in its row, struck out, and later entries don't move up (see "Corrections & Change Log");
+  - the entries so far, newest first, each with **✎** (load into the form → 💾 Update entry) and **🗑** (asks; later entries move up). An entry saved with the log is **on file**: changing it is a correction, and 🗑 marks it "deleted on Save" (**↩** undoes) — it stays in its row, struck out, and later entries don't move up (see "Corrections & Change Log");
   - "N entries · page 3 prints 2× (20 rows per page)", or a warning when the table's questions aren't bound to repeating rows;
-  - a new entry starts from the previous one for **⏪ same-as-last** questions (initials: the name only — strokes are drawn fresh) and from `prefillFrom` otherwise.
-  - **Save** (labelled **💾 Save log**) writes every table's entries to `inst.rows`. An entry still typed in any table's form is added first; if it can't be (a mandatory answer missing) the runner shows that form and nothing is saved.
+  - a new entry starts from the previous one for ⏪ same-as-last questions (initials: the name only — strokes are drawn fresh) and from `prefillFrom` otherwise;
+  - **💾 Save log** writes every table's entries to `inst.rows`. An entry still typed in a form is added first; if it can't be (a mandatory answer missing), the runner shows that form and nothing is saved;
   - **✕ / Escape / clicking beside the card** asks before closing when entries were added, changed or deleted, or a form holds an unadded entry.
-- **Storage:** `inst.rows = [{ id, <questionId>: value }]` — every table's entries in one list, table by table, each in entry order. Each entry has an 8-char `id` and a key for **every** question of its table (blank answers as `''`), which is how a row is matched to its table (`splitRows`: the first table whose questions it answers). Rows that match no table (their questions were deleted) are kept on save and never printed. Saving replaces the list with the runner's copy (like the header answers).
-- **Print:** a table's entry n goes in its row slot n; the table's page prints again for every further *rows-per-page* entries, and a page holding several tables prints as often as the fullest one needs. Each copy follows the last (page 2, 2, 3, 3 …). `entry.number` numbers a table's rows across copies; `page.number` / `page.count` count the printed pages, copies included.
-- **Completion:** every table needs at least one entry (the Print / Sign tooltips list "no entries yet (page 2)").
-- **Reports:** the Labour & Cost Wizard reads `inst.rows` like any other answers (dated by the instance), so a summed metric such as `harvest.wetWeight` or `harvest.dryWeight` adds every entry (`EmployeeWizard/REPORTS.md`). A Net column tagged dry weight sums every bin — flower, trim and other alike.
+- **Storage:** `inst.rows = [{ id, <questionId>: value, …, void? }]` — every table's entries in one list, table by table, each in entry order. Each entry has an 8-char `id` and a key for **every** question of its table (blank = `''`, initials `{ name, strokes } | null`); that is how a row finds its table (`splitRows`: the first table whose questions it answers). Rows matching no table (their questions were deleted) are kept on save and never printed. Saving replaces the list with the runner's copy. `void` (ISO time) = deleted after it was on file: keeps its slot, prints struck out, counts nowhere.
+- **Print:** a table's entry n goes in row slot n. The table's page prints again for every further *rows-per-page* entries (45 entries on a 20-row page → 3 copies), and a page with several tables prints as often as its fullest table needs. Copies follow each other before any later page (pages 2, 2, 3, 3 …). Header boxes repeat on every copy; unused rows on the last copy print blank; a saved entry's empty answer prints `N/A`.
+- **Completion:** every table needs at least one entry (see "Completion Rules").
+- **Reports:** the Labour & Cost Wizard reads `inst.rows` like other answers (dated by the instance), so a summed metric (`harvest.wetWeight`, `harvest.dryWeight`) adds every entry; a Net column tagged dry weight sums every bin, flower, trim and other alike (`EmployeeWizard/REPORTS.md`).
 - SitkaTools' split files treat a page as a whole, so `rows` needs nothing there.
 
 ### Corrections & Change Log (QAP traceability)
 
-Built 2026-10-19 for the QAP (user decisions: a reason is required, with tap-to-fill choices; dates print `yyyy/mm/dd`; a signed log can still be corrected and is flagged; the change log prints from its own button, not with the form).
+A value on file that is changed keeps its old value on the printed page, struck out with drawn initials and the date, and every change goes in a printable change log. A reason is required, and a signed log can still be corrected (it is flagged).
 
 - **On file:** a value is on file once it was saved as part of a complete entry. From then on a change is a correction:
   - a daily log's **day**, once saved with every answer and the day's drawn initials (`dayAnswered`, or the day already has a correction — `dayOnFile`);
-  - a page's own (**header**) answers, once every one of them is answered (`headerOnFile`);
+  - a page's **header** answers, once every one of them is answered (`headerOnFile`);
   - a **repeating entry**, once the log was saved with it;
   - a 📌 **constant**, once saved (not blank).
 
-  Days and pages still being filled in change freely, as before.
+  Days and pages still being filled in change freely.
 - **The runner:**
   - an on-file step says so ("✏️ This day is on file…", "✏️ This page is on file…", "✏️ Saved entries are on file…");
-  - a changed answer shows "✏️ On file as 24.5 — saving strikes it out…", and earlier corrections of it are listed under it;
+  - a changed answer shows "✏️ On file as 24.5 — saving strikes it out…", with its earlier corrections listed under it;
   - the day's drawn initials are shown locked (🔒), never redrawn;
   - prefills don't fill a saved blank on an on-file day (it would read as a change).
-- **Saving (`saveRunnerEntry`):** the sheet's pages are copied before the save (`sdBefore`). After everything else (backfill prompts, strike-out initials), `findCorrections` compares before and after. Days that a re-page moved are followed by date. When anything on file changed, the **correction pad** (`captureCorrection`) opens:
-  - It lists each change (`Oct 14 · Temp: ~~24.5~~ → 25`; knock-ons say "carried forward").
-  - It requires a reason (chips: Typing error, Wrong reading, Entered on the wrong day, Wrong box), a name and drawn initials.
-  - **Cancel** puts the sheet's pages and the lot back exactly as before Save. Nothing is saved, and the runner stays open with its draft. A live DB update while the pad is open cancels the same way.
-  - The Initialize quiz (`saveInitConstants`) does the same for constants, into `constantChanges`.
-- **Knock-ons:** a backfilled plant count that shifts later counts records each shifted day that was on file as `carried` (with `via` = the edited day). A re-page (`applyRepage`) moves each day's change history to the page the day lands on. A rebuilt page gets the page-level history of the page its header came from. Days on file whose phase / room the re-page changes are recorded as carried.
+- **Saving (`saveRunnerEntry`):** the sheet's pages are copied before the save (`sdBefore`). After everything else (backfill prompts, strike initials), `findCorrections` compares before and after; days a re-page moved are followed by date. When anything on file changed, the **correction pad** (`captureCorrection`) opens:
+  - it lists each change (`Oct 14 · Temp: ~~24.5~~ → 25`; knock-ons say "carried forward");
+  - it requires a reason (tap-to-fill chips: Typing error, Wrong reading, Entered on the wrong day, Wrong box), a name and drawn initials;
+  - **Cancel** puts the sheet's pages and the lot back exactly as before Save. Nothing is saved; the runner stays open with its draft. A live DB update while the pad is open cancels the same way;
+  - the Initialize quiz (`saveInitConstants`) does the same for constants, into `constantChanges`.
+- **Knock-ons:** a backfilled plant count that shifts later counts records each shifted on-file day as `carried` (`via` = the edited day). A re-page (`applyRepage`) moves each day's change history to the page the day lands on; a rebuilt page gets the page-level history of the page its header came from. On-file days whose phase / room the re-page changes are recorded as carried.
 - **Record** (`inst.changes[]`, `constantChanges[]`): `{ id: 'ch…', at: ISO, date: YYYY-MM-DD, kind, day, row, entry?, where?, q, label, from, to, by: { name, strokes }, reason, via?, constant? }`.
-  - `kind` is one of: `edit` (the user changed it), `carried` (a save changed it on another day), `void` (an entry deleted), `removed` (a filed day or entry no longer on any page), `signature`.
+  - `kind`: `edit` (the user changed it), `carried` (a save changed it on another day), `void` (an entry deleted), `removed` (a filed day or entry no longer on any page), `signature`.
   - Strokes are rounded to 3 decimals; each record keeps its own copy.
-- **Print:** each box's `edit` / `carried` records (`boxCorrections`) print oldest first, ending with the current value on its own line. Each record is `~~old~~ – [drawn initials] yyyy/mm/dd`, wrapped to the box's width: the initials stay beside the struck value when they fit, else go to the line below (without the dash), and the date likewise (user request 2026-10-19: "the initials and date can go down below the old number").
-  - The initials are 1 line high (pad shape `CORR_INITIALS_ASPECT` 2.5:1), the same size as the value. A blank that was filled in prints a struck `N/A`.
-  - **Room = the box as configured** (its `x`, `y`, `w`, `h` in the sheet; user decision 2026-10-19 — not read from the page image, so shading or lines on a form never change it). A correction needs about three lines, so give a box that may be corrected room for them in Configure Sheets (resizing a day-1 box resizes its whole column); a value that isn't corrected prints at the box's top as before, so a taller box doesn't move it. For the grow log's pH over EC in one cell, each box can take half the cell.
-  - The text shrinks only when the lines don't fit the box (a script in the popup, in 3 % steps, not below 5 pt). What still doesn't fit shows past the edge, never cut off.
-  - A **tick box** that lost its ✕ prints the ✕ struck through, inside the box. Nothing prints beside a tick box (it would cover the form's label), so its initials, date and reason are in the change log only (user decision 2026-10-19). The runner's "On file as …" note and the correction pad say so (`printsAsCheckbox`).
+- **Print:** each box's `edit` / `carried` records (`boxCorrections`) print oldest first, then the current value on its own line. Each record is `~~old~~ – [drawn initials] yyyy/mm/dd`, wrapped to the box's width: the initials stay beside the struck value when they fit, else go to the line below (without the dash); the date likewise.
+  - The initials are 1 line high (pad shape `CORR_INITIALS_ASPECT`, 2.5 : 1), the size of the value. A blank that was filled in prints a struck `N/A`.
+  - **Room = the box as configured** (`x`, `y`, `w`, `h`) — never read from the page image, so shading or lines on a form don't change it. A correction needs about three lines, so give a box that may be corrected that room in Configure Sheets (resizing a day-1 box resizes its column). An uncorrected value prints at the box's top, so a taller box doesn't move it. For pH over EC in one cell, each box can take half the cell.
+  - The text shrinks only when the lines don't fit (a popup script, 3 % steps, not below 5 pt). What still doesn't fit shows past the edge, never cut off.
+  - A **tick box** that lost its ✕ prints the ✕ struck through, inside the box. Nothing prints beside a tick box (it would cover the form's label), so its initials, date and reason are in the change log only; the runner's "On file as …" note and the correction pad say so (`printsAsCheckbox`).
   - A **deleted entry** prints every value struck through, with the initials and date once, after the row's right-most text box.
   - The popup toolbar (not printed) says "✏️ N changes on file for this page".
 - **Filing Cabinet:**
-  - A page with changes shows **✏️ N**, which opens the change log for that page. It turns amber with "· changed after signing" when a change is newer than the master grower's signature (signing again clears it).
-  - The toolbar's **📝 Change log (N)** lists every change on the lot, newest first: when, document and page, where, the change, who (drawn initials + name) and why.
-  - **🖨️ Print change log** opens a light, print-ready table (Letter landscape) for the QAP.
+  - a page with changes shows **✏️ N**, which opens its change log. It turns amber with "· changed after signing" when a change is newer than the master grower's signature (signing again clears it);
+  - the toolbar's **📝 Change log (N)** lists every change on the lot, newest first: when, document and page, where, the change, who (drawn initials + name) and why;
+  - **🖨️ Print change log** opens a light, print-ready table (Letter landscape). The change log prints from this button only, never with the form.
 - **Reports:** the Labour & Cost Wizard skips `void` entries; corrected values count as they are now.
-- **Not tracked:** auto-filled boxes (dates, lot #, strain, plants removed) aren't typed by anyone, so they print what they are. On-file initials can't change. The change log records changes made in PaperWizard; it can't stop the JSON file being edited by hand (SharePoint's version history covers that).
+- **Not tracked:** auto-filled boxes (dates, lot #, strain, plants removed) aren't typed by anyone, so they print what they are. On-file initials can't change. Edits to the JSON file by hand aren't caught (SharePoint's version history covers that).
 
 ### Completion Rules
 
-- **`daily-weekly`:** complete when **every day slot in the active window** has answers for every row-scoped question — including any row-scoped **initials** question, which counts only once its strokes are drawn (see "Initials Question Type") — and (if the sheet has one) a signature is captured. The active window is normally all 7 days (`periodStart` … `periodEnd`) — but if `phaseChangeDate` is set, the window ends there instead (struck-through rows don't count) and `strikeInitials` must be captured so the strike-out can print. Completion drives the leaf's status chip (`✓ complete`, `4/7 days`, `3/5 · phase change Sep 24`) and the Print tooltip — **not** the button: 🖨️ Print is clickable whenever an entry exists and the page set is loaded, so a partial week can be printed on demand (missing fields print N/A).
-  - **Blank-but-confirmed counts:** when the user saves a day's entry, every non-initials row-scoped question is recorded in that day's `confirmed` list — so an intentionally left-blank box (e.g. an empty comments field) still counts as filled out for that day, and the progress chip advances (`3/7` → `4/7`). **Initials are never waived** — a row-scoped initials question always requires drawn strokes regardless of confirm; it is excluded from `confirmed`. The list is merged across saves (once confirmed, stays counted even if a later re-save leaves the box blank). Printing is unaffected: a blank-but-confirmed field still prints `N/A`.
-- **`one-shot`:** complete when all instance-level questions are answered (+ signature if defined).
-- **`event`:** complete when its questions are answered (+ signature if defined) — each event is a self-contained sheet.
-- **Repeating questions** (one-shot / event): **every repeating table** also needs at least one entry (a deleted, struck-out entry doesn't count). Each entry's mandatory answers are checked when it is added. The leaf shows `1/1 fields · 12 entries`; the Print / Sign tooltips list "no entries yet (page 2)".
+Completion is re-evaluated after every save and kept only as `completedAt`. It drives the leaf's status chip and the Print / Sign tooltips — never whether Print works.
 
-Completion is re-evaluated after every save; it is never stored as a flag, only `completedAt`.
-
-## Page Image Handling — Just-In-Time Load
-
-- **"Load document" button** (hidden `<input type="file" accept=".webp,image/webp" multiple>`) appears in both tabs:
-  - **Configure Sheets:** required before the preview renders and before any box can be placed. The picker accepts a whole page set at once (`<base>-p1.webp`, `-p2.webp`, …). Loading a *new* base name starts a new sheet configuration; loading a set matching an existing sheet id opens that sheet for editing (with a confirm if it already has fields).
-  - **Filing Cabinet → Print:** required at print time for the selected instance. The loaded page set is validated against the sheet id (base-name match + consecutive numbering from p1), then handed to the print popup.
-- **Validation** (`parsePageFiles`): WebP only; all files share one base name; page numbers are consecutive 1..N with no gaps or duplicates. Any violation is rejected with a clear error naming the offending file.
-- The loaded `File`s are held in memory only (blob URLs on a JS variable) for the duration of the configure session / print action. Nothing is written to disk or browser storage.
-- **Blob lifecycle:** each page image gets a `URL.createObjectURL(file)`; all are revoked when the tool closes, a new document is loaded, or the popup closes.
-- Because the page images are never persisted, **a configured sheet with no page set loaded shows as "⚠️ needs document"** in the Filing Cabinet — its print button is disabled until the matching page set is loaded in that session.
+- **`daily-weekly`:** every day in the active window has an answer for every row-scoped question (initials only once drawn), plus the signature if the sheet has one. The window is `periodStart` … `periodEnd`, or ends at `phaseChangeDate` when set (struck rows don't count) — and then `strikeInitials` must be captured.
+  - **Blank-but-confirmed counts:** saving a day stores every row-scoped question, blank ones as `''`, and a key being present counts as filled, so a box left blank on purpose (an empty comments field) still completes the day (`dayAnswered`). Initials never count that way: they need drawn strokes. A confirmed blank still prints `N/A`.
+- **`one-shot` / `event`:** all instance-level questions answered, plus the signature if defined.
+- **Repeating tables** (one-shot / event): each also needs at least one entry (a deleted, struck-out entry doesn't count); each entry's mandatory answers are checked when it is added. The leaf shows `1/1 fields · 12 entries`; the tooltips list "no entries yet (page 2)".
 
 ## Print Popup
 
-When Print is clicked (entry exists + matching page set loaded — the instance does **not** need to be complete):
+Print works once an entry exists and the matching page set is loaded — the instance needn't be complete.
 
-1. The tool builds a **self-contained HTML document** for the popup: one section per page, each page image rendered at its physical size (inches), every field's resolved text absolutely positioned over it (normalized coords → % of the page container), the signature as an inline SVG polyline, and a single **🖨️ Print** button in a slim toolbar. Pages are separated by `page-break-after: always`.
-2. The popup opens via `window.open()`; the page images' blob URLs are transferred to it (or re-created from the `File`s) so the popup owns its own rendering — the opener can be closed without breaking the print view.
-3. The popup uses a **light theme** (white page, black overlay text) regardless of the suite's dark theme — it is a paper preview. `@media print` CSS hides the toolbar so only the filled form prints.
-4. The Print button calls `window.print()` in the popup; the browser print dialog does the rest (including "Save as PDF" if the user wants an archive copy).
+1. The tool builds a self-contained HTML document: one section per page at its physical size (inches), each field's text absolutely positioned (normalized coords → % of the page container), signatures and initials as inline SVG polylines, and a slim toolbar with **🖨️ Print**. Pages break with `page-break-after: always`.
+2. The popup opens with `window.open()` and gets its own blob URLs (transferred or re-created from the `File`s), so closing the opener doesn't break it.
+3. Light theme (white page, black text) whatever the suite's theme; `@media print` hides the toolbar.
+4. Print calls `window.print()`; the browser dialog does the rest (including Save as PDF).
 
-**Overlay content rules:**
+**Page rendering** (configure and print): each page is a plain `<img>` (`pointer-events: none`, so click-drag creates boxes over it) in a `.form-page` container whose `aspect-ratio` is the image's pixel ratio. Box coordinates become percentages, so boxes track the image at any size with pure CSS. Configure has a zoom (buttons + Ctrl/⌘+scroll, a CSS variable). No PDF library, no CDN.
 
-- **N/A default:** any field whose value is empty or missing — an unanswered question, or a binding that resolved to null (e.g. `lot.parentLotId` on a new lot) — prints **`N/A`**, never a blank box. A controlled document is complete on its face; "not applicable" is itself a filled-in answer.  - **Unfilled day rows print blank:** the one exception is a daily-entry group member (or legacy row field) on a day that was **never saved** — those boxes print empty, not `N/A`. A struck-out log's remaining days stay clean under the strike line instead of filling the page with N/A. A day that *was* saved still prints `N/A` for its empty boxes (including intentionally blank-but-confirmed fields), and header / one-shot / event fields keep the N/A default.
-- **Repeating page:** a page holding a repeating table prints once per *rows-per-page* of its entries — 45 entries on a 20-row page print it 3 times, one copy after another, before any later page. Its header boxes repeat on every copy; unused rows on the last copy print blank; a saved entry's empty answer prints `N/A`.
-- **Strike-out:** an instance with a `phaseChangeDate` renders the computed strike-out (diagonal across the remaining day rows, initials above the line, date below — see "Phase & Room Change") as part of the overlay.
+**Overlay rules:**
 
-## Page Image Rendering (decided)
-
-Each page is a plain `<img>` inside a `.form-page` container whose inline `aspect-ratio` comes from the image's actual pixel dimensions (`wPx / hPx`). Normalized 0–1 box coordinates → percentages of that container, so boxes track the image at any display size with pure CSS — no JS sizing, and window resizes need no handler. A zoom control (buttons + Ctrl/⌘+scroll) scales the pages via a CSS variable for precise box placement.
-
-- Zero dependencies; works fully offline on `file://` — consistent with the suite's no-network rule.
-- Image pixel dimensions determine portrait or landscape; the print size is automatically North American Letter (8.5 × 11 in, rotated for landscape). The stored `pageWidthIn`/`pageHeightIn` values are generated from that orientation and used for print scaling (pt → inches).
-- The `<img>` has `pointer-events: none`, so click-drag box creation works over empty page space.
-- The print popup pins each page section to the exact physical size (inches) with the same %-positioned overlays, so what you placed is what prints.
+- **Empty prints `N/A`:** an unanswered question or a null binding prints `N/A`, never a blank — a controlled document is complete on its face.
+- **Except unsaved day rows:** a day-group member (or legacy row field) on a day that was **never saved** prints blank, so a struck-out log's remaining days stay clean under the line. A saved day prints `N/A` in its empty boxes (confirmed blanks included). Header / one-shot / event fields keep the `N/A` default.
+- **Repeating pages** print once per *rows-per-page* entries (see "Repeating Rows").
+- **Strike-out:** an instance with `phaseChangeDate` prints the computed strike-out (see "Phase & Room Change").
 
 ## Database Key — `_PaperWizard`
 
-All of this tool's data lives under one top-level key, owned exclusively by PaperWizard:
-
-```json
-{
-  "_PaperWizard": {
-    "sheets": {
-      "grow-log": {
-        "name": "Weekly Grow-Log",
-        "orientation": "portrait",
-        "pageWidthIn": 8.5,
-        "pageHeightIn": 11,
-        "pageCount": 2,
-        "cadence": "daily-weekly",
-        "fields": [
-          { "id": "a3k9", "label": "Strain Name", "x": 0.12, "y": 0.07, "w": 0.4, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "lot.strain", "questionId": null, "day": 1, "dayGroup": null },
-          { "id": "b7m2", "label": "Lot #", "x": 0.62, "y": 0.07, "w": 0.3, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "lot.name", "questionId": null, "day": 1, "dayGroup": null },
-          { "id": "c4p8", "label": "Phase", "x": 0.12, "y": 0.11, "w": 0.3, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": "instance.phase", "questionId": null, "day": 1, "dayGroup": null },
-          { "id": "s7u3", "label": "Substrate lot", "x": 0.62, "y": 0.11, "w": 0.3, "h": 0.035,
-            "fontSize": 12, "align": "left", "source": null, "questionId": "subl", "day": 1, "dayGroup": null, "constant": true },
-          { "id": "d9q1", "label": "Temp high (°C)", "x": 0.45, "y": 0.30, "w": 0.12, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 1, "dayGroup": "g7xk" },
-          { "id": "e2m4", "label": "Temp high (°C)", "x": 0.45, "y": 0.395, "w": 0.12, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 2, "dayGroup": "g7xk" },
-          { "id": "f8n5", "label": "Temp high (°C)", "x": 0.45, "y": 0.49, "w": 0.12, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": 3, "dayGroup": "g7xk" },
-          { "id": "…", "label": "Temp high (°C)", "x": 0.45, "y": "…", "w": 0.12, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "t1hi", "day": "4..7", "dayGroup": "g7xk" },
-          { "id": "i9z2", "label": "Initials", "x": 0.68, "y": 0.30, "w": 0.16, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "init1", "day": 1, "dayGroup": "gInit" },
-          { "id": "…", "label": "Initials", "x": 0.68, "y": "…", "w": 0.16, "h": 0.03,
-            "fontSize": 10, "align": "center", "source": null, "questionId": "init1", "day": "2..7", "dayGroup": "gInit" }
-        ],
-        "signature": { "x": 0.6, "y": 0.92, "w": 0.32, "h": 0.05, "label": "Initials" }
-      },
-      "propagation-worksheet": { "name": "Propagation Worksheet", "orientation": "portrait",
-        "pageWidthIn": 8.5, "pageHeightIn": 11, "pageCount": 1, "cadence": "one-shot", "fields": [ "…" ], "signature": null }
-    },
-    "wizards": {
-      "g1wz": {
-        "sheetId": "grow-log",
-        "name": "Grow-Log Daily Entry",
-        "questions": [
-          { "id": "subl", "label": "Substrate lot", "type": "text", "options": [],
-            "rowScoped": false, "sameAsLast": false, "mandatory": false },
-          { "id": "t1hi", "label": "Temp high (°C)", "type": "number", "options": [],
-            "rowScoped": true, "sameAsLast": true, "mandatory": true },
-          { "id": "cnt1", "label": "Current plant count", "type": "number", "options": [],
-            "rowScoped": true, "sameAsLast": true, "mandatory": false },
-          { "id": "rm1x", "label": "Room", "type": "room", "options": [],
-            "rowScoped": false, "sameAsLast": true, "mandatory": false },
-          { "id": "obs1", "label": "Observations / notes", "type": "text", "options": [],
-            "rowScoped": true, "sameAsLast": false, "mandatory": false },
-          { "id": "init1", "label": "Initials", "type": "initials", "options": [],
-            "rowScoped": true, "sameAsLast": false, "mandatory": true }
-        ]
-      }
-    },
-    "entries": {
-      "LOT-001": {
-        "grow-log": {
-          "instances": {
-            "2026-09-14": {
-              "phase": "Clone",
-              "room": "Clone Room 1",
-              "header": {},
-              "days": {
-                "2026-09-14": { "t1hi": "24.0", "init1": { "name": "J.D.", "strokes": [[0.2, 0.5, 0.8, 0.4]] } },
-                "2026-09-15": { "t1hi": "24.5", "init1": { "name": "M.K.", "strokes": [[0.3, 0.6, 0.7, 0.3]] } }
-              },
-              "phaseChangeDate": "2026-09-15",
-              "strikeInitials": { "name": "R.V.", "strokes": [[0.15, 0.55, 0.85, 0.4]] },
-              "snapshots": { "lot.name": "LOT-001", "lot.strain": "Purple Haze",
-                              "lot.stage": "Clone", "lot.plantCount": "48" },
-              "signature": null,
-              "completedAt": "2026-09-15T16:20:00Z",
-              "printedAt": null
-            },
-            "2026-09-21": {
-              "phase": "Veg",
-              "room": "Veg Room 2",
-              "header": {},
-              "days": {
-                "2026-09-21": { "t1hi": "27.5", "obs1": "Looking strong.", "init1": { "name": "J.D.", "strokes": [[0.2, 0.5, 0.8, 0.4]] } },
-                "2026-09-22": { "t1hi": "28.0", "obs1": "", "init1": null }
-              },
-              "phaseChangeDate": null,
-              "strikeInitials": null,
-              "snapshots": { "lot.name": "LOT-001", "lot.strain": "Purple Haze",
-                              "lot.stage": "Veg", "lot.plantCount": "48",
-                              "lot.vegRoom": "Veg Room 2" },
-              "signature": null,
-              "completedAt": null,
-              "printedAt": null
-            }
-          },
-          "constants": { "subl": "SL-2026-042" }
-        }
-      },
-      "LOT-000": {
-        "room-clean": {
-          "instances": {
-            "2026-09-15": {
-              "phase": null,
-              "header": { "rm1x": "Veg Room 2" },
-              "days": {},
-              "phaseChangeDate": null,
-              "strikeInitials": null,
-              "snapshots": { "lot.name": "LOT-000", "lot.vegRoom": "Veg Room 2" },
-              "signature": { "name": "J.D.", "strokes": [[0.1, 0.5, 0.9, 0.4]] },
-              "completedAt": "2026-09-15T14:02:00Z",
-              "printedAt": null
-            }
-          }
-        }
-      }
-    }
-  }
+```
+_PaperWizard: {
+  sheets:  { <sheetId = page base name>: { name, orientation, pageWidthIn, pageHeightIn, pageCount,
+                                           cadence, document, fields: [Field], signature } },
+  wizards: { <wizardId>: { sheetId, name, questions: [Question] } },
+  entries: { <lotId>: { <sheetId>: { instances: { <YYYY-MM-DD>: Instance },
+                                     constants?, constantChanges?, paperBefore? } } }
 }
 ```
 
-Rules:
-
-- **Ownership:** PaperWizard is the only tool that reads or writes `_PaperWizard`. It *reads* `lots`, `rooms`, and `buildings` from the main DB for auto-fill bindings and the lot selector. **Exception (unique to PaperWizard):** it may also write exactly three fields on lot records — `plantCount`, `stage`, and `currentRoom` — when a log entry records a change (see "Write-Back to the Main DB"). No other tool has this permission.
-- **Sheet ids are page-image base names** — no separate id field, no random codes. Renaming a controlled form's page set means re-configuring (or an explicit rename action that updates the key).
-- **Orphaned entries:** if a lot in `entries` no longer exists in `DB.lots`, its entries remain (paper history) but the lot never appears in selectors. If a sheet id has no matching configured sheet, it is ignored in the Filing Cabinet.
-- **Cross-lot references are derived, not stored:** `LOT-000`'s room-clean instance above is exactly what `LOT-001`'s filing cabinet lists under Room Cleans (pre-move-in) — matched at view time by room name + date-on-or-before-move-in. No link field exists on either side.
-- **No calendar events:** this tool appends nothing to `calendarEvents`.
+- **Ownership:** only PaperWizard reads or writes `_PaperWizard`. It reads `lots`, `rooms` and `buildings`, and writes only the three lot fields in "Write-Back to the Main DB".
+- **Sheet ids are page-image base names** — no separate id. Renaming a form's page set means re-configuring (or an explicit rename that moves the key).
+- **Orphans:** entries of a lot no longer in `DB.lots` are kept. Entries for a sheet id with no configured sheet are ignored in the cabinet.
+- **Cross-lot references are derived**, never stored (see "Filing Cabinet" → pre-move-in sourcing).
+- Writes nothing to `calendarEvents`.
 
 ## Initial Sheet Set (to be configured, not shipped)
 
-These are the controlled forms the facility will configure in the Configure Sheets tab. None of them exist in code:
-
-| Sheet (page-image base name) | Cadence | Notes |
+| Sheet (base name) | Cadence | Notes |
 |---|---|---|
-| Propagation worksheet (`propagation-worksheet`, pages `propagation-worksheet-p1.webp`…) | one-shot | Filled once at lot creation; header auto-filled from lot keys (strain, lot #, parent lot #, dates). Starting plant count is a wizard question pre-filled from `lot.plantCount` so re-prints show the value at creation. |
-| Weekly Grow-Log (`grow-log`, pages `grow-log-p1.webp`…) | daily-weekly | 7 day rows + phase header (Clone / Veg / Bloom via `instance.phase`). Rolling 7-day window from first entry; rolls over on phase change with strike-through. Each day row ends in an **initials box** bound to a row-scoped ✍️ initials question, so whoever fills the day draws their initials for accountability. Completes when the window fills (answers + per-day initials) → print. |
-| Room-clean sheets — one per room role (`room-clean-clone`, `room-clean-veg`, `room-clean-grow`, `room-clean-dry`, `room-clean-trim`; pages `<base>-p1.webp`…) | event | One controlled form **per room** (the facility's five: Clone · Veg · Grow · Dry · Trim), each assigned via the Document dropdown. The room name is an overlaid field bound to the lot's room for that role. One instance per clean event, filed under the lot that performed the clean — it appears in this lot's **Room Cleans (post-usage)** tree and is referenced read-only by the *next* occupant's pre-move-in tree (see "Filing Cabinet"). A legacy single generic `room-clean` page set still works: its room role is inferred from name keywords. |
-| IPM log (`ipm-log`, pages `ipm-log-p1.webp`…) | event | Pesticide/IPM application entries; print on demand (e.g. end of week or at close-out). |
-| Harvest log (`harvest-log`, pages `harvest-log-p1.webp`…) | event | Harvest-day entries; print on demand. |
-| Drying log (`drying-log`, pages `drying-log-p1.webp`…) | daily-weekly | Post-harvest daily drying-room log — one rolling 7-day window per period, same machinery as the grow-log (including room-change rollover when the lot moves rooms). No planting-date coverage rule. |
-| Trim log (`trim-log`, pages `trim-log-p1.webp`…) | daily-weekly | Daily trim-room log — same machinery as the drying log. Dry rooms double as trim rooms, but the two logs (and their clean forms) are separate documents. |
+| `propagation-worksheet` | one-shot | Filled once at lot creation; header from lot keys (strain, lot #, parent lot #, dates). Starting plant count pre-filled from `lot.plantCount`. |
+| `grow-log` | daily-weekly | 7 day rows + phase header (`instance.phase`). Each row ends in an initials box (row-scoped ✍️ question). Rolls over on phase / room change. |
+| `room-clean-clone` / `-veg` / `-grow` / `-dry` / `-trim` | event | One form per room role. The room is a box bound to the lot's room for that role. Filed under the lot that cleaned; referenced by the next occupant. A legacy single `room-clean` page set still works (role from name keywords). |
+| `ipm-log` | event | IPM applications; printed on demand. |
+| `harvest-log` | event | Harvest-day entries (repeating tables for weights); printed on demand. |
+| `drying-log` / `trim-log` | daily-weekly | Post-harvest daily logs, grow-log machinery (incl. room rollover), no coverage rule. Separate documents even when dry and trim are one room. |
 
 ## Relationship to SitkaTools
 
-PaperWizard is part of the SitkaGit suite: a standalone single-file HTML application, vanilla HTML/CSS/JS, no build step, no network calls, running in the browser sandbox (`file://`).
+Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessage), a tab on tablets (shared working copy, "Go back to SitkaTools to save"); by itself it shows "Open this tool from SitkaTools". It has no DB import / export of its own — only sheet-configuration import / export and Load document. It calls `notifySitkaTools()` after every `_PaperWizard` change (sheets, wizards, entries, signatures) and after every lot write-back.
 
-### Launched from SitkaTools only
+**Split files:** paperwork filled on a building device is saved in that building's `Building-<ID>.json`; other buildings' paperwork is shown but stays in their files. On a lot hand-off, unsigned pages and lot-level values move to the receiving building's file and signed pages stay (root `CLAUDE.md` → "Lot hand-off"). PaperWizard needs no special handling for this.
 
-PaperWizard always runs through SitkaTools — there is no standalone mode or DB import/export of its own (sheet configuration import/export and the page-image "Load document" stay).
+**On a building device** (root `CLAUDE.md` → "Building Device View"):
 
-1. **Laptops:** opens as a popup per the suite convention; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every mutation to `_PaperWizard` (sheet/wizard saves, entry saves, signatures) **and after every lot write-back** (`plantCount` / `stage` / `currentRoom`).
-2. **Tablets:** opens as a tab and loads SitkaTools' open DB from the shared working copy (root `CLAUDE.md` → "Shared Working Copy"). A banner offers **Go back to SitkaTools to save**; entries and write-backs flow back to SitkaTools.
+- The lot selector lists only the building's lots (current room or flower room in it).
+- **Configure Sheets** is hidden — sheets and wizards live in Main.json.
+- The 🏠 Room question and Start on a chosen day offer only the building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept.
+- **Read-only lots:** `lotElsewhere` returns `{ banner, toast }` for a lot this device may only view and print:
+  - **sent** and not yet accepted: "🚚 … was sent to <building>" (frozen so the receiver takes over exactly what was saved);
+  - **on its way here:** "🚚 … is on its way here from <building> — accept it in SitkaTools";
+  - **in another building now**, even if its flower room is here: "🔒 … is in <room> (<building>)".
 
-Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". With a split DB, paperwork filled on a building device is saved in that building's `Building-<ID>.json`. Paperwork from other buildings stays in their files and is still shown, because every device opens all files. When a building accepts a moved lot, the lot's unsigned pages and lot-level values move to the receiving building's file; signed pages stay put (root `CLAUDE.md` → "Lot hand-off"). PaperWizard itself needs no special handling for this.
-
-On a building device (root `CLAUDE.md` → "Building Device View"):
-- The lot selector lists only that building's lots: those whose current room or flower room is in it.
-- **Configure Sheets** is hidden, because sheets and wizards are saved in Main.json.
-- The 🏠 Room question and "Start on a chosen day" offer only that building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept.
-- **Read-only lots:** `lotElsewhere` returns a `{ banner, toast }` for lots this device can only view and print:
-  - **Sent** and not yet accepted: "🚚 … was sent to <building>". Its paperwork is frozen so the receiver takes over exactly what was saved.
-  - **On its way here:** "🚚 … is on its way here from <building> — accept it in SitkaTools".
-  - **In another building right now**, even if its flower room is here: "🔒 … is in <room> (<building>)".
-
-  The cabinet shows the banner and has no Fill, Start, Sign or Initialize paperwork buttons. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, also for any lot this device doesn't list. Those pages are in another building's file, which this device can't save.
+  The cabinet shows the banner and drops Fill, Start, Sign and Initialize paperwork. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, for these lots and any lot this device doesn't list.
 
 ### Standard postMessage Pattern
 
-The standard subtool pattern from the root `CLAUDE.md` applies verbatim (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), plus non-disruptive handling of live `sitkaGit_db_update` pushes. SitkaTools pushes `{ type: 'sitkaGit_db_update', payload, view }` whenever its DB changes (tablet tabs get the same through the shared working copy). PaperWizard accepts it only from `window.opener` (or its own shared-copy loader), replaces `DB.data`, applies the view and re-renders the lot selector, status bar and cabinet. It never calls `notifySitkaTools()` in response and shows no toast.
+The root pattern applies. Live `sitkaGit_db_update` pushes (from `window.opener` or the shared-copy loader) replace `DB.data`, apply the view and re-render the lot selector, status bar and cabinet — no toast, never `notifySitkaTools()` back.
 
-- **Open dialogs keep what the user is doing:** the runner and every dialog are overlays outside the cabinet, so they stay open. The runner keeps its draft and isn't re-rendered; its page is looked up again in the new DB. The signature, Start-on-a-chosen-day and Initialize dialogs look their record up again when saved, and every save re-checks that the lot isn't read-only here.
-- **The cabinet keeps its open sections:** redrawing the same lot's cabinet (a push, or after a save) keeps the sections the user opened or closed. Switching lots starts again from the default (only Grow Logs open).
-- **Runner prefills follow the push:** an answer that still holds its prefill is recomputed from the new DB by the same rules as at open: plant count, phase and room come from the live lot, but on a backfill day they come from the page. The on-screen input is updated too if it still shows the old prefill. Answers the user typed or picked are never touched. If the push changed the lot's stage, the runner carries on as if "Lot is now in … — close this grow-log?" had been declined, so the phase prefill follows the live phase. The next open asks again.
-- **Push during the strike-initials pad:** a save waiting on strike-out initials still holds the old DB. If a push replaced it while the pad was open, OK cancels the save like Cancel ("nothing was recorded — try again"); the runner stays open with its draft.
+- **Open dialogs survive:** the runner and dialogs are overlays outside the cabinet. The runner keeps its draft and isn't re-rendered; its page is looked up again in the new DB. The signature, Start on a chosen day and Initialize dialogs look their record up again on save, and every save re-checks that the lot isn't read-only here.
+- **The cabinet keeps its open sections** when the same lot redraws (push or save). Switching lots resets to the default.
+- **Prefills follow the push:** an answer still holding its prefill is recomputed by the open-time rules (live lot for plant count / phase / room; the page on a backfill day), and the input is updated if it still shows the old prefill. Typed or picked answers are never touched. If the push changed the lot's stage, the runner acts as if the "Lot is now in …" prompt was declined; the next open asks again.
+- **Push during the strike-initials pad:** the waiting save still holds the old DB, so OK cancels it like Cancel ("nothing was recorded — try again"); the runner stays open with its draft.
 
 ## UI Convention
 
-Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky header/footer, card styles, `DB` object pattern). PaperWizard-specific layout:
+Root UI Standards apply. Specifics:
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ 📄 Paper Wizard [Filing Cabinet | Configure Sheets] [Lot ▾] │ ← sticky header (tabs + active lot)
-├──────────────────────────────────────────────────────────┤
-│ Status bar: 📋 5 sheets configured · 🌱 LOT-001 Purple Haze · ⏳ 2 entries due today
-├──────────────────────────────────────────────────────────┤
-│ FILING CABINET tab (first page):                          │
-│ 🗄️ LOT-001 Purple Haze — 14 docs · ⚠️ 1 missing          │
-│ ├─▸ 📁 Propagation                                        │
-│ ├─▾ 📁 Room Cleans (pre-move-in)                          │
-│ │    🧼 Clone Room · Sep 12 · from LOT-000   ✓ on file    │
-│ │    🧼 Veg Room · Sep 15 · from LOT-000     ✓ on file    │
-│ │    🧼 Grow Room                        ⚠️ missing       │
-│ ├─▾ 📁 Grow Logs (12)                                     │
-│ │    📗 Sep 21–27 · Veg        4/7 days   [✍️][🖨️ locked] │
-│ │    📗 Sep 28 – Oct 4 · Veg   complete   [🖨️]           │
-│ ├─▸ 📁 IPM Log                                            │
-│ └─▸ 📁 Harvest                                            │
-│                                                           │
-│ CONFIGURE SHEETS tab:                                     │
-│ [⬆️ Load document]  page size in                          │
-│ ┌───────────────────┬──────────────────────────────┐     │
-│ │                   │ Field properties:             │     │
-│ │   Page image      │  label / x y w h / font /     │     │
-│ │   with draggable  │  align / source binding /     │     │
-│ │   boxes + sig box │  question link / group info   │     │
-│ │   (D2..DN badges) ├──────────────────────────────┤     │
-│ │                   │ Multi-select: N boxes         │     │
-│ │                   │  [🔗 Group as daily entry]    │     │
-│ │                   │  [✂️ Ungroup]                 │     │
-│ │                   ├──────────────────────────────┤     │
-│ │                   │ Wizard builder:               │     │
-│ │                   │  questions list, add/move/    │     │
-│ │                   │  delete, same-as-last + mand. │     │
-│ └───────────────────┴──────────────────────────────┘     │
-│ [💾 Save sheet]  [🗑 Delete sheet]                        │
-├──────────────────────────────────────────────────────────┤
-│ [Close Tool]                                              │ ← sticky footer
-└──────────────────────────────────────────────────────────┘
-```
+- **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right, disabled / hidden in Configure Sheets (configuration is lot-independent).
+- **Status bar:** sheets configured · active lot · entries due today.
+- **Filing Cabinet:** collapsible tree, one leaf per instance with status and inline actions; toolbar with Load document, 📋 Initialize paperwork, 📝 Change log.
+- **Configure Sheets:** the page preview on top — click-drag creates a box; drag moves it (modifiers as in "Day rows"); ↕ / ↔ handles slide along one axis (same modifiers); corner and edge handles resize (a column at a time, Alt/⌥ one box); Shift-click / Shift-drag multi-selects; the signature box has its own style. Below: **Sheet** and **Field properties** cards side by side, the **Wizard builder** full width under them (it shows each question's binding read-only). 💾 Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
 
-- **Header:** tool name + the two tabs (segmented buttons) on the left; Active Lot selector on the right (lot-focused tool). The lot selector is disabled/hidden in Configure Sheets (configuration is lot-independent).
-- **Filing Cabinet tab:** the lot's paperwork as a collapsible tree — seven sections (Propagation, Room Cleans pre-move-in, Room Cleans post-usage, Grow Logs, IPM Log, Harvest, Drying Logs, Trim Logs), one leaf per instance with its status and the two actions inline. The toolbar above the tree holds **📋 Initialize paperwork** (shown when the lot has constant fields; ⚠️ while any value is unset — see "Constant / Header Fields"). Pre-move-in room cleans are read-only reference nodes tagged with their source lot; an expected document that is absent shows as a ⚠️ leaf. Print is available at all times once an entry exists and the page set is loaded (tooltip explains what's still missing: days remaining / signature / strike initials / unset constants); it is disabled only when there is no entry yet or the matching document isn't loaded this session.
-- **Configure Sheets tab:** top = page image preview canvas (boxes are click-drag to create; drag a box body to move — plain drag moves a grouped box's whole day-column as one block, **Ctrl/⌘**-drag moves just that day's row, **Alt/⌥**-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize (a box in a day row or repeating row resizes its whole column; Alt/⌥ just that box); Shift-click or Shift-drag marquee for multi-select; the signature box is a distinct style). Below the canvas: the **Sheet** and **Field properties** cards sit side by side, with the **Wizard builder** spanning the full width beneath them. Save writes `_PaperWizard.sheets[baseName]` and the wizard, then `notifySitkaTools()`.
-- **Wizard runner (Filing Cabinet):** a centered card stepping through questions one at a time (Next/Back), with the "⏪ Same as last time" button in the card header when any visible question has `sameAsLast`. A **mandatory** question hides Next/Save (and blocks Enter) until it is answered — Back stays available. Pressing **Enter** in a text/number/select answer advances to the next question (or saves on the last one), subject to the same mandatory gate; on an initials step, Enter on the name field does the same once strokes are drawn. There is no signature step — the master grower's signature is captured only via the cabinet leaf's ✍️ Sign button.
+## Tests
 
-## Resolved Design Decisions
-
-Decisions made during design (2026-09-24, updated 2026-09-26) — already folded into the sections above; kept here as a record:
-
-1. **Page image rendering:** plain `<img>` per page, CSS aspect-ratio from each image's pixel dimensions (offline-first). No PDF library, no CDN — the suite's offline `file://` constraint and single-file simplicity win; the one-time cost is exporting each form's pages to WebP locally (best compression for black-and-white text documents).
-2. **Plant count & parent lot #:** both already exist on the SitkaTools lot record (`plantCount`, `parentLotId`) and are auto-fill bindings. The grow-log captures every subsequent plant-count change day by day, so only the *starting* count lives in the main DB. **Pending SitkaTools change (not PaperWizard):** make the parent-lot field accept manual free-text entry (in addition to picking an existing lot) so a lot can be created from a parent that isn't in the system.
-3. **Grow-log window:** rolling 7 days from the first daily entry — not fixed Mon–Sun weeks.
-4. **Phase & room change:** an old log that ends early (phase *or* room change, or all plants removed) gets a diagonal strike-out across its remaining rows — initials above the line, change date below (see "Strike-out policy", decision 12). The day's full entry is saved *before* the strike-out; a new instance starts on the **same day** as the move for the double entry (old log stamped with the previous value, fresh page filled in under the new value); headers carry their own phase + room snapshots. See "Phase & Room Change".
-5. **Room cleans (updated 2026-10):** one controlled form **per room role** — Clone · Veg · Grow · Dry · Trim — each assigned via the Document dropdown (`room-clean-clone` … `room-clean-trim`). The cabinet shows two parallel trees over the same five rooms: pre-move-in (read-only references to the previous occupant's clean) and post-usage (this lot's own fillable forms). A legacy single generic `room-clean` page set still works via name-keyword inference.
-6. **IPM & harvest logs:** event-driven, printed on demand — no fixed weekly completion rule.
-7. **Write-back permission (unique to PaperWizard):** the daily logs can update the main DB — `lot.plantCount` when a day's entry records a different count, `lot.stage` when the Phase question records a new phase, and `lot.currentRoom` when the Room question records a new room (both of which also trigger the rollover). `lot.plantCount` is a live current count: starting value at lot creation, then maintained by PaperWizard; per-day entries keep the full history. No other tool may write another tool's data.
-15. **Room tracking (2026-10):** daily-weekly instances carry a `room` snapshot alongside `phase`; a room change rolls the log over with the same strike-out machinery as a phase change, and move-in dates for the pre-move-in clean tree are derived from the logs' 🏠 Room answers when available (phase fallback otherwise). Drying Logs and Trim Logs are first-class daily-weekly sections after Harvest.
-16. **Authority roadmap (long-term, not yet implemented):** PaperWizard's grow logs are becoming the authoritative source of truth for lot lifecycle events — sub-lot creation, plant destruction, and room/phase changes will all be recorded in the logs and written back; the SitkaTools lot manager will eventually handle only external lots. The `currentRoom` write-back is the first step of this roadmap.
-8. **Filing cabinet is the first page (2026-09-26):** the former Fill Sheets tab becomes the Filing Cabinet — a per-lot tree view of all paperwork (propagation, pre-move-in room cleans, 10–14 weekly grow-logs, IPM entries, harvest). It is a pure view over `entries` + the lot record; nothing extra is stored.
-9. **Room cleans sourced from the previous occupant (2026-09-26):** a pre-move-in clean lives in the *previous* lot's entries and appears in the incoming lot's cabinet as a read-only reference, matched at view time by room name + date-on-or-before-move-in. No link fields stored on either side.
-10. **Bindings snapshot at save time (2026-09-26):** render-time binding resolution is retired — paperwork is saved as the plant transitions phases, so a sheet must keep printing what was true when it was saved. Instances store `snapshots` of every binding they use, captured at creation and refreshed on each entry save; print always shows stored values (live resolution only as a fallback for legacy instances).
-11. **Empty prints as N/A (2026-09-26; refined 2026-10):** any unanswered field or null binding prints `N/A` — controlled documents are never blank. Exception: day-row fields on a day that was never saved print **blank** (not `N/A`), so a struck-out log's remaining days stay clean under the strike line; saved days (even with intentionally blank fields) still print `N/A` for empty boxes.
-12. **Strike-out policy (2026-09-26):** an early-ended grow-log gets a diagonal across the remaining day rows with initials *above* the line and the date *below*; the overlay is computed from `phaseChangeDate` + `strikeInitials` + row geometry, never stored.
-13. **Question controls (2026-09-26):** v1 question types are exactly string input, number input, and simple multiple choice — enough for every sheet in the initial set; the fill engine is fully data-driven from wizard configuration.
-14. **Field-side-only question binding (2026-10-04):** a wizard question is bound to a field solely via `field.questionId`, assigned in the Field properties panel ("Filled by question"). The former question-side `targetFieldId` and the wizard builder's "Fills field" dropdown are retired — the builder shows each question's binding as a read-only indicator derived from the fields. For daily-entry columns the binding is **per-column**: anchored on day 1, repeated to every day of that column, editable from any member with whole-column propagation (same group + same x — sibling columns in the same group keep their own bindings; since 2026-10-16 boxes stacked at one x in a cell are separate columns too, matched by their place in the stack — `cfgColumnOf`). Deleting a question clears its id from *every* bound field; deleting/ungrouping boxes takes their bindings with them (day-1 survivors keep theirs).
-17. **Constant / header fields (2026-10):** values that are fixed for a whole lot's paper chain (e.g. substrate lot on the grow-log) are set once via the cabinet's 📋 Initialize paperwork quiz and stored at **lot+sheet level** (`entries[lotId][sheetId].constants`), not per instance — so they persist across every weekly page and survive phase/room rollovers. Constant questions are excluded from the daily runner; print reads the lot-level value (constant is the first branch in `printFieldValue`, so a constant box inside a day group prints the same value on every day). **Daily-weekly sheets only** — one-shot/event sheets have no chain to share across, so the flag is not offered for them.
-18. **Signature date (2026-10):** saving the master grower's signature via the cabinet leaf's ✍️ Sign button stamps `inst.signature.date` (local YYYY-MM-DD); re-signing updates it, clearing removes it. The new `signature.date` auto-fill binding prints it as **yyyy/mm/dd**, resolved live from `inst.signature` at print time and never snapshotted (like `day.date`) — a bound box prints N/A until the log is signed.
-19. **Repeating rows (2026-10-16):** event / one-shot sheets can hold tables that take any number of entries (the harvest log's wet and dry weights). Questions ticked 🔁 Repeating are filled on a quick-entry Entries step per table (short choice lists as tap buttons) and stored in `inst.rows`; a table's page prints again each time its rows are full. Tables are worked out from the bindings; a sheet may have several, each on one page. Checkbox settings follow down a column like the bindings. See "Repeating Rows".
-20. **Corrections & change log (2026-10-19):** the QAP asked for traceability. A value on file that is changed keeps its old value on the printed page, struck out, with the person's drawn initials and the date (`yyyy/mm/dd`), the new value below; a reason is required; every change is in the page's change log (📝 Change log, printable). Deleted entries stay struck out. A signed log can be corrected and is flagged "changed after signing". See "Corrections & Change Log".
+`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tools-smoke`, `link-lost`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").

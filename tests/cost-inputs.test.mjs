@@ -108,6 +108,17 @@ export async function run(b, BASE) {
     const trellis = Object.entries(after.inputs).find(([, x]) => x.name === 'Trellis');
     check('import matches an existing supply by name', impRec?.inputs?.[0]?.inputId === cocoId);
     check('…and adds a new one to the price list without a price', trellis && trellis[1].price == null && trellis[1].unit === 'ft' && impRec.inputs[1].inputId === trellis[0]);
+    // Day offsets out of range come in clamped to −30…+365 (the clone cut, counted back from harvest, down to −200)
+    const wild = { id: 'wild1', name: 'Wild offsets', version: 1, tasks: rec.tasks.map(t => ({ ...t,
+        defaultOffset: t.taskType === 'harvest' ? 400 : t.taskType === 'topping' ? -50 : t.taskType === 'clone_cut' ? -150 : t.defaultOffset })) };
+    await b.run(clw, `const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(JSON.stringify(wild))}], 'recipe-wild1.json', { type: 'application/json' }));
+        const inp = document.getElementById('recipeImportInput'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));`);
+    await b.sleep(500);
+    const wildRec = (await b.run(main, `return DB.data._CropLabourWizard.recipes.wild1;`))?.tasks || [];
+    const off = tt => wildRec.find(t => t.taskType === tt)?.defaultOffset;
+    check('importing a recipe keeps day offsets to −30…+365 (clone cut down to −200)', off('harvest') === 365 && off('topping') === -30 && off('clone_cut') === -150,
+        JSON.stringify([off('harvest'), off('topping'), off('clone_cut')]));
+    check('…and says so', (await b.run(clw, `return document.getElementById('toast')?.textContent || document.querySelector('.toast')?.textContent || '';`)).includes('brought into range'));
     // Delete an input used by another recipe (asks first — accepted)
     await b.run(clw, `openRecipeManager(); showRecipeEditor(cloneRecipeData(DB.data._CropLabourWizard.recipes.imprt1)); document.querySelector('.editor-tab[data-tab="inputs"]').click();`, { user: true });
     await b.run(clw, `[...document.querySelectorAll('#inputCatalogBody tr[data-id]')].find(tr => tr.querySelector('.in-name').value === 'Coco block').querySelector('[data-act="del-input"]').click();`, { user: true });

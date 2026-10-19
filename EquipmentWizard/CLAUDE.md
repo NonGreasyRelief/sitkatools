@@ -1,303 +1,107 @@
 # EquipmentWizard — Tool Context
 
-## What This Tool Does
+Schedules recurring maintenance for grow-room equipment, room by room. It writes every occurrence of each maintenance task onto the shared calendar, up to 12 months ahead.
 
-EquipmentWizard is a **cyclical equipment maintenance scheduler** for licensed cannabis cultivation facilities. It automatically populates the shared calendar with recurring maintenance events for grow-room equipment, infrastructure, and systems on a per-room basis.
+- **Room-focused tool:** the header shows "🔧 EquipmentWizard" and an **Active Room** selector. The footer and UI follow the root `CLAUDE.md`, and so do postMessage, `LinkLost` and `WorkCopy`.
+- **Office only** (`DeviceView.OFFICE_ONLY: true`). On a building device, SitkaTools hides the link. If the tool is opened anyway, it covers the page with "Office only" and stops before loading, because a building device couldn't save the result. It never resyncs there. See root `CLAUDE.md` → "Building Device View".
 
-### Intended Use
+## Data — `_EquipmentWizard.rooms[roomId].equipment[]`
 
-- **Track equipment per room:** Assign equipment items (dehumidifiers, air conditioners, plumbing systems, irrigation layouts, drip lines, tables, etc.) to specific grow rooms. Each room maintains its own independent equipment inventory.
-- **Define sub-tasks with intervals:** Under each equipment item, create maintenance sub-tasks (e.g., "replace filter", "clean drain pan", "tighten connections") with a configurable recurrence interval — measured in either **days** or **months**.
-- **Auto-populate the calendar:** When a schedule is generated (or regenerated), the tool computes every occurrence of each sub-task over a **12-month forward window** from today and writes them as individual calendar events. This gives the grower full visibility into upcoming maintenance demand.
-- **Retroactive scheduling:** When adding equipment mid-cycle, the user can set a "start date" in the past (retroactively). The tool will back-fill any occurrences from that start date up to today, then continue projecting forward 12 months. This ensures the schedule reflects the true maintenance cadence even if tracking starts late.
-- **Regenerate on demand:** The user can regenerate the schedule at any time — the tool purges all existing EquipmentWizard events for the selected room and recomputes from scratch. This keeps the calendar clean when intervals change or equipment is removed.
+Equipment belongs to rooms (`DB.rooms`), not lots. The tool may also keep per-lot data under `lots.<id>._tool_EquipmentWizard`, and it writes only its own keys.
 
-### Equipment & Maintenance Model
+| Field | Notes |
+|---|---|
+| `id`, `type`, `name`, `emoji` | `type` comes from the dropdown (optional). `name` is free text. `emoji` comes from the type (`getEmojiForType`, falling back to 🔧). |
+| `installedDate` | Set to the day the item is added. Power use counts from this date. |
+| `serialNumber`, `filterSize` | Dehumidifier only. |
+| `power` | Optional `{ watts, units, hoursPerDay }`. See "⚡ Power Use (for the electricity cost)". |
+| `tasks[]` | Maintenance sub-tasks: `{ id, name, intervalValue, intervalUnit: 'days' \| 'months', startDate, emoji }`. |
+| `additionalMaintenance[]` | The **Repair Log**: one-off `{ id, name, date }` entries. They make no calendar events and save with `notifySitkaTools()`. |
 
-The data model has three levels:
+### Common equipment types (dropdown)
 
-1. **Room** — a grow room from `DB.rooms` (e.g., "Flower Room A", "Clone Room B"). Equipment is scoped to rooms, not lots.
-2. **Equipment** — an item or system installed in a room. Each equipment entry has:
-   - A name (free text) or a type selected from a dropdown of common types
-   - A unique ID for tracking
-   - An optional "installed date" for reference
-3. **Maintenance Sub-Task** — a recurring task under an equipment item. Each sub-task has:
-   - A name (e.g., "Replace Filter", "Clean Drain Pan")
-   - An interval value (number) and unit (`days` or `months`)
-   - A start date (the first occurrence; can be in the past for retroactive scheduling)
-   - An emoji icon for calendar display
+Equipment names are free text, so any custom item can be added.
+
+| Category | Examples |
+|---|---|
+| Dehumidifier | Filter Replacement, Drain Cleaning, Annual Performance Measurement, Coil Cleaning |
+| Air Conditioner | Filter Replacement, Condenser Cleaning, Drain Line Cleaning, Refrigerant Check |
+| Plumbing | Tighten Connections, Leak Inspection, Valve Service |
+| Irrigation | Dripper Replacement, Layout Inspection, Line Flush, Timer Calibration |
+| Infrastructure | Table — Leak Check, Table — Level Adjustment, HVAC — General Inspection |
 
 ### ⚡ Power Use (for the electricity cost)
 
-Added 2026-10-16 for the Labour & Cost Wizard's total cost per gram.
+- `power: { watts, units, hoursPerDay }`:
+  - `watts` is the draw per unit.
+  - `units` is how many (default 1).
+  - `hoursPerDay` is roughly how long it runs each day (default 12).
+- Estimated use is `watts × units × hours ÷ 1000` kWh a day, counted from `installedDate` on. ACs and dehumidifiers matter most.
+- **Add form:** "⚡ Power draw (watts)", "How many units" and "Runs about (hours a day)". Leaving watts empty means no power entry.
+- **Each item's card:** a power line under the name (`⚡ 1,100 W × 2 · 16 h/day ≈ 35.2 kWh/day`, or "Power not set"), plus an editable "⚡ Power use" row at the top of the expanded body.
+  - An edit saves straight away with `notifySitkaTools()`.
+  - It never resyncs the calendar, because power doesn't change the schedule.
+- **Group entries:** an item that stands for a group (e.g. "All ACs / Grow 2") can carry the whole group's power, with `units` set to how many there are. Don't also give power to the group's members, or the room counts them twice.
+- The Labour & Cost Wizard reads this (read-only) to estimate electricity for the room's crops. See root `CLAUDE.md` → "Total Cost per Gram".
 
-- Every equipment item can carry `power: { watts, units, hoursPerDay }`: watts per unit, how many units (default 1), and about how many hours a day it runs (default 12). Its estimated use is `watts × units × hours ÷ 1000` kWh a day, from its `installedDate` on. ACs and dehumidifiers matter most.
-- **Add form:** "⚡ Power draw (watts)", "How many units", "Runs about (hours a day)". No watts = no power entry.
-- **Each item's card:** a power line under the name (`⚡ 1,100 W × 2 · 16 h/day ≈ 35.2 kWh/day`, or "Power not set"), and an editable "⚡ Power use" row at the top of its expanded body. A change saves straight away with `notifySitkaTools()`. It never resyncs the calendar, because it doesn't change the schedule.
-- **Group entries:** an item that stands for a group ("All ACs / Grow 2") can carry the whole group's power (units = how many). Don't also give power to its members, or the room counts them twice.
-- The Labour & Cost Wizard reads it (read-only) for the estimated electricity of the room's crops (root `CLAUDE.md` → "Total Cost per Gram").
-
-### Common Equipment Types (Dropdown)
-
-The tool provides a dropdown of pre-defined equipment types for quick selection, but also allows free-text entry for custom types:
-
-| Category | Examples |
-|----------|----------|
-| **Dehumidifier** | Dehumidifier — Filter Replacement, Dehumidifier — Drain Cleaning, Dehumidifier — Annual Performance Measurement, Dehumidifier — Coil Cleaning |
-| **Air Conditioner** | AC — Filter Replacement, AC — Condenser Cleaning, AC — Drain Line Cleaning, AC — Refrigerant Check |
-| **Plumbing** | Plumbing — Tighten Connections, Plumbing — Leak Inspection, Plumbing — Valve Service |
-| **Irrigation** | Irrigation — Dripper Replacement, Irrigation — Layout Inspection, Irrigation — Line Flush, Irrigation — Timer Calibration |
-| **Infrastructure** | Table — Leak Check, Table — Level Adjustment, HVAC — General Inspection |
-
-### Calendar Events Generated
-
-EquipmentWizard appends events to the shared `calendarEvents` array using `"sourceTool": "EquipmentWizard"`. Each event has:
-
-- **Title:** Emoji + sub-task name + equipment name + room name (e.g., `"🔧 Replace Filter — Dehumidifier #1 — Flower Room A"`)
-- **Date:** The computed date for this maintenance occurrence (`YYYY-MM-DD`)
-- **SourceTool:** `"EquipmentWizard"`
-- **RoomId:** Always set to the room ID — every event is scoped to a room
-- **EquipmentId:** The ID of the parent equipment item, used during reconciliation
-- **TaskId:** The ID of the sub-task that generated the event, used during reconciliation (events saved before it existed have none)
-- **Id:** A stable event id (`newEventId()`), kept across resyncs — see "Schedule Reconciliation"
-- **TaskType:** `"equipment_maintenance"` — used during reconciliation to detect and replace stale schedules
-
-### Schedule Reconciliation
-
-When a user generates (or regenerates) a schedule for a room, the tool first **removes all existing EquipmentWizard events** for that room from `calendarEvents` before inserting the new batch. This prevents duplicate or stale events when intervals change, equipment is removed, or the 12-month window rolls forward. The reconciliation logic matches on `sourceTool === 'EquipmentWizard'` AND `roomId === selectedRoom`.
-
-**Annotations carry over (ROADMAP 0.3):** both resync paths (`syncAllRooms` on open/import, `autoSyncCalendar` on room switch and equipment edits) keep the previous events and copy each one's `id`, `completed`, `labour_map` and SitkaTools event-panel fields onto the regenerated event with the same `equipmentId + taskId + date` (`carryOverAnnotations`), so renaming a sub-task or changing its emoji keeps its history. A previous event without `taskId` (saved before it existed) falls back to `equipmentId + title + date`; the first resync gives every matched event its `taskId`. Editing a sub-task (✎ → **Update Task**) replaces it in place and keeps its id; **Cancel** leaves edit mode. A previous event with no regenerated match is dropped — **except** a completed or labour-tracked occurrence whose equipment and room still exist, which stays on the calendar as maintenance history (e.g. after an interval change). Deleting the equipment removes its history too. A date moved on the SitkaTools calendar no longer matches and is regenerated at its computed date.
-
-**Incremental reconciliation (auto-purge):** Calendar events are also automatically purged in these scenarios:
-- **Delete equipment:** After a confirmation naming the item and how many tasks, Repair Log entries and completed / labour-tracked visits go with it, all calendar events with matching `equipmentId` are immediately removed from the calendar.
-- **Delete sub-task:** All calendar events for the parent equipment item are purged (the task list changed, so the schedule is stale).
-- **Add sub-task:** Old events for that equipment are purged and regenerated to include the new task's occurrences.
-
-This ensures the main SitkaTools calendar never shows orphaned EquipmentWizard events — even when users modify equipment or tasks without clicking "Generate Schedule".
-
-### Scheduling Algorithm
-
-For each sub-task in a room:
-1. Start from the sub-task's `startDate`
-2. Compute occurrences by adding the interval (days or months) repeatedly
-3. Collect all occurrences that fall within `[startDate, today + 12 months]`
-4. Each occurrence becomes a calendar event
-
-Month-based intervals use calendar-month arithmetic (e.g., Jan 15 + 3 months = Apr 15). Occurrence *k* is always `startDate + k × interval` months, clamped to the last day of the target month — never chained from the previous occurrence — so Jan 31 monthly gives Jan 31, Feb 28 (29), Mar 31, Apr 30… Day-based intervals use simple day addition. All dates, including "today", are local dates (never UTC).
-
-## BC Civic Holidays
-
-This tool must be aware of British Columbia's **11 civic (statutory) holidays**. The canonical spec lives in the root `CLAUDE.md` ("BC Civic Holidays"); the full rules are reproduced below so this tool can be implemented from its own directory alone. Every holiday date is a pure function of its year — no external data, no network calls.
-
-### Calculation Helpers
-
-All date math must use **local-time** `Date` constructors (`new Date(y, m, d)`) — never UTC variants — to avoid off-by-one-day errors from time zones. Month indices are 0-based (`0`=Jan … `11`=Dec); weekday numbers follow `Date.getDay()` (`0`=Sun … `6`=Sat).
+## Calendar Events
 
 ```js
-// Add/subtract days (returns a new Date)
-function addDays(d, n) {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-}
-
-// Nth occurrence of a weekday in a month (n is 1-based)
-function nthWeekday(y, m, weekday, n) {
-    const first = new Date(y, m, 1).getDay();
-    return new Date(y, m, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7);
-}
-
-// Victoria Day — the last Monday strictly before May 25 (per BC ESA).
-// Start from May 24 and walk back to the previous Monday.
-function victoriaDay(y) {
-    const d = new Date(y, 4, 24);
-    while (d.getDay() !== 1) d.setDate(d.getDate() - 1);
-    return d;
-}
-
-// Observed-date shift — applies ONLY to fixed-date holidays:
-// if the nominal date falls on Saturday or Sunday, the holiday is observed on the following Monday.
-function observed(d) {
-    const dow = d.getDay();
-    if (dow === 6) return addDays(d, 2); // Sat → Mon
-    if (dow === 0) return addDays(d, 1); // Sun → Mon
-    return d;
-}
-
-// Easter Sunday — Gregorian computus (Anonymous / Meeus–Jones–Butcher algorithm)
-function easterSunday(y) {
-    const a = y % 19, b = Math.floor(y / 100), c = y % 100;
-    const d = Math.floor(b / 4), e = b % 4;
-    const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
-    const h = (19 * a + b - d - g + 15) % 30;
-    const i = Math.floor(c / 4), k = c % 4;
-    const l = (32 + 2 * e + 2 * i - h - k) % 7;
-    const m = Math.floor((a + 11 * h + 22 * l) / 451);
-    const month = Math.floor((h + l - 7 * m + 114) / 31); // 3 = March, 4 = April
-    return new Date(y, month - 1, ((h + l - 7 * m + 114) % 31) + 1);
-}
+{ id, date, title, sourceTool: 'EquipmentWizard', roomId, equipmentId, taskId, taskType: 'equipment_maintenance' }
 ```
 
-### The 11 Holidays and Their Rules
+- **Title:** task emoji, task name, equipment name, room name: `"🔧 Replace Filter — Dehumidifier #1 — Flower Room A"`.
+- **`roomId`** is always set.
+- **`id`** stays the same across resyncs (see "Schedule Reconciliation").
+- **`taskId`** is missing on events saved before it existed.
 
-| # | Holiday | Rule | Calculation (JS) |
-|---|---------|------|------------------|
-| 1 | New Year's Day | Jan 1; observed on the following Monday if it falls on a weekend | `observed(new Date(y, 0, 1))` |
-| 2 | Family Day | Third Monday in February | `nthWeekday(y, 1, 1, 3)` |
-| 3 | Good Friday | Two days before Easter Sunday | `addDays(easterSunday(y), -2)` |
-| 4 | Victoria Day | Last Monday strictly before May 25 | `victoriaDay(y)` |
-| 5 | Canada Day | Jul 1; observed on the following Monday if it falls on a weekend | `observed(new Date(y, 6, 1))` |
-| 6 | BC Day (Civic Holiday) | First Monday in August | `nthWeekday(y, 7, 1, 1)` |
-| 7 | Labour Day | First Monday in September | `nthWeekday(y, 8, 1, 1)` |
-| 8 | National Day for Truth and Reconciliation | Sep 30; observed on the following Monday if it falls on a weekend | `observed(new Date(y, 8, 30))` |
-| 9 | Thanksgiving | Second Monday in October | `nthWeekday(y, 9, 1, 2)` |
-| 10 | Remembrance Day | Nov 11; observed on the following Monday if it falls on a weekend | `observed(new Date(y, 10, 11))` |
-| 11 | Christmas Day | Dec 25; observed on the following Monday if it falls on a weekend | `observed(new Date(y, 11, 25))` |
+## Scheduling Algorithm
 
-**Rules & edge cases:**
-- BC does **not** observe Easter Sunday, Easter Monday, or Boxing Day (Dec 26) — per the BC government, these are not statutory holidays.
-- Weekday-anchored holidays never need an observed-date shift: Family Day, Victoria Day, BC Day, Labour Day, and Thanksgiving are always Mondays; Good Friday is always a Friday. Only the five fixed-date holidays (New Year's Day, Canada Day, Truth & Reconciliation, Remembrance Day, Christmas Day) can shift to the following Monday.
-- When a holiday shifts to its observed date, use the **observed** date for calendar display and for holiday checks — that is the day off.
-- Holiday checks are always performed against the year of the event date being checked.
+For each task, `computeEquipmentEvents` starts at `startDate` and adds the interval repeatedly. Every occurrence in `[startDate, today + 12 months]` becomes an event.
 
-### Verification Table — Known Dates
+- **Months:** occurrence *k* is always `startDate + k × interval` months, clamped to the last day of the month. It is never chained from the previous occurrence. So Jan 31 monthly gives Jan 31, Feb 28 (or 29), Mar 31, Apr 30…
+- **Days:** plain day addition.
+- **Local dates only**, including "today". Never UTC.
+- **Retroactive start:** a `startDate` in the past back-fills occurrences up to today, then continues 12 months ahead. This keeps the real maintenance cadence when tracking starts late.
 
-Any implementation must reproduce this table exactly:
+## Schedule Reconciliation
 
-| Holiday | 2026 | 2027 |
-|---------|------|------|
-| New Year's Day | Jan 1 (Thu) | Jan 1 (Fri) |
-| Family Day | Feb 16 (Mon) | Feb 15 (Mon) |
-| Good Friday | Apr 3 (Fri) | Mar 26 (Fri) |
-| Victoria Day | May 18 (Mon) | May 24 (Mon) |
-| Canada Day | Jul 1 (Wed) | Jul 1 (Thu) |
-| BC Day | Aug 3 (Mon) | Aug 2 (Mon) |
-| Labour Day | Sep 7 (Mon) | Sep 6 (Mon) |
-| Truth & Reconciliation | Sep 30 (Wed) | Sep 30 (Thu) |
-| Thanksgiving | Oct 12 (Mon) | Oct 11 (Mon) |
-| Remembrance Day | Nov 11 (Wed) | Nov 11 (Thu) |
-| Christmas Day | Dec 25 (Fri) | **Dec 27 (Mon)** — observed; Dec 25 falls on a Saturday |
+A resync deletes the room's EquipmentWizard events (`sourceTool === 'EquipmentWizard' && roomId === room`) and recomputes them from scratch. Changed intervals, removed equipment and the rolling 12-month window therefore never leave stale or duplicate events.
 
-### Holiday-Awareness Behavior for EquipmentWizard (implementation pending)
+**When it runs** (there's no need to press anything):
 
-When generating or regenerating a room's maintenance schedule, compare each occurrence date against the 11 BC civic holidays for that year (using observed dates). If any occurrence falls on a holiday, surface a notification listing the affected sub-tasks and holidays (e.g., "⚠️ 🔧 Replace Filter — Dehumidifier #1 — Flower Room A falls on Labour Day (Sep 7)"). Do not auto-reschedule occurrences — notify only. The SitkaTools calendar will render the holidays themselves as if they were events.
+- `syncAllRooms` resyncs every room on each `sitkaGit_db` (open), then calls `notifySitkaTools()`.
+- `autoSyncCalendar(roomId)` resyncs one room on a room switch and after every equipment or task add, edit or delete. Adding or deleting a task also purges and regenerates its equipment's events.
 
-## Relationship to SitkaTools
+**What survives a resync:**
 
-**Office only.** On a building device (root `CLAUDE.md` → "Building Device View"), SitkaTools hides this tool's link. If it's opened anyway, `DeviceView` covers the page with "Office only" and stops before loading anything, because a building device couldn't save the result.
+- **Annotations carry over** (`carryOverAnnotations`; the fields are listed in root `CLAUDE.md` → "Event Annotations Survive Regeneration").
+  - Events are matched on `equipmentId + taskId + date` (`equipmentEventKey`), so renaming a task or changing its emoji keeps its history.
+  - Events without `taskId` fall back to `equipmentId + title + date`. The first resync gives each matched event its `taskId`.
+- **Unmatched old events are dropped.** The exception (`retainedHistory`): a completed or labour-tracked event (`hasWorkRecords`) whose equipment and room still exist stays on the calendar as maintenance history, e.g. after an interval change.
+- **Gotcha:** a date moved on the SitkaTools calendar no longer matches, so it is regenerated at its computed date (ROADMAP 0.6).
 
-This tool is part of the SitkaGit suite. It operates as a standalone single-file HTML application with no communication to other tools. All shared state flows through the common JSON database file (`DB-YY-MM-DD.json`).
+**Editing:**
 
-### How Data Fits Into the Database
+- **✎ → Update Task** replaces the task in place and keeps its id. **Cancel** leaves edit mode.
+- Adding a task with the same name as an existing one replaces that task instead of duplicating it.
+- **Delete equipment** asks first. The confirm names the item and says how many tasks, Repair Log entries and completed or labour-tracked visits go with it. Then all its events are removed, history included.
 
-EquipmentWizard reads and writes its own keys within the shared database, following the suite's decoupled convention:
+## Messages from SitkaTools
 
-**Per-lot data** (inside `lots.<LotID>`):
-```
-_tool_EquipmentWizard: { ... }
-```
-Each lot can have its own equipment-related dictionary. The tool writes only to this key and does not touch other keys in the lot entry or other lots.
+These follow root `CLAUDE.md` → "Cross-Window Database Workflow"; only this tool's specifics are listed here.
 
-**Top-level data** (root of database):
-```
-_EquipmentWizard: { ... }
-```
-Tool-wide state that isn't scoped to a specific lot lives under this top-level key.
+- **`sitkaGit_db` (open):** acknowledge, `DeviceView.take`, fill the room selector, render, then `syncAllRooms()`. That means opening the tool always sends an update back.
+- **`sitkaGit_db_update` (live push; the shared copy sends the same, `WorkCopy.LIVE: true`):**
+  - Replace `DB.data` and run `ensureStructure()`.
+  - Keep the selected room, and refresh the preview.
+  - Rebuild the equipment list only when the selected room's equipment changed, so half-filled task and Repair Log forms survive.
+  - Never resync, and never call `notifySitkaTools()` in reply. Only `sitkaGit_db` resyncs.
 
-**Calendar events:**
-When EquipmentWizard generates reminders (e.g., "scheduled maintenance", "equipment inspection due"), it appends events to the shared `calendarEvents` array using `"sourceTool": "EquipmentWizard"`. The main SitkaTools calendar view will render these alongside events from all other tools.
+## BC Civic Holidays (implementation pending)
 
-### Full Database Context
+The rules are in root `CLAUDE.md` → "BC Civic Holidays".
 
-For reference, the complete database structure is defined in the root `CLAUDE.md`. Key points:
-- Database file naming: `DB-YY-MM-DD.json`
-- File I/O is user-managed via import (`<input type="file">`) and export (`URL.createObjectURL` + download)
-- Tools never communicate with each other — only through the JSON file on disk
-- Dates in data use ISO format (`YYYY-MM-DD`); filenames use 2-digit year (`YY`)
-
-### Database Import on Open — postMessage Convention
-
-EquipmentWizard receives its database from SitkaTools via `postMessage`, following the convention defined in the root `CLAUDE.md`.
-
-**How it works:**
-1. When SitkaTools.html launches EquipmentWizard, it opens the subtool in a new window then sends the current DB via `postMessage` with type `sitkaGit_db`.
-2. On page load, EquipmentWizard listens for this message — no overlay, no file dialog, no manual import step.
-3. After receiving the DB, EquipmentWizard acknowledges with `{ type: 'sitkaGit_ready' }` so SitkaTools stops retrying.
-4. After every mutation (add/delete/edit), EquipmentWizard calls `notifySitkaTools()` which sends the updated DB back via `postMessage` with type `sitkaGit_db_update`.
-5. The main app auto-refreshes all views and shows a toast notification that auto-dismisses after 3 seconds.
-6. On init, EquipmentWizard calls `populateRoomSelector()` to fill the Active Room dropdown from `DB.rooms`, then renders its UI.
-7. **Live updates:** SitkaTools posts `{ type: 'sitkaGit_db_update', payload, view }` whenever its DB changes (the shared working copy delivers the same message, `WorkCopy.LIVE: true`). EquipmentWizard accepts it only from `window.opener` (or its own WorkCopy loader), replaces `DB.data`, runs `ensureStructure()`, applies the view, keeps the selected room, and rebuilds the equipment list (with its half-filled task / Repair Log forms) only when the selected room's equipment changed. It never resyncs and never calls `notifySitkaTools()` in response — only `sitkaGit_db` (open) resyncs.
-
-**Implementation:**
-```js
-// ---- postMessage Convention ----
-DB.ensureStructure();
-
-function notifySitkaTools() {
-    if (window.opener && !window.opener.closed) {
-        window.opener.postMessage({
-            type: 'sitkaGit_db_update',
-            payload: DB.data
-        }, SITKA_MSG_ORIGIN);
-    }
-}
-
-window.addEventListener('message', (e) => {
-    // Real messages must come from the SitkaTools window that opened us; untrusted events are this
-    // page's own shared-copy loader (WorkCopy — root CLAUDE.md → "Shared Working Copy")
-    if (e.isTrusted && (!window.opener || e.source !== window.opener)) return;
-    if (e.data?.type === 'sitkaGit_db' && e.data.payload) {
-        DB.data = e.data.payload;
-        DB.ensureStructure();
-        if (window.opener && !window.opener.closed) {
-            window.opener.postMessage({ type: 'sitkaGit_ready' }, SITKA_MSG_ORIGIN);
-        }
-        populateRoomSelector();
-        showToast('Database loaded from SitkaTools');
-    }
-});
-
-// After every mutation:
-notifySitkaTools();
-```
-
-This tool uses **no localStorage, sessionStorage, IndexedDB, cookies, or any browser storage APIs**. All cross-window state flows through postMessage.
-
-## UI Convention
-
-This tool follows the shared UI Standards defined in the root `CLAUDE.md`. Key specifics for this tool:
-
-- **Selector type:** Active Room (room-focused tool — equipment maintenance is tracked per room)
-- **Popup size:** Opens from SitkaTools.html at half the main app's viewport width and 83% of the viewport height
-- **Header:** Tool name "🔧 EquipmentWizard" on the left, Active Room dropdown on the right
-- **Footer:** Close Tool button only (no Save DB — changes auto-sync to SitkaTools via postMessage)
-- **Theme:** Uses shared CSS custom properties from root UI Standards
-
-**Footer implementation:**
-```html
-<footer class="footer">
-    <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
-</footer>
-```
-```css
-.footer {
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
-    padding: 12px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    bottom: 0;
-    z-index: 100;
-}
-```
-```js
-// ---- Close Tool ----
-$('closeToolBtn').addEventListener('click', () => window.close());
-```
-
-## Constraints
-
-- Single `.html` file, no build step, no external dependencies
-- Runs in browser sandbox (`file://` protocol)
-- Vanilla HTML/CSS/JavaScript only
-- No network calls of any kind
+- When a room's schedule is generated or regenerated, check each occurrence against that year's holidays (observed dates).
+- List any task that lands on a holiday, e.g. "⚠️ 🔧 Replace Filter — Dehumidifier #1 — Flower Room A falls on Labour Day (Sep 7)".
+- Notify only. Never reschedule.

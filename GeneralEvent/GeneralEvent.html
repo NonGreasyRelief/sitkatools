@@ -992,8 +992,11 @@
             eventListCard.style.display = 'block';
             eventListEl.innerHTML = '';
 
-            // Sort by date, then creation time
-            const sorted = [...log].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+            // Sort by date, then creation order. The log follows calendarEvents, which tools only append to, so
+            // its position is the creation order (createdAt is re-stamped whenever the log is rebuilt).
+            const sorted = log.map((entry, i) => ({ entry, i }))
+                .sort((a, b) => String(a.entry.date || '').localeCompare(String(b.entry.date || '')) || a.i - b.i)
+                .map(x => x.entry);
 
             sorted.forEach(entry => {
                 const item = document.createElement('div');

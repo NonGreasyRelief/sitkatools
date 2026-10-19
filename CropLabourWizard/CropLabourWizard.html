@@ -1324,6 +1324,21 @@
             else if (recipe.chain) delete recipe.chain.cloneCutBeforeHarvest;
         }
 
+        // A recipe task's day offset is kept to −30…+365 days from its reference — the clone cut, which counts back
+        // from harvest, down to −200, as the preview allows it. Applied on import and on save; returns how many changed.
+        function recipeOffsetRange(t) { return { min: t?.taskType === 'clone_cut' ? -200 : -30, max: 365 }; }
+        function clampRecipeOffsets(recipe) {
+            let n = 0;
+            for (const t of recipe?.tasks || []) {
+                if (!t || !Number.isInteger(t.defaultOffset)) continue;
+                const { min, max } = recipeOffsetRange(t);
+                const v = Math.max(min, Math.min(max, t.defaultOffset));
+                if (v !== t.defaultOffset) { t.defaultOffset = v; n++; }
+            }
+            return n;
+        }
+        const clampNote = n => n ? ` · ${n} day offset${n === 1 ? '' : 's'} brought into range (−30…+365)` : '';
+
         // Lowest day offset the preview allows. The clone cut counts back from harvest and can sit well
         // before it; other tasks with a negative default may go 30 days before their anchor; the rest
         // stay on or after it.
@@ -1667,6 +1682,7 @@
                 }
                 // Validate BEFORE mutating anything (an older file's clone cut is converted first)
                 normalizeCloneCut(parsed);
+                const clamped = clampRecipeOffsets(parsed);
                 const errors = validateRecipe(parsed);
                 if (errors.length > 0) {
                     alert(`Invalid recipe "${file.name}":\n\n` + errors.join('\n'));
@@ -1693,7 +1709,7 @@
                 refreshPreview();
                 renderRecipeList(); // keep the manager list in sync if it's open
                 notifySitkaTools();
-                showToast(`Recipe imported: ${parsed.name}`);
+                showToast(`Recipe imported: ${parsed.name}` + clampNote(clamped));
             };
             reader.readAsText(file);
             e.target.value = '';
@@ -2062,7 +2078,7 @@
                     <td><input type="text" class="t-name" value="${escapeHtml(t.name || '')}" placeholder="Task name" title="Name"></td>
                     <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
                     <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? 'disabled title="Counted back from harvest — it starts the next lot"' : 'title="Reference anchor"'}>${refOpts}</select></td>
-                    <td class="t-offset"><input type="number" class="t-offset" step="1" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
+                    <td class="t-offset"><input type="number" class="t-offset" step="1" min="${recipeOffsetRange(t).min}" max="${recipeOffsetRange(t).max}" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
                     <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
                         ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length / Multi-day harvest)">'
                         : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="How many days the task runs (blank = 1)">`}</td>
@@ -2130,6 +2146,7 @@
             editorRecipe.name = $('recipeNameInput').value.trim();
             if ($('recipeTasksTab').style.display !== 'none') editorRecipe.tasks = readTaskTable();   // the tab shown holds the latest edits
             else readInputTables();
+            const clamped = clampRecipeOffsets(editorRecipe);
             syncChainFromCloneCut(editorRecipe);
             // Price list: names must be filled in and unique (fertilizers are matched to the grow logs by name)
             const names = new Set();
@@ -2185,7 +2202,7 @@
             notifySitkaTools();
             const savedName = editorRecipe.name; // closeRecipeManager() nulls the working copy
             closeRecipeManager();
-            showToast(wasNew ? `Recipe created: ${savedName}` : `Recipe saved: ${savedName}`);
+            showToast((wasNew ? `Recipe created: ${savedName}` : `Recipe saved: ${savedName}`) + clampNote(clamped));
         }
 
         function deleteRecipe(r) {

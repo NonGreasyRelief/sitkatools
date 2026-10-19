@@ -1,488 +1,250 @@
 # DailyWizard — Tool Context
 
-## What This Tool Does
+Per-building **daily chore lists** plus that day's calendar events, as a tablet floor view. CropLabourWizard covers the big crop jobs; DailyWizard covers the small daily ones (watering, mixing fertilizer, scouting rooms, stocking paper towels, uniforms, glove holders…).
 
-DailyWizard is a **daily to-do list builder and floor view** for the SitkaGit suite. CropLabourWizard tracks the big crop jobs (planting, flip, harvest, trim…), but nothing covers the small essential activities that happen every day in each building — watering plants, mixing fertilizer, scouting rooms, stocking paper towels, stocking uniforms, stocking glove holders, and similar. DailyWizard fills that gap:
+- **Planning (manager):** pick a building; add, edit and reorder its daily tasks and write their steps.
+- **Floor (staff, tablet):** open it from SitkaTools (a tab), pick the building or All Buildings, and work down the list.
+- For any date (default today) it shows the building's tasks for that day, then that building's calendar events for the day (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent).
+- Ticks save per day ("Check-offs — Saved Per Day"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
 
-1. **Build per-building daily task lists.** The manager defines a set of recurring daily tasks for each building (emoji, name, estimated time, required staff). Task lists are saved directly to this tool's own database key (`_DailyWizard`) — they are *definitions*, not one-off events, and they never touch `calendarEvents`.
-2. **Show the day.** For any date (default: today), the tool renders that building's tasks for that day, followed by that building's scheduled calendar events from the main database (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent) for the same day — giving staff one complete picture of what happens in the building today.
-3. **Check things off.** Every row has a large thumb-friendly checkbox. A tick is **saved for that day** in the building's own file (each new day starts blank), so staff and the floor manager can see on any device what's been done today (see "Check-offs — Saved Per Day").
-4. **Log hours.** Each daily-task row, and each crop (CropLabourWizard) or equipment (EquipmentWizard) task in "Scheduled today" or "⏰ Still open", has a **⏱ Log** button. Staff pick their name, type hours and minutes, and sign with drawn initials. The hours save in the building's own file and feed EmployeeWizard's Tasks tab and Reports (see "⏱ Hours").
-5. **Keep tasks open until they're done.** A building's crop and equipment tasks whose day has passed stay listed under **⏰ Still open** until the floor manager signs them off with **✍️ Mark done**: their name and drawn initials (see "⏰ Still open and ✅ Mark done").
-6. **Speak the worker's language.** A **🌐 Language** picker switches the whole screen to French, Spanish, Vietnamese or Simplified Chinese, and shows each chore's name and steps in that language once the manager has written them (see "🌐 Language").
+## What It Reads and Writes
 
-### Intended Use
-
-- **Planning (manager, desktop or tablet):** Pick a building, build/edit/reorder its daily task list, write step-by-step instructions for any task. Changes save to `_DailyWizard` and sync back to SitkaTools via postMessage when launched from the main app.
-- **Floor view (staff, tablet in the building):** Open SitkaTools on the tablet, launch DailyWizard from it (it opens as a tab), pick the building (or "All Buildings"), and work down the list with big checkboxes. A "Reset Day" button clears all check-offs for a fresh start.
-- **Combined overview:** The "All Buildings" view shows every building's list for the day, grouped by building, so one tablet can coordinate multiple buildings.
-
-### What This Tool Is NOT
-
-- It does **not** create, edit, move or delete `calendarEvents`. It reads them to display a building's crop and equipment tasks. On a crop or equipment event it writes only:
-  - labour hours, added to the event's `labour_map` (the same field EmployeeWizard's Tasks tab edits — see "⏱ Hours");
-  - the floor manager's sign-off: `completed` and `completedBy` (see "✅ Mark done").
-- Chore hours live in its own key (`_DailyWizard.buildings[<id>].labour`).
-- Row **check-offs** (the big checkboxes) say what's done *today*; they are saved per day with the building's chore hours. On a crop or equipment row a tick means today's part is done. ✅ Mark done is what finishes the task.
+- **`_DailyWizard`:** only DailyWizard writes it (task lists, chore hours, check-offs, adjustments). EmployeeWizard's Reports and Labour Log read the chore hours.
+- **Calendar events:** never created, edited, moved or deleted, and nothing is appended. On a crop or equipment event it writes only the floor fields `labour_map` ("⏱ Hours") and `completed` / `completedBy` ("✅ Mark done").
+- **Reads:** events' `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, `estStaff` / `estMinutes`; `rooms`, `buildings`, `lots` (attribution); `_EmployeeWizard.employees` (names for hours, `floorManager` for Mark done).
+- No network calls (🗣️ Talk only opens a link). No browser storage beyond SitkaTools' shared working copy. Emoji data is embedded.
 
 ## Task Model
 
-A daily task is a small record stored per building under `_DailyWizard` (full schema below):
-
 | Field | Type | Rules |
 |---|---|---|
-| `code` | string (4 chars) | Random lowercase alphanumeric from the alphabet `abcdefghjkmnpqrstuvwxyz23456789` (excludes confusing `0/o/1/l/i`). **Globally unique** across all buildings — regenerate on collision. Immutable after creation. Displayed as a small monospace chip on every row. Used by the step-picture filename convention (`pics/<code>_<n>.png` — see "Step Pictures"). |
-| `emoji` | string | One emoji, chosen from the embedded full emoji picker (see UI section). |
-| `name` | string | Non-empty task name (e.g., "Water plants", "Stock paper towels"). |
-| `minutes` | integer | Estimated duration in minutes. Minimum 5, step 5 (e.g., `30`). |
-| `staff` | integer | Number of staff required to do the task. Minimum 1 (e.g., `2`). |
-| `days` | array of int (0–6) | Weekdays the task appears on, using JS `getDay()` values (`0`=Sun … `6`=Sat). Default: all seven `[0,1,2,3,4,5,6]`. |
-| `monthDays` | array of int (1–31) | Optional day-of-month list the task *also* appears on (e.g., `[1, 15]`). Default: `[]`. |
-| `steps` | array of `{ text, translations? }` | Step-by-step instructions shown in the task's detail view. Ordered; each step is free-form text. Each step can display a picture via the filename convention (see "Step Pictures") — no picture data is stored in the DB. `translations` holds the step in other languages (see "🌐 Language"). |
-| `translations` | object, optional | The task's name in other languages: `{ fr: 'Arroser les plantes', es: 'Regar las plantas' }`. Absent until one is written. `name` stays the English master (see "🌐 Language"). |
+| `code` | 4 chars | Random from `abcdefghjkmnpqrstuvwxyz23456789`. **Unique across all buildings** (regenerate on collision), immutable. Shown as a monospace chip; names step pictures ("Step Pictures"). |
+| `emoji` | string | One emoji from the picker. Default 📋. |
+| `name` | string | Required. The English master. |
+| `minutes` | int | Estimated duration. Min 5, step 5. |
+| `staff` | int | Staff needed. Min 1. |
+| `days` | int[] 0–6 | Weekdays, JS `getDay()` (`0`=Sun). Default all seven. |
+| `monthDays` | int[] 1–31 | Extra days of the month (e.g. `[1, 15]`). Default `[]`. |
+| `steps` | `{ text, translations? }[]` | Ordered instructions for the detail view. No picture data in the DB. |
+| `translations` | object, optional | The name in other languages (`{ es: 'Regar las plantas' }`); see "🌐 Language". |
 
-Task order within a building is the **array order** — no separate sort field. Moving a task up/down rewrites its position in the array.
+Task order is the **array order** (no sort field); moving a task rewrites its position.
 
 ### Recurrence Rules
 
-A task appears on a given date when **either** condition holds (OR semantics):
-
-- the date's weekday is in `days`, **or**
-- the date's day-of-month is in `monthDays`.
-
-Validation: a task must have at least one weekday **or** at least one month-day — an empty combination is rejected on save.
-
-| Example | `days` | `monthDays` | Appears on |
-|---|---|---|---|
-| Water plants (every day) | all 7 | `[]` | Every day |
-| Stock uniforms (Mondays) | `[1]` | `[]` | Mondays only |
-| Scouting rooms (weekdays) | `[1,2,3,4,5]` | `[]` | Mon–Fri |
-| Deep clean / delivery (1st & 15th) | `[]` | `[1, 15]` | 1st and 15th of each month |
-| Fertilizer mix (Tue/Thu + 1st) | `[2,4]` | `[1]` | Tuesdays, Thursdays, and the 1st |
+A task appears on a date when its weekday is in `days` **or** its day of month is in `monthDays`. Saving needs at least one weekday or one month-day.
 
 ### Labour Display
 
-- Task rows show two small chips: `👥 {staff}` and `⏱ {minutes}m`.
-- The task detail view shows the derived total labour: `staff × minutes / 60` person-hours (e.g., 2 staff × 30 min → "≈ 1.0 h labour").
-- **Crop tasks** (CropLabourWizard / CropProjection events) whose recipe task has a labour estimate show the same two chips, from the event's `estStaff` / `estMinutes` — the estimate for one day, so a multi-day task like Trim shows its per-day figure on each of its days. Long times read as hours (`⏱ 8h`, `⏱ 1h 30m`). Events without an estimate show no chips.
-
-## Step Pictures
-
-Each step in a task's detail view can display a picture, referenced purely by **filename convention** — no picture data is stored in the database:
-
-- **Naming:** `pics/{code}_{n}.{ext}` where `{code}` is the task's 4-letter code and `{n}` is the step's **1-based position** in the steps array (Step 1 → `j234_1`, Step 2 → `j234_2`). The `pics/` folder lives next to `DailyWizard.html`.
-- **Extension fallback:** for each step, probe `.png` → `.jpg` → `.webp` in order and use the first that loads (photos are usually JPG).
-- **Videos** (added 2026-10-17): a step can also have `pics/{code}_{n}.mp4`. It is probed with a `<video>` element that loads only the metadata (no `fetch()`), and plays in the step with the browser's controls (`playsinline`, nothing autoplays).
-  - When a step has both, the picture shows first, then the video. A step with neither shows `🖼 j234_1.png / .mp4 not found`.
-  - Use **H.264** mp4. A video the browser can't decode (e.g. HEVC from some phones) probes as missing.
-  - Keep videos short and compressed. GitHub refuses files over 100 MB, and every tablet streams the file.
-- **Language versions** (optional, added 2026-10-17): a picture or video whose name starts with a language code is that language's version: `es_j234_1.jpg`, `fr_j234_1.mp4` (codes `fr`, `es`, `vi`, `zh`, as in "🌐 Language").
-  - When the screen is in that language, each step looks for its own version first and falls back to the English file (no prefix). The picture and the video are looked up separately, so a step can have a Spanish video and the English picture.
-  - The order is: the language's version (uploaded, then `pics/`), then the English one (uploaded, then `pics/`). English never looks at prefixed files.
-  - It works the same for files in `pics/` and for uploaded ones (`stepMediaSrc`). 🔄 Refresh images re-checks both versions for the language on screen.
-- **Loading mechanism:** plain `<img src="pics/...">` tags. This works on **both** deployment protocols:
-  - **http (GitHub Pages):** normal same-origin loading — `pics/` must be committed to the repo.
-  - **file:// (local/offline):** relative image tags load fine from a double-clicked HTML file in Chrome, Firefox, and Safari. The `file://` CORS sandbox blocks *programmatic* access (`fetch()`, XHR) but not tag-based resource loading, so no server is required.
-- **Existence probing:** to detect missing files without `fetch()`, create an `Image()` object, set its `src`, and listen for `onerror`. A missing picture renders as a muted placeholder chip showing the expected filename (e.g., `🖼 j234_1.png not found`) so the manager knows exactly what to name/copy.
-- **Refresh:** browsers cache failed image loads, so the detail view includes a **🔄 Refresh images** button that re-probes all steps (bumps a cache-busting query string — harmless on `file://`, useful on http).
-- **Positional binding:** pictures bind to step *position*, not identity. Reordering or deleting steps shifts which picture appears where; the manager renames files if they want a different mapping. This keeps the schema free of any picture field.
-- **Manual placement only:** browsers cannot write into `pics/` from the page (no server; the File System Access API is unavailable in Firefox/Safari/iPadOS). The workflow is: manager saves photos as `pics/{code}_{n}.jpg|png` (phone camera → rename/copy, or desktop), opens the task's detail view, and hits Refresh.
-- **Uploading pictures** (built 2026-10-17; user decision: kept only while the window is open). For a copy that isn't run next to its `pics/` folder, such as the online one, the steps view has two buttons:
-  - **📁 Upload image pack:** pick a folder, e.g. the pack folder in the SharePoint / OneDrive sync.
-  - **🖼 Upload images / videos:** pick the files themselves. Android Chrome may not offer folder picking, so select all the files in the pack folder this way there.
-  - **Matching:** only the file name counts: `{code}_{n}.png|jpg|jpeg|webp` for the picture and `{code}_{n}.mp4` for the video. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick, png beats jpg beats webp, as in the `pics/` probe. A later pick replaces an earlier file of the same step.
-  - **Where they go:** they're read into the window as object URLs (`uploadedPics`, `uploadedVids`) and win over `pics/`. They're never stored in the browser or sent anywhere, so a new window needs the pack picked again.
-  - **Feedback:** a toast reports how many pictures and videos loaded, names that don't fit the pattern, and files whose code matches no task. A note in the steps view shows how many uploaded pictures and videos are in use.
-- **Repo hygiene (GitHub Pages):** recommend resized photos (~1280 px max width, JPG) so committing `pics/` to the repo stays lean.
-
-## Calendar Event Attribution (Building Resolution)
-
-After rendering a building's daily tasks for the selected date, DailyWizard appends that building's **scheduled calendar events** for the same day, read from `DB.data.calendarEvents`. Multi-day events appear on every day in their `[date, endDate]` range (inclusive), matching the suite's calendar rendering rule. Events are displayed read-only (emoji + title) with their own large checkbox — ticked and saved per day like daily tasks.
-
-Each event is attributed to a building by resolving its physical room:
-
-```
-buildingForEvent(event):
-    1. If event.roomId exists and DB.rooms[event.roomId] exists
-         → return DB.rooms[event.roomId].buildingId
-       (CropProjection events always carry roomId; EquipmentWizard events use their roomId.)
-    2. Else if event.lotId exists and DB.lots[event.lotId] exists
-         → resolve the lot's physical room for this task using CropLabourWizard's phase rules:
-             taskType in { clone_cut_prep, clone_room_clean }            → lot.cloningRoom
-             taskType in { planting, ipm_spray_veg_early, topping,
-                           order_ipm, veg_room_clean }                   → lot.vegRoom
-             everything else (incl. transplant and all post-transplant)  → lot.destRoom
-           resolve the room name to a room ID via rooms.<roomId>.name,
-           then return DB.rooms[roomId].buildingId
-    3. Else if the title starts with a room-ID prefix → return DB.rooms[prefix].buildingId.
-       CropLabourWizard embeds the room ID in event titles when the lot's room was known
-       at generation time ("🧼 B66DG2-Strain#123, Task", "💡 B66DG2#123, ...").
-       The prefix is validated against DB.rooms, so only real room IDs match.
-       This covers events whose lot record was deleted but whose events remain.
-    4. Otherwise → null (unattributable)
-```
-
-- **Single-room fallback:** if the phase rule's room field is empty but the lot has exactly one resolvable room across all three fields (`cloningRoom`, `vegRoom`, `destRoom`), the event is attributed to that room's building. This covers lots created with only a destination room.
-- **Title-prefix fallback (last resort):** when neither `roomId` nor a live lot record resolves, the leading room-ID prefix in CLW titles is used — but only if it names an existing room in `DB.rooms`. Strain names or free-form text that merely resemble a room ID never match.
-- **Unattributable events** (GeneralEvent entries with no lot/room, or events whose room/lot can't be resolved, or rooms with no `buildingId`) never appear in a single-building view. In the **All Buildings** view they are collected into a muted "📌 Unassigned / General" section at the bottom so nothing silently disappears.
-- A lot whose rooms span multiple buildings is attributed per-task via the phase rules above — an event shows under exactly one building (the room where that task physically happens).
-- DailyWizard reads `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, and the labour estimate `estStaff` / `estMinutes`. It writes `labour_map` (hours logged on a crop or equipment task) and `completed` / `completedBy` (✅ Mark done).
-
-## Check-offs — Saved Per Day
-
-Saved since 2026-10-13. User decisions: one tap by anyone, recording the time and device; ticks on crop and equipment rows are saved as "today's part done".
-
-- **Where:** `_DailyWizard.buildings[<id>].checks[<YYYY-MM-DD>][<item>] = { at, by }`.
-  - `item` is the daily task's `code`, or `ev:<event id>` for a calendar row.
-  - `at` is the ISO time ticked; `by` is the device (a building id or `office`).
-  - It lives with the building's chore hours, so it saves in `Building-<ID>.json` (SitkaTools split). A building with no daily tasks gets a bare `{ tasks: [] }` entry the first time one of its event rows is ticked.
-- **Each new day starts blank:** ticks are kept by day, so another date shows only its own.
-- **Ticking** a row adds the record and **unticking** deletes it (empty days and maps are tidied away); both call `notifySitkaTools()`. No signature is asked for. ✅ Mark done is the signed completion of a crop or equipment task, and a tick doesn't change `completed`.
-- **Rows that can't be saved:** an event that belongs to no building (All Buildings → "📌 Unassigned / General") has no file to go in, so its tick stays in the page only (`sessionChecks`), as all ticks used to.
-- **Reset Day button** (footer): clears the selected date's ticks in the buildings shown (the selected building, or every building in All Buildings), after a confirm. Other dates are left alone.
-- Completed rows stay in place (no auto-move to bottom) and render with an accent check, muted text, and strikethrough on the task name.
-- Progress is shown live: overall `✅ done/total` in the status bar, and per-building `done/total` in each section header of the All Buildings view.
-
-## ⏱ Hours
-
-Built 2026-10-12 (ROADMAP Phase 1, "Labour in DailyWizard"), following the roadmap decisions: each entry is the person's name, the hours and minutes they type, and their own drawn initials.
-
-- **Where the button is:**
-  - every daily-task row;
-  - every CropLabourWizard or EquipmentWizard row in "Scheduled today" whose building is known. Projections, general events and the Upcoming list get none.
-- **The row button:** shows `⏱ Log`, or the hours logged for the selected date (`⏱ 1h 15m`, in the accent colour). It is disabled for future dates, and tapping it never opens the task detail.
-- **The hours view** (full-screen overlay, like the task editor):
-  - the entries for that row and day, each with name, hours, an initials thumbnail and the time it was logged. An entry made in EmployeeWizard's Tasks tab shows "Entered in EmployeeWizard";
-  - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`);
-  - a form: **Who** (roster names from `_EmployeeWizard.employees`, plus "Someone else (not on the roster)…" with a name box and an optional **hourly wage** box for temps), **Hours**, **Minutes**, and an **initials pad**.
-- **Validation:** **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke on the pad.
-- **Where the hours go:**
-  - **Chore:** `_DailyWizard.buildings[<id>].labour[<day>][<code>]`.
-  - **Crop or equipment task:** the event's `labour_map[<day>]`. This is the same field EmployeeWizard's Tasks tab edits (it marks these entries "✍️ signed"), that CropLabourWizard and EquipmentWizard carry over on regeneration, and that the Reports read. It's a floor field, so a building device's entries save in its own file as an overlay (SitkaTools DbSplit).
-- **Corrections:**
-  - A **building device** can remove only an entry it logged itself, on the **day it was logged** (a same-day correction). The entry is deleted.
-  - The **office** (or a single-file DB) can remove any entry, including ones entered in EmployeeWizard.
-  - An entry the office removes after its day is deleted from the hours and **kept on record** in the building's adjustments log. It stays visible, struck through, in the hours view. So the hours themselves stay clean for every tool that reads them.
-- **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`. The form fields and the initials being drawn are left alone.
-- **Check-offs** are separate from hours (see "Check-offs — Saved Per Day").
-- **Where to see them all:** EmployeeWizard's **📜 Labour Log** tab lists every entry, chores and tasks, with who, what, when it was logged, on which device, the drawn initials and the office's removals. The office sees every building; a building device sees its own.
-- **A signed entry changed in EmployeeWizard's Tasks tab** keeps `signedHours` / `editedAt` / `editedBy`. The hours view shows "signed for 1h 15m, changed in EmployeeWizard …" under it.
-- **A window that lost its link:** if SitkaTools is reloaded or closed while this popup stays open, a cover says so, and an entry added anyway is reported as not kept (root `CLAUDE.md` → postMessage rule 10).
-- **Reports:** EmployeeWizard's Reports read chore hours (`rptChoreLabour`) and event hours (`labour_map`): labour mix, labour hours, logged vs scheduled, estimate vs actual, and $ per gram.
-  - A temp's typed wage is used for cost.
-  - A temp with no wage counts in hours. A crop with such hours is left out of $ figures, the same rule as any missing wage.
-
-## ⏰ Still open and ✅ Mark done
-
-Built 2026-10-13 (user decisions: Mark done prompts for the floor manager's signature; Still open was first only in a single building's view, and since 2026-10-18 it is in All Buildings too).
-
-- **⏰ Still open** (`appendStillOpenSection`), between the daily tasks and "Scheduled today", in a single building's view and in each building's section of All Buildings:
-  - **What it lists:** the building's CropLabourWizard and EquipmentWizard events (with an `id`) whose last day (`endDate || date`) is before the selected date and that aren't `completed`. The building comes from `buildingForEvent`, as for "Scheduled today".
-  - Projections and general events never show in it.
-  - Oldest first, each with a `due Mon 12 Oct · 1 day overdue` chip and a warning-coloured left edge. The 10 oldest show; **+ N more** unfolds the rest of that building's for the session.
-  - Rows have no check-off box, but do have **⏱ Log** and **✍️ Mark done**.
-  - Hours logged there go on the **selected day** (`labour_map[<selected day>]`), even though it's outside the task's dates. That is EmployeeWizard's "+ Add day" convention, so its totals, the Labour Report, the Reports and the Labour Log all count them. The estimate shown is still the task's per-day estimate.
-- **✍️ Mark done** (`makeDoneButton` → the Mark done view), on every crop and equipment row whose building is known: Still open, and Scheduled today in both views.
-  - It shows **✅ Done** once the task is completed (the tooltip names who signed it off).
-  - It is disabled for future dates.
-- **The Mark done view:**
-  - the task, its building and due dates;
-  - **Floor manager:** the roster employees ticked "Floor manager" in EmployeeWizard (`employees[name].floorManager`). When none is ticked, everyone on the roster is listed, with a note saying so;
-  - the floor manager's **initials pad**.
-  - **✅ Mark done** needs a name and at least one stroke. It sets `completed: true` and `completedBy`, then calls `notifySitkaTools()`.
-- **`completedBy`** = `{ name, initials: { name, strokes }, at, by, day }`: the floor manager, their drawn initials (PaperWizard's stroke format), the ISO time, the device (a building id or `office`) and the day the view was on.
-  - It's a floor field like `completed`, so a building device saves it in its own file (root `CLAUDE.md` → "Split Database").
-  - CropLabourWizard and EquipmentWizard carry it over when they regenerate an event.
-  - SitkaTools' event panel shows "Completed — signed off by …".
-  - Un-ticking Completed in SitkaTools (event panel or terminal) or reopening in EmployeeWizard's Tasks tab deletes it. Ticking Completed there doesn't ask for a signature, so such tasks show as "Marked done in SitkaTools or EmployeeWizard (not signed)".
-- **Reopen** (in the Mark done view of a done task) follows the hours rules:
-  - a building device may reopen a sign-off it made itself, today;
-  - the office may reopen any.
-  - Reopening clears `completed` and `completedBy`.
-  - A sign-off the office reopens after its day is kept on record in the building's adjustments log, as `{ at, by, date, eventId, title, reopened: <the sign-off> }`. It has no `entry`, so the hours view and the Labour Log skip it.
-
-## 🌐 Language
-
-Built 2026-10-17 (user decisions: daily chores only, not crop or equipment task names; the screen's own buttons and labels translate too; French, Spanish, Vietnamese and Simplified Chinese).
-
-- **The picker:** **🌐 Language** is the first control in the header. It lists English, Français, Español, Tiếng Việt and 中文（简体）, each in its own language. English is the default every time the tool opens. The choice lasts while the window is open; nothing is stored in the browser.
-- **English is the master.** Every task `name` and step `text` stays in English in the DB, and every other tool reads only that. Translations sit next to it and only change what DailyWizard shows:
-  - a task's name: `task.translations[<lang>]`;
-  - a step: `step.translations[<lang>]`.
-  - Language codes are `fr`, `es`, `vi`, `zh`. An empty translation is removed, and an empty `translations` map with it.
-  - They live in the task list, so they save in the building's own file like the rest of it.
-- **What's missing:**
-  - A task **name** with no translation in the chosen language shows the English, with a small dashed **EN** tag (tooltip "Not translated yet — showing English").
-  - A **step** with none shows **blank** (user decision 2026-10-17), so the floor only ever reads a real translation. Its number, picture and ▲ ▼ 🗑 stay. The empty, dashed line is where you tap to paste the translation. Switching language shows each language's own steps.
-  - A step's **picture or video** can have a language version too (`es_j234_1.jpg`); without one the English file shows (see "Step Pictures").
-- **Writing translations** (pick the language first):
-  - **Name:** Add / Edit Task shows a second field, **Name (<language>)**. Blank shows the English name. The first field is then labelled "Name in English" and is still required.
-  - **Steps:** in the task detail view, tapping a step (or an untranslated step's blank line) edits its translation, with the English shown under the box while you type. Clearing it makes the step blank again in that language. ▲ ▼ 🗑 move or delete the step in every language.
-  - **+ Add Step** is off in another language: new steps are written in English first, then translated.
-  - A step being typed when the language changes is saved in the language it was started in.
-- **The screen's own text** (buttons, labels, section headers, toasts, confirms, the hours and Mark done views, the task editor, emoji categories, the tablet's "Go back to SitkaTools to save" banner) comes from `UI_TEXT` at the end of the script. It is keyed by the English text, with `fr` / `es` / `vi` / `zh` side by side, and `T(english, vars)` looks it up, filling `{placeholders}`. A string missing from `UI_TEXT` shows in English. Dates, weekdays and times follow the language (`toLocaleDateString`; `1 h 30 min`, `1小时30分钟`). English output is exactly as before.
-- **🗣️ Talk** (user decision 2026-10-17): a header button next to the picker, shown only in another language. It opens Google Translate in a new tab, set to English ⇄ the language on screen: `https://translate.google.com/?sl=en&tl=<fr|es|vi|zh-CN>&op=translate`. On a tablet with the Google Translate app, the link may open in the app instead.
-  - A toast says to tap **Conversation**: Google's mode with a microphone for each person, which reads each translation aloud. A link can't open that mode or switch the mic on by itself.
-  - It's only a link: DailyWizard still sends nothing anywhere. It needs internet, and what's said goes to Google.
-  - An in-page two-microphone translator was looked at and put off. Android Chrome has no built-in translation, so it would need a paid cloud service with a key, which means a server or IT (ROADMAP → Phase 2, "Voice translator").
-- **Stays in English:** crop and equipment task titles (they come from other tools), building, room and staff names, task codes, the emoji search keywords (the placeholder says to search in English), and the lost-link cover (a shared snippet, rarely seen).
-- **Translations were written for the tool, not by native speakers.** Have each language checked on the floor and correct `UI_TEXT` where needed.
-- **Adding a language:** add it to `LANGS` (code, its own name, a locale for dates) and a column to every `UI_TEXT` entry.
+- Task rows show `👥 {staff}` and `⏱ {minutes}m`; the detail view adds `≈ N.N h labour` (`staff × minutes / 60`).
+- Crop tasks (CropLabourWizard / CropProjection) show the same chips from `estStaff` / `estMinutes` when the event has them — the per-day figure, on each day of a multi-day task. Long times read as hours (`⏱ 8h`, `⏱ 1h 30m`). No estimate, no chips.
 
 ## Database Key — `_DailyWizard`
 
-All of this tool's data lives under one top-level key, owned exclusively by DailyWizard:
-
 ```json
-{
-  "_DailyWizard": {
-    "buildings": {
-      "B66D": {
-        "tasks": [
-          {
-            "code": "j234",
-            "emoji": "💧",
-            "name": "Water plants",
-            "minutes": 30,
-            "staff": 1,
-            "days": [0, 1, 2, 3, 4, 5, 6],
-            "monthDays": [],
-            "translations": { "es": "Regar las plantas" },
-            "steps": [
-              { "text": "Check each room's drip lines for pressure before starting.",
-                "translations": { "es": "Revise la presión de las líneas de goteo de cada sala antes de empezar." } },
-              { "text": "Water in order: G1 → G2 → G3. Log any dry spots on the whiteboard." }
-            ]
-          },
-          {
-            "code": "k9m2",
-            "emoji": "🧤",
-            "name": "Stock glove holders",
-            "minutes": 10,
-            "staff": 1,
-            "days": [1],
-            "monthDays": [],
-            "steps": []
-          }
-        ]
-      }
-    }
-  }
-}
+"_DailyWizard": { "buildings": { "<buildingId>": {
+  "tasks": [ { "code": "j234", "emoji": "💧", "name": "Water plants", "minutes": 30, "staff": 1,
+               "days": [0,1,2,3,4,5,6], "monthDays": [], "translations": { "es": "Regar las plantas" },
+               "steps": [ { "text": "Check drip lines…", "translations": { "es": "…" } } ] } ],
+  "labour": { "2026-10-12": { "j234": [ { "id": "le_k3m9qa2xtd", "employee": "Kasia", "hours": 1.25,
+               "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] }, "at": "<ISO>", "by": "B6" } ] } },
+  "checks": { "2026-10-12": { "j234": { "at": "<ISO>", "by": "B6" }, "ev:<event id>": { "at": "<ISO>", "by": "B6" } } },
+  "adjustments": [
+    { "at": "<ISO>", "by": "office", "date": "2026-10-12", "code": "j234", "entry": { "…": "the removed entry" } },
+    { "at": "<ISO>", "by": "office", "date": "2026-10-11", "eventId": "ev_…", "title": "…", "entry": { "…": "…" } },
+    { "at": "<ISO>", "by": "office", "date": "…", "eventId": "ev_…", "title": "…", "reopened": { "…": "the sign-off" } }
+  ]
+} } }
 ```
 
-**Chore hours and the adjustments log** sit next to a building's task list:
+- **Labour entry** (chores here; crop and equipment tasks use the same shape in the event's `labour_map[<day>]`):
+  - `id` — `le_` + 10 characters (`newLabourId()`). Office and building hours on an event merge entry by entry by it (root `CLAUDE.md` → "Split Database"). Entries without one get a content-derived id when SitkaTools opens the file.
+  - `employee` (roster name), or `temp` (typed name) with optional `wage`.
+  - `hours` (decimal); `initials` (`{ name, strokes }`, PaperWizard's stroke format); `at` (ISO time logged); `by` (device: building id or `office`).
+  - EmployeeWizard's own `labour_map` entries have no `initials` / `at` / `by`.
+- **`adjustments`** is the record of office corrections made after their day: removed hours (`entry`) and reopened sign-offs (`reopened`, no `entry`, so the hours view and Labour Log skip it). Nothing reads it for totals.
+- Buildings are keyed by building id. An absent entry means no daily tasks. A building with no tasks gets a bare `{ tasks: [] }` the first time it needs one (a tick on one of its event rows, an office removal or reopen).
+- The whole building entry saves in that building's `Building-<ID>.json` (root `CLAUDE.md` → "Split Database").
+- **Orphans:** a `_DailyWizard` building missing from `DB.data.buildings` still appears in the selector with ⚠️ so its list can be reviewed and deleted. It is left out of All Buildings (and of the selector on a building device).
 
-```json
-"labour": {
-  "2026-10-12": {
-    "j234": [
-      { "id": "le_k3m9qa2xtd", "employee": "Kasia", "hours": 1.25, "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] },
-        "at": "2026-10-12T20:49:00.000Z", "by": "B6" }
-    ]
-  }
-},
-"checks": {
-  "2026-10-12": {
-    "j234": { "at": "2026-10-12T15:02:00.000Z", "by": "B6" },
-    "ev:ev_2e5zv837bsc": { "at": "2026-10-12T19:40:00.000Z", "by": "B6" }
-  }
-},
-"adjustments": [
-  { "at": "2026-10-14T16:00:00.000Z", "by": "office", "date": "2026-10-12", "code": "j234",
-    "entry": { "temp": "Sam", "wage": 24.5, "hours": 0.5, "initials": { "…": "…" }, "at": "…", "by": "B6" } },
-  { "at": "…", "by": "office", "date": "2026-10-11", "eventId": "ev_…", "title": "🍃 …, Late Flower Leaf Pick",
-    "entry": { "employee": "Matt", "hours": 2 } }
-]
-```
+## Step Pictures
 
-- `labour` is keyed by day, then task `code`. Each entry has:
-  - `id` (`le_` + 10 characters, `newLabourId()`): the office's and a building's hours on an event merge entry by entry by it (root `CLAUDE.md` → "Split Database"). Older entries get one derived from their content when SitkaTools opens the file;
-  - `employee` (a roster name), or `temp` (a typed name) with an optional `wage`;
-  - `hours` (decimal);
-  - `initials` (`{ name, strokes }`, PaperWizard's normalized stroke format);
-  - `at` (ISO time logged) and `by` (the device: a building id or `office`).
-- Hours on crop and equipment tasks use the same entry shape, inside the event's `labour_map[<day>]`. EmployeeWizard's own entries there have no `initials` / `at` / `by`.
-- `adjustments` keeps entries the office removed after their day: who removed it and when, the day, the chore `code` or the event's `eventId` and `title`, and a copy of the entry. Nothing reads it for totals; it's the record.
-- The whole building entry (task list, chore hours, adjustments) is saved in that building's `Building-<ID>.json` (SitkaTools split). A building that has no daily tasks gets a bare `{ tasks: [] }` entry the first time the office removes one of its event hours.
+Pictures bind to steps by **filename only**; nothing is stored in the DB.
 
-Rules:
+- **Name:** `pics/{code}_{n}.{ext}`, `n` = the step's 1-based position (`j234_1`, `j234_2`); `pics/` sits next to `DailyWizard.html`. Probe `.png` → `.jpg` → `.webp`, first that loads wins.
+- **Video:** `pics/{code}_{n}.mp4`, probed with a metadata-only `<video>`; plays with browser controls, `playsinline`, no autoplay. Picture shows first, then video. Neither → `🖼 j234_1.png / .mp4 not found`.
+  - Use **H.264**; an undecodable video (e.g. HEVC) probes as missing. Keep files short (GitHub refuses > 100 MB; every tablet streams them).
+- **Language versions:** a name prefixed with a language code (`es_j234_1.jpg`, `fr_j234_1.mp4`; codes as in "🌐 Language") is that language's version.
+  - Lookup order: the language's version (uploaded, then `pics/`), then English (uploaded, then `pics/`). Picture and video are looked up separately. English never looks at prefixed files.
+- **Loading:** plain `<img>` / `<video>` tags, which work on http (commit `pics/`) and on `file://`. Never `fetch()` — detect missing files with `Image()` + `onerror`, and show a muted chip with the expected filename.
+- **🔄 Refresh images** re-probes every step (cache-busting query string; browsers cache failed loads), for the language on screen and English.
+- **Positional:** reordering or deleting steps shifts which picture shows; rename files to remap.
+- **Placement:** the page can't write into `pics/`. The manager copies files in by hand, then hits Refresh. Suggest ~1280 px JPGs to keep the repo lean.
+- **Uploading** (for a copy not next to its `pics/`, e.g. the online one), in the steps view:
+  - **📁 Upload image pack** (pick a folder) and **🖼 Upload images / videos** (pick files — Android Chrome may not pick folders).
+  - Only the file name counts: `{code}_{n}.png|jpg|jpeg|webp` or `.mp4`, optional language prefix. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick png beats jpg beats webp; a later pick replaces an earlier file for the same step.
+  - Held as object URLs in `uploadedPics` / `uploadedVids` for this window only (never stored or sent); they win over `pics/` (`stepMediaSrc`). A new window needs the pack picked again.
+  - A toast reports how many loaded, names that don't fit, and codes that match no task; a note in the steps view counts those in use.
 
-- **Ownership:** DailyWizard is the only tool that **writes** `_DailyWizard`. EmployeeWizard's Reports read the chore hours (read-only).
-- **Buildings are keyed by building ID** (matching `DB.data.buildings`). A building entry with no tasks yet is simply absent — absence means "no daily tasks defined".
-- **Orphaned entries:** if a building exists in `_DailyWizard.buildings` but no longer exists in `DB.data.buildings` (deleted in SitkaTools), it still appears in the building selector with a ⚠️ suffix so the manager can review and delete its task list. Orphaned buildings are excluded from the All Buildings view.
-- **No calendar events:** this tool appends nothing to `calendarEvents`.
+## Calendar Event Attribution (Building Resolution)
 
-## Shared Suite Standard — Tool-Owned Keys & JSON Import/Export
+Events show on every day of `[date, endDate]`. `buildingForEvent(ev)` resolves an event's building:
 
-DailyWizard's pattern is now the **shared suite standard** for per-tool data: each tool owns exactly one top-level DB key (DailyWizard → `_DailyWizard`, CropLabourWizard → `_CropLabourWizard`, etc.), reads/writes only its own key, and supports standalone file import/export of that data. CropLabourWizard's **Task Recipes** feature follows this same pattern — recipes live under `_CropLabourWizard.recipes` and are imported/exported as self-contained `recipe-<id>.json` files via an explicit file picker (no auto-loading of adjacent JSONs). See the root `CLAUDE.md` → "Task Recipes" for the full contract.
+1. `ev.roomId` in `DB.rooms` → that room's `buildingId` (CropProjection and EquipmentWizard events).
+2. `ev.lotId` in `DB.lots` → the lot's room for this task, by name, then its `buildingId`:
+   - `ev.roomPhase` first: `cloning` → `cloningRoom`, `veg` → `vegRoom`, `flower` → `destRoom`;
+   - else `CLW_CLONE_ROOM_TYPES` (`clone_cut_prep`, `clone_room_clean`) → `cloningRoom`; `CLW_VEG_ROOM_TYPES` (`planting`, `ipm_spray_veg_early`, `topping`, `order_ipm`, `veg_room_clean`) → `vegRoom`; everything else (transplant onward, unknown types) → `destRoom`;
+   - if that room doesn't resolve but the lot has exactly one distinct room across the three fields, use it.
+3. A room-id prefix at the start of the title (`🧼 B66DG2-Strain#123, …`, `💡 B66DG2#123, …`), only if it is a real room in `DB.rooms` — covers events whose lot was deleted.
+4. Otherwise `null`.
 
-### CLW Event Attribution — `roomPhase`
+- An event shows under exactly one building; a lot spanning buildings is split per task.
+- Unattributable events (no lot/room, unresolvable, or a room with no building) never show in a single-building view. All Buildings collects them in a muted **📌 Unassigned / General** section at the bottom.
 
-When attributing CropLabourWizard events to a building (`buildingForEvent`), DailyWizard checks an **explicit `ev.roomPhase` first** (written by CropLabourWizard when the recipe task specifies one): `'cloning'` → the lot's cloning room, `'veg'` → veg room, `'flower'` → destination room. Only when `roomPhase` is absent does it fall back to the known-type lists (`CLW_CLONE_ROOM_TYPES`, `CLW_VEG_ROOM_TYPES`) and then default to the destination room. This lets custom recipe tasks carry their own room attribution without DailyWizard needing to know about each new task type.
+## Check-offs — Saved Per Day
 
-## Relationship to SitkaTools
+- **Where:** `_DailyWizard.buildings[<id>].checks[<YYYY-MM-DD>][<item>] = { at, by }`. `item` is the task `code` or `ev:<event id>`; `at` is the ISO tick time, `by` the device (building id or `office`).
+- One tap by anyone, no signature. Untick deletes the record (empty days and maps are tidied). Both call `notifySitkaTools()`.
+- Ticks are per day: each new day starts blank.
+- On a crop or equipment row a tick means today's part is done; it never changes `completed` — ✅ Mark done finishes the task.
+- An event with no building (📌 Unassigned / General) has no file, so its tick stays in the page only (`sessionChecks`).
+- Ticked rows stay in place, with an accent check, muted text and a struck-through name.
+- Progress: `✅ done/total` in the status bar; `done/total` per section header in All Buildings.
 
-DailyWizard is part of the SitkaGit suite: a standalone single-file HTML application, vanilla HTML/CSS/JS, no build step, no network calls, running in the browser sandbox (`file://`).
+## ⏱ Hours
 
-### Launched from SitkaTools only
+Each entry is the person's name, the hours and minutes they type, and their own drawn initials.
 
-DailyWizard always runs through SitkaTools — there is no standalone mode or DB import/export of its own.
+- **The button:** on every daily-task row and every CropLabourWizard / EquipmentWizard row (Scheduled today and Still open) whose building is known. Projections, general events and Upcoming rows get none. It reads `⏱ Log`, or the selected day's total (`⏱ 1h 15m`, accent colour). Disabled for future dates; tapping it never opens the detail view.
+- **The hours view** (full-screen overlay):
+  - the row's entries for that day: name, hours, initials thumbnail, time logged. EmployeeWizard entries say they were entered there. A signed entry later changed in EmployeeWizard's Tasks tab keeps `signedHours` / `editedAt` / `editedBy`, and the view shows what it was signed for;
+  - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`);
+  - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Hours**, **Minutes**, **initials pad**.
+- **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke.
+- **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
+- **Removing:**
+  - a building device may remove only an entry it logged itself, on the day it was logged; it is deleted;
+  - the office (or a single-file DB) may remove any entry, including EmployeeWizard ones;
+  - an entry the office removes after its day is deleted from the hours and kept in the building's `adjustments`, shown struck through in the hours view.
+- **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`, leaving the form and the initials being drawn alone.
+- **Lost link:** if SitkaTools is reloaded or closed, a cover says so and an entry added anyway is reported as not kept (root `CLAUDE.md` → postMessage rule 10).
+- **Elsewhere:** EmployeeWizard's 📜 Labour Log lists every entry (office: all buildings; building device: its own). Its Reports read chore hours (`rptChoreLabour`) and `labour_map`. A temp's typed wage is used for cost; a temp with no wage counts in hours only, and a crop with such hours is left out of $ figures (the missing-wage rule).
 
-1. **Laptops:** opens as a popup; receives the DB via `postMessage` (`sitkaGit_db`), acknowledges with `sitkaGit_ready`, and calls `notifySitkaTools()` after every **task definition** mutation (add/edit/delete/move task, edit steps), every hours entry added or removed, every tick or untick, Reset Day, and every Mark done or reopen.
-2. **Tablets:** opens as a tab and loads SitkaTools' open DB from the shared working copy (root `CLAUDE.md` → "Shared Working Copy"). A banner offers **Go back to SitkaTools to save**; task-list edits flow back to SitkaTools, which saves them to this building's `Building-<ID>.json`.
+## ⏰ Still open and ✅ Mark done
 
-Opened by itself (no SitkaTools on the device), it shows "Open this tool from SitkaTools". Until the DB arrives, the empty state reads "Waiting for SitkaTools to deliver the database…".
+### ⏰ Still open
 
-### Standard postMessage Pattern
+`appendStillOpenSection`, between the daily tasks and Scheduled today, in a single building's view and in each building's section of All Buildings.
 
-DailyWizard includes the standard subtool pattern from the root `CLAUDE.md` (`notifySitkaTools()` + `sitkaGit_db` listener with `sitkaGit_ready` ack), with one addition: it also handles **live** `sitkaGit_db_update` pushes from SitkaTools non-disruptively — refresh the building selector, status bar, and current list without disturbing check-off state or an open editor. An open task detail view refreshes too, except while a step's text is being typed: it refreshes when that edit ends, and the edit is written into the fresh DB. The step buttons (▲ ▼ 🗑, + Add Step) likewise look their task up again by building + code when tapped, so they change the fresh DB too; if the task is gone they only re-render (the view closes).
+- Lists the building's (`buildingForEvent`) CropLabourWizard and EquipmentWizard events that have an `id`, whose last day (`endDate || date`) is before the selected date, and that aren't `completed`. Never projections or general events.
+- Oldest first, each with a `due Mon 12 Oct · 1 day overdue` chip and a warning-coloured left edge. The 10 oldest show (`OPEN_SHOWN`); **+ N more** unfolds the rest for the session.
+- No check-off box; has **⏱ Log** and **✍️ Mark done**.
+- Hours logged here go on the **selected day** (`labour_map[<selected day>]`), outside the task's dates — EmployeeWizard's "+ Add day" convention, so every total counts them. The estimate shown is still per day.
 
-## UI Convention
+### ✅ Mark done
 
-Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky header/footer, card styles, `DB` object pattern). DailyWizard-specific layout:
+- **The button** (`makeDoneButton`): on every crop and equipment row whose building is known (Still open, and Scheduled today in both views). Reads **✍️ Mark done**, or **✅ Done** once completed (tooltip names who signed). Disabled for future dates.
+- **The view:** the task, its building and due dates; **Floor manager** — roster employees with `floorManager` ticked in EmployeeWizard, or everyone (with a note) when none is; the floor manager's **initials pad**. Its **✅ Mark done** needs a name and at least one stroke, sets `completed: true` and `completedBy`, then `notifySitkaTools()`.
+- **`completedBy`** = `{ name, initials: { name, strokes }, at, by, day }` — the floor manager, their initials (PaperWizard stroke format), ISO time, device, and the day the view was on.
+  - A floor field: a building device saves it in its own file (root `CLAUDE.md` → "Split Database"). CropLabourWizard and EquipmentWizard carry it over on regeneration. SitkaTools' event panel shows "Completed — signed off by …".
+  - Unticking Completed in SitkaTools or reopening in EmployeeWizard's Tasks tab deletes it. Ticking Completed there asks for no signature; such tasks show as done but not signed.
+- **Reopen** (Mark done view of a done task): a building device may reopen its own sign-off, on the day it was made; the office may reopen any. It clears `completed` and `completedBy`. An office reopen after the sign-off's day is kept in `adjustments` as `{ at, by, date, eventId, title, reopened }`.
 
-```
-┌──────────────────────────────────────────────┐
-│ 📋 DailyWizard [🌐 ▾] [Building ▾] [📅 date] │  ← sticky header
-├──────────────────────────────────────────────┤
-│ Status bar: 🏢 3 buildings · 📝 12 today · ✅ 4/12 done
-├──────────────────────────────────────────────┤
-│ [ + Add Task ]            (single-building mode only)
-│                                              │
-│ ☐ 💧 Water plants   j234  👥1 ⏱30m   ▲ ▼    │  ← daily task row
-│ ☐ 🧤 Stock gloves   k9m2  👥1 ⏱10m   ▲ ▼    │
-│ ── Scheduled today (calendar events) ─────── │
-│ ☐ 🌸 B66DG1-Purple Haze#LOT-001, Flip …     │  ← event row (no move buttons)
-│ ── Upcoming (next calendar events) ───────── │
-│   🌾 LOT-001, Harvest            [Fri 25 Sep]│  ← read-only, date chip, no checkbox
-├──────────────────────────────────────────────┤
-│ [ Reset Day ]                 [ Close Tool ] │  ← sticky footer
-└──────────────────────────────────────────────┘
-```
+## 🌐 Language
+
+Translations cover daily chores only, not crop or equipment task names; the screen's own text translates too.
+
+- **The picker** is the first header control: English, Français, Español, Tiếng Việt, 中文（简体）, each in its own language. Opens in English every time; the choice lasts while the window is open and is never stored.
+- **English is the master.** `name` and step `text` stay English, and other tools read only those. Translations sit beside them and only change what DailyWizard shows: `task.translations[<lang>]`, `step.translations[<lang>]`, codes `fr`, `es`, `vi`, `zh`. An empty translation is removed, and an empty map with it. They save with the task list in the building's file.
+- **Missing translations:**
+  - a name shows the English with a small dashed **EN** tag ("Not translated yet — showing English");
+  - a step shows **blank**, so the floor only ever reads a real translation. Its number, picture and ▲ ▼ 🗑 stay; the dashed empty line is where you tap to paste one;
+  - pictures and videos fall back to the English file ("Step Pictures").
+- **Writing them** (pick the language first):
+  - Add / Edit Task shows **Name (<language>)** (blank = English); the first field becomes "Name in English", still required.
+  - In the detail view, tapping a step edits its translation, with the English shown under the box. Clearing makes it blank again. ▲ ▼ 🗑 act on the step in every language.
+  - **+ Add Step** is off outside English: write steps in English first.
+  - A step being typed when the language changes is saved in the language it was started in.
+- **Screen text** comes from `UI_TEXT` (end of the script), keyed by the English text with `fr` / `es` / `vi` / `zh` beside it; `T(english, vars)` looks it up and fills `{placeholders}`. Missing strings show in English. Dates, weekdays and times follow the language (`toLocaleDateString`; `1 h 30 min`, `1小时30分钟`). English output must stay unchanged.
+- **🗣️ Talk:** header button beside the picker, shown only outside English. Opens `https://translate.google.com/?sl=en&tl=<fr|es|vi|zh-CN>&op=translate` in a new tab (may open the app on a tablet). A toast says to tap **Conversation**, which a link can't open by itself. It needs internet, and speech goes to Google; DailyWizard itself sends nothing. An in-page voice translator is deferred (ROADMAP → Phase 2, "Voice translator").
+- **Stays English:** crop and equipment titles, building / room / staff names, task codes, emoji search keywords (the placeholder says so), the lost-link cover.
+- Translations weren't written by native speakers: have each checked on the floor and fix `UI_TEXT`.
+- **Adding a language:** add it to `LANGS` (code, own name, date locale) and a column to every `UI_TEXT` entry.
+
+## SitkaTools Link
+
+Uses the standard subtool pattern (root `CLAUDE.md` → "Cross-Window Database Workflow", "Shared Working Copy"). Popup on laptops; tab fed from the shared working copy on tablets. Opened alone: "Open this tool from SitkaTools"; before the DB arrives: "Waiting for SitkaTools to deliver the database…".
+
+- `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, Reset Day, and every Mark done or reopen.
+- **Live `sitkaGit_db_update`:** refresh the selector, status bar and list without disturbing ticks or an open editor. An open task detail view refreshes too, except while a step is being typed: it refreshes when the edit ends, and the edit is written into the fresh DB. Step buttons (▲ ▼ 🗑, + Add Step) look their task up again by building + code when tapped; if it is gone they only re-render (the view closes).
+
+## UI
+
+Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **+ Add Task** (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer.
 
 ### Header
 
-- **Logo:** `📋 DailyWizard` on the left.
-- **Language selector** (label "🌐 Language"): English, Français, Español, Tiếng Việt, 中文（简体）. See "🌐 Language".
-- **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") it opens on that building, the other buildings are marked `· 👀 view only`, and orphaned entries are left out (see "Other Buildings on a Building Device").
-- **Date input** (`<input type="date">`): defaults to today, and follows today while it still shows the date it set itself — a tablet left open overnight moves to the new day (checked when the window gets focus, when the tab is shown again, and once a minute). A hand-picked date is left alone. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
+- `📋 DailyWizard`, then **🌐 Language**, **Building**, and the date.
+- **Building:** `— All Buildings —`, then every `DB.data.buildings` entry (`{id} — {name}`), then orphans with ⚠️. On a building device see "Other Buildings on a Building Device".
+- **Date** (`<input type="date">`): defaults to today and follows today while it still shows the date it set itself, so a tablet left overnight moves on (checked on focus, when the tab is shown, and each minute — `rollToToday`). A hand-picked date is left alone.
 
 ### Status Bar
 
-Standard status-bar card: e.g. `🏢 3 buildings · 📝 12 tasks today · ✅ 4/12 done`. Gains the `.loaded` accent border once a DB is present. In All Buildings mode the task count is the combined total across buildings (calendar events excluded from the count).
+`🏢 3 buildings · 📝 12 tasks today · ✅ 4/12 done`; `.loaded` border once a DB is present. In All Buildings the task count is the total across buildings, events excluded.
 
-### Task Rows (the core tablet UI)
+### Task Rows
 
-Each row, left to right:
+Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · labour chips · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
 
-1. **Large checkbox** — a custom-styled checkbox with a minimum **48×48 px touch target** (visually ~32 px box inside generous padding). Tapping it toggles completion only; this is the primary thumb interaction on tablets.
-2. **Emoji** at ~1.5 rem.
-3. **Task name** — tapping anywhere else on the row opens the task's **detail view**.
-4. **Code chip** — small monospace muted chip (e.g., `j234`).
-5. **Labour chips** — `👥 {staff}` and `⏱ {minutes}m`.
-6. **Move buttons** `▲ ▼` — single-building mode only; disabled at the ends of the list shown. A move swaps the task with the row shown above/below it, so tasks that don't run on the selected date keep their places. Hidden in All Buildings mode (ordering is per-building).
+Event rows: same without code chip and moves; emoji from the title; labour chips only on crop tasks with an estimate ("Labour Display").
 
-Completed rows: accent-filled checkbox, muted row background, strikethrough name. Rows are never reordered by completion.
+### Upcoming
 
-Calendar event rows use the same anatomy minus the code chip and move buttons; their emoji comes from the event title, and the labour chips appear only on crop tasks with an estimate (see "Labour Display").
+**Upcoming (N)**: the next **5** events starting after the selected date — that building's in single-building mode, all (including unassigned) in All Buildings. Skips events already in Scheduled today; multi-day events dedupe by `sourceTool + lotId/roomId + title`. Ordered by start date, then title. Read-only rows (no checkbox) with a date chip (`Fri 25 Sep`). Omitted when empty.
 
-### Upcoming Section
+### All Buildings View
 
-After the "Scheduled today" events, a second divider — **Upcoming (N)** — lists the next **5** calendar events starting *after* the selected date:
-
-- **Scope:** single-building mode shows only events attributed to that building; All Buildings mode shows all upcoming events (including unassigned ones).
-- **Dedup:** an event already shown in "Scheduled today" (its `[date, endDate]` range covers the selected date) is not repeated. Multi-day events are deduped by `sourceTool + lotId/roomId + title`, so a 3-day trim shows once.
-- **Ordering:** by start date, then title.
-- **Rows:** read-only — no checkbox (completion only makes sense on the day itself), same emoji + title anatomy, plus a monospace date chip (`Fri 25 Sep`).
-- Omitted entirely when there are no upcoming events in scope.
+- One section per building, in `DB.data.buildings` order: header with name and `done/total`, its task rows, its ⏰ Still open, its Scheduled today.
+- A building with no tasks that day shows "No daily tasks for this date." (its events still show).
+- Then 📌 Unassigned / General, then one Upcoming list for all buildings.
+- No Add Task or move controls.
 
 ### Other Buildings on a Building Device (view only)
 
-User decision 2026-10-18: a building device can look at every other building's list, and at All Buildings, but changes only its own. It's not the default: the device opens on its own building and stays there until someone picks another (`pickedBuilding`), also through live DB updates.
+A building device opens on its own building and stays there until someone picks another (`pickedBuilding`), also through live DB updates. It can look at any building and at All Buildings but changes only its own.
 
-- **One rule:** `canEditBuilding(bid)`: true on the office (or a single-file DB) and for the device's own building. Everything another building owns saves in that building's file, which this device can't save.
-- **Another building's view:** a note **👀 Viewing {building} — view only** with **Back to {own building}**, and no **+ Add Task** or ▲ ▼. Its ticks show but can't be changed. **⏱ Log** shows the hours total but doesn't open, and **✍️ Mark done** / **✅ Done** don't open. Its ⏰ Still open, Scheduled today and Upcoming all show.
-- **Its task detail view:** steps, pictures and videos (in any language, uploaded ones too) to read. No Edit Task, Delete Task, ▲ ▼ 🗑 or + Add Step, and tapping a step doesn't edit it.
-- **All Buildings:** a note **👀 All buildings — only {building} can be changed here**. The device's own rows work as usual; the other sections are marked 👀. **Reset Day** clears only the device's own building's ticks.
-- The entry points check the rule too (`setChecked`, `openHours`, `openDone`, `openTaskEditor`, step and task moves and deletes), not just the buttons.
-
-### All Buildings (Combined) View
-
-- One **section per building** (in `DB.data.buildings` order), each with a section header: building name + `done/total` progress chip, then that building's daily task rows, its **⏰ Still open** tasks (user decision 2026-10-18: every building's open crop and equipment tasks in one view), then its scheduled events under the same "Scheduled today" divider.
-- Buildings with no tasks defined for the selected day show a muted "No daily tasks for this date." line (their events still render if any).
-- A muted **📌 Unassigned / General** section at the bottom collects unattributable events (see attribution rules).
-- After all building sections, a single **Upcoming (N)** section lists the next 5 calendar events across all buildings (see Upcoming Section).
-- No Add Task or move controls in this view.
-- On a building device, only its own building's rows can be ticked, logged or signed off here; the other sections are marked 👀 and are view only (see "Other Buildings on a Building Device").
+- **The rule:** `canEditBuilding(bid)` — true on the office (or a single-file DB) and for the device's own building. The entry points check it too (`setChecked`, `openHours`, `openDone`, `openTaskEditor`, step and task moves and deletes), not just the buttons.
+- In the selector, other buildings are marked `· 👀 view only`; orphans are left out.
+- **Another building:** a note **👀 Viewing {building} — view only** with **Back to {own building}**; no + Add Task or ▲ ▼. Ticks show but can't change; ⏱ Log shows the total but doesn't open; Mark done / ✅ Done don't open. Still open, Scheduled today and Upcoming all show.
+- **Its detail view:** steps, pictures and videos (any language, uploaded too) to read; no Edit Task, Delete Task, ▲ ▼ 🗑, + Add Step or step editing.
+- **All Buildings:** a note **👀 All buildings — only {building} can be changed here**; the own building's rows work, the other sections are marked 👀. **Reset Day** clears only the own building's ticks.
 
 ### Task Detail View
 
-Tapping a task row body opens a full-screen overlay (same theme):
+Full-screen overlay:
 
-- Header: large emoji + name, code chip, back button (←).
-- Summary block: labour (`👥 staff · ⏱ minutes · ≈ N.N h labour`), recurrence in plain language ("Every day" / "Mon, Wed, Fri" / "1st & 15th of each month" / combinations joined with "and").
-- **Steps list:** ordered steps, each editable inline (tap to edit text), with add-step, delete-step, and move up/down per step. Steps are stored on the task in `_DailyWizard`. Each step renders its picture (`pics/{code}_{n}.png` — see "Step Pictures") when present, otherwise a muted "not found" chip; a **🔄 Refresh images** button at the top of the list re-probes all steps.
-- Footer actions: **Edit Task** (opens the task editor pre-filled), **Delete Task** (confirm dialog; removes from `_DailyWizard` and notifies SitkaTools).
+- Header: large emoji + name, code chip, ← back.
+- Summary: labour (`👥 staff · ⏱ minutes · ≈ N.N h labour`) and recurrence in plain words ("Every day", "Mon, Wed, Fri", "1st & 15th of each month", combined with "and").
+- **Steps:** ordered; tap to edit inline; + Add Step, delete, ▲ ▼. Each shows its picture / video or the not-found chip ("Step Pictures"); **🔄 Refresh images** and the upload buttons sit at the top.
+- Footer: **Edit Task** (editor pre-filled), **Delete Task** (confirm, then `notifySitkaTools()`).
 
 ### Task Editor (Add / Edit)
 
-A card form (overlay or inline panel) with:
+- Emoji picker; **Name** (required); **Estimated time** (min 5, step 5); **Staff required** (min 1).
+- **Weekdays:** seven pill toggles Mon → Sun (values `1,2,3,4,5,6,0`), all on by default.
+- **Also on day(s) of month:** comma list of 1–31, validated and deduplicated on save; preset chips `1st & 15th`, `1st only`, `Clear`.
+- **Save** validates: name, at least one weekday or month-day, minutes ≥ 5, staff ≥ 1. New tasks get a fresh unique `code` and are appended.
 
-- **Emoji picker** — see below.
-- **Name** — text input, required.
-- **Estimated time** — number input, minutes, min 5, step 5.
-- **Staff required** — number input, min 1.
-- **Weekdays** — seven pill toggle buttons in display order Mon → Sun (values `1,2,3,4,5,6,0`), all on by default; tap to toggle.
-- **Also on day(s) of month** — text input accepting a comma-separated list of 1–31 (e.g., `1, 15`), validated and deduplicated on save, plus quick preset chips: `1st & 15th`, `1st only`, `Clear`.
-- **Save / Cancel.** Validation: name non-empty; at least one weekday or one month-day; minutes ≥ 5; staff ≥ 1. New tasks get a freshly generated unique `code` and are appended to the building's task array.
+### Emoji Picker
 
-### Emoji Picker — Full Embedded Picker
+Full picker, all inline (no library, no network): the current-emoji button opens a panel with a keyword **search** (English), category tabs (Smileys · People & Hands · Animals & Nature · Food & Drink · Objects · Activities · Travel · Symbols) and a scrollable grid of ~300 curated emojis embedded as JS arrays. Picking one fills the field and closes the panel.
 
-GeneralEvent uses a fixed row of ~15 preset emojis; DailyWizard needs a **full picker**, implemented entirely inline (no external library or network):
+### Footer and Empty States
 
-- A button showing the current emoji opens an expanding panel above/below it containing:
-  - A **search input** (filters by keyword, e.g., "water", "clean", "scissors").
-  - **Category tabs:** Smileys · People & Hands · Animals & Nature · Food & Drink · Objects · Activities · Travel · Symbols.
-  - A scrollable grid of emoji buttons (~300 curated emojis total across categories — a practical "full" set for operational tasks: watering, cleaning, gloves, paper towels, uniforms, scouting, spraying, lights, tools, delivery, etc.). All emoji data is embedded in the HTML file as JS arrays.
-- Selecting an emoji fills the field and closes the panel. Default when creating a task: 📋.
+- **Reset Day:** clears the selected date's ticks in the buildings shown (confirm first); other dates untouched; disabled when nothing is ticked. **Close Tool:** `window.close()` (closes the tab on a tablet).
+- No tasks in the building: "No daily tasks defined for {building} yet." + a prominent **+ Add Task**.
+- Tasks but none that day: "No daily tasks scheduled for this date." (events still show).
 
-### Footer
+### Tablet
 
-Sticky footer per suite convention with one addition for this tool:
-
-```html
-<footer class="footer">
-    <button class="btn btn-secondary" id="resetDayBtn">Reset Day</button>
-    <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
-</footer>
-```
-
-- **Reset Day** — clears the selected date's saved check-offs in the buildings shown (confirm first). Disabled when nothing is checked.
-- **Close Tool** — `window.close()`; on a tablet this closes the tool's tab.
-
-### Empty States
-
-- No DB yet: "Waiting for SitkaTools to deliver the database…" (opened without SitkaTools: "Open this tool from SitkaTools").
-- Building with no tasks: "No daily tasks defined for {building} yet." + prominent **+ Add Task** button.
-- Tasks defined but none recur on the selected date: "No daily tasks scheduled for this date." (events section still renders if non-empty).
-
-## Tablet Considerations
-
-- Designed for tablets in the buildings (launched from SitkaTools as a tab): everything must work with **touch only** — no hover-dependent UI, all interactive targets ≥ 48 px, large checkboxes as the primary control.
-- Works fully offline over `file://` — no network calls, no external fonts/CDNs; emoji picker data is embedded.
-- The layout should remain usable in portrait orientation at typical tablet widths (~768–1024 px); rows stack chips gracefully on narrow screens.
-- Check-offs are saved per day in the building's file (see "Check-offs — Saved Per Day"); saving them happens in SitkaTools, like everything else.
-
-## Constraints
-
-- Single `.html` file, no build step, no external dependencies
-- Runs in browser sandbox (`file://` protocol)
-- Vanilla HTML/CSS/JavaScript only
-- No network calls of any kind (the 🗣️ Talk button only opens a link to Google Translate in a new tab)
-- No localStorage, sessionStorage, IndexedDB, or cookies — cross-window state flows through postMessage or SitkaTools' shared working copy; saving happens in SitkaTools
-- Reads `calendarEvents`, `rooms`, `buildings`, `lots` (for attribution) and the roster in `_EmployeeWizard.employees` (names for the hours log, `floorManager` for Mark done). Writes `_DailyWizard` (task lists, chore hours, check-offs, adjustments), plus labour entries in the `labour_map` and the floor manager's sign-off (`completed` / `completedBy`) on crop and equipment events (floor fields)
-
-## Deferred Features
-
-- Nothing from ROADMAP Phase 1 is deferred here any more. Saved check-offs, ⏰ Still open and ✅ Mark done were built on 2026-10-13.
+Touch only: no hover-dependent UI, every target ≥ 48 px. Usable in portrait at ~768–1024 px; chips wrap on narrow screens.
