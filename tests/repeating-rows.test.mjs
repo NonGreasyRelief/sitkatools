@@ -116,6 +116,34 @@ export async function run(b, BASE) {
         return out;`, { user: true });
     check('re-spacing day rows keeps stacked boxes at their own height', respaced === 'c1@0.30 g1@0.32 c2@0.40 g2@0.42 c3@0.50 g3@0.52', respaced);
 
+    // Resizing a box in a day row resizes its whole column (pH over EC: only pH's column); Alt/⌥ just that box
+    await b.run(pw, `window.__savedCfg = { fields: cfgFields, cadence: cfgCadence };
+        const box = (id, y, d) => ({ id, label: id, x: 0.3, y, w: 0.1, h: 0.02, page: 1, fontSize: 10, align: 'left',
+            source: null, questionId: null, dayGroup: 'g9', day: d, checkbox: false, checkValue: '' });
+        cfgCadence = 'daily-weekly';
+        cfgFields = [box('p1', 0.30, 1), box('e1', 0.33, 1), box('p2', 0.40, 2), box('e2', 0.43, 2), box('p3', 0.50, 3), box('e3', 0.53, 3)];
+        cfgSelection = { kind: 'field', id: 'p1' }; cfgMultiSel = new Set(); refreshCfgOverlays();`);
+    const geo = () => b.run(pw, `return Object.fromEntries(cfgFields.map(f => [f.id, { x: f.x, y: f.y, w: f.w, h: f.h }]));`);
+    await b.drag(pw, '.form-page[data-page="1"] .field-box[data-id="p1"] .handle.s', [[0.5, 0.5], [0.5, 3], [0.5, 5]]);
+    let gm = await geo();
+    check('dragging day 1\'s bottom edge makes every day\'s box in that column taller, each in its own row',
+        gm.p1.h > 0.021 && gm.p2.h === gm.p1.h && gm.p3.h === gm.p1.h && gm.p2.y === 0.40 && gm.p3.y === 0.50 && ['e1', 'e2', 'e3'].every(k => gm[k].h === 0.02), JSON.stringify(gm));
+    await b.run(pw, `selectCfgItem('field', 'e2'); const el = document.getElementById('fpH'); el.value = '0.025'; el.dispatchEvent(new Event('change'));`);
+    gm = await geo();
+    check('typing a height in Field properties sets the whole column too (the box stacked under it)', ['e1', 'e2', 'e3'].every(k => gm[k].h === 0.025) && gm.p2.h === gm.p1.h && gm.p1.h !== 0.025, JSON.stringify(gm));
+    await b.run(pw, `selectCfgItem('field', 'p2');`);
+    const hb = await b.run(pw, `const r = document.querySelector('.form-page[data-page="1"] .field-box[data-id="p2"] .handle.e').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height };`);
+    const at = (fx, fy) => ({ x: Math.round(hb.x + fx * hb.w), y: Math.round(hb.y + fy * hb.h) });
+    await b.send('input.performActions', { context: pw, actions: [
+        { type: 'key', id: 'kb', actions: [{ type: 'keyDown', value: '\uE00A' }, { type: 'pause' }, { type: 'pause' }, { type: 'pause' }, { type: 'keyUp', value: '\uE00A' }] },
+        { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+            { type: 'pointerMove', ...at(0.5, 0.5), duration: 0 }, { type: 'pointerDown', button: 0 }, { type: 'pointerMove', ...at(4, 0.5), duration: 30 },
+            { type: 'pointerUp', button: 0 }, { type: 'pause' }] }] });
+    await b.send('input.releaseActions', { context: pw });
+    gm = await geo();
+    check('Alt/⌥-dragging resizes just that one box', gm.p2.w > 0.101 && gm.p1.w === 0.1 && gm.p3.w === 0.1, JSON.stringify(gm));
+    await b.run(pw, `cfgFields = window.__savedCfg.fields; cfgCadence = window.__savedCfg.cadence; cfgSelection = null; cfgMultiSel = new Set(); refreshCfgOverlays();`);
+
     // The Repeating tick on the table questions (real clicks)
     await b.run(pw, `refreshWizardBuilder();
         for (const id of ['tote', 'wetw', 'dtyp', 'dbin', 'tare', 'dnet']) document.querySelector('.q-card[data-qid="' + id + '"] .q-rep').click();`, { user: true });

@@ -1883,7 +1883,12 @@
                             }
                             drag = { mode: 'axis', id, kind, axis: handle.dataset.axis, offX: px - item0.x, offY: py - item0.y, members };
                         } else if (handle) {
-                            drag = { mode: 'resize', id, kind, corner: handle.dataset.corner };
+                            // A box in a day row or repeating row resizes its whole column — the same size on
+                            // every day / row, each box keeping its own place. Alt/⌥ resizes just that one box.
+                            const item0 = findCfgItem(kind, id);
+                            const column = kind === 'field' && item0?.dayGroup && !e.altKey
+                                ? cfgColumnOf(item0).filter(f => f !== item0).map(f => ({ f, x: f.x, y: f.y })) : [];
+                            drag = { mode: 'resize', id, kind, corner: handle.dataset.corner, x0: item0?.x, y0: item0?.y, column };
                         } else if (e.shiftKey && kind === 'field') {
                             // Shift-click a box → toggle it in the multi-selection.
                             selectCfgItem('field', id, { additive: true });
@@ -2028,12 +2033,21 @@
                         // item is the live cfgSignature object for signature boxes and the
                         // live field object otherwise — mutating it updates the model either way.
                         item.x = r4(x); item.y = r4(y); item.w = r4(Math.max(w, 0.02)); item.h = r4(Math.max(h, 0.02));
-                        const el = pageEl.querySelector(`.field-box[data-id="${drag.id}"]`);
-                        if (el) {
-                            el.style.left = (item.x * 100) + '%';
-                            el.style.top = (item.y * 100) + '%';
-                            el.style.width = (item.w * 100) + '%';
-                            el.style.height = (item.h * 100) + '%';
+                        // The rest of its column takes the same size, and moves by the same amount when the
+                        // top or left edge was dragged
+                        for (const m of drag.column || []) {
+                            m.f.x = r4(clamp01(m.x + item.x - drag.x0));
+                            m.f.y = r4(clamp01(m.y + item.y - drag.y0));
+                            m.f.w = item.w;
+                            m.f.h = item.h;
+                        }
+                        for (const it of [item, ...(drag.column || []).map(m => m.f)]) {
+                            const el = pageEl.querySelector(`.field-box[data-id="${it === item ? drag.id : it.id}"]`);
+                            if (!el) continue;
+                            el.style.left = (it.x * 100) + '%';
+                            el.style.top = (it.y * 100) + '%';
+                            el.style.width = (it.w * 100) + '%';
+                            el.style.height = (it.h * 100) + '%';
                         }
                     }
                 });
@@ -2144,7 +2158,7 @@
                     </div>`;
             }
 
-            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it — plain drag moves the whole daily-entry group, <b>Ctrl/⌘</b>-drag moves just that day\'s row (all boxes on the same day), and <b>Alt/⌥</b>-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize. ⧉ Duplicate (or Ctrl/⌘+D) copies a box at the exact same size & position. Shift-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
+            if (!cfgSelection) return '<div class="fp-body" id="fpBody"><p class="cfg-hint">Click-drag over any page to create a box. Drag a box to move it — plain drag moves the whole daily-entry group, <b>Ctrl/⌘</b>-drag moves just that day\'s row (all boxes on the same day), and <b>Alt/⌥</b>-drag moves just that one box; the ↕ / ↔ arrow handles slide along one axis only (same modifiers apply); corner & edge handles resize — a box in a day row or repeating row resizes its whole column (<b>Alt/⌥</b> resizes just that box). ⧉ Duplicate (or Ctrl/⌘+D) copies a box at the exact same size & position. Shift-click or Shift-drag selects several boxes at once. Delete key removes the selection.</p></div>';
 
             const isSig = cfgSelection.kind === 'signature';
             const item = findCfgItem(cfgSelection.kind, cfgSelection.id);
@@ -2252,8 +2266,10 @@
             $('fpLabel').addEventListener('change', () => { item.label = $('fpLabel').value.trim(); refreshCfgOverlays(); });
             num('#fpX', v => { if (!isNaN(v)) item.x = r4(clamp01(v)); });
             num('#fpY', v => { if (!isNaN(v)) item.y = r4(clamp01(v)); });
-            num('#fpW', v => { if (!isNaN(v)) item.w = r4(Math.max(0.01, Math.min(1, v))); });
-            num('#fpH', v => { if (!isNaN(v)) item.h = r4(Math.max(0.01, Math.min(1, v))); });
+            // Width and height follow down a day row's / repeating row's column, like the drag handles
+            const sizeTargets = () => isSig ? [item] : cfgColumnOf(item);
+            num('#fpW', v => { if (!isNaN(v)) for (const t of sizeTargets()) t.w = r4(Math.max(0.01, Math.min(1, v))); });
+            num('#fpH', v => { if (!isNaN(v)) for (const t of sizeTargets()) t.h = r4(Math.max(0.01, Math.min(1, v))); });
             $('fpPage').addEventListener('change', () => { item.page = parseInt($('fpPage').value, 10) || 1; refreshCfgOverlays(); });
 
             if (!isSig) {
@@ -2700,9 +2716,9 @@
                 ov.innerHTML = `
                     <div class="strike-card">
                         <div class="strike-title">✍️ Strike-out initials — ${escapeHtml(label)}</div>
-                        <div class="strike-sub">This closes the current log — rows after the change date are struck through. Draw your initials for the strike-out:</div>
+                        <div class="strike-sub">This closes the current log — rows after the change date are struck through. Draw your initials for the strike-out, and type them below:</div>
                         <div class="sig-pad-wrap"><canvas id="strikePad" class="sig-pad"></canvas></div>
-                        <input type="text" id="strikeName" class="sig-name" placeholder="Signer name / initials">
+                        <input type="text" id="strikeName" class="sig-name" placeholder="Your initials (required)">
                         <div class="strike-foot">
                             <button type="button" class="btn btn-secondary" id="strikeClearBtn">🧹 Clear</button>
                             <span class="spacer"></span>
@@ -2722,6 +2738,7 @@
                 $('strikeOkBtn').addEventListener('click', () => {
                     if (!strokes.length) { showToast('Draw your initials first'); return; }
                     const name = (nameEl.value || '').trim();
+                    if (!name) { showToast('Type your initials as well as drawing them'); nameEl.focus(); return; }
                     ov.remove();
                     // The DB was replaced while the pad was open: the save waiting on these initials
                     // still holds the old copy, so it is cancelled like Cancel (nothing saved).
@@ -4311,6 +4328,8 @@
             const missing = qs.find(q => q.mandatory && !has(q));
             if (missing) { showToast(`"${missing.label}" is mandatory — answer it for every entry`); return false; }
             const editing = ts.edit != null && ts.entries[ts.edit];
+            const unnamed = qs.find(q => q.type === 'initials' && initialsNeedName(form[q.id], editing ? editing[q.id] : null));
+            if (unnamed) { showToast(`Type the initials for "${unnamed.label}" as well as drawing them`); return false; }
             const row = { id: editing ? ts.entries[ts.edit].id : newRowId() };
             for (const q of qs) {
                 row[q.id] = q.type === 'initials'
@@ -4661,13 +4680,8 @@
             // yet (the Next button is hidden in the UI; this guards Enter-to-advance too).
             if (delta > 0) {
                 const cur = steps[runnerCtx.idx];
-                if (cur?.mandatory) {
-                    const v = runnerCtx.draft[cur.id];
-                    const answered = cur.type === 'initials'
-                        ? !!(v && Array.isArray(v.strokes) && v.strokes.length)
-                        : String(v ?? '').trim() !== '';
-                    if (!answered) { showToast(`"${cur.label}" is mandatory — answer it before continuing`); return; }
-                }
+                const why = cur && cur.type !== 'entries' ? runnerStepBlock(runnerCtx, cur) : '';
+                if (why) { showToast(why); return; }
             }
             runnerCtx.idx = Math.max(0, Math.min(steps.length - 1, runnerCtx.idx + delta));
             renderRunner();
@@ -4736,12 +4750,8 @@
             // Mandatory questions must be answered before the quiz can save — same rule as
             // the daily runner's Save button.
             for (const s of ctx.steps) {
-                if (!s.q.mandatory) continue;
-                const v = ctx.draft[s.q.id];
-                const empty = s.q.type === 'initials'
-                    ? !(v && Array.isArray(v.strokes) && v.strokes.length)
-                    : String(v ?? '').trim() === '';
-                if (empty) { showToast(`"${s.q.label}" is mandatory — answer it before saving`); return; }
+                const why = runnerStepBlock(ctx, s.q);
+                if (why) { showToast(why); return; }
             }
             // A constant saved before (not blank) is on file: changing it is a correction, initialled
             // and dated, and it prints struck out on every page of the form
@@ -4980,6 +4990,37 @@
             initDrawPad('qInitPad', ar, ctx.draft[q.id].strokes);
         }
 
+        // Drawn initials need the typed name / initials too (user decision 2026-10-19). Initials left as they
+        // were saved don't (older entries may have no name).
+        function initialsNeedName(v, saved) {
+            if (!v || !Array.isArray(v.strokes) || !v.strokes.length || String(v.name || '').trim()) return false;
+            return !(saved && Array.isArray(saved.strokes) && JSON.stringify(saved.strokes) === JSON.stringify(v.strokes));
+        }
+
+        // What an initials question in the runner (or the Initialize quiz) holds as saved
+        function runnerSavedInitials(ctx, q) {
+            if (ctx.mode === 'init') {
+                const step = ctx.steps.find(x => x.q === q);
+                return step ? (lotConstants(ctx.lotId, step.sheetId)?.[q.id] ?? null) : null;
+            }
+            return (q.rowScoped ? ctx.inst?.days?.[ctx.day]?.[q.id] : ctx.inst?.header?.[q.id]) ?? null;
+        }
+
+        // A runner step's answer: drawn initials count once drawn and named
+        function runnerStepAnswered(ctx, q) {
+            const v = ctx.draft[q.id];
+            if (q.type !== 'initials') return String(v ?? '').trim() !== '';
+            return !!(v && Array.isArray(v.strokes) && v.strokes.length) && !initialsNeedName(v, runnerSavedInitials(ctx, q));
+        }
+
+        // Why a runner step can't be left yet ('' when it can): a mandatory answer missing, or initials
+        // drawn without the typed initials
+        function runnerStepBlock(ctx, q) {
+            if (q.type === 'initials' && initialsNeedName(ctx.draft[q.id], runnerSavedInitials(ctx, q))) return `Type your initials for "${q.label}" as well as drawing them`;
+            if (q.mandatory && !runnerStepAnswered(ctx, q)) return `"${q.label}" is mandatory — answer it before continuing`;
+            return '';
+        }
+
         // The runner question's answer as saved (corrections compare against it)
         function runnerSavedAnswer(ctx, q) {
             return corrVal(q.rowScoped ? ctx.inst?.days?.[ctx.day]?.[q.id] : ctx.inst?.header?.[q.id]);
@@ -5020,16 +5061,16 @@
             const q = qs[ctx.idx];
             if (!q) return;
             const isLast = ctx.idx === qs.length - 1;
-            // Initials count as answered only once strokes are drawn — an empty pad is not an answer.
-            const dv = ctx.draft[q.id];
-            const stepAnswered = q.type === 'initials'
-                ? !!(dv && Array.isArray(dv.strokes) && dv.strokes.length)
-                : String(dv ?? '').trim() !== '';
-            const blockedByMandatory = !!q.mandatory && !stepAnswered;
+            // Initials count as answered only once drawn and typed — an empty pad is not an answer, and a
+            // drawing without the typed initials holds the step (mandatory or not)
+            const needName = q.type === 'initials' && initialsNeedName(ctx.draft[q.id], runnerSavedInitials(ctx, q));
+            const blockedByMandatory = !!q.mandatory && !runnerStepAnswered(ctx, q);
 
             const slot = $('wizFootSlot');
             if (!slot) return;
-            slot.innerHTML = blockedByMandatory
+            slot.innerHTML = needName
+                ? `<span class="wiz-hint">✍️ Type your initials to continue</span>`
+                : blockedByMandatory
                 ? `<span class="wiz-hint">⚠️ Answer this mandatory question to continue</span>`
                 : isLast
                     ? `<button type="button" class="btn btn-primary" id="wizSaveBtn">${isInit ? '💾 Save constants' : qs.some(x => x.type === 'entries') ? '💾 Save log' : '💾 Save entry'}</button>`
@@ -5105,8 +5146,8 @@
                 bodyInner = `
                 <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
                 <div class="sig-pad-wrap"><canvas id="qInitPad" class="sig-pad init-pad"></canvas></div>
-                <input type="text" id="qInitName" class="sig-name" placeholder="Who filled this (name / initials)" value="${escapeHtml(d.name ?? '')}">
-                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials — they print in the box at its placed position.${q.mandatory ? ' This question is mandatory — draw something before continuing.' : ''}</div>
+                <input type="text" id="qInitName" class="sig-name" placeholder="Type your initials (required)" value="${escapeHtml(d.name ?? '')}">
+                <div class="wiz-hint" style="margin-bottom:10px;">Draw your initials, then type them — the drawing prints in the box at its placed position.${q.mandatory ? ' This question is mandatory — draw something before continuing.' : ''}</div>
                 <div class="sig-actions"><button type="button" class="sig-clear" id="qInitClearBtn">🧹 Clear initials</button></div>`;
             } else {
                 const val = escapeHtml(ctx.draft[q.id] ?? '');
@@ -5221,16 +5262,14 @@
                 // nothing to wire: on-file initials are shown, not redrawn
             } else if (q.type === 'initials') {
                 initQuestionInitialsPad(ctx, q);
-                // A mandatory initials question unlocks Next/Save as soon as the first stroke
-                // lands. Update only the footer — the canvas already shows the stroke live, and a
-                // full re-render would reset the name field's caret.
-                if (q.mandatory) {
-                    const pad = $('qInitPad');
-                    pad.addEventListener('pointerup', () => updateRunnerFooter());
-                    pad.addEventListener('pointercancel', () => updateRunnerFooter());
-                }
+                // Next/Save follow the pad and the typed initials as they change. Update only the
+                // footer — the canvas already shows the stroke live, and a full re-render would reset
+                // the name field's caret.
+                const pad = $('qInitPad');
+                pad.addEventListener('pointerup', () => updateRunnerFooter());
+                pad.addEventListener('pointercancel', () => updateRunnerFooter());
                 const nameEl = $('qInitName');
-                nameEl.addEventListener('input', () => { ctx.draft[q.id].name = nameEl.value; });
+                nameEl.addEventListener('input', () => { ctx.draft[q.id].name = nameEl.value; updateRunnerFooter(); });
                 // Enter on the name field advances / saves like Next (same mandatory rules).
                 nameEl.addEventListener('keydown', (e) => {
                     if (e.key !== 'Enter') return;
@@ -5301,12 +5340,8 @@
             // Mandatory questions must be answered before the entry can save — same rule that
             // hides the Save button; this is the guard for direct calls / stale renders.
             for (const q of (wiz.questions || []).filter(x => !cids.has(x.id) && !isRep(x))) {
-                if (!q.mandatory) continue;
-                const v = ctx.draft[q.id];
-                const empty = q.type === 'initials'
-                    ? !(v && Array.isArray(v.strokes) && v.strokes.length)
-                    : String(v ?? '').trim() === '';
-                if (empty) { showToast(`"${q.label}" is mandatory — answer it before saving`); return; }
+                const why = runnerStepBlock(ctx, q);
+                if (why) { showToast(why.replace('before continuing', 'before saving')); return; }
             }
             const pw = DB.paperWizard;
             // The sheet's pages as they were before this save: what was on file, and what Cancel at the
@@ -5741,7 +5776,10 @@
                 for (const f of bySlot.values()) voidTail.add(f.id);
             }
             const voidRecOf = row => (inst.changes || []).find(c => c.kind === 'void' && c.row === row.id) || { by: null, date: String(row.void).slice(0, 10) };
-            const corrTail = c => ` – ${corrInitialsSvg(c.by)} ${escapeHtml(fmtYYYYMMDD(c.date || ''))}`;
+            // A struck value, then its initials and date: each goes beside the one before when it fits, else
+            // onto the line below (the dash goes when the initials do); the current value last, on its own line
+            const corrRow = (text, c) => `<span class="cr"><span class="cv"><s>${escapeHtml(text)}</s></span>${c
+                ? ` <span class="cs"><span class="cd">– </span>${corrInitialsSvg(c.by)}</span> <span class="cdt">${escapeHtml(fmtYYYYMMDD(c.date || ''))}</span>` : ''}</span>`;
 
             // One overlay span for a field at normalized y. `extra` = { corr, voidRec, tail }: the box's
             // corrections (each old value prints struck out, with the initials and date, above the
@@ -5760,17 +5798,17 @@
                     const cv = f.checkValue || '';
                     const on = val.checked && !voidRec;
                     const struck = !on && (val.checked || corr.some(c => checkboxMatches(c.from, cv)));
-                    return `<span class="ov-cb${on ? ' on' : ''}${struck ? ' struck' : ''}" style="left:${left}%;top:${top}%;width:${boxIn}in;height:${boxIn}in;${on || struck ? `font-size:${(boxIn * 0.72).toFixed(3)}in;` : ''}">${on || struck ? '✕' : ''}</span>`;
+                    return `<span class="ov-cb${on ? ' on' : ''}${struck ? ' struck' : ''}" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${boxIn}in;height:${boxIn}in;${on || struck ? `font-size:${(boxIn * 0.72).toFixed(3)}in;` : ''}">${on || struck ? '✕' : ''}</span>`;
                 }
                 const fs = (f.fontSize ?? 10) / 72;
                 if (!corr.length && !voidRec) {
-                    return `<span class="ov" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
+                    return `<span class="ov" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${escapeHtml(val.text)}</span>`;
                 }
-                const lines = corr.map(c => `<span class="cl"><s>${escapeHtml(c.from || 'N/A')}</s>${corrTail(c)}</span>`);
-                lines.push(voidRec
-                    ? `<span class="cl"><s>${escapeHtml(val.text)}</s>${extra.tail ? corrTail(voidRec) : ''}</span>`
-                    : `<span class="cl">${escapeHtml(val.text)}</span>`);
-                return `<span class="ov ov-corr" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${lines.join('')}</span>`;
+                const lines = corr.map(c => corrRow(c.from || 'N/A', c));
+                lines.push(voidRec ? corrRow(val.text, extra.tail ? voidRec : null) : `<span class="cn">${escapeHtml(val.text)}</span>`);
+                // Printed in the box exactly as configured (its x, y, w, h) — make a box big enough in Configure
+                // Sheets for a correction to sit comfortably; a value that isn't corrected prints at its top as before
+                return `<span class="ov ov-corr" data-fid="${escapeHtml(f.id)}" style="left:${left}%;top:${top}%;width:${w}%;height:${h}%;font-size:${fs}in;text-align:${f.align || 'left'};">${lines.join('')}</span>`;
             };
 
             // Overlay spans for one page. `copy` = which copy of the repeating page (0 = the first),
@@ -5886,7 +5924,10 @@
   .ov-strike { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   .ov-strike line { stroke: #000; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
   .ov-strike-txt, .ov-strike-date { position: absolute; transform: translate(-50%, -50%); color: #000; font-weight: 700; white-space: nowrap; }
-  .ov-corr .cl { display: block; white-space: nowrap; }
+  .ov-corr { line-height: 1.05; }
+  .ov-corr .cr, .ov-corr .cn { display: block; }
+  .ov-corr .cv, .ov-corr .cs, .ov-corr .cdt { display: inline-block; white-space: nowrap; }
+  .ov-corr .cs.wrapped .cd { display: none; }
   .ov-corr s { text-decoration: line-through; text-decoration-thickness: 0.07em; }
   .ov-corr.fitted { overflow: visible; }
   .ci { display: inline-block; height: 1em; width: ${CORR_INITIALS_ASPECT}em; vertical-align: -0.2em; overflow: visible; }
@@ -5900,16 +5941,23 @@
   <div class="pp-toolbar"><span class="pp-title">🖨️ ${escapeHtml(title)}</span>${nChanges ? `<span class="pp-corr">✏️ ${nChanges} change${nChanges === 1 ? '' : 's'} on file for this page — see 📝 Change log</span>` : ''}<button type="button" class="pp-print-btn" onclick="window.print()">🖨️ Print</button></div>
   ${pages}
   <script>
-  // Corrected boxes hold several lines: shrink each one's text until it fits its box (not below 5 pt);
-  // anything still too big shows past the box edge rather than being cut off
+  // A corrected box holds several lines, which wrap to its width. When they don't fit the box, the text shrinks
+  // (in small steps, not below 5 pt). Anything still too big shows past the edge rather than being cut off.
   (function () {
     var min = 5 * 96 / 72;
+    var fits = function (el) { return el.scrollHeight <= el.clientHeight + 0.5 && el.scrollWidth <= el.clientWidth + 0.5; };
     document.querySelectorAll('.ov-corr').forEach(function (el) {
       var fs = parseFloat(getComputedStyle(el).fontSize);
-      for (var i = 0; i < 80 && fs > min && (el.scrollHeight > el.clientHeight + 0.5 || el.scrollWidth > el.clientWidth + 0.5); i++) {
-        fs = Math.max(min, fs * 0.94);
+      for (var i = 0; i < 80 && !fits(el) && fs > min; i++) {
+        fs = Math.max(min, fs * 0.97);
         el.style.fontSize = fs + 'px';
       }
+      // Initials that went onto the line below their struck value lose the dash, and stay below (a line break,
+      // so the narrower initials don't jump back up)
+      el.querySelectorAll('.cs').forEach(function (s) {
+        var v = s.previousElementSibling;
+        if (v && s.offsetTop > v.offsetTop + 1) { s.classList.add('wrapped'); s.parentNode.insertBefore(document.createElement('br'), s); }
+      });
       el.classList.add('fitted');
     });
   })();

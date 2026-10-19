@@ -20,7 +20,9 @@ export async function run(b, BASE) {
         const y = 0.2 + (d - 1) * 0.06, g = { dayGroup: 'gday', day: d };
         dayFields.push(box('dt' + d, 0.02, y, { ...g, source: 'day.date', w: 0.06 }), box('tp' + d, 0.1, y, { ...g, questionId: 'temp' }),
             box('ct' + d, 0.25, y, { ...g, questionId: 'cnt' }), box('ok' + d, 0.4, y, { ...g, questionId: 'okq', checkbox: true, checkValue: 'Yes', w: 0.02, h: 0.02 }),
-            box('in' + d, 0.5, y, { ...g, questionId: 'init', w: 0.15 }));
+            box('in' + d, 0.5, y, { ...g, questionId: 'init', w: 0.15 }),
+            // pH over EC in one cell, each box sized to half the cell so a correction has room
+            box('ph' + d, 0.7, y, { ...g, questionId: 'phq', w: 0.05, h: 0.026 }), box('ec' + d, 0.7, y + 0.028, { ...g, questionId: 'ecq', w: 0.05, h: 0.026 }));
     }
     db._PaperWizard = {
         sheets: {
@@ -45,6 +47,8 @@ export async function run(b, BASE) {
                 q('temp', 'Temp', 'number', { rowScoped: true }),
                 q('cnt', 'Plant count', 'plant-count', { rowScoped: true, prefillFrom: 'lot.plantCount' }),
                 q('okq', 'Crop OK?', 'select', { rowScoped: true, options: ['Yes', 'No'] }),
+                q('phq', 'pH', 'number', { rowScoped: true }),
+                q('ecq', 'EC', 'number', { rowScoped: true }),
                 q('init', 'Initials', 'initials', { rowScoped: true })] },
             wb: { sheetId: 'glog2', name: 'Bloom Log', questions: [
                 q('temp2', 'Temp', 'number', { rowScoped: true }),
@@ -99,7 +103,7 @@ export async function run(b, BASE) {
     };
     await fillDay(D1, { temp: '24.5', cnt: '100', okq: 'Yes' });
     await fillDay(D2, { temp: '25.0', cnt: '99', okq: 'Yes' });
-    await fillDay(D3, { temp: '25.5', cnt: '98', okq: 'Yes' });
+    await fillDay(D3, { temp: '25.5', cnt: '98', okq: 'Yes', phq: '5.8', ecq: '1.2' });
     await fillDay(D4, { temp: '26', cnt: '97', okq: 'Yes' }, false);
     const page = () => b.run(pw, `return DB.paperWizard.entries.L100.glog.instances['${D1}'];`);
     let inst = await page();
@@ -110,7 +114,7 @@ export async function run(b, BASE) {
     check('opening a day on file says it is on file', (await b.run(pw, `return document.querySelector('.wiz-onfile')?.textContent || '';`)).includes('This day is on file'));
     await b.run(pw, `const el = document.getElementById('wizCtl'); el.value = '25'; el.dispatchEvent(new Event('input'));`);
     check('a changed answer shows what is on file', (await b.run(pw, `return document.getElementById('wizWas').textContent;`)).includes('On file as 24.5'));
-    await b.run(pw, `runnerGo(1); runnerGo(1); runnerGo(1);`);
+    await b.run(pw, `runnerGo(1); runnerGo(1); runnerGo(1); runnerGo(1); runnerGo(1);`);
     check('the day\'s drawn initials are shown, not redrawn', await b.run(pw, `return !!document.querySelector('.ini-view polyline') && !document.getElementById('qInitPad');`));
     await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
     await b.waitFor(pw, `return !!document.getElementById('corrOverlay');`);
@@ -200,8 +204,14 @@ export async function run(b, BASE) {
     check('signing again is in the change log, and the flag clears', inst.changes.at(-1).kind === 'signature' && ch && !ch.after, JSON.stringify(ch));
 
     // ---- The printed page ----
-    await b.run(pw, `const c = document.createElement('canvas'); c.width = 85; c.height = 110; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 85, 110);
+    // The form: a row line above each day row, and a grey block over the pH / EC column — neither may change
+    // where a correction prints (only its box does)
+    const loadGlogDoc = () => b.run(pw, `const c = document.createElement('canvas'); c.width = 850; c.height = 1100; const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, 850, 1100); g.fillStyle = '#000';
+        for (let d = 1; d <= 8; d++) g.fillRect(0, Math.round((0.19 + (d - 1) * 0.06) * 1100), 850, 2);
+        g.fillStyle = '#777'; g.fillRect(Math.round(0.69 * 850), Math.round(0.19 * 1100), Math.round(0.07 * 850), Math.round(0.42 * 1100));
         const blob = await new Promise(r => c.toBlob(r, 'image/webp')); await loadPrintDocument([new File([blob], 'glog-p1.webp', { type: 'image/webp' })]);`);
+    await loadGlogDoc();
     const popup = async (sheetId, key) => {
         const before = new Set((await b.contexts()).map(c => c.context));
         await b.run(pw, `openPrintPopup('L100', '${sheetId}', '${key}');`, { user: true });
@@ -210,22 +220,21 @@ export async function run(b, BASE) {
         return pop;
     };
     let pop = await popup('glog', D1);
-    const boxAt = (x, y) => `[...document.querySelectorAll('.ov')].find(e => Math.abs(parseFloat(e.style.left) - ${x * 100}) < 0.01 && Math.abs(parseFloat(e.style.top) - ${y * 100}) < 0.01)`;
-    const read = (x, y) => b.run(pop, `const el = ${boxAt(x, y)}; if (!el) return null;
-        return { corr: el.classList.contains('ov-corr'), lines: [...el.querySelectorAll('.cl')].map(l => l.textContent.trim()), struck: [...el.querySelectorAll('s')].map(s => s.textContent),
+    const read = (fid) => b.run(pop, `const el = document.querySelector('.ov[data-fid="${fid}"]'); if (!el) return null;
+        return { corr: el.classList.contains('ov-corr'), lines: [...el.querySelectorAll('.cr, .cn')].map(l => l.textContent.replace(/\\s+/g, ' ').trim()), struck: [...el.querySelectorAll('s')].map(s => s.textContent),
             ini: el.querySelectorAll('.ci polyline').length, fs: parseFloat(getComputedStyle(el).fontSize), fits: el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1,
             fitted: el.classList.contains('fitted'), text: el.textContent };`);
-    const t1 = await read(0.1, 0.2);
+    const t1 = await read('tp1');
     check('day 1 Temp prints both old values struck out, then the current one', t1?.corr && t1.struck.join() === '24.5,25' && t1.lines.length === 3 && t1.lines[2] === '26', JSON.stringify(t1));
     check('each struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini >= 4 && t1.lines[0].includes(ymd(T)) && t1.lines[1].includes(ymd(T)), JSON.stringify(t1?.lines));
     check('the corrected box shrinks its text to fit', t1?.fitted && t1.fs < 13.3 && (t1.fits || t1.fs <= 6.7), JSON.stringify(t1));
-    const c1b = await read(0.25, 0.2), c2b = await read(0.25, 0.26), c4b = await read(0.25, 0.38);
+    const c1b = await read('ct1'), c2b = await read('ct2'), c4b = await read('ct4');
     check('plant counts: day 1 corrected, day 2 carried forward, day 4 (not on file) just prints', c1b?.struck.join() === '100' && c1b.lines[1] === '90'
         && c2b?.struck.join() === '99' && c2b.lines[1] === '89' && !c4b?.corr && c4b?.text === '87', JSON.stringify([c1b?.lines, c2b?.lines, c4b?.text]));
     const cb = await b.run(pop, `const struck = [...document.querySelectorAll('.ov-cb.struck')];
         return { struck: struck.length, top: struck[0] ? Math.round(parseFloat(struck[0].style.top)) : null, text: struck[0]?.textContent, beside: document.querySelectorAll('.ov-cbn').length };`);
     check('Crop OK? box: the old ✕ struck out inside the box, nothing printed beside it', cb.struck === 1 && cb.top === 20 && cb.text === '✕' && cb.beside === 0, JSON.stringify(cb));
-    const sub = await read(0.6, 0.05);
+    const sub = await read('subl');
     check('the constant prints its old value struck out, then the new one', sub?.struck.join() === 'SL-1' && sub.lines[1] === 'SL-2', JSON.stringify(sub));
     check('the toolbar notes the changes on file (not printed)', (await b.run(pop, `return document.querySelector('.pp-corr')?.textContent || '';`)).includes('changes on file'));
     await b.send('browsingContext.close', { context: pop });
@@ -286,7 +295,7 @@ export async function run(b, BASE) {
     await b.run(pw, `const c = document.createElement('canvas'); c.width = 85; c.height = 110; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 85, 110);
         const blob = await new Promise(r => c.toBlob(r, 'image/webp')); await loadPrintDocument([new File([blob], 'harv-p1.webp', { type: 'image/webp' })]);`);
     pop = await popup('harv', T);
-    const [hp, w1, t2, w2, t3] = [await read(0.1, 0.1), await read(0.5, 0.3), await read(0.2, 0.35), await read(0.5, 0.35), await read(0.2, 0.4)];
+    const [hp, w1, t2, w2, t3] = [await read('hpl'), await read('we1'), await read('to2'), await read('we2'), await read('to3')];
     check('page answer: 42 struck out, 40 below', hp?.struck.join() === '42' && hp.lines[1] === '40', JSON.stringify(hp?.lines));
     check('entry 1: 10 struck out, 11 below', w1?.struck.join() === '10' && w1.lines[1] === '11', JSON.stringify(w1?.lines));
     check('deleted entry 2: every value struck out, initials and date once at the end of the row', t2?.struck.join() === 'T2' && t2.ini === 0 && t2.lines.length === 1
@@ -314,6 +323,8 @@ export async function run(b, BASE) {
     await b.waitFor(pw, `return !!document.getElementById('strikePad');`);
     await b.drag(pw, '#strikePad', [[0.2, 0.5], [0.8, 0.5]]);
     await b.run(pw, `document.getElementById('strikeOkBtn').click();`, { user: true });
+    check('the strike-out pad needs the initials typed as well as drawn', await b.run(pw, `return !!document.getElementById('strikePad') && document.getElementById('toast').textContent.includes('Type your initials');`));
+    await b.run(pw, `document.getElementById('strikeName').value = 'RV'; document.getElementById('strikeOkBtn').click();`, { user: true });
     await b.waitFor(pw, `return !!document.getElementById('corrOverlay');`);
     const rpText = await b.run(pw, `return document.getElementById('corrList').textContent;`);
     check('re-paging: the pad lists the later day on file whose phase it changes', rpText.includes('Phase') && rpText.includes('Bloom') && rpText.includes('Harvesting') && rpText.includes('carried forward'), rpText);
@@ -325,6 +336,37 @@ export async function run(b, BASE) {
     check('day 1\'s correction stays on the old page; day 3\'s moves to the new page with it, plus the phase carried forward',
         o?.changes.join() === `edit:temp2:${D1}:20→20.5` && nw?.changes.includes(`edit:temp2:${D3}:22→22.5`) && nw?.changes.includes(`carried:phs2:${D3}:Bloom→Harvesting`) && nw.changes.length === 2,
         JSON.stringify([o?.changes, nw?.changes]));
+
+    // ---- pH over EC in one cell: each correction wraps and uses the free space around its box ----
+    await b.run(pw, `await openRunner('L100', 'glog', '${D1}', '${D3}'); Object.assign(runnerCtx.draft, { phq: '6.0', ecq: '1.4' });
+        runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();`);
+    await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
+    await signPad();
+    await loadGlogDoc();
+    pop = await popup('glog', D1);
+    const cell = await b.run(pop, `const g = id => { const el = document.querySelector('.ov[data-fid="' + id + '"]'); const r = el.getBoundingClientRect();
+            return { top: parseFloat(el.style.top), bot: parseFloat(el.style.top) + parseFloat(el.style.height), px: { top: r.top, bot: r.bottom }, fs: parseFloat(getComputedStyle(el).fontSize),
+                fits: el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1, struck: [...el.querySelectorAll('s')].map(s => s.textContent),
+                now: el.querySelector('.cn')?.textContent, dateBelow: el.querySelector('.cdt').offsetTop > el.querySelector('.cv').offsetTop + 1,
+                iniBeside: el.querySelector('.cs').offsetTop <= el.querySelector('.cv').offsetTop + 1, dash: getComputedStyle(el.querySelector('.cd')).display !== 'none' }; };
+        return { ph: g('ph3'), ec: g('ec3') };`);
+    const { ph, ec } = cell;
+    check('pH and EC each print the old value struck out and the new one', ph.struck.join() === '5.8' && ph.now === '6.0' && ec.struck.join() === '1.2' && ec.now === '1.4', JSON.stringify(cell));
+    check('the date goes onto the line under the old number; the initials stay beside it when they fit (with the dash), else go below too (without)',
+        ph.dateBelow && ec.dateBelow && ph.iniBeside === ph.dash && ec.iniBeside === ec.dash, JSON.stringify(cell));
+    check('each prints exactly in its own box, whatever lines or grey blocks the form has',
+        Math.abs(ph.top - 32) < 0.01 && Math.abs(ph.bot - 34.6) < 0.01 && Math.abs(ec.top - 34.8) < 0.01 && Math.abs(ec.bot - 37.4) < 0.01 && ph.px.bot <= ec.px.top + 0.5, JSON.stringify(cell));
+    check('both fit their box, at no less than 5 pt', ph.fits && ec.fits && ph.fs >= 6.66 && ec.fs >= 6.66, JSON.stringify([ph.fs, ec.fs]));
+    await b.send('browsingContext.close', { context: pop });
+
+    // ---- Drawn initials need the typed initials too ----
+    await b.run(pw, `await openRunner('L100', 'glog', '${D1}', '${today(-1)}'); runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();`);
+    await b.drag(pw, '#qInitPad', [[0.2, 0.6], [0.5, 0.2], [0.8, 0.6]]);
+    const gate = await b.run(pw, `return { hint: document.getElementById('wizFootSlot').textContent, save: !!document.getElementById('wizSaveBtn') };`);
+    check('initials drawn but not typed: no Save, it asks for them', !gate.save && gate.hint.includes('Type your initials'), JSON.stringify(gate));
+    await b.run(pw, `const n = document.getElementById('qInitName'); n.value = 'CD'; n.dispatchEvent(new Event('input'));`);
+    check('typing them brings Save back', await b.run(pw, `return !!document.getElementById('wizSaveBtn');`));
+    await b.run(pw, `closeRunner();`);
 
     await leave(b, pw); await b.send('browsingContext.close', { context: pw }).catch(() => {});
     await leave(b, main);
