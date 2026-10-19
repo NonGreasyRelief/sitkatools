@@ -204,6 +204,10 @@
             color: #08301f;
         }
 
+        /* Another building's tick on a building device: shown, not changeable */
+        .task-check.view-only, .task-check.view-only input { cursor: default; }
+        .task-check.view-only input { border-style: dashed; opacity: 0.6; }
+
         .task-emoji { font-size: 1.5rem; flex-shrink: 0; }
 
         .task-name {
@@ -290,6 +294,15 @@
         }
 
         .building-section-header.muted { color: var(--text-secondary); }
+
+        /* ---- 👀 View-only note: a building device looking at another building, or at all of them ---- */
+        .view-only-note {
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+            margin-bottom: 14px; padding: 10px 14px;
+            background: var(--bg-secondary); border: 1px dashed var(--accent); border-radius: var(--radius);
+            color: var(--text-primary);
+        }
+        .view-only-note .btn { min-height: 44px; }
 
         /* ---- Add Task bar (single-building mode) ---- */
         .add-task-bar { margin-bottom: 14px; }
@@ -520,6 +533,7 @@
 
         .step-text { flex: 1; font-size: 0.95rem; cursor: pointer; min-width: 0; min-height: 48px; display: flex; align-items: center; } /* tablet touch target */
         .step-text.placeholder { color: var(--text-secondary); font-style: italic; }
+        .step-text.view-only { cursor: default; }   /* another building's task: nothing to tap */
         .step-text.blank { border-bottom: 1px dashed var(--border); } /* untranslated step: no text, still tappable */
 
         .step-text-input { flex: 1; min-width: 0; }
@@ -1103,6 +1117,7 @@
             return !!DB.dailyBuildings[spot.buildingId]?.checks?.[dateStr]?.[spot.item];
         }
         function setChecked(spot, dateStr, on) {
+            if (!spot.session && !canEditBuilding(spot.buildingId)) return;   // another building's list: view only
             if (spot.session) {
                 if (on) sessionChecks[spot.session] = true;
                 else delete sessionChecks[spot.session];
@@ -1122,13 +1137,23 @@
         }
         // Ticks on a day, in the buildings shown (null = every building) plus this page's unsaved ones
         function checkoffCountForDate(dateStr, bids = null) {
+            if (bids && !bids.length) return 0;
             let n = Object.keys(sessionChecks).filter(k => k.startsWith(dateStr + ':')).length;
             for (const [bid, b] of Object.entries(DB.dailyBuildings)) {
                 if (!bids || bids.includes(bid)) n += Object.keys(b?.checks?.[dateStr] || {}).length;
             }
             return n;
         }
-        const shownBuildings = () => { const sel = $('buildingSelect').value; return sel === 'ALL' ? null : [sel]; };
+        // The buildings whose ticks Reset Day clears: the ones shown that this device may change (null = every building)
+        const shownBuildings = () => {
+            const sel = $('buildingSelect').value, own = DeviceView.building;
+            if (own) return sel === 'ALL' || sel === own ? [own] : [];
+            return sel === 'ALL' ? null : [sel];
+        };
+        // A building device changes only its own building: its task list, ticks, hours and sign-offs (they save in
+        // its own file). Other buildings, and All Buildings apart from its own rows, are there to look at only.
+        // The office (or a single-file DB) changes everything.
+        function canEditBuilding(bid) { return !DeviceView.building || bid === DeviceView.building; }
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
@@ -1469,6 +1494,8 @@
 
         // Building selector: All Buildings + every DB building + orphaned
         // _DailyWizard buildings (⚠️ suffix) so the manager can review/delete them.
+        // A building device opens on its own building; the others are marked 👀 and are view only (canEditBuilding).
+        let pickedBuilding = false;   // someone chose in the selector (until then a building device shows its own)
         function populateBuildingSelector() {
             const sel = $('buildingSelect');
             const prev = sel.value;
@@ -1476,18 +1503,7 @@
 
             const d = DB.ensureStructure();
             const buildings = d.buildings || {};
-
-            // A building device shows only its own building (DeviceView)
-            const own = DeviceView.building;
-            sel.disabled = !!(own && buildings[own]);
-            if (sel.disabled) {
-                const opt = document.createElement('option');
-                opt.value = own;
-                opt.textContent = `${own} — ${buildings[own]?.name || T('Unnamed')}`;
-                sel.appendChild(opt);
-                sel.value = own;
-                return;
-            }
+            const own = DeviceView.building && buildings[DeviceView.building] ? DeviceView.building : null;
 
             const allOpt = document.createElement('option');
             allOpt.value = 'ALL';
@@ -1497,12 +1513,12 @@
             for (const [id, b] of Object.entries(buildings)) {
                 const opt = document.createElement('option');
                 opt.value = id;
-                opt.textContent = `${id} — ${b?.name || T('Unnamed')}`;
+                opt.textContent = `${id} — ${b?.name || T('Unnamed')}` + (DeviceView.building && id !== DeviceView.building ? ` · ${T('👀 view only')}` : '');
                 sel.appendChild(opt);
             }
 
-            // Orphaned: task list exists but the building was deleted from the DB
-            for (const id of Object.keys(d._DailyWizard.buildings)) {
+            // Orphaned: task list exists but the building was deleted from the DB (the office tidies these up)
+            for (const id of DeviceView.building ? [] : Object.keys(d._DailyWizard.buildings)) {
                 if (!buildings[id]) {
                     const opt = document.createElement('option');
                     opt.value = id;
@@ -1512,9 +1528,15 @@
             }
 
             // Restore previous selection if it still exists
-            if ([...sel.options].some(o => o.value === prev)) {
-                sel.value = prev;
-            }
+            const has = v => [...sel.options].some(o => o.value === v);
+            if (own && (!pickedBuilding || !has(prev))) sel.value = own;
+            else if (has(prev)) sel.value = prev;
+        }
+
+        // Back to this device's own building (from the view-only note)
+        function showOwnBuilding() {
+            pickedBuilding = false;
+            renderAll();
         }
 
         function updateStatusBar() {
@@ -1668,6 +1690,11 @@
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.checked = isChecked(spot, dateStr);
+            if (!spot.session && !canEditBuilding(spot.buildingId)) {
+                cb.disabled = true;
+                wrap.classList.add('view-only');
+                wrap.title = T('View only — another building’s list');
+            }
             cb.addEventListener('change', () => {
                 setChecked(spot, dateStr, cb.checked);   // saved in the building's file (see "Check-offs")
                 renderAll();
@@ -1720,7 +1747,7 @@
 
             row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
 
-            if (allowMove) {
+            if (allowMove && canEditBuilding(buildingId)) {
                 const moveBtns = document.createElement('div');
                 moveBtns.className = 'move-btns';
                 const up = document.createElement('button');
@@ -1833,6 +1860,7 @@
         // Swaps the two tasks by code: the row shown next to it may not be its neighbour in the
         // full list when some tasks don't run on the selected date.
         function moveTask(buildingId, code, otherCode) {
+            if (!canEditBuilding(buildingId)) return;
             const tasks = DB.dailyBuildings[buildingId]?.tasks;
             if (!tasks) return;
             const i = tasks.findIndex(t => t.code === code);
@@ -1855,8 +1883,9 @@
 
         // "⏰ Still open" divider + this building's crop and equipment tasks that ended before the selected date and
         // aren't done yet, oldest first, so hours can still be logged on them (on the selected day) until the floor
-        // manager marks them done. Single-building view only. The 10 oldest show; the rest fold under "+ N more".
-        let showAllOpen = false;
+        // manager marks them done. In a building's view, and in each building's section of All Buildings. The 10
+        // oldest show; the rest fold under "+ N more" (per building).
+        const openUnfolded = new Set();
         const OPEN_SHOWN = 10;
         function stillOpenEvents(dateStr, buildingId) {
             return DB.calendarEvents
@@ -1872,13 +1901,14 @@
             div.textContent = T('⏰ Still open ({n})', { n: evs.length });
             div.title = T('Tasks whose day has passed and that the floor manager hasn’t marked done yet');
             parent.appendChild(div);
-            for (const ev of showAllOpen ? evs : evs.slice(0, OPEN_SHOWN)) parent.appendChild(makeEventRow(ev, 'open'));
+            const unfolded = openUnfolded.has(buildingId);
+            for (const ev of unfolded ? evs : evs.slice(0, OPEN_SHOWN)) parent.appendChild(makeEventRow(ev, 'open'));
             if (evs.length > OPEN_SHOWN) {
                 const more = document.createElement('button');
                 more.type = 'button';
                 more.className = 'btn btn-secondary open-more';
-                more.textContent = showAllOpen ? T('Show fewer') : T('+ {n} more', { n: evs.length - OPEN_SHOWN });
-                more.addEventListener('click', () => { showAllOpen = !showAllOpen; renderAll(); });
+                more.textContent = unfolded ? T('Show fewer') : T('+ {n} more', { n: evs.length - OPEN_SHOWN });
+                more.addEventListener('click', () => { if (unfolded) openUnfolded.delete(buildingId); else openUnfolded.add(buildingId); renderAll(); });
                 parent.appendChild(more);
             }
         }
@@ -2115,6 +2145,7 @@
         }
 
         function openTaskEditor(buildingId, code) {
+            if (!canEditBuilding(buildingId)) return;   // another building's list: view only
             editorBuildingId = buildingId;
             editorTaskCode = code || null;
             const task = editorTaskCode
@@ -2469,6 +2500,16 @@
             rec.textContent = `🔁 ${describeRecurrence(task) || T('Never')}`;
             sum.appendChild(rec);
 
+            // Another building's task on a building device: steps, pictures and videos to look at, nothing to change
+            const viewOnly = !canEditBuilding(detailBuildingId);
+            for (const id of ['editTaskBtn', 'deleteTaskBtn']) $(id).style.display = viewOnly ? 'none' : '';
+            if (viewOnly) {
+                const note = document.createElement('div');
+                note.className = 'summary-line';
+                note.textContent = T('👀 View only — {building}’s task', { building: DB.buildings[detailBuildingId]?.name || detailBuildingId });
+                sum.appendChild(note);
+            }
+
             renderUploadedNote();
             renderStepsList(task);
         }
@@ -2489,19 +2530,21 @@
             top.appendChild(num);
 
             const shown = stepText(steps[index]);
+            const viewOnly = !canEditBuilding(detailBuildingId);
             const text = document.createElement('span');
             if (shown) {
                 text.className = 'step-text';
                 text.textContent = shown;
             } else if (LANG === 'en') {
                 text.className = 'step-text placeholder';
-                text.textContent = T('(tap to add instruction)');
+                text.textContent = viewOnly ? T('(no instruction yet)') : T('(tap to add instruction)');
             } else {
                 // Not translated yet: blank (no English) until a translation is pasted in; tapping it opens the box
                 text.className = 'step-text blank';
-                text.title = T('Not translated yet — tap to paste the translation');
+                text.title = viewOnly ? T('Not translated yet') : T('Not translated yet — tap to paste the translation');
             }
-            text.addEventListener('click', () => beginStepEdit(row, task, index));
+            if (viewOnly) text.classList.add('view-only');
+            else text.addEventListener('click', () => beginStepEdit(row, task, index));
             top.appendChild(text);
 
             const actions = document.createElement('div');
@@ -2517,10 +2560,12 @@
                 actions.appendChild(b);
             };
             const bid = detailBuildingId, code = task.code;
-            mkBtn('▲', T('Move step up'), index === 0, false, () => moveStep(bid, code, index, -1));
-            mkBtn('▼', T('Move step down'), index === steps.length - 1, false, () => moveStep(bid, code, index, +1));
-            mkBtn('🗑', T('Delete step'), false, true, () => deleteStep(bid, code, index));
-            top.appendChild(actions);
+            if (!viewOnly) {
+                mkBtn('▲', T('Move step up'), index === 0, false, () => moveStep(bid, code, index, -1));
+                mkBtn('▼', T('Move step down'), index === steps.length - 1, false, () => moveStep(bid, code, index, +1));
+                mkBtn('🗑', T('Delete step'), false, true, () => deleteStep(bid, code, index));
+                top.appendChild(actions);
+            }
 
             row.appendChild(top);
             row.appendChild(makeStepImageWrap(task.code, n));
@@ -2529,7 +2574,7 @@
 
         // Tap-to-edit: swap the text span for an input; commit on Enter/blur, discard on Escape.
         function beginStepEdit(rowEl, task, index) {
-            if (rowEl.querySelector('.step-text-input')) return;
+            if (!canEditBuilding(detailBuildingId) || rowEl.querySelector('.step-text-input')) return;
             const textEl = rowEl.querySelector('.step-text');
             if (!textEl) return;
 
@@ -2586,6 +2631,10 @@
             list.innerHTML = '';
             const steps = task.steps || [];
             steps.forEach((s, i) => list.appendChild(makeStepRow(task, i)));
+            if (!canEditBuilding(detailBuildingId)) {   // another building's task: nothing to add
+                if (!steps.length) list.appendChild(mutedLine(T('No steps yet.')));
+                return;
+            }
             if (!steps.length) list.appendChild(mutedLine(T('No steps yet — add the first one below.')));
 
             const addBtn = document.createElement('button');
@@ -2619,6 +2668,7 @@
         }
 
         function moveStep(bid, code, index, dir) {
+            if (!canEditBuilding(bid)) return;
             const steps = findStepTask(bid, code)?.steps || [];
             const j = index + dir;
             if (index >= steps.length || j < 0 || j >= steps.length) { renderDetail(); return; }
@@ -2628,6 +2678,7 @@
         }
 
         function deleteStep(bid, code, index) {
+            if (!canEditBuilding(bid)) return;
             const task = findStepTask(bid, code);
             if (!task?.steps?.[index]) { renderDetail(); return; } // task or step gone (changed elsewhere)
             task.steps.splice(index, 1);
@@ -2663,7 +2714,7 @@
 
         function deleteCurrentTask() {
             const task = getDetailTask();
-            if (!task) return;
+            if (!task || !canEditBuilding(detailBuildingId)) return;
             if (!confirm(T('Delete task "{name}" ({code})?\nThis removes it from _DailyWizard.', { name: taskName(task), code: task.code }))) return;
             const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
             const i = tasks.findIndex(t => t.code === detailTaskCode);
@@ -2741,18 +2792,19 @@
         function makeHoursButton(ctx) {
             const h = liveHours(ctxEntries(ctx));
             const future = ctx.date > todayStr();
+            const viewOnly = !canEditBuilding(ctx.buildingId);   // another building's: shows its hours, logs none
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'hours-btn' + (h > 0 ? ' logged' : '');
             btn.textContent = h > 0 ? `⏱ ${fmtHoursShort(h)}` : T('⏱ Log');
-            btn.title = future ? T('Hours can only be logged for today or earlier') : h > 0 ? T('Hours logged on this — tap to review or add') : T('Log who worked on this and for how long');
-            btn.disabled = future;
+            btn.title = viewOnly ? T('View only — hours are logged in that building') : future ? T('Hours can only be logged for today or earlier') : h > 0 ? T('Hours logged on this — tap to review or add') : T('Log who worked on this and for how long');
+            btn.disabled = future || viewOnly;
             btn.addEventListener('click', (e) => { e.stopPropagation(); openHours(ctx); });
             return btn;
         }
 
         function openHours(ctx) {
-            if (ctx.date > todayStr() || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
+            if (ctx.date > todayStr() || !canEditBuilding(ctx.buildingId) || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
             hoursCtx = { ...ctx };
             const who = $('hoursWho');
             who.innerHTML = '';
@@ -3006,13 +3058,14 @@
             btn.textContent = done ? T('✅ Done') : T('✍️ Mark done');
             btn.title = done ? (sign?.name ? (sign.at ? T('Signed off by {name}, {when}', { name: sign.name, when: doneStamp(sign.at) }) : T('Signed off by {name}', { name: sign.name })) : T('Marked done in SitkaTools or the Labour & Cost Wizard (not signed)'))
                 : T('Floor manager: sign this task off as done');
-            btn.disabled = !done && selectedDateStr() > todayStr();
+            btn.disabled = (!done && selectedDateStr() > todayStr()) || !canEditBuilding(buildingId);
+            if (!canEditBuilding(buildingId) && !done) btn.title = T('View only — signed off in that building');
             btn.addEventListener('click', (e) => { e.stopPropagation(); openDone(ev.id, buildingId); });
             return btn;
         }
 
         function openDone(eventId, buildingId) {
-            if (!DB.calendarEvents.some(e => e.id === eventId)) return;
+            if (!canEditBuilding(buildingId) || !DB.calendarEvents.some(e => e.id === eventId)) return;
             doneCtx = { eventId, buildingId };
             doneStrokes = [];
             const fm = floorManagers();
@@ -3126,16 +3179,21 @@
             const tasks = allTasks.filter(t => taskOccursOn(t, dateStr));
             const events = eventsOnDate(dateStr).filter(ev => buildingForEvent(ev) === buildingId);
 
-            // + Add Task bar (single-building mode only; editor lands in Stage 3)
-            const addBar = document.createElement('div');
-            addBar.className = 'add-task-bar';
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'btn btn-primary';
-            addBtn.textContent = T('+ Add Task');
-            addBtn.addEventListener('click', () => openTaskEditor(buildingId));
-            addBar.appendChild(addBtn);
-            container.appendChild(addBar);
+            if (!canEditBuilding(buildingId)) {
+                // A building device looking at another building
+                container.appendChild(viewOnlyNote(T('👀 Viewing {building} — view only', { building: b?.name || buildingId })));
+            } else {
+                // + Add Task bar (single-building mode only)
+                const addBar = document.createElement('div');
+                addBar.className = 'add-task-bar';
+                const addBtn = document.createElement('button');
+                addBtn.type = 'button';
+                addBtn.className = 'btn btn-primary';
+                addBtn.textContent = T('+ Add Task');
+                addBtn.addEventListener('click', () => openTaskEditor(buildingId));
+                addBar.appendChild(addBtn);
+                container.appendChild(addBar);
+            }
 
             if (allTasks.length === 0) {
                 container.appendChild(mutedLine(T('No daily tasks defined for {building} yet.', { building: b?.name || buildingId })));
@@ -3150,8 +3208,29 @@
             appendUpcomingSection(container, dateStr, buildingId);
         }
 
+        // The note at the top of a view a building device can only look at, with a way back to its own building
+        function viewOnlyNote(text) {
+            const div = document.createElement('div');
+            div.className = 'view-only-note';
+            const span = document.createElement('span');
+            span.textContent = text;
+            div.appendChild(span);
+            const own = DeviceView.building;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-secondary';
+            btn.textContent = T('Back to {building}', { building: DB.buildings[own]?.name || own });
+            btn.addEventListener('click', showOwnBuilding);
+            div.appendChild(btn);
+            return div;
+        }
+
         function renderAllBuildings(container, dateStr) {
             const dayEvents = eventsOnDate(dateStr);
+            const own = DeviceView.building;
+            if (own && DB.buildings[own]) {
+                container.appendChild(viewOnlyNote(T('👀 All buildings — only {building} can be changed here', { building: DB.buildings[own]?.name || own })));
+            }
 
             for (const [bid, b] of Object.entries(DB.buildings)) {
                 const section = document.createElement('div');
@@ -3164,7 +3243,7 @@
                 const header = document.createElement('div');
                 header.className = 'building-section-header';
                 const label = document.createElement('span');
-                label.textContent = `🏢 ${b?.name || bid}`;
+                label.textContent = `🏢 ${b?.name || bid}` + (canEditBuilding(bid) ? '' : ` · ${T('👀 view only')}`);
                 const chip = document.createElement('span');
                 chip.className = 'chip';
                 chip.textContent = `✅ ${done}/${tasks.length}`;
@@ -3178,6 +3257,7 @@
                     tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, null, null, false)));
                 }
 
+                appendStillOpenSection(section, dateStr, bid);
                 appendEventsSection(section, events);
                 container.appendChild(section);
             }
@@ -3350,6 +3430,18 @@
             "Step text cleared": { fr: "Texte de l’étape effacé", es: "Texto del paso borrado", vi: "Đã xóa nội dung bước", zh: "步骤内容已清除" },
             "Translation saved": { fr: "Traduction enregistrée", es: "Traducción guardada", vi: "Đã lưu bản dịch", zh: "译文已保存" },
             "Translation removed — the step shows blank": { fr: "Traduction supprimée — l’étape s’affiche vide", es: "Traducción eliminada — el paso se muestra en blanco", vi: "Đã xóa bản dịch — bước này để trống", zh: "译文已删除 — 此步骤显示为空白" },
+            // Another building, on a building device (view only)
+            "👀 view only": { fr: "👀 consultation seule", es: "👀 solo lectura", vi: "👀 chỉ xem", zh: "👀 仅查看" },
+            "👀 Viewing {building} — view only": { fr: "👀 Vous consultez {building} — consultation seule", es: "👀 Viendo {building} — solo lectura", vi: "👀 Đang xem {building} — chỉ xem", zh: "👀 正在查看 {building} — 仅查看" },
+            "👀 All buildings — only {building} can be changed here": { fr: "👀 Tous les bâtiments — seul {building} peut être modifié ici", es: "👀 Todos los edificios — aquí solo se puede cambiar {building}", vi: "👀 Tất cả tòa nhà — ở đây chỉ có thể thay đổi {building}", zh: "👀 所有建筑 — 这里只能更改 {building}" },
+            "Back to {building}": { fr: "Retour à {building}", es: "Volver a {building}", vi: "Quay lại {building}", zh: "返回 {building}" },
+            "View only — another building’s list": { fr: "Consultation seule — la liste d’un autre bâtiment", es: "Solo lectura — la lista de otro edificio", vi: "Chỉ xem — danh sách của tòa nhà khác", zh: "仅查看 — 其他建筑的清单" },
+            "View only — hours are logged in that building": { fr: "Consultation seule — les heures se saisissent dans ce bâtiment", es: "Solo lectura — las horas se registran en ese edificio", vi: "Chỉ xem — giờ được ghi tại tòa nhà đó", zh: "仅查看 — 工时在该建筑登记" },
+            "View only — signed off in that building": { fr: "Consultation seule — la validation se fait dans ce bâtiment", es: "Solo lectura — se da por terminado en ese edificio", vi: "Chỉ xem — được xác nhận tại tòa nhà đó", zh: "仅查看 — 在该建筑签核" },
+            "👀 View only — {building}’s task": { fr: "👀 Consultation seule — tâche de {building}", es: "👀 Solo lectura — tarea de {building}", vi: "👀 Chỉ xem — công việc của {building}", zh: "👀 仅查看 — {building} 的任务" },
+            "(no instruction yet)": { fr: "(pas encore d’instruction)", es: "(aún sin instrucción)", vi: "(chưa có hướng dẫn)", zh: "（尚无说明）" },
+            "Not translated yet": { fr: "Pas encore traduit", es: "Aún sin traducir", vi: "Chưa dịch", zh: "尚未翻译" },
+            "No steps yet.": { fr: "Pas encore d’étapes.", es: "Aún no hay pasos.", vi: "Chưa có bước nào.", zh: "还没有步骤。" },
             "Not translated yet — tap to paste the translation": { fr: "Pas encore traduit — touchez pour coller la traduction", es: "Aún sin traducir — toque para pegar la traducción", vi: "Chưa dịch — chạm để dán bản dịch", zh: "尚未翻译 — 点击粘贴译文" },
             "No steps yet — add the first one below.": { fr: "Pas encore d’étapes — ajoutez la première ci-dessous.", es: "Aún no hay pasos — añada el primero abajo.", vi: "Chưa có bước nào — hãy thêm bước đầu tiên bên dưới.", zh: "还没有步骤 — 请在下方添加第一步。" },
             "+ Add Step": { fr: "+ Ajouter une étape", es: "+ Añadir paso", vi: "+ Thêm bước", zh: "+ 添加步骤" },
@@ -3447,7 +3539,7 @@
             }
             $('langSelect').addEventListener('change', () => setLanguage($('langSelect').value));
             $('talkBtn').addEventListener('click', openTalk);
-            $('buildingSelect').addEventListener('change', renderAll);
+            $('buildingSelect').addEventListener('change', () => { pickedBuilding = true; renderAll(); });
             $('dateInput').addEventListener('change', renderAll);
             // Move to the new day past midnight: tab shown again, window focused, or once a minute
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') rollToToday(); });

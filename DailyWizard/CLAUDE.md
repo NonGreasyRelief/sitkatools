@@ -174,12 +174,12 @@ Built 2026-10-12 (ROADMAP Phase 1, "Labour in DailyWizard"), following the roadm
 
 ## ⏰ Still open and ✅ Mark done
 
-Built 2026-10-13 (user decisions: Still open only in a single building's view, not All Buildings; Mark done prompts for the floor manager's signature).
+Built 2026-10-13 (user decisions: Mark done prompts for the floor manager's signature; Still open was first only in a single building's view, and since 2026-10-18 it is in All Buildings too).
 
-- **⏰ Still open** (`appendStillOpenSection`), between the daily tasks and "Scheduled today" in a single building's view:
+- **⏰ Still open** (`appendStillOpenSection`), between the daily tasks and "Scheduled today", in a single building's view and in each building's section of All Buildings:
   - **What it lists:** the building's CropLabourWizard and EquipmentWizard events (with an `id`) whose last day (`endDate || date`) is before the selected date and that aren't `completed`. The building comes from `buildingForEvent`, as for "Scheduled today".
-  - Projections, general events and the All Buildings view never show it.
-  - Oldest first, each with a `due Mon 12 Oct · 1 day overdue` chip and a warning-coloured left edge. The 10 oldest show; **+ N more** unfolds the rest for the session.
+  - Projections and general events never show in it.
+  - Oldest first, each with a `due Mon 12 Oct · 1 day overdue` chip and a warning-coloured left edge. The 10 oldest show; **+ N more** unfolds the rest of that building's for the session.
   - Rows have no check-off box, but do have **⏱ Log** and **✍️ Mark done**.
   - Hours logged there go on the **selected day** (`labour_map[<selected day>]`), even though it's outside the task's dates. That is EmployeeWizard's "+ Add day" convention, so its totals, the Labour Report, the Reports and the Labour Log all count them. The estimate shown is still the task's per-day estimate.
 - **✍️ Mark done** (`makeDoneButton` → the Mark done view), on every crop and equipment row whose building is known: Still open, and Scheduled today in both views.
@@ -365,7 +365,7 @@ Follows the shared UI Standards in the root `CLAUDE.md` (theme variables, sticky
 
 - **Logo:** `📋 DailyWizard` on the left.
 - **Language selector** (label "🌐 Language"): English, Français, Español, Tiếng Việt, 中文（简体）. See "🌐 Language".
-- **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") the selector holds only that building and is locked.
+- **Building selector** (label "Building"): first option `— All Buildings —`, then every building from `DB.data.buildings` (`{id} — {name}`), plus any orphaned `_DailyWizard` buildings with a ⚠️ suffix. Selecting a building shows its list; "All Buildings" shows the combined view. On a building device (root `CLAUDE.md` → "Building Device View") it opens on that building, the other buildings are marked `· 👀 view only`, and orphaned entries are left out (see "Other Buildings on a Building Device").
 - **Date input** (`<input type="date">`): defaults to today, and follows today while it still shows the date it set itself — a tablet left open overnight moves to the new day (checked when the window gets focus, when the tab is shown again, and once a minute). A hand-picked date is left alone. Changing it re-renders the list for that date (recurrence filtering + event range matching). Lets the manager preview tomorrow or review yesterday.
 
 ### Status Bar
@@ -397,13 +397,24 @@ After the "Scheduled today" events, a second divider — **Upcoming (N)** — li
 - **Rows:** read-only — no checkbox (completion only makes sense on the day itself), same emoji + title anatomy, plus a monospace date chip (`Fri 25 Sep`).
 - Omitted entirely when there are no upcoming events in scope.
 
+### Other Buildings on a Building Device (view only)
+
+User decision 2026-10-18: a building device can look at every other building's list, and at All Buildings, but changes only its own. It's not the default: the device opens on its own building and stays there until someone picks another (`pickedBuilding`), also through live DB updates.
+
+- **One rule:** `canEditBuilding(bid)`: true on the office (or a single-file DB) and for the device's own building. Everything another building owns saves in that building's file, which this device can't save.
+- **Another building's view:** a note **👀 Viewing {building} — view only** with **Back to {own building}**, and no **+ Add Task** or ▲ ▼. Its ticks show but can't be changed. **⏱ Log** shows the hours total but doesn't open, and **✍️ Mark done** / **✅ Done** don't open. Its ⏰ Still open, Scheduled today and Upcoming all show.
+- **Its task detail view:** steps, pictures and videos (in any language, uploaded ones too) to read. No Edit Task, Delete Task, ▲ ▼ 🗑 or + Add Step, and tapping a step doesn't edit it.
+- **All Buildings:** a note **👀 All buildings — only {building} can be changed here**. The device's own rows work as usual; the other sections are marked 👀. **Reset Day** clears only the device's own building's ticks.
+- The entry points check the rule too (`setChecked`, `openHours`, `openDone`, `openTaskEditor`, step and task moves and deletes), not just the buttons.
+
 ### All Buildings (Combined) View
 
-- One **section per building** (in `DB.data.buildings` order), each with a section header: building name + `done/total` progress chip, then that building's daily task rows, then its scheduled events under the same "Scheduled today" divider.
+- One **section per building** (in `DB.data.buildings` order), each with a section header: building name + `done/total` progress chip, then that building's daily task rows, its **⏰ Still open** tasks (user decision 2026-10-18: every building's open crop and equipment tasks in one view), then its scheduled events under the same "Scheduled today" divider.
 - Buildings with no tasks defined for the selected day show a muted "No daily tasks for this date." line (their events still render if any).
 - A muted **📌 Unassigned / General** section at the bottom collects unattributable events (see attribution rules).
 - After all building sections, a single **Upcoming (N)** section lists the next 5 calendar events across all buildings (see Upcoming Section).
 - No Add Task or move controls in this view.
+- On a building device, only its own building's rows can be ticked, logged or signed off here; the other sections are marked 👀 and are view only (see "Other Buildings on a Building Device").
 
 ### Task Detail View
 

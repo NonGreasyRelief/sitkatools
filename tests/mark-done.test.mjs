@@ -25,7 +25,15 @@ export async function run(b, BASE) {
     check('hours logged on an overdue task go on today', r1.ok && evNames(await b.run(main, 'return DB.data;'), 'ev_oldb1', T).join() === 'Casey', r1.toast);
     check('…and its earlier hours stay on their own day', evNames(await b.run(main, 'return DB.data;'), 'ev_oldb1', Y).join() === 'Drew');
     await dwBuilding(b, dw, 'ALL');
-    check('All Buildings view has no Still open section', (await dwStillOpen(b, dw)).length === 0);
+    const byBuilding = await b.run(dw, `return [...document.querySelectorAll('#listContainer .building-section')].map(sec => {
+        const out = []; let inOpen = false;
+        for (const el of sec.children) {
+            if (el.classList.contains('section-divider')) { inOpen = el.classList.contains('overdue'); continue; }
+            if (inOpen && el.classList.contains('task-row')) out.push(el.textContent);
+        }
+        return out; });`);
+    check('All Buildings: each building\'s section has its own Still open (Room Tidy in B1, Strip Fans in B2)',
+        byBuilding[0]?.length === 1 && byBuilding[0][0].includes('Room Tidy') && byBuilding[1]?.length === 1 && byBuilding[1][0].includes('Strip Fans'), JSON.stringify(byBuilding));
     await dwBuilding(b, dw, 'B1');
 
     // ✍️ Mark done — checks first
