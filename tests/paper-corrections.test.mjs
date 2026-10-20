@@ -10,6 +10,7 @@ export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const T = today(), D1 = today(-5), D2 = today(-4), D3 = today(-3), D4 = today(-2);
     const ymd = s => s.replaceAll('-', '/');
+    const md = s => s.slice(5).replace('-', '/');
     const db = fixtureDb();
     db.lots.L100.createdDate = D1;
     const q = (id, label, type, extra = {}) => ({ id, label, type, options: [], rowScoped: false, sameAsLast: false, mandatory: false, prefillFrom: null, ...extra });
@@ -228,7 +229,7 @@ export async function run(b, BASE) {
             fitted: el.classList.contains('fitted'), text: el.textContent };`);
     const t1 = await read('tp1');
     check('day 1 Temp, changed twice: the current value first, then only the latest old value struck out', t1?.corr && t1.lines.length === 2 && t1.lines[0] === '26' && t1.struck.join() === '25', JSON.stringify(t1));
-    check('the struck value carries drawn initials and the date (yyyy/mm/dd)', t1?.ini > 0 && t1.lines[1].includes(ymd(T)), JSON.stringify(t1?.lines));
+    check('the struck value carries drawn initials and the date (mm/dd, no year)', t1?.ini > 0 && t1.lines[1].endsWith(md(T)) && !t1.lines[1].includes(ymd(T)), JSON.stringify(t1?.lines));
     check('the current value keeps the box\'s full size; the old values print small', t1?.fitted && Math.abs(t1.fs - 13.33) < 0.05 && t1.nowFs === t1.fs && t1.oldFs > 0 && t1.oldFs <= t1.fs * 0.56, JSON.stringify(t1));
     const c1b = await read('ct1'), c2b = await read('ct2'), c4b = await read('ct4');
     check('plant counts: day 1 corrected, day 2 carried forward, day 4 (not on file) just prints', c1b?.struck.join() === '100' && c1b.lines[0] === '90'
@@ -302,7 +303,7 @@ export async function run(b, BASE) {
     check('page answer: 40, then 42 struck out', hp?.struck.join() === '42' && hp.lines[0] === '40', JSON.stringify(hp?.lines));
     check('entry 1: 11, then 10 struck out', w1?.struck.join() === '10' && w1.lines[0] === '11', JSON.stringify(w1?.lines));
     check('deleted entry 2: every value struck out, initials and date once at the end of the row', t2?.struck.join() === 'T2' && t2.ini === 0 && t2.lines.length === 1
-        && w2?.struck.join() === '20' && w2.ini > 0 && w2.lines.length === 2 && w2.lines[0] === '20' && w2.lines[1].includes(ymd(T)), JSON.stringify([t2, w2]));
+        && w2?.struck.join() === '20' && w2.ini > 0 && w2.lines.length === 2 && w2.lines[0] === '20' && w2.lines[1].includes(md(T)), JSON.stringify([t2, w2]));
     check('entry 3 prints in the next row as usual', !t3?.corr && t3?.text === 'T3');
     await b.send('browsingContext.close', { context: pop });
 
@@ -355,17 +356,22 @@ export async function run(b, BASE) {
                     || el.querySelector('.cv').getBoundingClientRect().top > el.querySelector('.cn').getBoundingClientRect().top + 5,
                 over: (() => { const d = el.querySelector('.cdt').getBoundingClientRect(), i = el.querySelector('.ci').getBoundingClientRect(), v = el.querySelector('.cv').getBoundingClientRect();
                     return i.left < d.right && i.right > d.left && i.top < d.bottom && i.bottom > d.top && d.top >= v.bottom - 1 && Math.abs(d.left - v.left) < 1; })(),
-                stackH: el.querySelector('.cr').getBoundingClientRect().height }; };
+                stackH: el.querySelector('.cr').getBoundingClientRect().height,
+                under: (() => { const d = el.querySelector('.cdt').getBoundingClientRect();
+                    const top = document.elementFromPoint(d.left + d.width / 2, d.top + d.height / 2);
+                    return getComputedStyle(el.querySelector('.ci polyline')).stroke === 'rgb(102, 102, 102)' && !!top?.closest('.cdt'); })() }; };
+        document.querySelector('.ov[data-fid="ph3"]').scrollIntoView({ block: 'center' });
         return { ph: g('ph3'), ec: g('ec3') };`);
     const { ph, ec } = cell;
     check('pH and EC each print the old value struck out and the new one', ph.struck.join() === '5.8' && ph.now === '6.0' && ec.struck.join() === '1.2' && ec.now === '1.4', JSON.stringify(cell));
     check('after the new value: the old value struck out, stacked over the date with the drawn initials on it',
         ph.oldAfter && ec.oldAfter && ph.over && ec.over, JSON.stringify(cell));
-    check('the stack is about as tall as the new value', [ph, ec].every(x => x.stackH >= x.fs * 0.7 && x.stackH <= x.fs * 0.95), JSON.stringify([ph.stackH, ec.stackH, ph.fs]));
+    check('the initials are drawn in dark grey, under the date', ph.under && ec.under, JSON.stringify([ph.under, ec.under]));
+    check('the stack is about as tall as the new value (within its line)', [ph, ec].every(x => x.stackH >= x.fs * 0.8 && x.stackH <= x.fs * 1.15), JSON.stringify([ph.stackH, ec.stackH, ph.fs]));
     check('each prints exactly in its own box, whatever lines or grey blocks the form has',
         Math.abs(ph.top - 32) < 0.01 && Math.abs(ph.bot - 34.6) < 0.01 && Math.abs(ec.top - 34.8) < 0.01 && Math.abs(ec.bot - 37.4) < 0.01 && ph.px.bot <= ec.px.top + 0.5, JSON.stringify(cell));
-    check('both fit their box: the new values at full size, the old ones small but no less than 4 pt', ph.fits && ec.fits && ph.nowFs === ph.fs && ec.nowFs === ec.fs
-        && ph.oldFs < ph.fs * 0.5 && ec.oldFs < ec.fs * 0.5 && ph.oldFs >= 5.3 && ec.oldFs >= 5.3, JSON.stringify(cell));
+    check('both fit their box: the new values at full size, the old ones small but no less than 5 pt', ph.fits && ec.fits && ph.nowFs === ph.fs && ec.nowFs === ec.fs
+        && ph.oldFs < ph.fs * 0.6 && ec.oldFs < ec.fs * 0.6 && ph.oldFs >= 6.6 && ec.oldFs >= 6.6, JSON.stringify(cell));
     await b.send('browsingContext.close', { context: pop });
 
     // ---- Drawn initials need the typed initials too ----

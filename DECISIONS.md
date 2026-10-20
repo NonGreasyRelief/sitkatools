@@ -79,6 +79,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 - 2026-10-19 · corrections & change log for the QAP — reason required (tap chips), dates yyyy/mm/dd, signed logs can be corrected and are flagged, change log prints from its own button
 - 2026-10-19 · corrections print the new value first at full size, then a small stack as tall as it: the old value struck out over the date, with the initials drawn over the date
 - 2026-10-19 · only a box's latest correction prints; every change stays in the change log
+- 2026-10-19 · a printed correction's date is mm/dd (the change log keeps yyyy/mm/dd); the stack is 1 pt larger (5.2 pt old value in a 10 pt box)
+- 2026-10-19 · a printed correction's initials are dark grey, drawn under the date
 - 2026-10-19 · number answers take digits and one decimal point; plant counts digits only
 - 2026-10-19 · correction room is the box as configured, not read from the page image
 - 2026-10-19 · nothing prints beside a tick box; its correction details are in the change log only
