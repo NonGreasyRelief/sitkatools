@@ -68,18 +68,29 @@ export async function run(b, BASE) {
     check('SitkaTools gets the translations', t.translations?.es === 'Regar las plantas' && t.steps[0].translations?.es === 'Revise las líneas de goteo');
 
     // ---- 🗣️ Talk: shown in another language, opens Google Translate set to English ⇄ that language ----
-    await b.run(dw, `window.__opened = []; window.open = (u, t, f) => { window.__opened.push([u, t, f]); return null; };`);
+    await b.run(dw, `window.__opened = [];
+        window.open = (u, t, f) => { window.__opened.push([u, t, f]); return window.__win = { closed: false, focused: 0, focus() { this.focused++; }, opener: window, location: {} }; };`);
     const talk = () => b.run(dw, `const t = document.getElementById('talkBtn'); return { hidden: t.hidden, text: t.textContent };`);
     const tk = await talk();
     check('in Spanish the 🗣️ Hablar button shows', !tk.hidden && tk.text.includes('Hablar'), JSON.stringify(tk));
     await b.run(dw, `document.getElementById('talkBtn').click();`, { user: true });
-    let opened = await b.run(dw, `return window.__opened;`);
-    check('it opens Google Translate set to English → Spanish, in a new tab',
-        opened.length === 1 && opened[0][0] === 'https://translate.google.com/?sl=en&tl=es&op=translate' && opened[0][1] === '_blank', JSON.stringify(opened));
+    const talkState = () => b.run(dw, `return { opened: window.__opened, href: window.__win?.location.href, opener: window.__win?.opener === null, focused: window.__win?.focused };`);
+    let ts = await talkState();
+    check('it opens Google Translate set to English → Spanish, in a window of its own (width and height given)',
+        ts.opened.length === 1 && ts.opened[0][1] === 'sitkaTalk' && /width=\d+,height=\d+/.test(ts.opened[0][2]) && ts.href === 'https://translate.google.com/?sl=en&tl=es&op=translate', JSON.stringify(ts));
+    check('Google\'s page gets no link back to DailyWizard', ts.opener, JSON.stringify(ts));
+    await b.run(dw, `document.getElementById('talkBtn').click();`, { user: true });
+    ts = await talkState();
+    check('tapping Talk again brings the same window forward, no second window', ts.opened.length === 1 && ts.focused === 1, JSON.stringify(ts));
     await lang(b, dw, 'zh');
     await b.run(dw, `document.getElementById('talkBtn').click();`, { user: true });
-    opened = await b.run(dw, `return window.__opened;`);
-    check('in Chinese it opens English → Simplified Chinese (zh-CN)', !!opened[1]?.[0]?.includes('tl=zh-CN'), JSON.stringify(opened));
+    ts = await talkState();
+    check('in Chinese the same window switches to English → Simplified Chinese (zh-CN)', ts.opened.length === 1 && !!ts.href?.includes('tl=zh-CN'), JSON.stringify(ts));
+    await b.run(dw, `window.__win.closed = true; document.getElementById('talkBtn').click();`, { user: true });
+    ts = await talkState();
+    check('once that window is closed, Talk opens a new one', ts.opened.length === 2 && !!ts.href?.includes('tl=zh-CN'), JSON.stringify(ts));
+    await b.run(dw, `window.__win.closed = true; window.open = () => null; document.getElementById('talkBtn').click();`, { user: true });
+    check('blocked pop-ups: a toast says to allow them', (await b.run(dw, `return document.getElementById('toast')?.textContent || '';`)).includes('弹出窗口'));
     await lang(b, dw, 'en');
     check('in English the Talk button is hidden', (await talk()).hidden);
 

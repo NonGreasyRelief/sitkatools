@@ -990,10 +990,13 @@
                 if (!Object.keys(obj.translations).length) delete obj.translations;
             }
         }
-        // 🗣️ Talk (user decision 2026-10-17): opens Google Translate set to English ⇄ the language on screen, in a new
-        // tab (or its app on a tablet that has it). Its Conversation mode gives each person a microphone. It's only a
-        // link: this tool still sends nothing anywhere. An in-page translator would need a translation service that
-        // Android Chrome doesn't have built in (ROADMAP → Phase 2, "Voice translator").
+        // 🗣️ Talk (user decision 2026-10-17): opens Google Translate set to English ⇄ the language on screen. Its
+        // Conversation mode gives each person a microphone. It's only a link: this tool still sends nothing anywhere.
+        // An in-page translator would need a translation service that Android Chrome doesn't have built in (ROADMAP →
+        // Phase 2, "Voice translator").
+        // It opens in a window of its own on top of this one (a tab on phones and tablets, or Translate's app), so
+        // closing it, or Back on a tablet, comes back here as it was (2026-10-20). Tapping Talk again brings that
+        // window forward, switched to the language now on screen, instead of opening another.
         const TRANSLATE_CODES = { fr: 'fr', es: 'es', vi: 'vi', zh: 'zh-CN' };
         const talkUrl = (code = LANG) => `https://translate.google.com/?sl=en&tl=${TRANSLATE_CODES[code]}&op=translate`;
         function updateTalkBtn() {
@@ -1001,9 +1004,19 @@
             btn.hidden = !TRANSLATE_CODES[LANG];
             btn.title = btn.hidden ? '' : T('Opens Google Translate set to English and {language}. Tap Conversation, then each person uses their own microphone.', { language: langInfo().name });
         }
+        let talkWin = null, talkLang = null;
         function openTalk() {
             if (!TRANSLATE_CODES[LANG]) return;
-            window.open(talkUrl(), '_blank', 'noopener');
+            if (talkWin && !talkWin.closed) {
+                if (talkLang !== LANG) talkWin.location.href = talkUrl();
+                talkWin.focus();
+            } else {
+                talkWin = window.open('', 'sitkaTalk', `width=${window.innerWidth},height=${window.innerHeight},left=${window.screenX + 24},top=${window.screenY + 24}`);
+                if (!talkWin) { showToast(T('Pop-ups are blocked: allow them for this page to open Talk')); return; }
+                try { talkWin.opener = null; } catch (_) { /* a Talk window left open from before */ }   // Google's page can't reach this one
+                talkWin.location.href = talkUrl();
+            }
+            talkLang = LANG;
             showToast(T('In Google Translate, tap Conversation: one microphone for each person'));
         }
         // The fixed text in the page (data-t: text, data-t-ph: placeholder); the English is kept in the attribute
@@ -3392,6 +3405,7 @@
                 es: "Abre Google Traductor con inglés y {language}. Toque Conversación y cada persona usa su propio micrófono.",
                 vi: "Mở Google Dịch với tiếng Anh và {language}. Chạm Hội thoại, rồi mỗi người dùng micrô của mình.",
                 zh: "打开已设置为英语和{language}的 Google 翻译。点按「对话」，然后每人使用自己的麦克风。" },
+            "Pop-ups are blocked: allow them for this page to open Talk": { fr: "Les fenêtres pop-up sont bloquées : autorisez-les pour cette page pour ouvrir Parler", es: "Las ventanas emergentes están bloqueadas: permítalas en esta página para abrir Hablar", vi: "Cửa sổ bật lên bị chặn: hãy cho phép trên trang này để mở Nói chuyện", zh: "弹出窗口已被阻止：请允许此页面弹出窗口以打开对话" },
             "In Google Translate, tap Conversation: one microphone for each person": { fr: "Dans Google Traduction, touchez Conversation : un micro pour chaque personne", es: "En Google Traductor, toque Conversación: un micrófono para cada persona", vi: "Trong Google Dịch, chạm Hội thoại: mỗi người một micrô", zh: "在 Google 翻译中点按「对话」：每人一个麦克风" },
             "📁 Upload image pack": { fr: "📁 Importer un dossier d’images", es: "📁 Subir paquete de imágenes", vi: "📁 Tải lên gói hình ảnh", zh: "📁 上传图片包" },
             "🖼 Upload images / videos": { fr: "🖼 Importer des images / vidéos", es: "🖼 Subir imágenes / vídeos", vi: "🖼 Tải lên hình ảnh / video", zh: "🖼 上传图片 / 视频" },

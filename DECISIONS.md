@@ -38,6 +38,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 - 2026-10-17 · translations cover daily chores only, not crop/equipment task names; the screen's own buttons and labels translate too; languages are French, Spanish, Vietnamese, Simplified Chinese
 - 2026-10-17 · an untranslated step shows blank, not English, so the floor only ever reads a real translation
 - 2026-10-17 · 🗣️ Talk button opens Google Translate (English ⇄ screen language)
+- 2026-10-20 · 🗣️ Talk opens in a window of its own over DailyWizard, so closing it (or Back on a tablet) returns there as it was
 - 2026-10-17 · in-page two-microphone voice translator put off (would need a paid cloud service and a server/IT) → ROADMAP Phase 2
 - 2026-10-13 · check-offs are one tap by anyone, recording the time and device; ticks on crop/equipment rows are saved as "today's part done"
 - 2026-10-13 · ✅ Mark done asks for the floor manager's signature (name + drawn initials)
