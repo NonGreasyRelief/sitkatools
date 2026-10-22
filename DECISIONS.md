@@ -32,6 +32,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-22 · a daily chore can be tied to one of its building's rooms (optional `roomId`); changing it moves the chore's past hours too (closed-out lots keep their saved share)
+
 - 2026-10-18 · ⏰ Still open is also shown in All Buildings (every building's open crop/equipment tasks in one view)
 - 2026-10-18 · a building device can view other buildings and All Buildings but change only its own; it opens on its own building
 - 2026-10-17 · uploaded step pictures/videos are kept only while the window is open (never stored)
@@ -49,6 +51,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 - 2026-10-16 · ⚡ power use per item (watts × units × hours a day) feeds the cost-per-gram electricity estimate
 
 ## Labour & Cost Wizard
+
+- 2026-10-22 · room chores — a DailyWizard chore's hours go to the lots in its room that day, split by plants like electricity; worked out by Reports (nothing written to lots); chores without a room stay shared overhead
 
 - 2026-10-17 · property cost shared by lights in use (default) or plants, so four running rooms carry a quarter each
 - 2026-10-16 · shown as "Labour & Cost Wizard"; folder, file, `_EmployeeWizard` key, sourceTool and WorkCopy.TOOL keep "EmployeeWizard"

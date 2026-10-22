@@ -91,6 +91,7 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 | `_PaperWizard.wizards[*].questions[*].metric` / `metricUnit` + `_PaperWizard.entries` | harvest numbers, grow-log series, plant counts (🌱 plant-count questions need no tag) |
 | `_DailyWizard.buildings[*].tasks` (minutes × staff, recurrence) | chore hours in the demand forecast |
 | `_DailyWizard.buildings[*].labour` | chore hours in the labour mix, labour hours, logged vs scheduled, the chores share of $ per gram. Entries the office removed are gone from it (kept only in `.adjustments`). |
+| `_DailyWizard.buildings[*].tasks[].roomId` | 🚪 room chores: their hours go to the crops in that room that day (`rptApplyChores`) |
 | `rooms.<id>` (Room Manager): canopy sq ft, `lightCount`, watts per light, veg / bloom light hours | Per sq ft / Per light (`lightCount` is saved on each summary), the electricity estimate |
 | `buildings.<id>.monthlyPropertyCost` | rent and property fees, shared by room lights or plants (`costs.propertyShare`) |
 | `_EquipmentWizard.rooms.<id>.equipment[].power` | watts × units × hours a day, for the electricity estimate |
@@ -104,13 +105,15 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 
 ```js
 {
-  version: 2, lotId, strain, parentLotId, savedAt, recipeId,      // recipeId: the lot's CropLabourWizard recipe (its supplies)
+  version: 3, lotId, strain, parentLotId, savedAt, recipeId,      // recipeId: the lot's CropLabourWizard recipe (its supplies)
   rooms: { cloning, veg, flower, dry, trim },                     // names, as on the lot
   flowerRoomId, buildingId, canopySqFt, lightCount,               // the flower room's canopy and lights (Room Manager)
   dates: { day0, planting, transplant, flip, harvestStart, harvestEnd, tankClean, bucking, trimStart, trimEnd, ship },
   labour: { est, act, temp, tempCost, tempNoWage,
             byPerson: { "<employee>": h, "temp:<name>": h },        // hours only — never wages
-            byTask: { <taskType>: { date, est, act, temp, n, done, estStaff, estMinutes, roomId, days: { "YYYY-MM-DD": h } } } },
+            byTask: { <taskType>: { date, est, act, temp, n, done, estStaff, estMinutes, roomId, days: { "YYYY-MM-DD": h } } },
+            chores: { "<building>:<code>": { name, roomId, act, temp, days: { "YYYY-MM-DD": h }, byPhase: { clone, veg, flower, post } } } },
+                                                                    // the crop's share of room chores (version 3); act, byPerson and temps include it
   weights: { wet, dry, grades: { bigs, mids, smalls, popcorn }, flower, trim, total },   // grams
   lab: { potency, terpenes },                                       // %
   plants: { started, harvested },
@@ -131,7 +134,8 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 - **Frozen labour cost:** `_EmployeeWizard.cropCosts[lotId] = { cost, missingHours, savedAt }`, written by Save summary only while wages are open. SitkaTools' `DbSplit.split` puts it in Wages.json, and `DbSplit.merge` reads it back only when Wages.json is opened. A crop with `missingHours > 0` (someone had no wage) stays out of $ figures.
 - **Frozen non-labour costs:** `costs`, written by Save summary and archive import, stays in Main.json with the summary, so a closed-out lot keeps it when rates, prices or bills change. Crops saved together are modelled together (they share rooms and bills).
 - **Close-out:** SitkaTools' close-out doesn't touch `_EmployeeWizard`, so summaries stay after a lot is archived.
-- **Up to date?** Setup & data marks a summary "out of date" when the live numbers differ. Frozen `costs` don't count (they move with rates and bills); version 1 summaries are always out of date.
+- **Up to date?** Setup & data marks a summary "out of date" when the live numbers differ. Frozen `costs` don't count (they move with rates and bills); summaries older than version 3 are always out of date.
+- **Room chores** (`rptApplyChores`, run once per model): every chore entry whose chore has a room is split between the crops in that room that day (`rptRoomOccupancy`: `rptCropRoomDays` stays, by plants) and added to each live crop's `labour`. The row keeps only what no crop carries, so it isn't spread again as overhead. A closed-out crop's share is in its summary when it was saved as version 3; an older summary's share stays in the overhead. Archive imports get their share when saved (`rptSaveSummaries`).
 
 ### Main functions (EmployeeWizard.html, "📊 Reports tab")
 
@@ -142,6 +146,7 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 | `rptBuildCrop` / `rptCrops` | The crop object; live crops plus closed summaries |
 | `rptHours`, `rptDoneTasks`, `rptAgg`, `rptCropCost`, `rptOtherCost`, `rptCapacity` | Hours by work date, completed tasks with estimates, headline numbers, costs at today's wages, roster capacity |
 | `rptOtherLabour` / `rptChoreLabour` | Equipment and other events with a `labour_map`; DailyWizard chore hours |
+| `rptRoomOccupancy`, `rptApplyChores` | Who was in a room on a day (by plants); room chore hours into those crops' labour |
 | `rptOverview` … `rptSetup` | One function per page |
 | `RPT_PER`, `rptPerDenom`, `rptPerHours`, `rptYieldOf` | The Per switch: each crop's divisor (plants harvested, canopy sq ft, flower-room lights, grams of flower) and unit labels |
 | `rptExploreMeasures`, `RPT_OUTCOMES`, `rptExplorer` | What drives yield? (labour per plant and per task, flower days, density, survival, flower-phase climate and feed, water and nutrient per plant, IPM days). Least-squares line and Pearson r. |
@@ -197,11 +202,12 @@ Answers are parsed leniently (`"1,250"`, `"12 kg"`, `"24.0"` all read as numbers
 | **Actual hours** | every `labour_map` entry, extra days included |
 | **Estimate accuracy** | Σ actual ÷ Σ estimated, over completed tasks with both, planned in the period |
 | **Suggested estimate** | the recipe's staff × (minutes × median actual/estimate ratio of the last 8 crops), rounded to 5 min. Shown once a task has 3+ crops. Recipes are changed in CropLabourWizard, never here. |
-| **Labour cost** | staff hours × roster wage + temp hours × their own wage, or a closed lot's frozen cost. A crop with any hours lacking a wage is left out of $ figures. |
+| **Labour cost** | staff hours × roster wage + temp hours × their own wage (its room chore share included), or a closed lot's frozen cost. A crop with any hours lacking a wage is left out of $ figures. |
 | **Per (normalized)** | Plant / sq ft / light / gram use the crops **harvested in the period**: every hour (or $) on them ÷ Σ plants harvested, Σ canopy sq ft, Σ flower-room lights or Σ grams of flower. Hours read as minutes per plant or sq ft, hours per light, hours per kg. Total shows hours as logged by work date. |
 | **r (What drives yield?)** | Pearson correlation over the period's harvested crops with both values. < 0.2 "no clear link", < 0.4 weak, < 0.6 moderate, else strong. Under 8 crops: "too few to tell". |
 | **Labour $/g, direct** | Σ crop cost ÷ Σ flower, for harvested crops in the period |
-| **Labour $/g, fully loaded** | direct + (equipment and chore cost in the period ÷ the same flower) |
+| **Labour $/g, fully loaded** | direct + (equipment and whole-building chore cost in the period ÷ the same flower) |
+| **Room chore** | a DailyWizard chore with a room. Each hour goes to the crops in that room that day (where a crop is: below), split by plants when crops share it, and is part of that crop's **direct** labour (hours, cost, Gantt, hours by task, cost by phase by the phase it was in). On a day the room held no crop it is shared like a whole-building chore (listed under "What's missing"). |
 | **Where a crop is** | cloning room Day 0 → planting, veg room → transplant, flower room → end of harvest, dry room → bucking, trim room → ship (the lot's room names; `rptCropRoomDays`) |
 | **Electricity (estimated), per room per day** | lights: lights × watts per light × hours (the room's veg hours, or its bloom hours from the crop's flip) × that day's light % (`env.lightPct`; 100 % when not logged), on days the room holds a crop. Equipment: Σ watts × units × hours a day, every day from install. A "Mother" room runs its lights every day at its veg hours. |
 | **Electricity to a crop** | a room's kWh goes to the crops in it that day, split by plants. A room with no crop (hall, mother room, empty flower room) passes its kWh to the building's crops that day; with none, it's "not charged to any crop". Estimate mode: kWh × $/kWh. Bills mode: each bill spread evenly over its days, each day split across the meter's crops by estimated kWh (by plants when there's no estimate). |

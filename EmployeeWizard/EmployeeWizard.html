@@ -3641,7 +3641,8 @@
 
         // ---- One crop's numbers ----
         // From the live DB, or from an archive file (lot, events, paperwork). This object is what "Save summary"
-        // stores in _EmployeeWizard.crops[lotId] (version 1); `series` and `rooms` are kept off it (not enumerable).
+        // stores in _EmployeeWizard.crops[lotId]; `series` and `rooms` are kept off it (not enumerable).
+        // Version 3 adds labour.chores: the crop's share of room chores, filled in by rptApplyChores.
         function rptBuildCrop(lotId, lot, events, paper, qmap) {
             const tasks = (events || []).filter(ev => ev && ev.lotId === lotId && ev.sourceTool === 'CropLabourWizard' && isDay(ev.date))
                 .sort((a, b) => a.date.localeCompare(b.date));
@@ -3649,7 +3650,7 @@
             for (const ev of tasks) if (ev.taskType && !sched[ev.taskType]) sched[ev.taskType] = { date: ev.date, end: ev.endDate || ev.date };
             const flowerRoomId = rptRoomIdByName(lot?.destRoom);
             const c = {
-                version: 2, lotId, strain: lot?.strain || 'Unknown', parentLotId: lot?.parentLotId || null,
+                version: 3, lotId, strain: lot?.strain || 'Unknown', parentLotId: lot?.parentLotId || null,
                 rooms: { cloning: lot?.cloningRoom || null, veg: lot?.vegRoom || null, flower: lot?.destRoom || null, dry: lot?.dryRoom || null, trim: lot?.trimRoom || null },
                 flowerRoomId: flowerRoomId || null,
                 buildingId: DB.data.rooms?.[flowerRoomId]?.buildingId || null,
@@ -3662,7 +3663,7 @@
                     tankClean: sched.tank_irrigation_clean?.date || null, bucking: sched.bucking?.date || null,
                     trimStart: sched.trim?.date || null, trimEnd: sched.trim?.end || null, ship: sched.weigh_ship?.date || null
                 },
-                labour: { est: 0, act: 0, temp: 0, tempCost: 0, tempNoWage: 0, byPerson: {}, byTask: {} }
+                labour: { est: 0, act: 0, temp: 0, tempCost: 0, tempNoWage: 0, byPerson: {}, byTask: {}, chores: {} }
             };
             for (const ev of tasks) {
                 const tt = ev.taskType || 'other';
@@ -3792,23 +3793,93 @@
         // DailyWizard chore hours: _DailyWizard.buildings[<id>].labour[<day>][<task code>] = [{ employee | temp, hours, … }],
         // logged on the building tablet with drawn initials. Entries the office removed later (removedAt) are kept on
         // record there but don't count. Temps logged in DailyWizard carry no wage, so their hours count in hours, not $.
+        // A chore with a room (task.roomId, one of its building's rooms) is a room chore: rptApplyChores gives its hours
+        // to the crops in that room that day. `logged` is the entry's hours; `hours` is what's left for the shared pool.
         function rptChoreLabour() {
             const rows = [];
             for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                const tasks = new Map((b?.tasks || []).map(t => [t?.code, t]));
                 for (const [d, byCode] of Object.entries(b?.labour || {})) {
                     if (!isDay(d) || !byCode || typeof byCode !== 'object') continue;
                     for (const [code, entries] of Object.entries(byCode)) {
                         if (!Array.isArray(entries)) continue;
+                        const t = tasks.get(code), roomId = rptChoreRoomId(bid, t);
                         for (const e of entries) {
                             const h = Number(e?.hours) || 0;
                             if (h <= 0 || e.removedAt) continue;
-                            rows.push({ date: d, hours: h, kind: 'chore', code, roomId: null, buildingId: bid,
+                            rows.push({ date: d, hours: h, logged: h, kind: 'chore', code, roomId, buildingId: bid,
+                                choreKey: `${bid}:${code}`, label: t ? `${t.emoji || '📋'} ${t.name}` : `📋 Daily task ${code}`,
                                 person: e.temp != null ? 'temp:' + e.temp : e.employee, temp: e.temp != null, wage: e.temp != null ? Number(e.wage) || null : null });
                         }
                     }
                 }
             }
             return rows;
+        }
+        // 🚪 A DailyWizard chore's room (task.roomId), while it is still one of the chore's building's rooms; a room that
+        // was deleted or moved to another building makes it a whole-building chore again
+        function rptChoreRoomId(bid, task) {
+            const id = task?.roomId;
+            return id && DB.data.rooms?.[id] && DB.data.rooms[id].buildingId === bid ? id : null;
+        }
+        const rptHasRoomChores = () => Object.entries(DB.data._DailyWizard?.buildings || {}).some(([bid, b]) => (b?.tasks || []).some(t => rptChoreRoomId(bid, t)));
+
+        // Who was in a room on a day: the crops there by rptCropRoomDays (the same stays electricity and property use),
+        // each with its share by plants. (roomId, day) → [{ c, frac, phase }]; [] when the room held no crop.
+        function rptRoomOccupancy(crops) {
+            const byRoom = {};
+            for (const c of crops) for (const st of rptCropRoomDays(c)) (byRoom[st.roomId] || (byRoom[st.roomId] = [])).push({ c, plants: rptCropPlants(c), ...st });
+            return (roomId, day) => {
+                const occ = (byRoom[roomId] || []).filter(st => st.from <= day && day <= st.to);
+                const plants = rSum(occ, st => st.plants);
+                return occ.map(st => ({ c: st.c, frac: st.plants / plants, phase: st.phase }));
+            };
+        }
+
+        // 🚪 Room chores (user decision 2026-10-22): every hour logged on a room chore goes to the crops in that room on
+        // that day, split by plants when crops share it — the way a room's electricity is split. The share goes into
+        // the crop's own labour (c.labour.chores, and act / byPerson / temps), so its labour cost, cost per gram and
+        // summary carry it, and comes out of the row, so it isn't spread again with the whole-building chores.
+        // Hours on a day the room held no crop stay in that shared pool (r.shares = []).
+        // A closed-out crop's share is already in its summary when that was saved with room chores (version 3); an
+        // older summary's share stays in the pool, as before. targets: the crops to add hours to (default: every live
+        // crop); others only take part in the split.
+        const rptChoresDone = new WeakSet();   // crops that already hold their room chore hours
+        function rptApplyChores(crops, rows, targets = null) {
+            if (!rows.some(r => r.kind === 'chore' && r.roomId)) { for (const c of targets || crops) rptChoresDone.add(c); return rows; }
+            const occupants = rptRoomOccupancy(crops), give = targets ? new Set(targets) : null;
+            for (const r of rows) {
+                if (r.kind !== 'chore' || !r.roomId) continue;
+                r.shares = occupants(r.roomId, r.date);
+                let carried = 0;
+                for (const { c, frac, phase } of r.shares) {
+                    const gets = give ? give.has(c) : !c.closed;
+                    if (gets) rptAddChore(c, r, r.logged * frac, phase);
+                    if (gets || (c.closed && c.version >= 3)) carried += frac;
+                }
+                r.hours = r.logged * Math.max(0, 1 - carried);
+            }
+            for (const c of targets || crops) rptChoresDone.add(c);
+            return rows;
+        }
+        function rptAddChore(c, r, h, phase) {
+            if (!(h > 0)) return;
+            const L = c.labour, chores = L.chores || (L.chores = {});
+            const ch = chores[r.choreKey] || (chores[r.choreKey] = { name: r.label, roomId: r.roomId, act: 0, temp: 0, days: {}, byPhase: {} });
+            const ph = phase === 'dry' || phase === 'trim' ? 'post' : phase;
+            ch.act += h; ch.days[r.date] = (ch.days[r.date] || 0) + h; ch.byPhase[ph] = (ch.byPhase[ph] || 0) + h;
+            L.act += h;
+            if (r.person) L.byPerson[r.person] = (L.byPerson[r.person] || 0) + h;
+            if (r.temp) {
+                ch.temp += h; L.temp += h;
+                if (r.wage > 0) L.tempCost += h * r.wage; else L.tempNoWage += h;
+            }
+        }
+        // A chore's name for the charts (key `<building>:<code>`): the chore as it is now, else as the crop saved it
+        function rptChoreLabel(key, saved) {
+            const [bid, code] = String(key).split(':');
+            const t = (DB.data._DailyWizard?.buildings?.[bid]?.tasks || []).find(x => x?.code === code);
+            return t ? `${t.emoji || '📋'} ${t.name}` : saved || `📋 Daily task ${code}`;
         }
 
         // ---- Model: everything a page needs, built once per render ----
@@ -3819,6 +3890,8 @@
             const len = dDiff(from, today) + 1;
             const qmap = rptQuestionMap();
             const crops = rptCrops(qmap);
+            // Room chores go into the crops in the room; what's left of the other labour is shared overhead
+            const other = rptApplyChores(crops, rptOtherLabour());
             // Colours follow the entity: the three most-grown strains keep blue / orange / aqua whatever the filters
             const counts = {};
             for (const c of crops) counts[c.strain] = (counts[c.strain] || 0) + 1;
@@ -3829,7 +3902,7 @@
             return {
                 today, qmap, crops, topStrains, roomColors, flowerRooms,
                 per: { from, to: today, prevFrom: dAdd(from, -len), prevTo: dAdd(from, -1) },
-                other: rptOtherLabour().filter(r => rptRowMatch(r)),
+                other: other.filter(r => r.hours > 1e-9 && rptRowMatch(r)),
                 strainColor: s => ['var(--rv-blue)', 'var(--rv-orange)', 'var(--rv-aqua)'][topStrains.indexOf(s)] || 'var(--rv-neutral)'
             };
         }
@@ -3853,6 +3926,15 @@
                         if (!inRange(d, from, to)) continue;
                         out.crop += h; out.temp += h * tempShare;
                         out.byTask[tt] = (out.byTask[tt] || 0) + h;
+                        out.byMonth[d.slice(0, 7)] = (out.byMonth[d.slice(0, 7)] || 0) + h;
+                    }
+                }
+                // The crop's share of room chores: still chore hours, but the crop's own
+                for (const [key, ch] of Object.entries(c.labour?.chores || {})) {
+                    for (const [d, h] of Object.entries(ch.days || {})) {
+                        if (!inRange(d, from, to)) continue;
+                        out.chore += h;
+                        out.byTask['chore:' + key] = (out.byTask['chore:' + key] || 0) + h;
                         out.byMonth[d.slice(0, 7)] = (out.byMonth[d.slice(0, 7)] || 0) + h;
                     }
                 }
@@ -4334,6 +4416,11 @@
                 const end = taskEnd(ev), completed = ev.completed === true;
                 return { tt: ev.taskType, name: rShort(rptTaskLabel(ev.taskType, taskDisplayTitle(ev)), 34), date: ev.date, end, est: est ? est.hours : null, act: rSum(work, w => w[1]), work, completed, overdue: !completed && end < M.today };
             }).sort((a, b) => a.date.localeCompare(b.date) || order(a.tt) - order(b.tt));
+            // The lot's share of room chores, as one row of daily bars at the bottom
+            const choreDays = {};
+            for (const ch of Object.values(M.crops.find(c => c.lotId === lotId && !c.closed)?.labour?.chores || {})) for (const [d, h] of Object.entries(ch.days || {})) choreDays[d] = (choreDays[d] || 0) + h;
+            const choreWork = Object.entries(choreDays).sort(([a], [b]) => a.localeCompare(b));
+            if (choreWork.length) rows.push({ tt: null, chore: true, name: '🚪 Room chores (its share)', date: choreWork[0][0], end: choreWork[choreWork.length - 1][0], est: null, act: rSum(choreWork, w => w[1]), work: choreWork, completed: false, overdue: false });
             const sched = {};
             for (const r of rows) if (r.tt && !sched[r.tt]) sched[r.tt] = r;
             let first = rows[0].date, last = rows[0].end;
@@ -4365,6 +4452,12 @@
                 const y = top + i * RH, ph = phaseOf(t.date);
                 if (i % 2) s += rRect(0, y, W, RH, 'fill:var(--rv-zebra)', '', 0);
                 s += rT(10, y + 15, t.name, 'rv-lbl');
+                if (t.chore) {
+                    const maxC = Math.max(1, ...t.work.map(w => w[1]));
+                    for (const [d, h] of t.work) s += rRect(x(d) + 1, y + 7, Math.max(dw - 2, 2), 8, `fill:var(--rv-ph-${phaseOf(d)});fill-opacity:${(0.45 + 0.55 * h / maxC).toFixed(2)}`, rTip(`Room chores\n${dFmtY(d)}: ${rN(h, 2)} h — this lot’s share`), 1.5);
+                    s += rT(X1 + 75, y + 15, '—', 'rv-ax', 'end') + rT(X1 + 145, y + 15, rH(t.act), 'rv-lblp', 'end');
+                    return;
+                }
                 const bx = x(t.date), bw = (dDiff(t.date, t.end) + 1) * dw;
                 const state = t.completed ? 'completed' : t.overdue ? 'past due, not completed' : t.date > M.today ? 'planned' : 'in progress';
                 s += rRect(bx, y + 4, bw, 14, `fill:var(--rv-ph-${ph});fill-opacity:.15;stroke:var(--rv-ph-${ph});stroke-width:1.2`,
@@ -4408,7 +4501,7 @@
                 svg: rSvg(W, H, s, `Labour Gantt for lot ${lotId}`),
                 sub: `<b>Lot ${rEsc(lotId)}</b> · ${rEsc(lot.strain || '?')} · ${lot.plantCount ? rEsc(lot.plantCount) + ' plants · ' : ''}${rEsc([lot.cloningRoom, lot.vegRoom, lot.destRoom].filter(Boolean).join(' → '))}. Logged so far: <b>${rN(totAct, 0)} h</b>${totEst > 0 ? ` of <b>${rN(totEst, 0)} h</b> estimated for the whole crop` : ' (this schedule has no estimates)'}.`,
                 table: { cols: [{ h: 'Task' }, { h: 'Planned' }, { h: 'Est. h', n: 1 }, { h: 'Logged h', n: 1 }, { h: 'Days logged', n: 1 }, { h: 'Status' }],
-                    rows: rows.map(t => [t.name, t.end !== t.date ? `${t.date} – ${t.end}` : t.date, t.est != null ? rN(t.est, 1) : '—', t.work.length ? rN(t.act, 1) : '—', String(t.work.length), t.completed ? 'Completed' : t.overdue ? 'Past due' : t.date > M.today ? 'Planned' : 'In progress']) }
+                    rows: rows.map(t => [t.name, t.end !== t.date ? `${t.date} – ${t.end}` : t.date, t.est != null ? rN(t.est, 1) : '—', t.work.length ? rN(t.act, 1) : '—', String(t.work.length), t.chore ? 'Room chores' : t.completed ? 'Completed' : t.overdue ? 'Past due' : t.date > M.today ? 'Planned' : 'In progress']) }
             };
         }
 
@@ -4570,7 +4663,10 @@
         const rptFmtSmart = v => rN(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0);
 
         function rptPareto(M) {
-            const per = RPT.per, act = {}, est = {};
+            const per = RPT.per, act = {}, est = {}, names = {};
+            // Room chores (key chore:<building>:<code>) show as their own bars, named as the chore is now or as saved
+            for (const c of M.crops) for (const [key, ch] of Object.entries(c.labour?.chores || {})) names['chore:' + key] = ch.name;
+            const label = tt => tt.startsWith('chore:') ? rptChoreLabel(tt.slice(6), names[tt]) + ' (room chore)' : rptTaskLabel(tt);
             let denom = 1, nCrops = 0;
             if (per === 'total') {
                 Object.assign(act, rptHours(M, M.per.from, M.per.to).byTask);
@@ -4580,7 +4676,10 @@
                 const crops = rptHarvested(M, M.per.from, M.per.to).filter(c => rptPerDenom(c, per));
                 nCrops = crops.length;
                 denom = rSum(crops, c => rptPerDenom(c, per));
-                for (const c of crops) for (const [tt, t] of Object.entries(c.labour?.byTask || {})) { act[tt] = (act[tt] || 0) + t.act; if (t.est > 0) est[tt] = (est[tt] || 0) + t.est; }
+                for (const c of crops) {
+                    for (const [tt, t] of Object.entries(c.labour?.byTask || {})) { act[tt] = (act[tt] || 0) + t.act; if (t.est > 0) est[tt] = (est[tt] || 0) + t.est; }
+                    for (const [key, ch] of Object.entries(c.labour?.chores || {})) { act['chore:' + key] = (act['chore:' + key] || 0) + ch.act; names['chore:' + key] = ch.name; }
+                }
             }
             const all = rSum(Object.values(act));
             if (all <= 0 || !(denom > 0)) return null;
@@ -4596,15 +4695,15 @@
             let s = rT(W - 8, 16, 'Running share', 'rv-ax', 'end') + rT(X0, 16, unit, 'rv-ax');
             xn.t.forEach(v => { s += rVl(xs(v), top0 - 6, top0 + rows.length * RH) + rT(xs(v), H - 8, rN(v, xn.step < 0.1 ? 2 : xn.step < 1 ? 1 : 0), 'rv-ax', 'middle'); });
             rows.forEach((r, i) => {
-                const y = top0 + i * RH, name = r.tt == null ? `${r.other} other tasks` : rShort(rptTaskLabel(r.tt), 30), strong = i < k && r.tt != null;
+                const y = top0 + i * RH, name = r.tt == null ? `${r.other} other tasks` : rShort(label(r.tt), 30), strong = i < k && r.tt != null;
                 s += rT(X0 - 8, y + 16, name, strong ? 'rv-lblp' : 'rv-lbl', 'end');
-                s += rRect(X0, y + 5, xs(r.act) - X0, 14, `fill:var(--rv-blue);fill-opacity:${strong ? 1 : 0.45}`, rTip(`${name}\n${rptFmtSmart(r.act)} ${unit} logged${r.est ? ` · ${rptFmtSmart(r.est)} estimated` : ''}\n${rPct(r.raw / all, 1)} of crop-task hours`), 3);
+                s += rRect(X0, y + 5, xs(r.act) - X0, 14, `fill:var(--rv-blue);fill-opacity:${strong ? 1 : 0.45}`, rTip(`${name}\n${rptFmtSmart(r.act)} ${unit} logged${r.est ? ` · ${rptFmtSmart(r.est)} estimated` : ''}\n${rPct(r.raw / all, 1)} of the crops’ hours`), 3);
                 if (r.est > 0) s += rRect(X0, y + 2, xs(r.est) - X0, 20, 'fill:none;stroke:var(--text-secondary);stroke-width:1.2', '', 3);
                 s += rT(W - 8, y + 16, rPct(r.cum), strong ? 'rv-val' : 'rv-ax', 'end');
             });
             s += rVl(X0, top0 - 6, top0 + rows.length * RH, 'rv-base');
             return { k, share: rows[k - 1].cum, nCrops, unit, svg: rSvg(W, H, s, 'Hours by task'),
-                table: { cols: [{ h: 'Task' }, { h: `Logged (${unit})`, n: 1 }, { h: 'Estimated', n: 1 }, { h: 'Share', n: 1 }, { h: 'Running share', n: 1 }], rows: rows.map(r => [r.tt == null ? `${r.other} other tasks` : rptTaskLabel(r.tt), rptFmtSmart(r.act), r.est ? rptFmtSmart(r.est) : '—', rPct(r.raw / all, 1), rPct(r.cum, 1)]) } };
+                table: { cols: [{ h: 'Task' }, { h: `Logged (${unit})`, n: 1 }, { h: 'Estimated', n: 1 }, { h: 'Share', n: 1 }, { h: 'Running share', n: 1 }], rows: rows.map(r => [r.tt == null ? `${r.other} other tasks` : label(r.tt), rptFmtSmart(r.act), r.est ? rptFmtSmart(r.est) : '—', rPct(r.raw / all, 1), rPct(r.cum, 1)]) } };
         }
         function rptOverrun(M) {
             const rows = rptOverrunRows(M).sort((a, b) => b.hours - a.hours).slice(0, 10);
@@ -4663,7 +4762,7 @@
             if (total <= 0) return null;
             // Logged vs scheduled: hours roster staff logged (not temps) against their shifts, up to today
             let staffLogged = 0;
-            for (const c of M.crops) if (rptCropMatch(c)) for (const t of Object.values(c.labour?.byTask || {})) {
+            for (const c of M.crops) if (rptCropMatch(c)) for (const t of [...Object.values(c.labour?.byTask || {}), ...Object.values(c.labour?.chores || {})]) {
                 const share = t.act > 0 ? 1 - t.temp / t.act : 1;
                 for (const [d, hrs] of Object.entries(t.days || {})) if (inRange(d, M.per.from, M.per.to)) staffLogged += hrs * share;
             }
@@ -4697,9 +4796,11 @@
             for (const { c, k } of costed) {
                 const rate = k.cost / c.labour.act;   // the crop's average $/h, spread over its tasks
                 for (const [tt, t] of Object.entries(c.labour.byTask || {})) by[rptPhaseOf(tt)] += t.act * rate;
+                // Room chores, by the phase the crop was in that day (dry and trim rooms count as harvest & post)
+                for (const ch of Object.values(c.labour.chores || {})) for (const [ph, h] of Object.entries(ch.byPhase || {})) by[ph in by ? ph : 'flower'] += h * rate;
             }
             const other = rptOtherCost(M, M.per.from, M.per.to);
-            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
+            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Shared chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
             const total = rSum(steps, x => x.v);
             const dp = per === 'g' ? 3 : per === 'total' ? 0 : 2, money = v => rMoney(v, dp);
             const W = 640, H = 270, X0 = 62, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
@@ -4730,14 +4831,14 @@
                 : rEmpty(`No harvested crops with hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'light' ? ' and a light count (set in SitkaTools’ Room Manager)' : ''} in this period.`, `Per ${per === 'sqft' ? 'sq ft' : per === 'g' ? 'gram' : per === 'light' ? 'light' : 'plant'} uses every hour of the crops harvested in the period. Switch Per to Total to see hours as they were logged.`);
             const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
             const parSub = !par ? '' : per === 'total'
-                ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of crop-task hours logged in this period. Bars are hours logged; outlines are the estimate.`
+                ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of the hours logged on crops in this period (crop tasks and room chores). Bars are hours logged; outlines are the estimate.`
                 : `In <b>${rEsc(par.unit)}</b>, across the ${par.nCrops} crop${par.nCrops > 1 ? 's' : ''} harvested in this period. ${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of their hours. Outlines are the estimate.`;
             const wfSub = !wf.svg ? '' : `${per === 'total' ? 'Labour cost' : `Labour $ ${RPT_PER[per].label}`}, built up phase by phase across ${wf.n} crop${wf.n > 1 ? 's' : ''}: <b>${wf.money(wf.total)}</b> fully loaded.${wf.frozen ? ` ${wf.frozen} closed-out crop${wf.frozen > 1 ? 's use their' : ' uses its'} saved cost.` : ''}`;
             return `<div class="rpt-grid">` +
-                rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: parSub, body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: per === 'total' ? 'labour_map on crop tasks, by the day the work was done' : 'labour_map on the crops harvested in the period ÷ their plants, canopy or flower' }) +
+                rCard({ title: 'Where do the labour hours go?', chips: ['now'], sub: parSub, body: par ? par.svg : noHours, table: par?.table, legend: par ? rSw('var(--rv-blue)', 'hours logged') + '<span>▭ estimated</span>' : '', source: per === 'total' ? 'labour_map on crop tasks and the crops’ share of room chores, by the day the work was done' : 'labour_map and room chores of the crops harvested in the period ÷ their plants, canopy or flower' }) +
                 rCard({ title: 'Which tasks run over their estimate?', chips: ['now'], sub: ovr ? 'Each dot is one crop (up to the 8 most recent): hours logged as a share of the estimate. The white tick is the median. Not affected by Per.' : '', body: ovr ? ovr.svg : rEmpty('No completed tasks with both an estimate and hours in this period.', 'Estimates come from CropLabourWizard recipes (minutes × staff per task).'), after: ovr?.after, table: ovr?.table, source: 'Completed crop tasks with an estimate and logged hours, planned in this period' }) +
-                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type: crop tasks (Tasks tab), daily chores (logged in DailyWizard), equipment and anything else. Not affected by Per.', body: mix ? mix.svg : rEmpty('No hours logged in this period.', ''), table: mix?.table, source: 'labour_map on crop and equipment events · DailyWizard chore hours · roster shifts' }) +
-                rCard({ title: per === 'g' ? 'Where does the labour cost of a gram come from?' : 'Where does the labour cost come from?', chips: ['harvest', 'wages'], sub: wfSub, body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'chores & equipment share') : '', source: 'Hours × wages (today’s, or frozen with a closed lot’s summary) ÷ the Per divisor · chores and equipment spread over the same crops' }) +
+                rCard({ title: 'What kind of work fills the period?', chips: ['now'], sub: 'Hours logged by work type: crop tasks (Tasks tab), daily chores (logged in DailyWizard, room chores included), equipment and anything else. Not affected by Per.', body: mix ? mix.svg : rEmpty('No hours logged in this period.', ''), table: mix?.table, source: 'labour_map on crop and equipment events · DailyWizard chore hours · roster shifts' }) +
+                rCard({ title: per === 'g' ? 'Where does the labour cost of a gram come from?' : 'Where does the labour cost come from?', chips: ['harvest', 'wages'], sub: wfSub, body: wf.svg || wf.empty, table: wf.table, legend: wf.svg ? phaseLegend + rSw('var(--rv-neutral)', 'share of whole-building chores & equipment') : '', source: 'Hours × wages (today’s, or frozen with a closed lot’s summary) ÷ the Per divisor · room chores go to the crops in the room, by phase · other chores and equipment spread over the same crops' }) +
                 `</div>`;
         }
 
@@ -5315,11 +5416,13 @@
                 miss.push(`${rptRoomName(id)} has no light count, so its crops carry no property cost while in it — set its lights in SitkaTools’ Room Manager (or share property by plants in ⚡ Power & Rates).`);
             const propIdle = rSum(Object.entries(prop.unallocated).filter(([d]) => d >= M.per.from && d <= M.per.to), ([, v]) => v);
             if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building, so no crop carries it.`);
+            const idleChores = rSum(M.other.filter(r => r.kind === 'chore' && r.shares && !r.shares.length && inRange(r.date, M.per.from, M.per.to)), r => r.hours);
+            if (idleChores > 0) miss.push(`${rN(idleChores, 1)} h of room chores fell on days with no crop scheduled in the room, so they’re shared like whole-building chores.`);
             const health = miss.length ? `<ul class="rpt-attn">${miss.map(t => `<li><span class="rpt-sev info">ℹ️ Note</span><span>${rEsc(t)}</span></li>`).join('')}</ul>` : rEmpty('Every cost is in.', '');
 
             return `<div class="rpt-grid">` +
                 rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees, shared by its rooms in use' }) +
-                rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours (no chore or equipment share).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
+                rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours, its share of room chores included (no share of whole-building chores or equipment).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
                 rCard({ wide: true, title: 'What’s missing from the cost?', sub: 'Fill these in and the cost per gram covers more of what a gram really costs.', body: health, source: 'Room Manager (rooms and buildings) · EquipmentWizard · PaperWizard tags · CropLabourWizard price list · ⚡ Power & Rates' }) +
@@ -5352,6 +5455,9 @@
             // Crops being saved that aren't in the report yet (archives) share rooms and bills with each other too
             const extra = list.filter(c => !M.crops.some(x => x.lotId === c.lotId));
             if (extra.length) M.crops = [...M.crops, ...extra];
+            // …and get their share of room chores here (crops from the report already hold theirs)
+            const pending = list.filter(c => !c.closed && !rptChoresDone.has(c));
+            if (pending.length) rptApplyChores([...M.crops.filter(x => !pending.some(p => p.lotId === x.lotId)), ...pending], rptChoreLabour(), pending);
             for (const c of list) {
                 ew.crops[c.lotId] = rptSummaryOf(c);
                 ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer, supplies and property as they stood
@@ -5669,12 +5775,21 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     for (const en of list) if (en) rows.push({ ...info, day, en, building: info.building || (DB.data.buildings?.[en.by] ? en.by : null) });
                 }
             }
+            // 🚪 Room chores: the room, and the lots its hours went to that day (by plants, as the Reports count them)
+            const occupants = rptHasRoomChores() ? rptRoomOccupancy(rptCrops(rptQuestionMap())) : null;
+            const pct = f => `${Math.round(f * 100)} %`;
+            const roomSplit = (roomId, day) => {
+                const shares = occupants(roomId, day);
+                if (!shares.length) return '🚪 no crop in the room that day — shared like whole-building chores';
+                return `🚪 → ${shares.map(x => `Lot ${x.c.lotId}${shares.length > 1 ? ' ' + pct(x.frac) : ''}`).join(' · ')}${shares.length > 1 ? ' (by plants)' : ''}`;
+            };
             for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
                 const tasks = new Map((b?.tasks || []).map(t => [t.code, t]));
                 const choreInfo = (code) => {
                     const t = tasks.get(code);
                     return {
-                        kind: 'chore', building: bid, key: `chore|${bid}|${code}`, where: '',
+                        kind: 'chore', building: bid, key: `chore|${bid}|${code}`, roomId: rptChoreRoomId(bid, t),
+                        where: rptChoreRoomId(bid, t) ? `🚪 ${rooms[t.roomId]?.name || t.roomId}` : '',
                         label: t ? `${t.emoji || '📋'} ${t.name}` : `📋 Daily task ${code} (since deleted)`,
                         est: t && Number(t.minutes) > 0 ? { staff: Number(t.staff) || 1, minutes: Number(t.minutes) } : null
                     };
@@ -5683,7 +5798,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     for (const [code, list] of Object.entries(codes || {})) {
                         if (!Array.isArray(list)) continue;
                         const info = choreInfo(code);
-                        for (const en of list) if (en) rows.push({ ...info, day, en });
+                        const split = info.roomId && occupants ? roomSplit(info.roomId, day) : '';
+                        for (const en of list) if (en) rows.push({ ...info, day, en, split });
                     }
                 }
                 for (const a of b?.adjustments || []) {
@@ -5735,6 +5851,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 }
                 if (en.editedAt) out.push(['warn', `✏️ signed for ${logFmt(en.signedHours)}, changed in the Tasks tab ${logStamp(en.editedAt)}`]);
                 if (en.temp != null) out.push(['', 'not on the roster']);
+                if (r.split && !r.removed) out.push(['', r.split]);
                 if (!r.removed) {
                     const pd = personDay.get(`${logName(en)}|${r.day}`) || 0;
                     if (pd > LOG_LONG_DAY) out.push(['warn', `⚠️ ${logFmt(pd)} logged by ${logName(en)} this day`]);

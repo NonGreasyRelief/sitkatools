@@ -27,8 +27,18 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 | `monthDays` | int[] 1–31 | Extra days of the month (e.g. `[1, 15]`). Default `[]`. |
 | `steps` | `{ text, translations? }[]` | Ordered instructions for the detail view. No picture data in the DB. |
 | `translations` | object, optional | The name in other languages (`{ es: 'Regar las plantas' }`); see "🌐 Language". |
+| `roomId` | string, optional | 🚪 One of this building's rooms: a **room chore** ("🚪 Room Chores"). Absent = a whole-building chore. |
 
 Task order is the **array order** (no sort field); moving a task rewrites its position.
+
+### 🚪 Room Chores
+
+- **What it means:** the Labour & Cost Wizard's Reports give a room chore's hours to the lots scheduled in that room on the day the hours were logged, split by plants when lots share the room (the way a room's electricity is split). That share is the lot's own labour: its labour cost, cost per gram, crop Gantt and summary carry it. Whole-building chores, and room-chore hours on a day the room held no crop, stay shared over every crop harvested in the period. Root `CLAUDE.md` → "Total Cost per Gram"; `EmployeeWizard/REPORTS.md` §6.
+- **DailyWizard writes only `task.roomId`.** It never works out the split or writes to lots; the hours entries are unchanged.
+- **Editor:** **Room** — "— Whole building (no room) —", then the building's rooms (`id — name`). Saving with the first option removes `roomId`.
+- **Shown as** a `🚪 {room}` chip on the task row, a line in the detail view's summary, and a note in the hours view.
+- **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
+- **Changing the room** re-attributes the chore's past hours too (Reports read the room from the task). A closed-out lot keeps the share saved in its summary.
 
 ### Recurrence Rules
 
@@ -118,7 +128,7 @@ Each entry is the person's name, the hours and minutes they type, and their own 
 - **The button:** on every daily-task row and every CropLabourWizard / EquipmentWizard row (Scheduled today and Still open) whose building is known. Projections, general events and Upcoming rows get none. It reads `⏱ Log`, or the selected day's total (`⏱ 1h 15m`, accent colour). Disabled for future dates; tapping it never opens the detail view.
 - **The hours view** (full-screen overlay):
   - the row's entries for that day: name, hours, initials thumbnail, time logged. EmployeeWizard entries say they were entered there. A signed entry later changed in EmployeeWizard's Tasks tab keeps `signedHours` / `editedAt` / `editedBy`, and the view shows what it was signed for;
-  - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`);
+  - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`); a room chore adds "🚪 {room}: hours count toward the lots in this room";
   - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Hours**, **Minutes**, **initials pad**.
 - **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke.
 - **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
@@ -128,7 +138,7 @@ Each entry is the person's name, the hours and minutes they type, and their own 
   - an entry the office removes after its day is deleted from the hours and kept in the building's `adjustments`, shown struck through in the hours view.
 - **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`, leaving the form and the initials being drawn alone.
 - **Lost link:** if SitkaTools is reloaded or closed, a cover says so and an entry added anyway is reported as not kept (root `CLAUDE.md` → postMessage rule 10).
-- **Elsewhere:** EmployeeWizard's 📜 Labour Log lists every entry (office: all buildings; building device: its own). Its Reports read chore hours (`rptChoreLabour`) and `labour_map`. A temp's typed wage is used for cost; a temp with no wage counts in hours only, and a crop with such hours is left out of $ figures (the missing-wage rule).
+- **Elsewhere:** EmployeeWizard's 📜 Labour Log lists every entry (office: all buildings; building device: its own), with a room chore's room and the lots its hours went to that day. Its Reports read chore hours (`rptChoreLabour`) and `labour_map`. A temp's typed wage is used for cost; a temp with no wage counts in hours only, and a crop with such hours is left out of $ figures (the missing-wage rule).
 
 ## ⏰ Still open and ✅ Mark done
 
@@ -194,7 +204,7 @@ Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **+ 
 
 ### Task Rows
 
-Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · labour chips · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
+Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · 🚪 room chip (room chores) · labour chips · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
 
 Event rows: same without code chip and moves; emoji from the title; labour chips only on crop tasks with an estimate ("Labour Display").
 
@@ -224,13 +234,13 @@ A building device opens on its own building and stays there until someone picks 
 Full-screen overlay:
 
 - Header: large emoji + name, code chip, ← back.
-- Summary: labour (`👥 staff · ⏱ minutes · ≈ N.N h labour`) and recurrence in plain words ("Every day", "Mon, Wed, Fri", "1st & 15th of each month", combined with "and").
+- Summary: labour (`👥 staff · ⏱ minutes · ≈ N.N h labour`), the room (room chores), and recurrence in plain words ("Every day", "Mon, Wed, Fri", "1st & 15th of each month", combined with "and").
 - **Steps:** ordered; tap to edit inline; + Add Step, delete, ▲ ▼. Each shows its picture / video or the not-found chip ("Step Pictures"); **🔄 Refresh images** and the upload buttons sit at the top.
 - Footer: **Edit Task** (editor pre-filled), **Delete Task** (confirm, then `notifySitkaTools()`).
 
 ### Task Editor (Add / Edit)
 
-- Emoji picker; **Name** (required); **Estimated time** (min 5, step 5); **Staff required** (min 1).
+- Emoji picker; **Name** (required); **Estimated time** (min 5, step 5); **Staff required** (min 1); **Room** (optional, "🚪 Room Chores").
 - **Weekdays:** seven pill toggles Mon → Sun (values `1,2,3,4,5,6,0`), all on by default.
 - **Also on day(s) of month:** comma list of 1–31, validated and deduplicated on save; preset chips `1st & 15th`, `1st only`, `Clear`.
 - **Save** validates: name, at least one weekday or month-day, minutes ≥ 5, staff ≥ 1. New tasks get a fresh unique `code` and are appended.

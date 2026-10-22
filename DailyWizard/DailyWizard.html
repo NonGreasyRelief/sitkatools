@@ -74,6 +74,7 @@
             flex-direction: column;
             gap: 4px;
         }
+        .form-group[hidden] { display: none; }
 
         .form-group label {
             font-size: 0.75rem;
@@ -242,6 +243,10 @@
             font-family: 'Consolas', 'Menlo', monospace;
             letter-spacing: 1px;
         }
+
+        .chip-room { color: var(--text-primary); }
+        .chip-room.missing { border-color: var(--warning); color: var(--warning); }
+        .field-hint { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.35; }
 
         /* ---- Move buttons (single-building mode) ---- */
         .move-btns { display: flex; gap: 4px; flex-shrink: 0; }
@@ -765,6 +770,12 @@
                         <label for="taskStaffInput" data-t>Staff required</label>
                         <input type="number" id="taskStaffInput" min="1" step="1" value="1">
                     </div>
+                </div>
+                <!-- 🚪 Optional room: its hours go to the lots in that room that day (Reports, cost per gram) -->
+                <div class="form-group">
+                    <label for="taskRoomSelect" data-t>Room</label>
+                    <select id="taskRoomSelect"></select>
+                    <span class="field-hint" data-t>A room chore’s hours count toward the lots in that room that day, split by plants when lots share it. A whole-building chore is shared by every crop.</span>
                 </div>
                 <div class="form-group">
                     <label data-t>Weekdays</label>
@@ -1740,6 +1751,8 @@
             codeChip.className = 'chip chip-code';
             codeChip.textContent = task.code;
             row.appendChild(codeChip);
+            const room = choreRoom(buildingId, task);
+            if (room) row.appendChild(roomChip(room));
 
             // Tapping anywhere on the row body (except the checkbox / move buttons)
             // opens the task's detail view (CLAUDE.md "Task Rows").
@@ -1783,6 +1796,22 @@
             }
 
             return row;
+        }
+
+        // 🚪 A chore's room (task.roomId): { id, name, missing }, or null for a whole-building chore. `missing` when the
+        // room was deleted or now belongs to another building; the Reports then share its hours like a whole-building chore.
+        function choreRoom(buildingId, task) {
+            if (!task?.roomId) return null;
+            const r = DB.rooms[task.roomId];
+            return { id: task.roomId, name: r?.name || task.roomId, missing: !r || r.buildingId !== buildingId };
+        }
+        function roomChip(room) {
+            const chip = document.createElement('span');
+            chip.className = 'chip chip-room' + (room.missing ? ' missing' : '');
+            chip.textContent = `🚪 ${room.missing ? '⚠️ ' : ''}${room.name}`;
+            chip.title = room.missing ? T('This room is no longer in this building — its hours are shared like a whole-building chore')
+                : T('🚪 {room} — its hours count toward the lots in this room', { room: room.name });
+            return chip;
         }
 
         // CropLabourWizard's labour estimate on a crop event — per day, like a daily task's staff/minutes
@@ -2176,6 +2205,7 @@
             $('taskMinutesInput').value = task?.minutes ?? 30;
             $('taskStaffInput').value = task?.staff ?? 1;
             $('monthDaysInput').value = (task?.monthDays || []).join(', ');
+            fillRoomSelect(buildingId, task?.roomId || '');
 
             // Weekday pills — display order Mon → Sun, values 1..6,0; default all on for new tasks
             const days = new Set(task?.days || [0, 1, 2, 3, 4, 5, 6]);
@@ -2203,6 +2233,20 @@
             const task = editorTaskCode ? (DB.dailyBuildings[editorBuildingId]?.tasks || []).find(t => t.code === editorTaskCode) : null;
             $('editorTitle').textContent = task ? T('Edit Task — {name}', { name: taskName(task) }) : T('Add Task');
             document.querySelectorAll('#weekdayPills .pill').forEach(b => { b.textContent = weekdayShort(Number(b.dataset.day)); });
+            if (editorBuildingId) fillRoomSelect(editorBuildingId, $('taskRoomSelect').value);
+        }
+
+        // 🚪 Room: whole building, or one of this building's rooms (`id — name`). A saved room that's gone or now in
+        // another building stays listed, flagged, until someone picks another.
+        function fillRoomSelect(buildingId, current) {
+            const sel = $('taskRoomSelect');
+            sel.innerHTML = '';
+            const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
+            add('', T('— Whole building (no room) —'));
+            const ids = Object.keys(DB.rooms).filter(id => DB.rooms[id]?.buildingId === buildingId).sort();
+            for (const id of ids) add(id, `${id} — ${DB.rooms[id].name || id}`);
+            if (current && !ids.includes(current)) add(current, T('⚠️ {room} — no longer in this building', { room: DB.rooms[current]?.name || current }));
+            sel.value = current || '';
         }
 
         function closeTaskEditor() {
@@ -2230,6 +2274,7 @@
                 .map(b => Number(b.dataset.day)).sort((a, b) => a - b);
             const monthDays = parseMonthDays($('monthDaysInput').value);
             const nameTr = $('taskNameTrInput').value.trim();
+            const roomId = $('taskRoomSelect').value;
 
             // Validation (CLAUDE.md "Task Editor")
             if (!name) { showToast(T('Task name is required')); return; }
@@ -2251,11 +2296,13 @@
                     task.staff = staff;
                     task.days = days;
                     task.monthDays = monthDays;
+                    if (roomId) task.roomId = roomId; else delete task.roomId;
                     // steps preserved — edited in the detail view (Stage 4)
                     if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
                 }
             } else {
                 const task = { code: generateTaskCode(), emoji: editorEmoji, name, minutes, staff, days, monthDays, steps: [] };
+                if (roomId) task.roomId = roomId;
                 if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
                 tasks.push(task);
             }
@@ -2508,6 +2555,14 @@
             labour.className = 'summary-line';
             labour.textContent = `👥 ${staff} · ⏱ ${T('{m}m', { m: minutes })} · ${T('≈ {h} h labour', { h: ((staff * minutes) / 60).toFixed(1) })}`;
             sum.appendChild(labour);
+            const room = choreRoom(detailBuildingId, task);
+            if (room) {
+                const line = document.createElement('div');
+                line.className = 'summary-line';
+                line.textContent = room.missing ? T('🚪 {room} — no longer in this building, so its hours are shared like a whole-building chore', { room: room.name })
+                    : T('🚪 {room} — its hours count toward the lots in this room', { room: room.name });
+                sum.appendChild(line);
+            }
             const rec = document.createElement('div');
             rec.className = 'summary-line';
             rec.textContent = `🔁 ${describeRecurrence(task) || T('Never')}`;
@@ -2843,12 +2898,13 @@
         function renderHours() {
             if (!hoursCtx) return;
             const ctx = hoursCtx;
-            let title, est;
+            let title, est, room = null;
             if (ctx.kind === 'chore') {
                 const task = ctxTask(ctx);
                 if (!task) { closeHours(); return; }
                 title = `${task.emoji || '📋'} ${taskName(task)}`;
                 est = { staff: task.staff ?? 1, minutes: task.minutes ?? 0 };
+                room = choreRoom(ctx.buildingId, task);
             } else {
                 const ev = ctxEvent(ctx);
                 if (!ev) { closeHours(); return; }
@@ -2859,7 +2915,8 @@
             $('hoursTitle').textContent = `⏱ ${title}`;
             $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? T(' (today)') : ''} · ` +
                 (est ? T('estimate 👥 {staff} × {time}', { staff: est.staff, time: fmtMinutes(est.minutes) }) : T('no estimate')) +
-                (ctx.kind === 'event' ? T(' · these hours also show in the Labour & Cost Wizard’s Tasks tab') : '');
+                (ctx.kind === 'event' ? T(' · these hours also show in the Labour & Cost Wizard’s Tasks tab') : '') +
+                (room && !room.missing ? T(' · 🚪 {room}: hours count toward the lots in this room', { room: room.name }) : '');
             const list = $('hoursList');
             list.innerHTML = '';
             const entries = ctxEntries(ctx), removed = ctxRemoved(ctx);
@@ -3384,6 +3441,13 @@
             "Estimated time (min)": { fr: "Temps estimé (min)", es: "Tiempo estimado (min)", vi: "Thời gian ước tính (phút)", zh: "预计时间（分钟）" },
             "Staff required": { fr: "Personnel requis", es: "Personal necesario", vi: "Số người cần", zh: "所需人数" },
             "Weekdays": { fr: "Jours de la semaine", es: "Días de la semana", vi: "Các ngày trong tuần", zh: "星期" },
+            "Room": { fr: "Salle", es: "Sala", vi: "Phòng", zh: "房间" },
+            "A room chore’s hours count toward the lots in that room that day, split by plants when lots share it. A whole-building chore is shared by every crop.": { fr: "Les heures d’une tâche de salle comptent pour les lots présents dans cette salle ce jour-là, réparties selon le nombre de plants quand plusieurs lots la partagent. Une tâche de tout le bâtiment est partagée entre toutes les récoltes.", es: "Las horas de una tarea de sala cuentan para los lotes que están en esa sala ese día, repartidas según el número de plantas cuando varios lotes la comparten. Una tarea de todo el edificio se reparte entre todos los cultivos.", vi: "Số giờ của việc theo phòng được tính cho các lô trong phòng đó vào ngày hôm đó, chia theo số cây khi nhiều lô dùng chung phòng. Việc của cả tòa nhà được chia cho mọi vụ trồng.", zh: "房间任务的工时计入当天在该房间的批次；多个批次共用房间时按株数分摊。整栋楼的任务由所有批次分摊。" },
+            "— Whole building (no room) —": { fr: "— Tout le bâtiment (aucune salle) —", es: "— Todo el edificio (sin sala) —", vi: "— Cả tòa nhà (không theo phòng) —", zh: "— 整栋楼（不指定房间）—" },
+            "⚠️ {room} — no longer in this building": { fr: "⚠️ {room} — ne fait plus partie de ce bâtiment", es: "⚠️ {room} — ya no está en este edificio", vi: "⚠️ {room} — không còn thuộc tòa nhà này", zh: "⚠️ {room} — 已不在此楼栋" },
+            "This room is no longer in this building — its hours are shared like a whole-building chore": { fr: "Cette salle ne fait plus partie de ce bâtiment — ses heures sont partagées comme une tâche de tout le bâtiment", es: "Esta sala ya no está en este edificio — sus horas se reparten como una tarea de todo el edificio", vi: "Phòng này không còn thuộc tòa nhà này — số giờ được chia như việc của cả tòa nhà", zh: "该房间已不在此楼栋——其工时按整栋楼任务分摊" },
+            "🚪 {room} — its hours count toward the lots in this room": { fr: "🚪 {room} — ses heures comptent pour les lots de cette salle", es: "🚪 {room} — sus horas cuentan para los lotes de esta sala", vi: "🚪 {room} — số giờ được tính cho các lô trong phòng này", zh: "🚪 {room} — 工时计入该房间的批次" },
+            "🚪 {room} — no longer in this building, so its hours are shared like a whole-building chore": { fr: "🚪 {room} — ne fait plus partie de ce bâtiment, ses heures sont donc partagées comme une tâche de tout le bâtiment", es: "🚪 {room} — ya no está en este edificio, así que sus horas se reparten como una tarea de todo el edificio", vi: "🚪 {room} — không còn thuộc tòa nhà này nên số giờ được chia như việc của cả tòa nhà", zh: "🚪 {room} — 已不在此楼栋，因此其工时按整栋楼任务分摊" },
             "Also on day(s) of month (1–31, comma-separated)": { fr: "Aussi certains jours du mois (1–31, séparés par des virgules)", es: "También ciertos días del mes (1–31, separados por comas)", vi: "Thêm các ngày trong tháng (1–31, cách nhau bằng dấu phẩy)", zh: "每月另外的日期（1–31，用逗号分隔）" },
             "e.g., 1, 15": { fr: "p. ex. 1, 15", es: "p. ej. 1, 15", vi: "vd: 1, 15", zh: "例如：1, 15" },
             "1st & 15th": { fr: "Le 1er et le 15", es: "El 1 y el 15", vi: "Ngày 1 và 15", zh: "1日和15日" },
@@ -3484,6 +3548,7 @@
             "estimate 👥 {staff} × {time}": { fr: "estimation 👥 {staff} × {time}", es: "estimado 👥 {staff} × {time}", vi: "ước tính 👥 {staff} × {time}", zh: "估计 👥 {staff} × {time}" },
             "no estimate": { fr: "pas d’estimation", es: "sin estimación", vi: "chưa có ước tính", zh: "无估计" },
             " · these hours also show in the Labour & Cost Wizard’s Tasks tab": { fr: " · ces heures apparaissent aussi dans l’onglet Tasks du Labour & Cost Wizard", es: " · estas horas también aparecen en la pestaña Tasks del Labour & Cost Wizard", vi: " · số giờ này cũng hiện trong thẻ Tasks của Labour & Cost Wizard", zh: " · 这些工时也会显示在 Labour & Cost Wizard 的 Tasks 标签中" },
+            " · 🚪 {room}: hours count toward the lots in this room": { fr: " · 🚪 {room} : les heures comptent pour les lots de cette salle", es: " · 🚪 {room}: las horas cuentan para los lotes de esta sala", vi: " · 🚪 {room}: số giờ được tính cho các lô trong phòng này", zh: " · 🚪 {room}：工时计入该房间的批次" },
             "No hours logged for this day yet.": { fr: "Aucune heure saisie pour ce jour.", es: "Aún no hay horas registradas para este día.", vi: "Chưa ghi giờ cho ngày này.", zh: "这一天还没有记录工时。" },
             "Total {h}": { fr: "Total {h}", es: "Total {h}", vi: "Tổng {h}", zh: "合计 {h}" },
             " · estimate {h}": { fr: " · estimation {h}", es: " · estimado {h}", vi: " · ước tính {h}", zh: " · 估计 {h}" },

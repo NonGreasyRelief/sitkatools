@@ -173,7 +173,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 
 | Part | Comes from | Priced with |
 |---|---|---|
-| Labour | hours on crop tasks, chores and equipment | wages (Wages.json) |
+| Labour | hours on crop tasks, chores and equipment (a room chore's hours go to the lots in its room that day) | wages (Wages.json) |
 | Electricity | rooms' lights, watts and light cycles; the grow log's daily light % (100% when not logged); equipment power | ⚡ Power & Rates: power bills (split by estimated use) **or** estimated kWh × $/kWh |
 | Water | grow log water (L) | $ per 1,000 L |
 | Fertilizer | grow log mL by product (PaperWizard's product link) | price list, $/L (CropLabourWizard → 🧪 Inputs) |
@@ -181,6 +181,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 | Property | days each crop spends in a building's rooms | the building's monthly rent + fees, shared by the rooms holding a crop (by lights or plants) |
 
 - Electricity is worked out room by room, day by day. An empty room, or a Mother room, passes its kWh to the building's crops that day.
+- **Room chores:** a DailyWizard chore can be tied to one of its building's rooms (`task.roomId`). Its hours go into the labour of the lots scheduled in that room that day (the same room stays electricity uses), split by plants when lots share the room; they count as that lot's own labour cost. Chores without a room, and room-chore hours on a day the room held no crop, are shared over the crops harvested in the period, by grams (the "fully loaded" labour). Nothing is written to the lots: Reports work the split out when they draw, and a crop summary keeps its share.
 - Each part's $/g uses only the crops that part can price; Costs → "What's missing from the cost?" lists the gaps.
 - Prices, rates and bills live in Main.json. Closed lots keep their non-labour costs frozen in their crop summary; labour cost is frozen in Wages.json.
 
