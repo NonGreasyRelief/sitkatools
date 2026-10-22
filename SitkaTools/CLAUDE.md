@@ -70,6 +70,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 - **Folder saves** re-check each file on disk and write `<name>-conflict-HHMM.json` instead of overwriting one saved elsewhere since opening. Each saved file's `_meta` records `savedBy`.
 - **Adding Wages.json later (`addWages`):** for each roster employee, the file's wage goes in wherever the current value still equals what was opened; a wage changed in this session is kept and saves to Wages.json as usual. The same goes for frozen `cropCosts`. Nothing is marked unsaved. Toast: "💰 Wages added: N employees … · M change(s) made here kept".
 - **🏢 Building Files card** (Data & Files tab, with calendar import/export, lot move and close-out): Split into building files, the device link (**Set this device…**), Send / Accept for lot moves, and close-out.
+  - The lot move lists (`LotActions.render`) redraw with the lot, room and building lists (so a new lot shows at once, and on every tool update). Each list is rebuilt only when what it shows changed, so the picked lot and destination and typed Accept initials survive a redraw.
 
 ## Shared Working Copy — Details
 

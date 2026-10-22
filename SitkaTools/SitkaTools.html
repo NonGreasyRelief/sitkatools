@@ -5450,15 +5450,22 @@
                 const sendTo = $('sendLotTo');
                 const list = $('incomingTransfers');
                 const lots = Object.entries(DB.data?.lots || {}).filter(([, lot]) => DeviceView.lotVisible(lot));
-                const keep = select.value;
-                select.innerHTML = lots.length ? '' : '<option value="">— No lots —</option>';
-                for (const [id, lot] of lots) {
-                    const opt = document.createElement('option');
-                    opt.value = id;
-                    opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
-                    select.appendChild(opt);
+                // Redrawn whenever lots, rooms or buildings change (and on every tool update), so the lists and the
+                // Accept rows are rebuilt only when what they show changed: a pick, typed initials or an open
+                // drop-down are never lost to a redraw
+                const lotsKey = JSON.stringify(lots.map(([id, lot]) => [id, lot.name, lot.strain]));
+                if (select.dataset.key !== lotsKey) {
+                    select.dataset.key = lotsKey;
+                    const keep = select.value;
+                    select.innerHTML = lots.length ? '' : '<option value="">— No lots —</option>';
+                    for (const [id, lot] of lots) {
+                        const opt = document.createElement('option');
+                        opt.value = id;
+                        opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                        select.appendChild(opt);
+                    }
+                    if (keep && lots.some(([id]) => id === keep)) select.value = keep;
                 }
-                if (keep && lots.some(([id]) => id === keep)) select.value = keep;
 
                 const lotId = select.value;
                 const lot = DB.data?.lots?.[lotId];
@@ -5468,6 +5475,7 @@
                     ? `🚚 In transit to ${this.buildingName(pending.to)} (sent ${new Date(pending.sentAt).toLocaleDateString()})`
                     : `Now in ${lot.currentRoom || 'no room set'}${from ? ` · ${this.buildingName(from)}` : ''}`;
 
+                const keepTo = sendTo.value;
                 sendTo.innerHTML = '';
                 for (const [id, b] of Object.entries(DB.buildings)) {
                     if (id === from) continue;
@@ -5476,15 +5484,22 @@
                     opt.textContent = `to ${b.name || id}`;
                     sendTo.appendChild(opt);
                 }
+                if (keepTo && [...sendTo.options].some(o => o.value === keepTo)) sendTo.value = keepTo;
                 $('sendLotBtn').disabled = !lot || !!pending || !sendTo.options.length || !this.canActFor(from);
                 $('sendLotBtn').title = lot && from && !this.canActFor(from) ? `Only ${this.buildingName(from)} or the office can send this lot` : '';
                 $('closeOutLotBtn').disabled = !lot || (DbSplit.active && DbSplit.role !== 'office');
                 $('closeOutLotBtn').title = DbSplit.active && DbSplit.role !== 'office' ? 'Only the office device can close out lots' : '';
 
-                list.innerHTML = '';
                 // A building device lists only moves into or out of its own building
                 const b = DeviceView.building;
-                for (const t of this.transfers().filter(t => !t.acceptedAt && DB.data.lots?.[t.lotId] && (!b || t.to === b || t.from === b))) {
+                const shown = this.transfers().filter(t => !t.acceptedAt && DB.data.lots?.[t.lotId] && (!b || t.to === b || t.from === b));
+                const roomsIn = id => Object.values(DB.data.rooms || {}).filter(r => r.buildingId === id).map(r => r.name);
+                const listKey = JSON.stringify(shown.map(t => [t.id, t.from, t.to, t.sentAt, t.sentBy, this.buildingName(t.from), this.buildingName(t.to),
+                    this.canActFor(t.to) ? roomsIn(t.to) : null]));
+                if (list.dataset.key === listKey) return;
+                list.dataset.key = listKey;
+                list.innerHTML = '';
+                for (const t of shown) {
                     const row = document.createElement('div');
                     row.className = 'split-transfer' + (this.canActFor(t.to) ? '' : ' pending');
                     row.dataset.transfer = t.id;
@@ -6370,6 +6385,7 @@
 
         // ---- Render Lot List ----
         function renderLotList() {
+            if (DB.data) LotActions.render();   // the lot move / close-out lists show the lots too
             const lots = DB.lots;
             const lotKeys = Object.keys(lots);
 
@@ -6875,6 +6891,7 @@
             },
 
             renderRoomList() {
+                if (DB.data) LotActions.render();   // "Now in <room>" and the Accept rows' rooms
                 const rooms = this.rooms;
                 const roomKeys = Object.keys(rooms);
                 const roomListCard = $('roomListCard');
@@ -9806,6 +9823,7 @@
             },
 
             renderBuildingList() {
+                if (DB.data) LotActions.render();   // the "send to" buildings
                 const buildings = this.buildings;
                 const buildingKeys = Object.keys(buildings);
                 const buildingListCard = $('buildingListCard');
