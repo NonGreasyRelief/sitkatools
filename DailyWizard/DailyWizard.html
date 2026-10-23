@@ -150,6 +150,11 @@
         }
 
         .status-bar.loaded { border-color: var(--accent); }
+        .status-bar { flex-wrap: wrap; }
+        /* 🖼 Step pictures for every building, from the main screen */
+        .status-pics { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+        .status-pics .pics-btn { min-height: 48px; padding: 6px 12px; font-size: 0.8rem; }
+        .status-pics-note { color: var(--accent); font-weight: 600; }
 
         /* ---- Task rows (core tablet UI) ---- */
         .task-row {
@@ -760,7 +765,16 @@
         <!-- Status Bar -->
         <div class="status-bar" id="statusBar">
             <span id="statusText">No database loaded.</span>
+            <!-- 🖼 Step pictures and videos for every building at once: a building's folder, or the files themselves -->
+            <div class="status-pics">
+                <span class="status-pics-note" id="picsNote" hidden></span>
+                <button type="button" class="btn btn-secondary pics-btn" id="frontPackBtn" data-t data-t-title title="Pick a building's picture folder (e.g. from SharePoint). Pictures and videos named like j234_1.jpg or j234_1.mp4 show on their steps while this window is open. Pick each building's folder in turn; nothing is uploaded anywhere.">📁 Picture folder</button>
+                <button type="button" class="btn btn-secondary pics-btn" id="frontImagesBtn" data-t data-t-title title="Pick picture and video files, several at once, named like j234_1.jpg or j234_1.mp4. They show on their steps while this window is open; nothing is uploaded anywhere.">🖼 Picture files</button>
+            </div>
         </div>
+        <!-- Read into this window only (no browser storage); see "Uploaded pictures and videos" in the script -->
+        <input type="file" id="packInput" webkitdirectory multiple hidden>
+        <input type="file" id="imagesInput" accept="image/png,image/jpeg,image/webp,video/mp4,.png,.jpg,.jpeg,.webp,.mp4" multiple hidden>
 
         <!-- Day list (task rows + scheduled events) — rendered by JS -->
         <div id="listContainer"></div>
@@ -860,9 +874,6 @@
                         <button type="button" class="btn btn-secondary db-btn" id="uploadImagesBtn" data-t data-t-title title="Pick picture or video files named like j234_1.jpg or j234_1.mp4. They're shown on their steps while this window is open; nothing is uploaded anywhere.">🖼 Upload images / videos</button>
                         <button type="button" class="btn btn-secondary db-btn" id="refreshImagesBtn" data-t>🔄 Refresh images</button>
                     </div>
-                    <!-- Read into this window only (no browser storage); see "Step pictures" in the script -->
-                    <input type="file" id="packInput" webkitdirectory multiple hidden>
-                    <input type="file" id="imagesInput" accept="image/png,image/jpeg,image/webp,video/mp4,.png,.jpg,.jpeg,.webp,.mp4" multiple hidden>
                 </div>
                 <div class="uploaded-note" id="uploadedNote" hidden></div>
                 <div id="stepsList"></div>
@@ -1626,6 +1637,7 @@
         function updateStatusBar() {
             const bar = $('statusBar');
             const text = $('statusText');
+            renderPicsNote();   // 🖼 in the language on screen
 
             if (!dbLoaded) {
                 bar.classList.remove('loaded');
@@ -2510,7 +2522,14 @@
             if (loaded && skipped.length) msg += T(' · {n} skipped (names must look like {example}): {files}', { n: skipped.length, example, files: list(skipped) });
             if (noTask.length) msg += T(' · {n} match no task: {files}', { n: noTask.length, files: list(noTask) });
             showToast(msg);
+            renderPicsNote();
             if ($('detailOverlay').classList.contains('open')) renderDetail();
+        }
+        // The main screen's count of the pictures and videos picked in this window
+        function renderPicsNote() {
+            const note = $('picsNote'), n = uploadedPics.size, v = uploadedVids.size;
+            note.hidden = !(n + v);
+            note.textContent = n + v ? T('🖼 {n} pictures · {v} videos (this window)', { n, v }) : '';
         }
         function renderUploadedNote() {
             const note = $('uploadedNote'), n = uploadedPics.size, v = uploadedVids.size;
@@ -4167,6 +4186,12 @@
             "this task": { fr: "cette tâche", es: "esta tarea", vi: "công việc này", zh: "此任务" },
             "Reopened": { fr: "Rouvert", es: "Reabierto", vi: "Đã mở lại", zh: "已重新打开" },
             "Reopened — the sign-off is kept on record as an office adjustment": { fr: "Rouvert — l’approbation reste au dossier comme correction du bureau", es: "Reabierto — la aprobación queda archivada como ajuste de la oficina", vi: "Đã mở lại — xác nhận vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "已重新打开 — 签字作为办公室调整留档" },
+            // 🖼 Picture packs from the main screen
+            "📁 Picture folder": { fr: "📁 Dossier d’images", es: "📁 Carpeta de imágenes", vi: "📁 Thư mục ảnh", zh: "📁 图片文件夹" },
+            "🖼 Picture files": { fr: "🖼 Fichiers d’images", es: "🖼 Archivos de imágenes", vi: "🖼 Tệp ảnh", zh: "🖼 图片文件" },
+            "Pick a building's picture folder (e.g. from SharePoint). Pictures and videos named like j234_1.jpg or j234_1.mp4 show on their steps while this window is open. Pick each building's folder in turn; nothing is uploaded anywhere.": { fr: "Choisissez le dossier d’images d’un bâtiment (par ex. dans SharePoint). Les images et vidéos nommées comme j234_1.jpg ou j234_1.mp4 s’affichent sur leurs étapes tant que cette fenêtre est ouverte. Choisissez le dossier de chaque bâtiment à tour de rôle ; rien n’est envoyé nulle part.", es: "Elija la carpeta de imágenes de un edificio (p. ej., de SharePoint). Las imágenes y videos con nombres como j234_1.jpg o j234_1.mp4 se muestran en sus pasos mientras esta ventana esté abierta. Elija la carpeta de cada edificio por turno; no se sube nada a ningún sitio.", vi: "Chọn thư mục ảnh của một tòa nhà (ví dụ từ SharePoint). Ảnh và video đặt tên như j234_1.jpg hoặc j234_1.mp4 sẽ hiện ở các bước khi cửa sổ này còn mở. Lần lượt chọn thư mục của từng tòa nhà; không có gì được tải lên đâu cả.", zh: "选择一栋楼的图片文件夹（例如来自 SharePoint）。命名如 j234_1.jpg 或 j234_1.mp4 的图片和视频会在此窗口打开期间显示在对应步骤上。依次选择每栋楼的文件夹；不会上传到任何地方。" },
+            "Pick picture and video files, several at once, named like j234_1.jpg or j234_1.mp4. They show on their steps while this window is open; nothing is uploaded anywhere.": { fr: "Choisissez des fichiers d’images et de vidéos, plusieurs à la fois, nommés comme j234_1.jpg ou j234_1.mp4. Ils s’affichent sur leurs étapes tant que cette fenêtre est ouverte ; rien n’est envoyé nulle part.", es: "Elija archivos de imágenes y videos, varios a la vez, con nombres como j234_1.jpg o j234_1.mp4. Se muestran en sus pasos mientras esta ventana esté abierta; no se sube nada a ningún sitio.", vi: "Chọn nhiều tệp ảnh và video cùng lúc, đặt tên như j234_1.jpg hoặc j234_1.mp4. Chúng hiện ở các bước khi cửa sổ này còn mở; không có gì được tải lên đâu cả.", zh: "一次选择多个图片和视频文件，命名如 j234_1.jpg 或 j234_1.mp4。它们会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "🖼 {n} pictures · {v} videos (this window)": { fr: "🖼 {n} images · {v} vidéos (cette fenêtre)", es: "🖼 {n} imágenes · {v} videos (esta ventana)", vi: "🖼 {n} ảnh · {v} video (cửa sổ này)", zh: "🖼 {n} 张图片 · {v} 个视频（此窗口）" },
             // 🔒 Floor manager PIN and ✏️ edit mode
             "🔒 Floor manager PIN": { fr: "🔒 NIP du superviseur", es: "🔒 PIN del supervisor", vi: "🔒 Mã PIN của tổ trưởng", zh: "🔒 现场主管 PIN" },
             "No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.": { fr: "Aucun superviseur n’a encore de NIP. Le bureau les définit dans le Labour & Cost Wizard : Employés → cocher Superviseur → NIP.", es: "Ningún supervisor tiene PIN todavía. La oficina los define en el Labour & Cost Wizard: Empleados → marcar Supervisor → PIN.", vi: "Chưa tổ trưởng nào có mã PIN. Văn phòng đặt mã trong Labour & Cost Wizard: Nhân viên → chọn Tổ trưởng → PIN.", zh: "还没有现场主管设置 PIN。办公室在 Labour & Cost Wizard 中设置：员工 → 勾选现场主管 → PIN。" },
@@ -4259,10 +4284,11 @@
             });
             $('deleteTaskBtn').addEventListener('click', deleteCurrentTask);
             $('refreshImagesBtn').addEventListener('click', refreshStepImages);
-            for (const [btn, input] of [['uploadPackBtn', 'packInput'], ['uploadImagesBtn', 'imagesInput']]) {
+            // Picture packs: from the main screen (every building at once) or a task's steps view — the same pickers
+            for (const [btn, input] of [['uploadPackBtn', 'packInput'], ['uploadImagesBtn', 'imagesInput'], ['frontPackBtn', 'packInput'], ['frontImagesBtn', 'imagesInput']]) {
                 $(btn).addEventListener('click', () => { $(input).value = ''; $(input).click(); });
-                $(input).addEventListener('change', () => loadPictureFiles($(input).files));
             }
+            for (const input of ['packInput', 'imagesInput']) $(input).addEventListener('change', () => loadPictureFiles($(input).files));
 
             // ⏱ Hours on chores
             wirePad();

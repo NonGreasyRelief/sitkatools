@@ -94,8 +94,9 @@ Pictures bind to steps by **filename only**; nothing is stored in the DB.
 - **🔄 Refresh images** re-probes every step (cache-busting query string; browsers cache failed loads), for the language on screen and English.
 - **Positional:** reordering or deleting steps shifts which picture shows; rename files to remap.
 - **Placement:** the page can't write into `pics/`. The manager copies files in by hand, then hits Refresh. Suggest ~1280 px JPGs to keep the repo lean.
-- **Uploading** (for a copy not next to its `pics/`, e.g. the online one), in the steps view:
-  - **📁 Upload image pack** (pick a folder) and **🖼 Upload images / videos** (pick files — Android Chrome may not pick folders).
+- **Uploading** (for a copy not next to its `pics/`, e.g. the online one), for every building at once from the **main screen** (the status bar's **📁 Picture folder** and **🖼 Picture files**, with a count "🖼 N pictures · M videos (this window)"), or from a task's steps view (**📁 Upload image pack** / **🖼 Upload images / videos**). Both use the same two pickers (`packInput`, `imagesInput`):
+  - a folder (`webkitdirectory`; Chrome for Android picks folders from version 143) — keep one folder per building and pick each in turn, since task codes are unique across buildings;
+  - or files, several at once (the fallback where a folder can't be picked).
   - Only the file name counts: `{code}_{n}.png|jpg|jpeg|webp` or `.mp4`, optional language prefix. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick png beats jpg beats webp; a later pick replaces an earlier file for the same step.
   - Held as object URLs in `uploadedPics` / `uploadedVids` for this window only (never stored or sent); they win over `pics/` (`stepMediaSrc`). A new window needs the pack picked again.
   - A toast reports how many loaded, names that don't fit, and codes that match no task; a note in the steps view counts those in use.
@@ -234,7 +235,7 @@ Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **�
 
 ### Status Bar
 
-`🏢 3 buildings · 📝 12 tasks today · ✅ 4/12 done`; `.loaded` border once a DB is present. In All Buildings the task count is the total across buildings, events excluded.
+`🏢 3 buildings · 📝 12 tasks today · ✅ 4/12 done`; `.loaded` border once a DB is present. In All Buildings the task count is the total across buildings, events excluded. On the right: **📁 Picture folder** and **🖼 Picture files** ("Step Pictures").
 
 ### Task Rows
 

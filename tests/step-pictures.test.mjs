@@ -84,6 +84,22 @@ export async function run(b, BASE) {
     check('back in English the English files show', (await srcs())[0] === enPic && (await vids())[1] === enVid);
 
     await b.run(dw, `closeTaskDetail();`);
+
+    // ---- From the main screen: every building's pictures at once (a folder per building, or the files) ----
+    const front = await b.run(dw, `const opened = [];
+        for (const id of ['packInput', 'imagesInput']) document.getElementById(id).click = () => opened.push(id);
+        document.getElementById('frontPackBtn').click(); document.getElementById('frontImagesBtn').click();
+        delete document.getElementById('packInput').click; delete document.getElementById('imagesInput').click;
+        return { opened, note: document.getElementById('picsNote').textContent, shown: !document.getElementById('picsNote').hidden };`, { user: true });
+    check('the main screen has 📁 Picture folder and 🖼 Picture files (the same pickers)', front.opened.join() === 'packInput,imagesInput', JSON.stringify(front));
+    check('…and says what is loaded in this window', front.shown && /^🖼 \d+ pictures · \d+ videos \(this window\)$/.test(front.note), front.note);
+    await b.run(dw, `DB.dailyBuildings.B2.tasks[0].steps = [{ text: 'Check Grow A' }];`);
+    await pick('imagesInput', [file('wat2_1.png')]);   // Building 2's chore, picked with no task open
+    await dwBuilding(b, dw, 'B2');
+    await b.run(dw, `openTaskDetail('B2', 'wat2');`);
+    await b.sleep(300);
+    check('a picture picked on the main screen shows on another building\'s task', (await srcs())[0]?.startsWith('blob:'), JSON.stringify(await srcs()));
+    await b.run(dw, `closeTaskDetail();`);
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
     await leave(b, main);
     fs.rmSync(dir, { recursive: true, force: true });
