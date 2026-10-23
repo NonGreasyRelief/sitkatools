@@ -1106,6 +1106,15 @@
         .rpt-tbtn:disabled { opacity: 0.5; cursor: default; }
         .rpt-tbtn.danger:hover { border-color: var(--danger); }
         .rpt-tbl { overflow: auto; max-height: 420px; }
+        .rpt-ctls-page .rpt-filters .form-group { display: none; }
+        .rpt-tbl.ctls-tbl { max-height: none; }
+        .ctls-tbl tfoot td { background: var(--bg-primary); }
+        .ctls-tbl tr.ctls-internal td { color: var(--rv-muted); }
+        .ctls-tbl tr.ctls-odd td { color: var(--warning); }
+        .ctls-tbl tr.ctls-sub td { color: var(--text-secondary); }
+        .ctls-tbl tr.ctls-total td { border-top: 2px solid var(--text-secondary); }
+        .ctls-h5 { margin: 14px 0 6px; font-size: 0.85rem; font-weight: 600; }
+        .ctls-head .rpt-chart { display: none; }
         .rpt-tbl table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
         .rpt-tbl th, .rpt-tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
         .rpt-tbl th { color: var(--rv-muted); font-weight: 600; position: sticky; top: 0; background: var(--bg-secondary); white-space: nowrap; }
@@ -1493,6 +1502,7 @@
                 <button type="button" data-page="yield">Yield &amp; Quality</button>
                 <button type="button" data-page="rooms">Rooms &amp; Environment</button>
                 <button type="button" data-page="forecast">Forecast</button>
+                <button type="button" data-page="ctls">📋 CTLS month</button>
                 <button type="button" data-page="settings">⚙️ Setup &amp; data</button>
             </nav>
             <div id="rptBody"></div>
@@ -1566,13 +1576,22 @@
             return 'le_' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
         }
 
-        // A changed entry that was signed in DailyWizard keeps a record of the hours as signed (the Labour Log shows it)
-        function noteSignedEdit(en, newHours) {
-            if (!en.initials || Number(en.hours) === newHours) return;
-            if (en.signedHours === undefined) en.signedHours = en.hours;
+        // An entry changed in the Tasks tab keeps a record: the hours as first signed (DailyWizard's initials, or the
+        // floor manager who entered it here), when and on which device it changed, and who approved the change
+        function noteEdit(en, sign) {
+            if ((en.initials || en.enteredBy) && en.signedHours === undefined) en.signedHours = en.hours;
             en.editedAt = new Date().toISOString();
             en.editedBy = DeviceView.building || 'office';
+            if (sign?.initials) en.editedSignoff = sign.initials;
         }
+        // Hours typed in the Tasks tab (not on the floor in DailyWizard, the usual way) need a floor manager's name,
+        // PIN and drawn initials, for adds and changes alike (user decision 2026-10-22). Resolves the sign-off, or null.
+        function askHoursSignoff(ev, day, what) {
+            const when = parseISO(day).toLocaleDateString([], { month: 'short', day: 'numeric' });
+            return FloorPin.ask(`${what} on ${when} · ${ev.title || 'task'}`, { initials: true });
+        }
+        // The task again after the sign-off dialog (a live update may have replaced the DB while it was open)
+        const taskById = id => DB.data.calendarEvents.find(e => e.id === id) || null;
 
         // cyrb53 — fast non-cryptographic 53-bit string hash
         function contentHash(str) {
@@ -2930,8 +2949,10 @@
                     const who = (en.temp != null
                         ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · ${Number(en.wage) > 0 ? `$${Number(en.wage)}/hr` : 'no wage'}</span>`
                         : escapeHtml(en.employee)) +
-                        // Logged on the floor in DailyWizard, signed with drawn initials
-                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>` : '');
+                        // Logged on the floor in DailyWizard, signed with drawn initials — or entered here, signed off by a floor manager
+                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}${en.editedSignoff?.name ? ` · change approved by ${escapeHtml(en.editedSignoff.name)}` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>`
+                        : en.enteredBy ? `<span class="entry-temp-tag" title="Entered here and signed off by ${escapeHtml(en.enteredBy.name || '?')} (floor manager)${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.editedAt ? ` · changed${en.signedHours !== undefined ? ` from ${fmtHours(en.signedHours)}` : ''}${en.editedSignoff?.name ? `, approved by ${escapeHtml(en.editedSignoff.name)}` : ''}` : ''}">✍️ ${escapeHtml(en.enteredBy.name || '?')}${en.editedAt ? ' · changed' : ''}</span>`
+                        : en.editedSignoff ? `<span class="entry-temp-tag" title="Changed here, approved by ${escapeHtml(en.editedSignoff.name || '?')}">✏️ changed · ${escapeHtml(en.editedSignoff.name || '?')}</span>` : '');
                     return `<div class="entry-row">
                         <span class="entry-name">${who}</span>
                         <span class="entry-hours">${fmtHours(en.hours)}</span>
@@ -3326,24 +3347,31 @@
             return ev.labour_map[dateStr];
         }
 
-        // Add (or update) a roster employee's hours for the selected day
-        $('lfAddBtn').addEventListener('click', () => {
-            const ev = selectedTask();
-            if (!ev) return;
+        // Add (or update) a roster employee's hours for the selected day — signed off by a floor manager
+        $('lfAddBtn').addEventListener('click', async () => {
+            const ev0 = selectedTask();
+            if (!ev0) return;
             const name = $('lfEmpSelect').value;
             if (!name) { showToast('Pick an employee from the roster'); return; }
             const hours = parseHm($('lfHours'), $('lfMinutes'));
             if (hours == null) return;
+            const day = TASK.editDate;
+            const had = (ev0.labour_map?.[day] || []).find(en => en.employee === name);
+            if (had && Number(had.hours) === hours) { showToast(`${name} already has ${fmtHours(hours)} on this day`); return; }
+            const sign = await askHoursSignoff(ev0, day, had ? `Change ${name}'s hours: ${fmtHours(had.hours)} → ${fmtHours(hours)}` : `Add ${fmtHours(hours)} for ${name}`);
+            if (!sign) return;
+            const ev = taskById(ev0.id);
+            if (!ev) { showToast('That task is no longer in the database'); return; }
 
-            const entries = dayEntryList(ev, TASK.editDate);
+            const entries = dayEntryList(ev, day);
             const idx = entries.findIndex(en => en.employee === name);
             if (idx >= 0) {
-                noteSignedEdit(entries[idx], hours);
+                noteEdit(entries[idx], sign);
                 entries[idx].hours = hours;
-                showToast(`Updated ${name} — ${fmtHours(hours)}`);
+                showToast(`Updated ${name} — ${fmtHours(hours)} · approved by ${sign.name}`);
             } else {
-                entries.push({ id: newLabourId(), employee: name, hours });
-                showToast(`Added ${name} — ${fmtHours(hours)}`);
+                entries.push({ id: newLabourId(), employee: name, hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
+                showToast(`Added ${name} — ${fmtHours(hours)} · signed by ${sign.name}`);
             }
 
             $('lfHours').value = '';
@@ -3352,10 +3380,10 @@
             renderTasksTab();
         });
 
-        // Add (or update) a temp worker's hours for the selected day
-        $('lfAddTempBtn').addEventListener('click', () => {
-            const ev = selectedTask();
-            if (!ev) return;
+        // Add (or update) a temp worker's hours for the selected day — signed off by a floor manager
+        $('lfAddTempBtn').addEventListener('click', async () => {
+            const ev0 = selectedTask();
+            if (!ev0) return;
             const name = $('lfTempName').value.trim();
             if (!name) { showToast("Enter the temp worker's name"); return; }
             if (getEmployees()[name]) {
@@ -3366,17 +3394,24 @@
             if (isNaN(wage) || wage < 0) { showToast('Enter a valid temp wage ($/hr)'); return; }
             const hours = parseHm($('lfTempHours'), $('lfTempMinutes'));
             if (hours == null) return;
+            const day = TASK.editDate;
+            const had = (ev0.labour_map?.[day] || []).find(en => en.temp === name);
+            if (had && Number(had.hours) === hours && Number(had.wage) === wage) { showToast(`Temp ${name} already has ${fmtHours(hours)} on this day`); return; }
+            const sign = await askHoursSignoff(ev0, day, had ? `Change temp ${name}'s hours: ${fmtHours(had.hours)} → ${fmtHours(hours)}` : `Add ${fmtHours(hours)} for temp ${name}`);
+            if (!sign) return;
+            const ev = taskById(ev0.id);
+            if (!ev) { showToast('That task is no longer in the database'); return; }
 
-            const entries = dayEntryList(ev, TASK.editDate);
+            const entries = dayEntryList(ev, day);
             const idx = entries.findIndex(en => en.temp === name);
             if (idx >= 0) {
-                noteSignedEdit(entries[idx], hours);
+                noteEdit(entries[idx], sign);
                 entries[idx].hours = hours;
                 entries[idx].wage = wage;
-                showToast(`Updated temp ${name} — ${fmtHours(hours)}`);
+                showToast(`Updated temp ${name} — ${fmtHours(hours)} · approved by ${sign.name}`);
             } else {
-                entries.push({ id: newLabourId(), temp: name, wage, hours });
-                showToast(`Added temp ${name} — ${fmtHours(hours)}`);
+                entries.push({ id: newLabourId(), temp: name, wage, hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
+                showToast(`Added temp ${name} — ${fmtHours(hours)} · signed by ${sign.name}`);
             }
 
             $('lfTempName').value = '';
@@ -3394,6 +3429,9 @@
         // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
         // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
         // developer tools: the drawn initials and the removal records are the real control.
+        // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
+        // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
+        // normalized 0–1, like DailyWizard's hours entries.
         var FloorPin = {
             WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
             WAIT_MS: 60 * 1000,
@@ -3401,6 +3439,8 @@
             _waitUntil: 0,
             _el: null,
             _done: null,
+            _wantInitials: false,
+            _strokes: [],
             tr(s, v) {
                 if (typeof T === 'function') return T(s, v);
                 return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
@@ -3465,14 +3505,19 @@
                 const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
                 return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
             },
-            // Ask a floor manager for their PIN. Resolves { name } once it's right, or null (cancelled).
-            ask(why) {
+            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials). Resolves { name }
+            // (plus initials) once it's right, or null (cancelled).
+            ask(why, opts = {}) {
                 if (this._done) this._finish(null);
                 this._build();
                 const el = this._el, names = this.managers();
                 const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
+                this._wantInitials = !!opts.initials;
+                this._strokes = [];
                 // The words are set on every ask, so they follow DailyWizard's language
-                el.querySelector('.fpin-title').textContent = this.tr('🔒 Floor manager PIN');
+                el.querySelector('.fpin-title').textContent = this.tr(this._wantInitials ? '✍️ Floor manager sign-off' : '🔒 Floor manager PIN');
+                el.querySelector('[data-fpin-sign-label]').textContent = this.tr('Your initials — draw them');
+                el.querySelector('[data-fpin-clear]').textContent = this.tr('Clear initials');
                 el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
                 el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
                 el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
@@ -3484,11 +3529,14 @@
                 el.querySelector('[data-fpin-fields]').hidden = none;
                 el.querySelector('[data-fpin-ok]').hidden = none;
                 el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
+                const sign = el.querySelector('[data-fpin-sign]');
+                sign.hidden = none || !this._wantInitials;
                 who.innerHTML = '';
                 if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
                 for (const n of names) who.appendChild(new Option(n, n));
                 pin.value = '';
                 el.hidden = false;
+                if (!sign.hidden) this._sizePad();
                 (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
                 return new Promise(resolve => { this._done = resolve; });
             },
@@ -3504,9 +3552,10 @@
                 if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
                 if (!name) { err.textContent = this.tr('Pick your name'); return; }
                 if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
+                if (this._wantInitials && !this._strokes.length) { err.textContent = this.tr('Draw your initials'); return; }
                 if (await this.check(name, pinEl.value)) {
                     this._fails = 0;
-                    this._finish({ name });
+                    this._finish(this._wantInitials ? { name, initials: { name, strokes: this._strokes.map(st => st.slice()) } } : { name });
                     return;
                 }
                 pinEl.value = '';
@@ -3523,7 +3572,7 @@
                 css.textContent = `
                     .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
                     .fpin[hidden] { display: none; }
-                    .fpin-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+                    .fpin-card { width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
                     .fpin-title { font-size: 1.1rem; font-weight: 700; }
                     .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
                     .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
@@ -3532,6 +3581,11 @@
                     .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
                     .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
                     .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
+                    .fpin-sign { display: flex; flex-direction: column; gap: 6px; }
+                    .fpin-sign[hidden] { display: none; }
+                    .fpin-sign span { font-size: 0.8rem; color: var(--text-secondary); }
+                    .fpin-pad { width: 100%; height: 120px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
+                    .fpin .fpin-clear { align-self: flex-start; min-height: 40px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
                     .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
                     .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
                     .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
@@ -3554,6 +3608,11 @@
                             <label for="floorPinInput"></label>
                             <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
                         </div>
+                        <div class="fpin-sign" data-fpin-sign hidden>
+                            <span data-fpin-sign-label></span>
+                            <canvas class="fpin-pad" data-fpin-pad></canvas>
+                            <button type="button" class="fpin-clear" data-fpin-clear></button>
+                        </div>
                         <div class="fpin-err" data-fpin-err role="alert"></div>
                         <div class="fpin-actions">
                             <button type="button" class="fpin-cancel" data-fpin-cancel></button>
@@ -3566,8 +3625,56 @@
                     if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
                 });
                 el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
+                // The initials pad: pointer strokes, normalized 0–1
+                const pad = el.querySelector('[data-fpin-pad]');
+                let stroke = null;
+                const at = (e) => {
+                    const r = pad.getBoundingClientRect();
+                    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+                };
+                pad.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    try { pad.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
+                    const [x, y] = at(e);
+                    stroke = [+x.toFixed(3), +y.toFixed(3)];
+                    this._strokes.push(stroke);
+                    this._drawPad();
+                });
+                pad.addEventListener('pointermove', (e) => {
+                    if (!stroke) return;
+                    const [x, y] = at(e);
+                    if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;
+                    stroke.push(+x.toFixed(3), +y.toFixed(3));
+                    this._drawPad();
+                });
+                const end = () => { stroke = null; };
+                pad.addEventListener('pointerup', end);
+                pad.addEventListener('pointercancel', end);
+                el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
                 document.body.appendChild(el);
                 this._el = el;
+            },
+            _sizePad() {
+                const c = this._el.querySelector('[data-fpin-pad]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+                c.width = Math.max(1, Math.round(r.width * dpr));
+                c.height = Math.max(1, Math.round(r.height * dpr));
+                this._drawPad();
+            },
+            _drawPad() {
+                const c = this._el.querySelector('[data-fpin-pad]'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+                ctx.clearRect(0, 0, c.width, c.height);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2.5 * dpr;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                for (const st of this._strokes) {
+                    if (st.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(st[0] * c.width, st[1] * c.height);
+                    for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
+                    if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
+                    ctx.stroke();
+                }
             }
         };
 
@@ -3838,8 +3945,8 @@
                 if (def.daily) {
                     if (!a.date) continue;
                     const m = daily[a.metric] || (daily[a.metric] = {});
-                    const c = m[a.date] || (m[a.date] = { sum: 0, n: 0, max: -Infinity });
-                    c.sum += a.value; c.n++; c.max = Math.max(c.max, a.value);
+                    const c = m[a.date] || (m[a.date] = { sum: 0, n: 0, max: -Infinity, min: Infinity });
+                    c.sum += a.value; c.n++; c.max = Math.max(c.max, a.value); c.min = Math.min(c.min, a.value);
                     if (a.room && !rooms[a.date]) rooms[a.date] = a.room;
                 } else if (def.agg === 'sum') {
                     once[a.metric] = (once[a.metric] || 0) + a.value;
@@ -3862,7 +3969,10 @@
                 const tc = (tF - 32) * 5 / 9;
                 series.vpd[d] = 0.6108 * Math.exp(17.27 * tc / (tc + 237.3)) * (1 - rh / 100);
             }
-            return { once, series, rooms, products };
+            // The lowest plant count of each day (a move day can hold two entries: before and after a cull), for supplies
+            // charged per plant at a recipe task
+            const plantLows = Object.fromEntries(Object.entries(daily[RPT_PLANTS] || {}).map(([d, c]) => [d, c.min]));
+            return { once, series, rooms, products, plantLows };
         }
 
         // The room a crop task happens in (CropLabourWizard's phase rules, as taskRoomId), for any lot record
@@ -3887,6 +3997,7 @@
         // From the live DB, or from an archive file (lot, events, paperwork). This object is what "Save summary"
         // stores in _EmployeeWizard.crops[lotId]; `series` and `rooms` are kept off it (not enumerable).
         // Version 3 adds labour.chores: the crop's share of room chores, filled in by rptApplyChores.
+        // Version 4 adds ctls: the lot's dated plant and weight history for the 📋 CTLS page (ctlsLedger).
         function rptBuildCrop(lotId, lot, events, paper, qmap) {
             const tasks = (events || []).filter(ev => ev && ev.lotId === lotId && ev.sourceTool === 'CropLabourWizard' && isDay(ev.date))
                 .sort((a, b) => a.date.localeCompare(b.date));
@@ -3894,7 +4005,7 @@
             for (const ev of tasks) if (ev.taskType && !sched[ev.taskType]) sched[ev.taskType] = { date: ev.date, end: ev.endDate || ev.date };
             const flowerRoomId = rptRoomIdByName(lot?.destRoom);
             const c = {
-                version: 3, lotId, strain: lot?.strain || 'Unknown', parentLotId: lot?.parentLotId || null,
+                version: 4, lotId, strain: lot?.strain || 'Unknown', parentLotId: lot?.parentLotId || null,
                 rooms: { cloning: lot?.cloningRoom || null, veg: lot?.vegRoom || null, flower: lot?.destRoom || null, dry: lot?.dryRoom || null, trim: lot?.trimRoom || null },
                 flowerRoomId: flowerRoomId || null,
                 buildingId: DB.data.rooms?.[flowerRoomId]?.buildingId || null,
@@ -3936,7 +4047,9 @@
                 }
             }
 
-            const { once, series, rooms, products } = rptRollup(rptAnswers(paper, qmap));
+            const answers = rptAnswers(paper, qmap);
+            const { once, series, rooms, products, plantLows } = rptRollup(answers);
+            c.plantLows = plantLows;
             const grades = {};
             for (const g of RPT_GRADES) if (once['harvest.' + g] != null) grades[g] = once['harvest.' + g];
             const gradeSum = Object.keys(grades).length ? rSum(Object.values(grades)) : null;
@@ -3974,6 +4087,9 @@
                 nutrientByProduct: products, lightPct: avg('env.lightPct', c.dates.planting, c.dates.harvestEnd ? dAdd(c.dates.harvestEnd, 1) : null) };
             // The recipe the lot was scheduled with, and its plants at the start — for the supplies it used
             c.recipeId = lot?._tool_CropLabourWizard?.recipeId || null;
+            // 📋 CTLS: the lot's dated plant and weight history (version 4), kept with the summary so a lot closed out
+            // mid-month still counts in that month's numbers
+            c.ctls = ctlsLedger(lot, paper, qmap, answers);
             const flagged = new Set(), herm = new Set();
             for (const m of RPT_IPM) for (const [d, v] of Object.entries(series[m] || {})) if (v >= 1) { flagged.add(d); if (m === 'ipm.herm') herm.add(d); }
             c.ipm = { flagDays: flagged.size, hermDays: herm.size };
@@ -4273,6 +4389,24 @@
         }
         const rptCropPlants = c => Number(c.plants?.started) > 0 ? Number(c.plants.started) : Number(c.plants?.harvested) > 0 ? Number(c.plants.harvested) : 1;
 
+        // Plants for a supply charged "per plant at" a recipe task (user decision 2026-10-22): the lot's CropLabourWizard
+        // event of that task type, on its calendar date (every day of a multi-day task), and the lowest count the grow
+        // logs recorded on those days. No count those days → the last one before (how 'before'); none at all → the count
+        // at the start ('start'). A task still ahead → today's count ('estimate'). The lot has a schedule without that task
+        // (e.g. Cutting Clones switched off for bought clones) → no plants ('none'); no schedule at all → the start count.
+        function rptPlantsAtTask(c, taskType) {
+            const evs = (DB.data.calendarEvents || []).filter(e => e.lotId === c.lotId && e.sourceTool === 'CropLabourWizard' && e.date);
+            const ev = evs.filter(e => e.taskType === taskType).sort((a, b) => a.date.localeCompare(b.date))[0];
+            if (!ev) return evs.length ? { plants: 0, how: 'none' } : { plants: rptCropPlants(c), how: 'start' };
+            const lows = c.plantLows || {}, days = Object.keys(lows).sort(), from = ev.date, to = ev.endDate || ev.date, today = rToday();
+            const inside = days.filter(d => d >= from && d <= to).map(d => lows[d]);
+            if (inside.length) return { plants: Math.min(...inside), how: 'logged', date: from };
+            const upTo = d => days.filter(x => x <= d).pop();
+            if (from > today) { const last = upTo(today); return { plants: last ? lows[last] : rptCropPlants(c), how: 'estimate', date: from }; }
+            const before = days.filter(d => d < from).pop();
+            return before ? { plants: lows[before], how: 'before', date: from } : { plants: rptCropPlants(c), how: 'start', date: from };
+        }
+
         // The power model for a set of crops: { byCrop: Map(lotId → { kWh, lights, equip, cost, pctMissing }), unallocated,
         // missingLights: Set(roomId), source, rate }
         function rptPowerModel(crops) {
@@ -4439,9 +4573,14 @@
             const items = [], unpricedSupplies = [];
             for (const x of recipe?.inputs || []) {
                 const item = cfg.catalog[x.inputId] || cfg.byName[String(x.name || '').trim().toLowerCase()];
-                const qty = (Number(x.qty) || 0) * (x.per === 'plant' ? rptCropPlants(c) : 1);
+                const atTask = x.per === 'plant' && x.at ? rptPlantsAtTask(c, x.at) : null;
+                const qty = (Number(x.qty) || 0) * (atTask ? atTask.plants : x.per === 'plant' ? rptCropPlants(c) : 1);
                 const p = cfg.price(item?.price);
-                items.push({ name: item?.name || x.name, unit: item?.unit || x.unit || '', qty, cost: p != null ? qty * p : null });
+                // The task is named as the lot's recipe names it (else the task-type registry)
+                const rt = atTask ? (recipe?.tasks || []).find(t => t?.taskType === x.at) : null;
+                const label = atTask ? (rt?.name ? `${rt.emoji || ''} ${rt.name}`.trim() : rptTaskLabel(x.at)) : null;
+                items.push({ name: item?.name || x.name, unit: item?.unit || x.unit || '', qty, cost: p != null ? qty * p : null,
+                    ...(atTask ? { at: { task: x.at, label, plants: atTask.plants, how: atTask.how, date: atTask.date || null } } : {}) });
                 if (p == null) unpricedSupplies.push(item?.name || x.name);
             }
             const supplyCosts = items.map(x => x.cost).filter(v => v != null);
@@ -5613,7 +5752,10 @@
             for (const c of cur) {
                 const k = rptCropInputCost(c, M);
                 for (const [n, x] of Object.entries(k.fert.byProduct)) { const t = fert[n] || (fert[n] = { mL: 0, cost: 0, priced: true }); t.mL += x.mL; if (x.cost != null) t.cost += x.cost; else t.priced = false; }
-                for (const x of k.supplies.items) { const t = sup[x.name] || (sup[x.name] = { qty: 0, unit: x.unit, cost: 0, priced: true }); t.qty += x.qty; if (x.cost != null) t.cost += x.cost; else t.priced = false; }
+                for (const x of k.supplies.items) {
+                    const key = x.at ? `${x.name} · at ${x.at.label || rptTaskLabel(x.at.task)}` : x.name;
+                    const t = sup[key] || (sup[key] = { qty: 0, unit: x.unit, cost: 0, priced: true }); t.qty += x.qty; if (x.cost != null) t.cost += x.cost; else t.priced = false;
+                }
                 if (k.water.L > 0) { waterL += k.water.L; waterCost += k.water.cost || 0; }
                 if (k.power.kWh > 0) { kWh += k.power.kWh; kWhCost += k.power.cost || 0; }
                 if (k.property?.cost > 0) { propDays += k.property.days || 0; propCost += k.property.cost; }
@@ -5653,6 +5795,9 @@
             if (noSup) miss.push(`${noSup} crop${noSup === 1 ? '’s recipe lists' : 's’ recipes list'} no supplies — add them in CropLabourWizard → recipe → 🧪 Inputs.`);
             const unpricedSup = [...new Set(cur.flatMap(c => rptCropInputCost(c, M).supplies.unpriced))];
             if (unpricedSup.length) miss.push(`Supplies without a price: ${unpricedSup.join(', ')}.`);
+            // Supplies per plant at a task that had no grow-log count on or before that task: counted from the start
+            const fromStart = [...new Set(cur.flatMap(c => rptCropInputCost(c, M).supplies.items.filter(x => x.at?.how === 'start').map(x => `${x.name} (lot ${c.lotId}, ${x.at.label || rptTaskLabel(x.at.task)})`)))];
+            if (fromStart.length) miss.push(`No plant count was logged on or before the task, so these are counted from the plants at the start: ${fromStart.join(', ')}.`);
             const usedBuildings = new Set(cur.flatMap(c => rptCropRoomDays(c).map(st => DB.data.rooms?.[st.roomId]?.buildingId).filter(Boolean)));
             for (const b of usedBuildings) if (!(Number(DB.data.buildings?.[b]?.monthlyPropertyCost) > 0)) miss.push(`${rptBuildingName(b)} has no monthly property cost (rent and fees) — set it in SitkaTools’ Room Manager → Existing Buildings.`);
             const prop = M.property || (M.property = rptPropertyModel(M.crops));
@@ -5674,9 +5819,357 @@
         }
 
         // ---- Setup & data: canopy, shift length, crop summaries, archive import, metric hook-up ----
+        // =====================================================
+        // 📋 CTLS — the month's plant and cannabis numbers for Health Canada's monthly CTLS report (user decision 2026-10-22)
+        // Plants: each lot's count from its grow log (the newest page's count of each day), the reasons PaperWizard keeps on
+        // a day whose count changed (days[day]._removed / ._removedTo / ._added), and the Lot Manager's record: new lots
+        // are plants received, sub-lots clones cut, split lots plants moved between lots (not counted). Wet cannabis: the
+        // harvest log's wet weight, hanging until the lot's dry weight is recorded. Dry flower sent out: the dry weight, on
+        // the day it's recorded. Filed months: _EmployeeWizard.ctls[YYYY-MM] (Mark as filed), checked against next month.
+        // =====================================================
+        const CTLS_REMOVED = { destroyed: 'Destroyed', culled: 'Culled', sampled: 'Sampled', harvested: 'Harvested', moved: 'Moved to another lot', sold: 'Sold / transferred' };
+        const CTLS_MOVED_IN = /moved in|from another lot/i;   // a higher count for this reason came from another lot
+        const CTLS_MONTHS_BACK = 36;
+        const CTLS_STAGE_WORDS = { cloning: 'Cloning', veg: 'Vegetation', flower: 'Bloom', harvest: 'Harvesting', drying: 'Drying', curing: 'Curing' };
+
+        // sheetId → the 🌱 plant-count and ✍️ initials questions of each daily-weekly sheet (as PaperWizard's plantCountQuestion)
+        function ctlsSheetQuestions() {
+            const pw = DB.data._PaperWizard || {}, out = {};
+            for (const w of Object.values(pw.wizards || {})) {
+                if (!w?.sheetId || out[w.sheetId] || pw.sheets?.[w.sheetId]?.cadence !== 'daily-weekly') continue;
+                const qs = w.questions || [];
+                const pc = qs.find(q => q?.type === 'plant-count' && q.rowScoped);
+                if (pc) out[w.sheetId] = { pc: pc.id, init: qs.find(q => q?.type === 'initials' && q.rowScoped)?.id || null };
+            }
+            return out;
+        }
+
+        // One lot's dated history, from a lot record and its paperwork (live, or an archive file's):
+        //   { v: 1, type, created, start, from, parent, dryRoom, room, stage, logged,
+        //     counts: [[day, plants, room, phase]] (only the days something changed, and the last),
+        //     moves: [{ date, kind: 'removed' | 'added' | 'unexplained', reason?, n, to?, by? }],
+        //     wet: [[day, g]], dry: [[day, g]], undatedWeights? }
+        // `unexplained` is a change in the count with no reason on the day (entries from before reasons were asked).
+        function ctlsLedger(lot, paper, qmap, answers = null, sq = ctlsSheetQuestions()) {
+            const byDay = {};
+            for (const [sheetId, entry] of Object.entries(paper || {})) {
+                const s = sq[sheetId];
+                if (!s || !entry || typeof entry !== 'object') continue;
+                for (const [key, inst] of Object.entries(entry.instances || {})) {
+                    for (const [day, d] of Object.entries(inst?.days || {})) {
+                        if (!isDay(day) || !d || typeof d !== 'object' || (inst.phaseChangeDate && day > inst.phaseChangeDate)) continue;   // struck-out rows
+                        const r = byDay[day] || (byDay[day] = { n: null, key: '', room: null, phase: null, removed: {}, to: {}, added: [], by: null, reasonBy: null, seen: new Set() });
+                        const raw = d[s.pc];
+                        const n = raw == null || typeof raw === 'object' || String(raw).trim() === '' ? NaN : Number(String(raw).replace(/[^0-9.\-]/g, ''));
+                        const by = s.init && d[s.init] && typeof d[s.init] === 'object' && d[s.init].name ? String(d[s.init].name) : null;
+                        // A move day is on two pages: the newest page's count is the day's last word
+                        if (Number.isFinite(n) && key >= r.key) { r.n = n; r.key = key; r.room = inst.room || null; r.phase = inst.phase || null; if (by) r.by = by; }
+                        if (!d._removed && !d._added) continue;
+                        const sig = JSON.stringify([d._removed || null, d._removedTo || null, d._added || null]);
+                        if (r.seen.has(sig)) continue;
+                        r.seen.add(sig);
+                        for (const [reason, k] of Object.entries(d._removed || {})) {
+                            const m = Math.round(Number(k) || 0);
+                            if (m <= 0) continue;
+                            r.removed[reason] = (r.removed[reason] || 0) + m;
+                            if (d._removedTo?.[reason]) r.to[reason] = String(d._removedTo[reason]);
+                        }
+                        if (d._added && Number(d._added.n) > 0) r.added.push({ n: Math.round(Number(d._added.n)), reason: String(d._added.reason || '') });
+                        if (by) r.reasonBy = by;
+                    }
+                }
+            }
+            const days = Object.keys(byDay).filter(d => byDay[d].n != null).sort();
+            const sumAdded = r => r.added.reduce((t, a) => t + a.n, 0), sumRemoved = r => Object.values(r.removed).reduce((t, k) => t + k, 0);
+            const startSet = lot?.startPlantCount != null && lot.startPlantCount !== '' && Number.isFinite(Number(lot.startPlantCount));
+            let start = startSet ? Number(lot.startPlantCount) : null;
+            // Older lots: the count before the first logged day's change (that day the grow log compared with the lot's count)
+            if (start == null && days.length) { const r = byDay[days[0]]; start = r.n + sumRemoved(r) - sumAdded(r); }
+            if (start == null) start = Number(lot?.plantCount) > 0 ? Number(lot.plantCount) : 0;
+            const moves = [], counts = [];
+            let prev = start, last = null;
+            for (const d of days) {
+                const r = byDay[d], by = r.reasonBy || r.by;
+                for (const [reason, k] of Object.entries(r.removed)) moves.push({ date: d, kind: 'removed', reason, n: k, ...(r.to[reason] ? { to: r.to[reason] } : {}), ...(by ? { by } : {}) });
+                for (const a of r.added) moves.push({ date: d, kind: 'added', reason: a.reason, n: a.n, ...(by ? { by } : {}) });
+                const off = r.n - prev - (sumAdded(r) - sumRemoved(r));
+                if (off) moves.push({ date: d, kind: 'unexplained', n: off });
+                prev = r.n;
+                const row = [d, r.n, r.room, r.phase];
+                if (!last || last[1] !== row[1] || last[2] !== row[2] || last[3] !== row[3] || d === days[days.length - 1]) counts.push(row);
+                last = row;
+            }
+            const wet = {}, dry = {};
+            let undated = false;
+            for (const a of answers || rptAnswers(paper, qmap)) {
+                if (a.metric !== 'harvest.wetWeight' && a.metric !== 'harvest.dryWeight') continue;
+                if (!a.date) { undated = true; continue; }
+                const m = a.metric === 'harvest.wetWeight' ? wet : dry;
+                m[a.date] = (m[a.date] || 0) + a.value;
+            }
+            const byDate = o => Object.entries(o).sort(([a], [b]) => a.localeCompare(b)).map(([d, g]) => [d, Math.round(g * 10) / 10]);
+            const type = ['new-lot', 'sub-lot', 'split-lot'].includes(lot?.type) ? lot.type : (lot?.parentLotId ? 'sub-lot' : 'new-lot');
+            let created = isDay(lot?.createdDate) ? lot.createdDate : null;
+            if (days.length && (!created || days[0] < created)) created = days[0];
+            const L = { v: 1, type, created, start, from: lot?.receivedFrom || null, parent: lot?.parentLotId || null,
+                dryRoom: lot?.dryRoom || null, room: lot?.currentRoom || null, stage: lot?.stage || null, logged: days.length > 0,
+                counts, moves, wet: byDate(wet), dry: byDate(dry), ...(undated ? { undatedWeights: true } : {}) };
+            Object.defineProperty(L, 'days', { value: new Set(days), enumerable: false });   // every logged day (live lots: missing days)
+            return L;
+        }
+
+        // ---- A lot's numbers on a day ----
+        function ctlsCountAt(L, d) {
+            if (!L.created || d < L.created) return 0;
+            let n = L.start;
+            for (const [day, c] of L.counts) { if (day > d) break; n = c; }
+            return n;
+        }
+        function ctlsPlaceAt(L, d) {
+            let at = null;
+            for (const c of L.counts) { if (c[0] > d) break; at = c; }
+            // A lot with no grow log has the Lot Manager's stage: in the grow log's words, so phases add up
+            return at ? { room: at[2] || '', phase: at[3] || '' } : { room: L.room || '', phase: CTLS_STAGE_WORDS[L.stage] || L.stage || '' };
+        }
+        const ctlsSumTo = (list, d) => list.reduce((t, [day, g]) => day <= d ? t + g : t, 0);
+        const ctlsDryDate = L => L.dry.length ? L.dry[0][0] : null;
+        // Wet weight still hanging: harvested, and the lot's dry weight not recorded yet
+        const ctlsHanging = (L, d) => { const dd = ctlsDryDate(L); return dd && dd <= d ? 0 : ctlsSumTo(L.wet, d); };
+
+        // ---- Months ----
+        const ctlsBounds = ym => {
+            const [y, m] = ym.split('-').map(Number);
+            const start = `${ym}-01`;
+            return { start, end: localDateStr(new Date(y, m, 0)), prevEnd: dAdd(start, -1), prevYm: localDateStr(new Date(y, m - 2, 1)).slice(0, 7) };
+        };
+        const ctlsMonthName = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleString('en-CA', { month: 'long', year: 'numeric' }); };
+        const ctlsDefaultMonth = () => { const t = parseISO(rToday()); return localDateStr(new Date(t.getFullYear(), t.getMonth() - 1, 1)).slice(0, 7); };
+        const ctlsFiled = () => DB.data._EmployeeWizard?.ctls || {};
+        const ctlsG = g => rN(g, Math.abs(g % 1) > 1e-9 ? 1 : 0) + ' g';
+        const ctlsKg = g => rN(g / 1000, 3) + ' kg';
+        const ctlsSigned = n => n > 0 ? '+' + rN(n) : n < 0 ? '−' + rN(-n) : '0';
+        const ctlsLotSort = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+
+        // Every lot that could hold plants or cannabis: the DB's lots (live), plus closed-out lots' summaries
+        function ctlsLots() {
+            const qmap = rptQuestionMap(), sq = ctlsSheetQuestions(), crops = DB.data._EmployeeWizard?.crops || {};
+            const lots = [], old = [];
+            for (const [lotId, lot] of Object.entries(DB.lots)) {
+                if (lot) lots.push({ lotId, strain: lot.strain || '—', live: true, L: ctlsLedger(lot, DB.data._PaperWizard?.entries?.[lotId], qmap, null, sq), saved: crops[lotId] || null });
+            }
+            for (const [lotId, s] of Object.entries(crops)) {
+                if (DB.lots[lotId] || !s || typeof s !== 'object') continue;
+                if (s.ctls?.v) lots.push({ lotId, strain: s.strain || '—', live: false, L: s.ctls });
+                else old.push({ lotId, s });   // saved before the CTLS history existed
+            }
+            return { lots, old };
+        }
+
+        function ctlsModel(ym) {
+            const B = ctlsBounds(ym), today = rToday();
+            const { lots, old } = ctlsLots();
+            // ---- Plants ----
+            const rows = [];
+            for (const x of lots) {
+                const L = x.L;
+                if (L.created && inRange(L.created, B.start, B.end) && L.start > 0) {
+                    const bucket = L.type === 'split-lot' ? 'internal' : L.type === 'sub-lot' ? 'produced' : 'received';
+                    rows.push({ date: L.created, lotId: x.lotId, strain: x.strain, delta: L.start, bucket, by: '',
+                        what: bucket === 'internal' ? `Split from lot ${L.parent || '?'}` : bucket === 'produced' ? `Clones cut${L.parent ? ` from lot ${L.parent}` : ''}` : 'New lot received',
+                        party: bucket === 'received' ? (L.from || '') : '' });
+                }
+                for (const m of L.moves) {
+                    if (!inRange(m.date, B.start, B.end)) continue;
+                    let bucket, what;
+                    if (m.kind === 'removed') {
+                        bucket = m.reason === 'moved' ? 'internal' : CTLS_REMOVED[m.reason] ? m.reason : 'other';
+                        what = m.reason === 'harvested' ? 'Harvested (now wet weight)' : CTLS_REMOVED[m.reason] || m.reason;
+                    } else if (m.kind === 'added') {
+                        bucket = CTLS_MOVED_IN.test(m.reason) ? 'internal' : 'adjust';
+                        what = m.reason ? `Added: ${m.reason}` : 'Added';
+                    } else { bucket = 'unexplained'; what = 'Count changed, no reason recorded'; }
+                    rows.push({ date: m.date, lotId: x.lotId, strain: x.strain, delta: m.kind === 'removed' ? -m.n : m.n, bucket, what, party: m.to || '', by: m.by || '' });
+                }
+            }
+            rows.sort((a, b) => a.date.localeCompare(b.date) || ctlsLotSort(a.lotId, b.lotId) || b.delta - a.delta);
+            const opening = rSum(lots, x => ctlsCountAt(x.L, B.prevEnd)), closing = rSum(lots, x => ctlsCountAt(x.L, B.end));
+            const tot = {};
+            for (const r of rows) tot[r.bucket] = (tot[r.bucket] || 0) + r.delta;
+            const atEnd = lots.map(x => ({ lotId: x.lotId, strain: x.strain, n: ctlsCountAt(x.L, B.end), ...ctlsPlaceAt(x.L, B.end) }))
+                .filter(o => o.n > 0).sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
+            const byPhase = {};
+            for (const o of atEnd) byPhase[o.phase || 'No phase'] = (byPhase[o.phase || 'No phase'] || 0) + o.n;
+
+            // ---- Wet cannabis hanging, and dry flower sent out ----
+            const wetIn = [], wetOut = [], hanging = [], dryOut = [], oddWet = [];
+            for (const x of lots) {
+                const L = x.L, dd = ctlsDryDate(L);
+                for (const [d, g] of L.wet) {
+                    if (!inRange(d, B.start, B.end)) continue;
+                    if (dd && dd < B.start) oddWet.push({ lotId: x.lotId, date: d, g }); else wetIn.push({ date: d, lotId: x.lotId, strain: x.strain, g, room: L.dryRoom || '' });
+                }
+                if (dd && inRange(dd, B.start, B.end)) wetOut.push({ date: dd, lotId: x.lotId, strain: x.strain, wet: ctlsSumTo(L.wet, B.end), dry: ctlsSumTo(L.dry, B.end) });
+                const h = ctlsHanging(L, B.end);
+                if (h > 0) hanging.push({ lotId: x.lotId, strain: x.strain, room: L.dryRoom || '', since: L.wet[0]?.[0] || '', g: h });
+                for (const [d, g] of L.dry) if (inRange(d, B.start, B.end)) dryOut.push({ date: d, lotId: x.lotId, strain: x.strain, g });
+            }
+            const bySort = (a, b) => (a.date || '').localeCompare(b.date || '') || ctlsLotSort(a.lotId, b.lotId);
+            wetIn.sort(bySort); wetOut.sort(bySort); dryOut.sort(bySort); hanging.sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
+            const wet = { opening: rSum(lots, x => ctlsHanging(x.L, B.prevEnd)), closing: rSum(lots, x => ctlsHanging(x.L, B.end)), in: rSum(wetIn, r => r.g), out: rSum(wetOut, r => r.wet) };
+            const dryTotal = rSum(dryOut, r => r.g);
+
+            // ---- Checks: what could make these numbers wrong ----
+            const checks = [];
+            const lotList = ids => { const u = [...new Set(ids)].sort(ctlsLotSort); return u.slice(0, 6).join(', ') + (u.length > 6 ? ` and ${u.length - 6} more` : ''); };
+            for (const x of lots.filter(x => x.live)) {
+                const L = x.L;
+                const inMonth = ctlsCountAt(L, B.end) > 0 || ctlsCountAt(L, B.prevEnd) > 0 || inRange(L.created, B.start, B.end);
+                if (!inMonth || L.created > B.end) continue;
+                if (!L.logged) { checks.push({ sev: 'warn', text: `Lot ${x.lotId} has no grow log yet: its ${rN(ctlsCountAt(L, B.end))} plants come from the Lot Manager, and changes to them aren't dated.` }); continue; }
+                // Days with plants and no grow-log count (today isn't due yet)
+                const first = L.counts[0][0], to = B.end < today ? B.end : dAdd(today, -1);
+                let missing = 0, firstMissing = null;
+                for (let d = first > B.start ? first : B.start; d <= to; d = dAdd(d, 1)) {
+                    if (L.days.has(d) || ctlsCountAt(L, dAdd(d, -1)) <= 0) continue;
+                    missing++;
+                    if (!firstMissing) firstMissing = d;
+                }
+                if (missing) checks.push({ sev: 'warn', text: `Lot ${x.lotId}'s grow log has no plant count on ${missing} day${missing === 1 ? '' : 's'} with plants this month (from ${dFmt(firstMissing)}).` });
+            }
+            const unexplained = rows.filter(r => r.bucket === 'unexplained');
+            if (unexplained.length) checks.push({ sev: 'warn', text: `${unexplained.length} change${unexplained.length === 1 ? '' : 's'} in a plant count ${unexplained.length === 1 ? 'has' : 'have'} no reason (entered before reasons were asked, or changed by hand): ${unexplained.slice(0, 4).map(r => `lot ${r.lotId} on ${dFmt(r.date)} (${ctlsSigned(r.delta)})`).join(', ')}${unexplained.length > 4 ? '…' : ''}. They're counted under "No reason recorded".` });
+            const noTo = rows.filter(r => r.bucket === 'sold' && !r.party);
+            if (noTo.length) checks.push({ sev: 'warn', text: `Plants sold or transferred with no company recorded: ${noTo.map(r => `lot ${r.lotId} on ${dFmt(r.date)}`).join(', ')}. Saving that grow-log day again asks for it.` });
+            const noWet = lots.filter(x => x.L.moves.some(m => m.reason === 'harvested' && m.date <= B.end && m.date >= dAdd(B.start, -60)) && !x.L.wet.some(([d]) => d <= B.end));
+            if (noWet.length) checks.push({ sev: 'warn', text: `Harvested with no wet weight on the harvest log yet: lot ${lotList(noWet.map(x => x.lotId))}.` });
+            if (oddWet.length) checks.push({ sev: 'warn', text: `Wet weight recorded after the lot's dry weight (not counted): lot ${lotList(oddWet.map(o => o.lotId))}.` });
+            const undated = lots.filter(x => x.L.undatedWeights);
+            if (undated.length) checks.push({ sev: 'info', text: `Lot ${lotList(undated.map(x => x.lotId))} has a weight in a 📌 constant, which has no date, so it isn't counted.` });
+            const oldIn = old.filter(({ s }) => { const ds = Object.values(s.dates || {}).filter(isDay).sort(); return ds.length && ds[0] <= B.end && ds[ds.length - 1] >= dAdd(B.start, -120); });
+            if (oldIn.length) checks.push({ sev: 'warn', text: `Closed-out lot ${lotList(oldIn.map(o => o.lotId))} ${oldIn.length === 1 ? 'was' : 'were'} saved without ${oldIn.length === 1 ? 'its' : 'their'} plant history. Import the archive file again (⚙️ Setup & data → 📂 Import archived lots) to count ${oldIn.length === 1 ? 'it' : 'them'}.`, go: 'settings' });
+            const offPlants = closing - opening - rSum(rows, r => r.delta), offWet = wet.closing - wet.opening - wet.in + wet.out;
+            if (Math.abs(offPlants) > 1e-9 || Math.abs(offWet) > 0.05) checks.push({ sev: 'crit', text: `The changes don't add up to the month-end numbers (plants ${ctlsSigned(offPlants)}, wet ${rN(offWet, 1)} g). Please report this.` });
+            const filed = ctlsFiled(), pf = filed[B.prevYm], tf = filed[ym];
+            if (pf && (pf.plants !== opening || Math.abs((pf.wetG || 0) - wet.opening) > 0.05)) {
+                const diffs = [pf.plants !== opening ? `${rN(pf.plants)} plants → ${rN(opening)} (${ctlsSigned(opening - pf.plants)})` : '', Math.abs((pf.wetG || 0) - wet.opening) > 0.05 ? `${ctlsG(pf.wetG || 0)} wet → ${ctlsG(wet.opening)}` : ''].filter(Boolean).join(', ');
+                checks.push({ sev: 'warn', text: `${ctlsMonthName(B.prevYm)} was filed with different closing numbers than the logs now give for ${dFmtY(B.prevEnd)}: ${diffs}. CTLS expects this month's opening to match last month's closing (within 5 %); report the difference under “Other”.` });
+            }
+            if (tf && (tf.plants !== closing || Math.abs((tf.wetG || 0) - wet.closing) > 0.05 || Math.abs((tf.dryG || 0) - dryTotal) > 0.05))
+                checks.push({ sev: 'warn', text: `Changed since it was filed on ${dFmtY(rSavedDay(tf.filedAt))}: filed ${rN(tf.plants)} plants, ${ctlsG(tf.wetG || 0)} wet, ${ctlsG(tf.dryG || 0)} dry; the logs now give ${rN(closing)} plants, ${ctlsG(wet.closing)} wet, ${ctlsG(dryTotal)} dry.` });
+
+            // Lots that could be closed out: no plants and nothing hanging. Their history must be saved first.
+            const ready = lots.filter(x => x.live && x.L.created && ctlsCountAt(x.L, today) === 0 && ctlsHanging(x.L, today) === 0 && (x.L.logged || x.L.wet.length))
+                .map(x => ({ lotId: x.lotId, strain: x.strain, state: !x.saved?.ctls ? 'none' : JSON.stringify(x.saved.ctls) === JSON.stringify(x.L) ? 'ok' : 'old' }))
+                .sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
+            return { ym, B, today, rows, opening, closing, tot, atEnd, byPhase, wet, wetIn, wetOut, hanging, dryOut, dryTotal, checks, ready,
+                filed: tf || null, prevFiled: pf || null, done: B.end < today };
+        }
+
+        // ---- The page ----
+        function ctlsBody(C, print) {
+            const T = (head, body, foot = '') => `<div class="rpt-tbl ctls-tbl"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot ? `<tfoot>${foot}</tfoot>` : ''}</table></div>`;
+            const month = ctlsMonthName(C.ym), endDay = dFmt(C.B.end), prevDay = dFmt(C.B.prevEnd);
+            // Plants
+            const plantRows = C.rows.map(r => `<tr class="${r.bucket === 'internal' ? 'ctls-internal' : r.bucket === 'unexplained' ? 'ctls-odd' : ''}"><td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${rEsc(r.what)}${r.bucket === 'internal' ? ' <span class="rpt-muted">(between lots, not counted)</span>' : ''}</td><td class="n">${ctlsSigned(r.delta)}</td><td>${rEsc(r.party)}</td><td>${rEsc(r.by)}</td></tr>`).join('');
+            const line = (label, v, cls = '') => `<tr class="${cls}"><td colspan="4">${label}</td><td class="n">${v}</td><td colspan="2"></td></tr>`;
+            const t = k => C.tot[k] || 0;
+            const plantFoot = line(`Opening: plants on hand at the end of ${rEsc(prevDay)}`, rN(C.opening), 'ctls-sub')
+                + [['received', 'Received (new lots)'], ['produced', 'Clones cut (sub-lots)'], ['destroyed', 'Destroyed'], ['culled', 'Culled'], ['sampled', 'Sampled'],
+                    ['sold', 'Sold / transferred'], ['harvested', 'Harvested'], ['other', 'Other removals'], ['adjust', 'Recounts and other additions'], ['unexplained', 'No reason recorded'], ['internal', 'Moved between lots (net)']]
+                    .filter(([k]) => C.tot[k] != null).map(([k, l]) => line(l, ctlsSigned(t(k)), k === 'internal' ? 'ctls-internal' : '')).join('')
+                + line(`<b>Closing: plants on hand at the end of ${rEsc(endDay)}</b>`, `<b>${rN(C.closing)}</b>`, 'ctls-total');
+            const plantsCard = rCard({ wide: true, title: `🌱 Plants — every change in ${month}`, sub: 'From the grow logs (each day’s plant count and the reason given when it changed) and the Lot Manager (new lots and sub-lots). Moves between lots don’t change the facility’s total.',
+                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th>What happened</th><th class="n">Plants</th><th>To / from</th><th>Initials</th>',
+                    plantRows || `<tr><td colspan="7" class="rpt-muted">No changes recorded this month.</td></tr>`, plantFoot),
+                source: '_PaperWizard grow logs (🌱 plant count, days[day]._removed / _removedTo / _added) · lots (type, createdDate, startPlantCount, receivedFrom)' });
+            const endRows = C.atEnd.map(o => `<tr><td>${rEsc(o.lotId)}</td><td>${rEsc(o.strain)}</td><td>${rEsc(o.room || '—')}</td><td>${rEsc(o.phase || '—')}</td><td class="n">${rN(o.n)}</td></tr>`).join('');
+            const phases = Object.entries(C.byPhase).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${rEsc(p)} ${rN(n)}`).join(' · ');
+            const endCard = rCard({ wide: true, title: `Plants on hand at the end of ${rEsc(endDay)}, by lot`, sub: phases ? `By phase: ${phases}` : '',
+                body: T('<th>Lot</th><th>Strain</th><th>Room</th><th>Phase</th><th class="n">Plants</th>', endRows || `<tr><td colspan="5" class="rpt-muted">No plants on hand.</td></tr>`,
+                    `<tr class="ctls-total"><td colspan="4"><b>Total</b></td><td class="n"><b>${rN(C.closing)}</b></td></tr>`),
+                source: 'The last grow-log count on or before the month’s last day (the Lot Manager’s count for a lot with no grow log)' });
+            // Wet
+            const wetRows = [...C.wetIn.map(r => ({ date: r.date, html: `<td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>Harvested — wet weight${r.room ? ` (${rEsc(r.room)})` : ''}</td><td class="n">+${ctlsG(r.g)}</td>` })),
+                ...C.wetOut.map(r => ({ date: r.date, html: `<td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>Dried — dry weight ${ctlsG(r.dry)}${r.wet > 0 ? `, ${ctlsG(Math.max(0, r.wet - r.dry))} lost in drying` : ''}</td><td class="n">−${ctlsG(r.wet)}</td>` }))]
+                .sort((a, b) => a.date.localeCompare(b.date)).map(r => `<tr>${r.html}</tr>`).join('');
+            const wline = (label, g, cls = '') => `<tr class="${cls}"><td colspan="4">${label}</td><td class="n">${g}</td></tr>`;
+            const wetFoot = wline(`Opening: hanging at the end of ${rEsc(prevDay)}`, `${ctlsG(C.wet.opening)} · ${ctlsKg(C.wet.opening)}`, 'ctls-sub')
+                + wline('Harvested (wet weight)', '+' + ctlsG(C.wet.in)) + wline('Dried (their wet weight)', '−' + ctlsG(C.wet.out))
+                + wline(`<b>Closing: hanging at the end of ${rEsc(endDay)}</b>`, `<b>${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.closing)}</b>`, 'ctls-total');
+            const hangRows = C.hanging.map(h => `<tr><td>${rEsc(h.lotId)}</td><td>${rEsc(h.strain)}</td><td>${rEsc(h.room || '—')}</td><td>${h.since ? rEsc(dFmtY(h.since)) : '—'}</td><td class="n">${ctlsG(h.g)}</td></tr>`).join('');
+            const wetCard = rCard({ wide: true, title: '💧 Wet cannabis hanging to dry', sub: 'The harvest log’s wet weight counts as hanging in the dry room until the lot’s dry weight is recorded.',
+                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th>What happened</th><th class="n">Grams</th>', wetRows || `<tr><td colspan="5" class="rpt-muted">No harvests or dry weights this month.</td></tr>`, wetFoot)
+                    + (C.hanging.length ? `<h5 class="ctls-h5">Still hanging at the end of ${rEsc(endDay)}</h5>` + T('<th>Lot</th><th>Strain</th><th>Dry room</th><th>Harvested</th><th class="n">Wet weight</th>', hangRows,
+                        `<tr class="ctls-total"><td colspan="4"><b>Total</b></td><td class="n"><b>${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.closing)}</b></td></tr>`) : ''),
+                source: 'harvest.wetWeight and harvest.dryWeight answers (PaperWizard → Report metric), dated by their page' });
+            // Dry
+            const dryRows = C.dryOut.map(r => `<tr><td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td class="n">${ctlsG(r.g)}</td><td class="n">${ctlsKg(r.g)}</td></tr>`).join('');
+            const dryCard = rCard({ wide: true, title: '🌾 Dry flower sent out', sub: 'Each lot’s dry weight from the harvest log, on the day it was recorded.',
+                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th class="n">Grams</th><th class="n">kg</th>', dryRows || `<tr><td colspan="5" class="rpt-muted">No dry weights recorded this month.</td></tr>`,
+                    `<tr class="ctls-total"><td colspan="3"><b>Total</b></td><td class="n"><b>${ctlsG(C.dryTotal)}</b></td><td class="n"><b>${ctlsKg(C.dryTotal)}</b></td></tr>`),
+                source: 'harvest.dryWeight answers' });
+            // Checks
+            const checksCard = rCard({ wide: true, title: 'Checks — what could make these numbers wrong', sub: '',
+                body: C.checks.length ? `<ul class="rpt-attn">${C.checks.map(c => `<li><span class="rpt-sev ${c.sev === 'crit' ? 'crit' : c.sev === 'info' ? 'info' : ''}">${c.sev === 'crit' ? 'Error' : c.sev === 'info' ? 'Note' : 'Check'}</span><span>${rEsc(c.text)}</span>${c.go && !print ? `<button type="button" class="rpt-go" data-go="${c.go}">Open →</button>` : ''}</li>`).join('')}</ul>`
+                    : `<p class="rpt-note rpt-ok">✓ Nothing found: every lot with plants has a grow-log count each day, every change has a reason, and every harvest has its wet weight.</p>`, source: '' });
+            // Lots ready to close out
+            const readyCard = !print && C.ready.length ? rCard({ wide: true, title: 'Lots ready to close out — save their plant history first', sub: 'Close-out takes a lot out of the database. Its saved crop summary keeps its plant and weight history, so this report still counts it in the months it was here.',
+                body: T('<th>Lot</th><th>Strain</th><th>Plant history</th><th></th>', C.ready.map(r => `<tr><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${r.state === 'ok' ? '<span class="rpt-ok">✓ Saved</span>' : r.state === 'old' ? '<span class="rpt-warn">Saved — out of date</span>' : '<span class="rpt-warn">Not saved</span>'}</td><td>${r.state === 'ok' ? '' : `<button type="button" class="rpt-tbtn" data-ctls-keep="${rEsc(r.lotId)}">💾 ${r.state === 'old' ? 'Update' : 'Save'}</button>`}</td></tr>`).join('')),
+                source: '_EmployeeWizard.crops[<lot>].ctls' }) : '';
+            const kpi = (label, value, sub) => `<div class="rpt-kpi"><span class="rpt-kpi-label">${label}</span><div class="rpt-kpi-row"><span class="rpt-kpi-value">${value}</span></div><span class="rpt-kpi-sub">${sub}</span></div>`;
+            const kpis = `<div class="rpt-kpis">${kpi('Plants at month end', rN(C.closing), `${rN(C.opening)} at the start · ${ctlsSigned(C.closing - C.opening)}`)}${kpi('Plants in', rN(t('received') + t('produced')), `${rN(t('received'))} received · ${rN(t('produced'))} clones cut`)}${kpi('Plants out', rN(-(t('destroyed') + t('culled') + t('sampled') + t('sold') + t('harvested') + t('other'))), `${rN(-(t('destroyed') + t('culled')))} destroyed · ${rN(-t('harvested'))} harvested · ${rN(-(t('sold') + t('sampled')))} sold or sampled`)}${kpi('Wet hanging at month end', ctlsKg(C.wet.closing), `${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.opening)} at the start`)}${kpi('Dry flower sent out', ctlsKg(C.dryTotal), ctlsG(C.dryTotal))}</div>`;
+            return kpis + `<div class="rpt-grid">${checksCard}${plantsCard}${endCard}${wetCard}${dryCard}${readyCard}</div>`;
+        }
+        function rptCtls() {
+            if (!RPT.ctlsMonth) RPT.ctlsMonth = ctlsDefaultMonth();
+            const C = ctlsModel(RPT.ctlsMonth);
+            const t = parseISO(C.today), opts = [];
+            for (let i = 0; i <= CTLS_MONTHS_BACK; i++) {
+                const ym = localDateStr(new Date(t.getFullYear(), t.getMonth() - i, 1)).slice(0, 7);
+                opts.push(`<option value="${ym}"${ym === C.ym ? ' selected' : ''}>${rEsc(ctlsMonthName(ym))}${i === 0 ? ' (so far)' : ctlsFiled()[ym] ? ' · filed' : ''}</option>`);
+            }
+            const filedNote = C.filed ? `<span class="rpt-ok">📌 Filed ${rEsc(dFmtY(rSavedDay(C.filed.filedAt)))}</span><button type="button" class="rpt-tbtn danger" id="ctlsUnfile">Remove filing</button>`
+                : `<button type="button" class="rpt-tbtn" id="ctlsFile"${C.done ? '' : ' disabled title="The month isn’t over yet"'}>📌 Mark as filed</button>`;
+            const head = rCard({ wide: true, title: `📋 CTLS monthly numbers — ${ctlsMonthName(C.ym)}${C.done ? '' : ' (so far)'}`,
+                sub: `The cultivation numbers for Health Canada’s monthly CTLS report, for the whole facility: plants, wet cannabis drying, and dry flower sent out. Kilograms are shown to 3 decimals, as CTLS takes them. Mark the month as filed once it’s submitted: its closing numbers are kept, and next month’s opening is checked against them.`,
+                control: `<select class="rpt-inline-sel" id="ctlsMonth" aria-label="Month">${opts.join('')}</select>${filedNote}<button type="button" class="rpt-tbtn" id="ctlsPrint">🖨️ Print</button>`,
+                body: '', source: '_EmployeeWizard.ctls (filed months)' });
+            return `<div class="rpt-grid ctls-head">${head}</div>` + ctlsBody(C, false);
+        }
+        function ctlsPrint() {
+            if (!DB.data) return;
+            const C = ctlsModel(RPT.ctlsMonth || ctlsDefaultMonth());
+            const css = [...document.querySelectorAll('style')].map(st => st.textContent).join('\n');
+            const win = window.open('', '_blank', 'width=1100,height=900');
+            if (!win) { alert('The report opens in a new window to print — allow pop-ups for this page and try again.'); return; }
+            const month = ctlsMonthName(C.ym);
+            win.document.open();
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>CTLS — ${rEsc(month)}</title><style>${css}\n${RPT_PRINT_CSS}
+                .rpt-tbl { max-height: none; overflow: visible; } .rpt-tbl th { position: static; } .ctls-tbl tr { break-inside: avoid; } .rpt-grid { grid-template-columns: 1fr; }
+                .rpt-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }</style></head><body>
+<div class="bp-bar"><span>CTLS monthly numbers</span><button type="button" id="bpPrint">🖨️ Print / Save as PDF</button></div>
+<header class="bp-head"><h1>SitkaTools — CTLS monthly numbers, ${rEsc(month)}${C.done ? '' : ' (so far)'}</h1><p>Whole facility · ${rEsc(dFmtY(C.B.start))} – ${rEsc(dFmtY(C.B.end))}${C.filed ? ` · filed ${rEsc(dFmtY(rSavedDay(C.filed.filedAt)))}` : ''}</p><p>Printed ${rEsc(new Date().toLocaleString())}</p></header>
+${ctlsBody(C, true)}
+<script>document.getElementById('bpPrint').addEventListener('click', () => window.print());<\/script></body></html>`);
+            win.document.close();
+        }
+        function ctlsFile(ym) {
+            const C = ctlsModel(ym);
+            if (!C.done) return;
+            if (!confirm(`Mark ${ctlsMonthName(ym)} as filed with CTLS?\n\nIts closing numbers are kept: ${rN(C.closing)} plants, ${ctlsG(C.wet.closing)} of wet cannabis hanging, ${ctlsG(C.dryTotal)} of dry flower sent out. Next month's opening is checked against them.`)) return;
+            const ew = rptEnsureOwnKeys();
+            if (!ew.ctls || typeof ew.ctls !== 'object') ew.ctls = {};
+            ew.ctls[ym] = { filedAt: new Date().toISOString(), plants: C.closing, wetG: Math.round(C.wet.closing * 10) / 10, dryG: Math.round(C.dryTotal * 10) / 10,
+                openingPlants: C.opening, openingWetG: Math.round(C.wet.opening * 10) / 10 };
+            notifySitkaTools();
+            showToast(`${ctlsMonthName(ym)} marked as filed`);
+            renderReports();
+        }
+
         function rptSummaryOf(c) {
             const s = JSON.parse(JSON.stringify(c));
             delete s.closed;
+            delete s.plantLows;   // only for working out live supplies; a summary keeps its frozen costs
             s.savedAt = new Date().toISOString();
             return s;
         }
@@ -5772,7 +6265,7 @@
                     const a = JSON.parse(await f.text());
                     if (a?._meta?.kind !== 'lot-archive' || !a.lotId || !a.lot) throw new Error('not a lot archive');
                     const c = rptBuildCrop(a.lotId, a.lot, a.events || [], a.paperwork || {}, qmap);
-                    if (!c.dates.harvestStart && !c.labour.act) throw new Error('no schedule or hours in it');
+                    if (!c.dates.harvestStart && !c.labour.act && !c.ctls.counts.length && !c.ctls.wet.length) throw new Error('no schedule, hours or grow log in it');
                     got.push(c);
                 } catch (err) { bad.push(`${f.name}: ${err.message}`); }
             }
@@ -5870,14 +6363,16 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             if (!body || !DB.data || DeviceView.building || !$('paneReports').classList.contains('active')) return;
             rptFillFilters();
             document.querySelectorAll('#rptPages button').forEach(b => b.classList.toggle('active', b.dataset.page === RPT.page));
+            $('paneReports').classList.toggle('rpt-ctls-page', RPT.page === 'ctls');   // the CTLS month is for the whole facility: no filters
             try {
                 const M = rptModel();
-                const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, yield: rptYield, rooms: rptRooms, forecast: rptForecast, settings: rptSetup };
+                const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, yield: rptYield, rooms: rptRooms, forecast: rptForecast, ctls: rptCtls, settings: rptSetup };
                 body.innerHTML = (pages[RPT.page] || rptOverview)(M);
             } catch (err) {
                 console.error(err);
                 body.innerHTML = rEmpty('This report hit a problem.', rEsc(err && err.message || err));
             }
+            const cm = $('ctlsMonth'); if (cm) cm.addEventListener('change', () => { RPT.ctlsMonth = cm.value; renderReports(); });
             const gl = $('rptGanttLot'); if (gl) gl.addEventListener('change', () => { RPT.ganttLot = gl.value; renderReports(); });
             const el = $('rptEnvLot'); if (el) el.addEventListener('change', () => { RPT.envLot = el.value; renderReports(); });
             const ex = $('rptExX'), ey = $('rptExY');
@@ -5921,6 +6416,28 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const go = t.closest('[data-go]');
             if (go) { RPT.page = go.dataset.go; renderReports(); return; }
             if (t.closest('#rptImportBtn')) { $('rptArchiveInput').click(); return; }
+            if (t.closest('#ctlsPrint')) { ctlsPrint(); return; }
+            if (t.closest('#ctlsFile')) { ctlsFile(RPT.ctlsMonth || ctlsDefaultMonth()); return; }
+            if (t.closest('#ctlsUnfile')) {
+                const ym = RPT.ctlsMonth || ctlsDefaultMonth();
+                if (!confirm(`Remove the filing of ${ctlsMonthName(ym)}? Its kept closing numbers are deleted, and next month's opening isn't checked against them any more.`)) return;
+                delete DB.data._EmployeeWizard.ctls[ym];
+                notifySitkaTools();
+                showToast(`Filing of ${ctlsMonthName(ym)} removed`);
+                renderReports();
+                return;
+            }
+            const keep = t.closest('[data-ctls-keep]');
+            if (keep) {
+                const id = keep.dataset.ctlsKeep, lot = DB.lots[id];
+                if (!lot) return;
+                // The lot's crop (with its room chore share) when it has a schedule, else one built from its paperwork alone
+                const c = rptModel().crops.find(x => x.lotId === id && !x.closed) || rptBuildCrop(id, lot, [], DB.data._PaperWizard?.entries?.[id], rptQuestionMap());
+                const dropped = rptSaveSummaries([c]);
+                showToast(`Plant history saved for lot ${id}${dropped ? ` · ${dropped} older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+                renderReports();
+                return;
+            }
             if (t.closest('#rptSaveAll')) {
                 const M = rptModel(), saved = DB.data._EmployeeWizard?.crops || {};
                 const list = M.crops.filter(c => !c.closed && c.dates?.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
@@ -6068,6 +6585,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
         }
 
         // Drawn initials (PaperWizard's normalized strokes) as an SVG string
+        // The drawn initials an entry carries: the worker's own (DailyWizard), else the floor manager who entered it in the Tasks tab
+        const logSignature = en => en.initials?.strokes?.length ? en.initials : en.enteredBy?.strokes?.length ? en.enteredBy : null;
         function logInitialsSvg(ini) {
             const lines = (ini?.strokes || []).map(st => {
                 const pts = [];
@@ -6096,13 +6615,14 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const flags = (r) => {
                 const out = [], en = r.en;
                 if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}${r.removed.approvedBy ? ` · approved by ${r.removed.approvedBy}` : ''}`]);
-                if (!en.initials?.strokes?.length) out.push(['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
+                if (!en.initials?.strokes?.length) out.push(en.enteredBy?.strokes?.length ? ['', `🏢 entered in the Tasks tab by ${en.enteredBy.name || '?'} (floor manager)`]
+                    : ['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
                 if (en.at) {
                     const loggedDay = localDateStr(new Date(en.at));
                     const late = Math.round((parseISO(loggedDay) - parseISO(r.day)) / 86400000);
                     if (late > 0) out.push(['warn', `⏰ logged ${late} day${late === 1 ? '' : 's'} later`]);
                 }
-                if (en.editedAt) out.push(['warn', `✏️ signed for ${logFmt(en.signedHours)}, changed in the Tasks tab ${logStamp(en.editedAt)}`]);
+                if (en.editedAt) out.push(['warn', `✏️ ${en.signedHours !== undefined ? `signed for ${logFmt(en.signedHours)}, ` : ''}changed in the Tasks tab ${logStamp(en.editedAt)}${en.editedSignoff?.name ? ` · approved by ${en.editedSignoff.name}` : ''}`]);
                 if (en.temp != null) out.push(['', 'not on the roster']);
                 if (r.split && !r.removed) out.push(['', r.split]);
                 if (!r.removed) {
@@ -6119,9 +6639,9 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 entries: shownLive.length,
                 hours: shownLive.reduce((s, r) => s + logHours(r.en), 0),
                 people: new Set(shownLive.map(r => logName(r.en))).size,
-                signed: shownLive.filter(r => r.en.initials?.strokes?.length).length,
+                signed: shownLive.filter(r => logSignature(r.en)).length,
                 late: shownLive.filter(r => r.en.at && localDateStr(new Date(r.en.at)) > r.day).length,
-                changed: shownLive.filter(r => r.en.editedAt).length,
+                changed: shownLive.filter(r => r.en.editedAt && r.en.signedHours !== undefined).length,
                 removed: rows.length - shownLive.length,
                 longDays: new Set(shownLive.filter(r => (personDay.get(`${logName(r.en)}|${r.day}`) || 0) > LOG_LONG_DAY).map(r => `${logName(r.en)}|${r.day}`)).size
             };
@@ -6173,7 +6693,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     if (r.removed) continue;
                     const p = per.get(logName(r.en)) || per.set(logName(r.en), { days: new Set(), entries: 0, hours: 0, unsigned: 0 }).get(logName(r.en));
                     p.days.add(r.day); p.entries++; p.hours += logHours(r.en);
-                    if (!r.en.initials?.strokes?.length) p.unsigned++;
+                    if (!logSignature(r.en)) p.unsigned++;
                 }
                 html += `<div class="log-section"><h4>Hours by person</h4><table class="log-table"><thead><tr><th>Person</th><th class="num">Days</th><th class="num">Entries</th><th class="num">Hours</th><th class="num">Not signed</th></tr></thead><tbody>` +
                     [...per.entries()].sort((a, b) => b[1].hours - a[1].hours).map(([n, p]) =>
@@ -6206,8 +6726,9 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 for (const r of list) {
                     const i = LOG.shown.push(r) - 1, en = r.en;
                     const bName = r.building ? (DB.data.buildings?.[r.building]?.name || r.building) : 'No building known';
-                    const sig = en.initials?.strokes?.length
-                        ? `<button type="button" class="log-sig" data-sig="${i}" title="Show the initials larger">${logInitialsSvg(en.initials)}</button>`
+                    const ini = logSignature(en);
+                    const sig = ini
+                        ? `<button type="button" class="log-sig" data-sig="${i}" title="Show the initials larger">${logInitialsSvg(ini)}</button>${ini === en.enteredBy ? `<span class="log-sub">${escapeHtml(ini.name || '?')} · office</span>` : ''}`
                         : '<span class="log-nosig">not signed</span>';
                     const logged = en.at ? `${escapeHtml(logStamp(en.at))}<span class="log-sub">on ${escapeHtml(logDevice(en.by) || 'unknown device')}</span>` : '—<span class="log-sub">Tasks tab</span>';
                     html += `<tr${r.removed ? ' class="removed"' : ''}>` +
@@ -6243,8 +6764,10 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const btn = e.target.closest('[data-sig]');
             const r = btn && LOG.shown[Number(btn.dataset.sig)];
             if (!r) return;
-            $('logSigBig').innerHTML = logInitialsSvg(r.en.initials);
+            $('logSigBig').innerHTML = logInitialsSvg(logSignature(r.en));
+            const office = !r.en.initials?.strokes?.length && r.en.enteredBy;
             $('logSigCaption').textContent = `${logName(r.en)} · ${logFmt(logHours(r.en))} on ${r.label} · ${logDayTitle(r.day)}` +
+                (office ? ` · entered in the Tasks tab and signed by ${r.en.enteredBy.name || '?'} (floor manager)` : '') +
                 (r.en.at ? ` · logged ${logStamp(r.en.at)} on ${logDevice(r.en.by) || 'unknown device'}` : '');
             $('logSigOverlay').hidden = false;
         });

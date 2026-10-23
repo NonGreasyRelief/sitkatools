@@ -6,9 +6,11 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 
 - The create form sets all five rooms: cloning, veg, flower (`destRoom`), dry and trim (dry and trim may be the same room). It also picks a start room: the clone room by default, or the veg room for purchased clones. `currentRoom` starts from that choice.
 - Only `destRoom` syncs to `rooms.<id>.assignedLots`. The other room fields are names stored on the lot.
+- **New lots** may say who the plants came from (**Received from**, optional; `receivedFrom`), shown and editable in the lot list (📦). Every new lot keeps the count it started with (`startPlantCount`). Until a grow log records the lot, a count changed in the list changes that too. The Labour & Cost Wizard's 📋 CTLS month counts new lots as plants received and sub-lots as clones cut.
 - The parent lot is chosen from existing lots. It should also accept typed free text for a parent that isn't in the system (still to do).
 - Creating a lot in, or moving one into, a flowering room runs the projection deletion hook (root `CLAUDE.md` → "Deletion Hook — SitkaTools").
 - **🔒 Locked to its grow log** (`lotLocked`: PaperWizard has a daily-weekly page for the lot): the list shows phase, current room and plant count as read-only chips ("🔒 Flower", "🔒 📍 Grow 1", "🔒 🌱 120", tooltip "Set by the grow log in PaperWizard"), and the ✕ is off ("Close it out … once its plant count is 0"). Every handler checks it too. The planned rooms (clone / veg / flower / dry / trim) stay editable: they're the schedule.
+- **Close-out warns** ("Its plant history isn't saved yet…") when the lot has no crop summary holding its plant history (`_EmployeeWizard.crops[lot].ctls`): the monthly CTLS numbers count a closed-out lot from it. Save it in the Labour & Cost Wizard (📊 Reports → 📋 CTLS month), or import the archive there later. Close-out still goes ahead if confirmed.
 - **Split lots from a locked parent** take at most the plants its grow log recorded as moved to another lot (`days[day]._removed.moved`) that no split lot has yet (`movedOutUnclaimed`: moved − Σ `plantsTransferred` of its split lots). Otherwise the form says to record the move in the parent's grow log first. Sub-lots (clones) take nothing from the parent.
 
 ## Room and Building Managers
@@ -33,6 +35,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
   - Filters apply to the grid and the terminal list ("N of M events"), are session-only, and drop values that no longer exist when the DB is replaced (`Calendar.onDbChanged`).
 - **Event panel:** edits `date` and `endDate`, plus the annotation fields `startTime`, `endTime`, `notes`, `status`, `assignedTo` and `estimatedHours`. 📋 Duplicate gives the copy a new id. Dragging moves an event and keeps its length.
 - **Holidays:** amber, read-only chips with a 🏛️ Holidays toggle (root `CLAUDE.md` → "BC Civic Holidays").
+- **The day rolls over** (`DayRollover`, like DailyWizard's `rollToToday`): left open overnight, SitkaTools moves to the new day by itself — checked once a minute, when the tab is shown again and on focus. What was showing today follows it: the current month (or year in the annual view), a 7-day window starting today or on this week's Sunday, and the new-lot form's date. A month, window or date picked by hand stays put. Every view then redraws (`refreshAllViews`), so Today, overdue tasks and the task list are current.
 - **Tooltip:** a crop event shows its labour estimate and the hours recorded in `labour_map`.
 
 ## Loading and Saving

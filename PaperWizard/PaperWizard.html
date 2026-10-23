@@ -897,6 +897,7 @@
         .startlog-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--text-secondary); }
         .startlog-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 12px; line-height: 1.4; }
         /* 🌱 Why the plant count changed */
+        .wiz-overlay.nested { z-index: 260; background: rgba(0, 0, 0, 0.3); }
         .reason-grid { display: grid; grid-template-columns: 1fr 110px; gap: 8px 10px; align-items: center; margin-top: 12px; }
         .reason-grid .reason-name { min-height: 44px; text-align: left; }
         .reason-grid .reason-n { min-height: 44px; text-align: center; font-size: 1.1rem; }
@@ -904,6 +905,9 @@
         .reason-chips .btn { min-height: 44px; }
         .reason-total { margin-top: 10px; font-weight: 700; color: var(--warning); }
         .reason-total.ok { color: var(--accent); }
+        .reason-to { margin-top: 14px; }
+        .reason-to-label { display: block; margin-bottom: 6px; font-weight: 600; }
+        .reason-to .reason-chips { margin: 8px 0 0; }
         .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
         .sig-clear {
             background: none; border: 1px dashed var(--border); border-radius: 6px;
@@ -1126,9 +1130,23 @@
         // left for each reason (they must add up to the drop); a higher count asks why. Kept on the day —
         // days[day]._removed = { reason: n } and ._added = { n, reason } (SitkaTools counts the "moved" plants a split lot
         // may take) — and added to the day's comments answer ("[Removed 3: 2 culled, 1 sampled]") so it prints.
+        // Plants sold go to a company, named in a required box; samples may name the testing lab (optional). Both are
+        // kept as days[day]._removedTo = { sold: 'Name', sampled: 'Lab' } for the monthly CTLS report.
         const REMOVAL_REASONS = [['destroyed', 'Destroyed'], ['culled', 'Culled'], ['sampled', 'Sampled'], ['harvested', 'Harvested'],
             ['moved', 'Moved to another lot'], ['sold', 'Sold / transferred to another company']];
         const removalTotal = rec => Object.values(rec || {}).reduce((n, v) => n + (Number(v) || 0), 0);
+        const REMOVAL_TO = { sold: { label: 'Sold / transferred to — which company?', placeholder: 'Company name', required: true },
+            sampled: { label: 'Samples sent to (testing lab, optional)', placeholder: 'Lab name', required: false } };
+        // Names used before for a reason (newest first), offered as taps
+        function earlierRecipients(reason) {
+            const seen = new Map();
+            for (const sheets of Object.values(DB.paperWizard?.entries || {})) for (const entry of Object.values(sheets || {}))
+                for (const inst of Object.values(entry?.instances || {})) for (const [day, d] of Object.entries(inst?.days || {})) {
+                    const name = d?._removedTo?.[reason];
+                    if (name && (!seen.has(name) || seen.get(name) < day)) seen.set(name, day);
+                }
+            return [...seen.entries()].sort((a, b) => b[1].localeCompare(a[1])).map(([n]) => n).slice(0, 4);
+        }
         const plantCountQuestion = sheetId => wizardForSheet(sheetId)?.questions.find(q => q.type === 'plant-count' && q.rowScoped) || null;
         // The comments question the reasons are added to: the one picked on the plant-count question in Configure
         // Sheets, else a day question named like comments / rationale / notes
@@ -1139,16 +1157,16 @@
             if (picked || pcQ?.reasonsTo === '') return picked || null;
             return qs.find(q => q.type === 'text' && q.rowScoped && /comment|rationale|remark|note/i.test(q.label || '')) || null;
         }
-        function reasonNote(removed, added) {
+        function reasonNote(removed, added, to) {
             const parts = [];
-            if (removed) parts.push(`[Removed ${removalTotal(removed)}: ${REMOVAL_REASONS.filter(([k]) => removed[k] > 0).map(([k, l]) => `${removed[k]} ${l.toLowerCase()}`).join(', ')}]`);
+            if (removed) parts.push(`[Removed ${removalTotal(removed)}: ${REMOVAL_REASONS.filter(([k]) => removed[k] > 0).map(([k, l]) => `${removed[k]} ${l.toLowerCase()}${to?.[k] ? ` (${to[k]})` : ''}`).join(', ')}]`);
             if (added) parts.push(`[Added ${added.n}: ${added.reason}]`);
             return parts.join(' ');
         }
         // The comments answer with this day's reason note in place of any earlier one
-        function withReasonNote(text, removed, added) {
+        function withReasonNote(text, removed, added, to) {
             const base = String(text ?? '').replace(/\s*\[(?:Removed|Added) \d+:[^\]]*\]/g, '').trim();
-            return [base, reasonNote(removed, added)].filter(Boolean).join(' ');
+            return [base, reasonNote(removed, added, to)].filter(Boolean).join(' ');
         }
 
         // Before a grow-log day is saved: ask why its count changed, unless that day already says so. Returns false
@@ -1163,28 +1181,38 @@
             // The first day of the lot's first log: compared with the lot's count (a backfilled day never is)
             if (prev === null && !isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day) && hasValue(DB.lots[ctx.lotId]?.plantCount)) prev = Number(DB.lots[ctx.lotId].plantCount);
             const had = DB.paperWizard.entries?.[ctx.lotId]?.[ctx.sheetId]?.instances?.[ctx.key]?.days?.[ctx.day] || {};
-            let removed = null, added = null;
+            let removed = null, added = null, to = null;
             if (prev !== null && Number.isFinite(prev) && n < prev) {
                 const drop = prev - n;
-                removed = had._removed && removalTotal(had._removed) === drop ? had._removed : await openCountReasons('removed', drop, ctx.day, had._removed);
-                if (!removed) return false;
+                // Asked again when the day's reasons don't match the drop, or a sale on it names no company yet
+                const hadTo = had._removedTo || {};
+                if (had._removed && removalTotal(had._removed) === drop && !(had._removed.sold > 0 && !hadTo.sold)) {
+                    removed = had._removed;
+                    to = Object.keys(hadTo).length ? hadTo : null;
+                } else {
+                    const got = await openCountReasons('removed', drop, ctx.day, had._removed, null, hadTo);
+                    if (!got) return false;
+                    removed = got.counts;
+                    to = got.to;
+                }
             } else if (prev !== null && Number.isFinite(prev) && n > prev) {
                 const up = n - prev;
                 added = had._added && had._added.n === up ? had._added : await openCountReasons('added', up, ctx.day, had._added, prev);
                 if (!added) return false;
             }
-            ctx.countReasons = { removed, added };
+            ctx.countReasons = { removed, added, to };
             const cq = reasonsQuestion(ctx.sheetId);
-            if (cq) ctx.draft[cq.id] = withReasonNote(ctx.draft[cq.id], removed, added);
+            if (cq) ctx.draft[cq.id] = withReasonNote(ctx.draft[cq.id], removed, added, to);
             return true;
         }
 
         // The dialog: per-reason counts that add up to the drop ('removed'), or the reason for more plants ('added').
-        // Resolves { reason: n } / { n, reason }, or null when cancelled.
-        function openCountReasons(kind, amount, day, before, prev) {
+        // Resolves { counts: { reason: n }, to: { reason: name } | null } / { n, reason }, or null when cancelled.
+        function openCountReasons(kind, amount, day, before, prev, beforeTo) {
             return new Promise(resolve => {
+                document.getElementById('countReasonOverlay')?.remove();   // never two at once
                 const ov = document.createElement('div');
-                ov.className = 'wiz-overlay';
+                ov.className = 'wiz-overlay nested';   // over the runner: a light dim, not a second dark layer
                 ov.id = 'countReasonOverlay';
                 const when = fmtShort(day);
                 const plants = `${amount} plant${amount === 1 ? '' : 's'}`;
@@ -1198,6 +1226,12 @@
                                 <input ${numberCtlAttrs(true)} class="sig-name reason-n" data-r="${k}" aria-label="${escapeHtml(l)}" value="${before?.[k] > 0 ? before[k] : ''}">`).join('')}
                             </div>
                             <div class="reason-total" id="reasonTotal"></div>
+                            ${Object.entries(REMOVAL_TO).map(([k, t]) => `
+                            <div class="reason-to" data-to="${k}" hidden>
+                                <label class="reason-to-label" for="reasonTo_${k}">${escapeHtml(t.label)}</label>
+                                <input type="text" class="sig-name reason-to-input" id="reasonTo_${k}" data-r="${k}" maxlength="80" autocomplete="off" placeholder="${escapeHtml(t.placeholder)}" value="${escapeHtml(beforeTo?.[k] || '')}">
+                                ${earlierRecipients(k).length ? `<div class="reason-chips">${earlierRecipients(k).map(nm => `<button type="button" class="btn btn-secondary reason-chip" data-to-chip="${k}">${escapeHtml(nm)}</button>`).join('')}</div>` : ''}
+                            </div>`).join('')}
                         </div>
                         <div class="wiz-foot"><span class="spacer"></span>
                             <button type="button" class="btn btn-secondary" id="reasonCancel">Cancel</button>
@@ -1219,16 +1253,34 @@
                             <button type="button" class="btn btn-primary" id="reasonOk">Save the reason</button></div>
                     </div>`;
                 document.body.appendChild(ov);
+                // Everything is looked up inside this dialog, and it keeps the keyboard: Enter = OK, Escape = Cancel,
+                // neither reaching the runner behind it
+                const el = sel => ov.querySelector(sel);
                 const done = (v) => { ov.remove(); resolve(v); };
-                $('reasonCancel').addEventListener('click', () => done(null));
+                el('#reasonCancel').addEventListener('click', () => done(null));
+                ov.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+                    else if (e.key === 'Enter' && !e.target.classList.contains('reason-name') && !e.target.classList.contains('reason-chip')) { e.preventDefault(); e.stopPropagation(); el('#reasonOk').click(); }
+                });
                 if (kind === 'removed') {
                     const inputs = [...ov.querySelectorAll('.reason-n')];
                     const counts = () => Object.fromEntries(inputs.map(i => [i.dataset.r, parseInt(i.value, 10) || 0]).filter(([, v]) => v > 0));
                     const show = () => {
-                        const t = removalTotal(counts());
-                        $('reasonTotal').textContent = `${t} of ${amount}`;
-                        $('reasonTotal').classList.toggle('ok', t === amount);
+                        const c = counts(), t = removalTotal(c);
+                        el('#reasonTotal').textContent = `${t} of ${amount}`;
+                        el('#reasonTotal').classList.toggle('ok', t === amount);
+                        ov.querySelectorAll('.reason-to').forEach(box => { box.hidden = !(c[box.dataset.to] > 0); });   // who they went to, once there are some
                     };
+                    // A name without the brackets the comments note is wrapped in
+                    const recipients = () => {
+                        const c = counts(), to = {};
+                        for (const k of Object.keys(REMOVAL_TO)) {
+                            const v = (ov.querySelector(`#reasonTo_${k}`)?.value || '').replace(/[\[\]]/g, '').trim();
+                            if (c[k] > 0 && v) to[k] = v;
+                        }
+                        return to;
+                    };
+                    ov.querySelectorAll('[data-to-chip]').forEach(b => b.addEventListener('click', () => { ov.querySelector(`#reasonTo_${b.dataset.toChip}`).value = b.textContent.trim(); }));
                     inputs.forEach(i => { wireNumberCtl(i); i.addEventListener('input', show); });
                     ov.querySelectorAll('.reason-name').forEach(b => b.addEventListener('click', () => {
                         const input = ov.querySelector(`.reason-n[data-r="${b.dataset.r}"]`);
@@ -1237,15 +1289,18 @@
                         show();
                     }));
                     show();
-                    $('reasonOk').addEventListener('click', () => {
-                        const c = counts();
+                    el('#reasonOk').addEventListener('click', () => {
+                        const c = counts(), to = recipients();
                         if (removalTotal(c) !== amount) { showToast(`The reasons must add up to ${amount}`); return; }
-                        done(c);
+                        const missing = Object.keys(REMOVAL_TO).find(k => REMOVAL_TO[k].required && c[k] > 0 && !to[k]);
+                        if (missing) { showToast('Type the company the plants went to'); ov.querySelector(`#reasonTo_${missing}`).focus(); return; }
+                        done({ counts: c, to: Object.keys(to).length ? to : null });
                     });
+                    inputs[0]?.focus();
                 } else {
-                    const text = $('reasonText');
+                    const text = el('#reasonText');
                     ov.querySelectorAll('.reason-chip').forEach(b => b.addEventListener('click', () => { text.value = b.textContent.trim(); }));
-                    $('reasonOk').addEventListener('click', () => {
+                    el('#reasonOk').addEventListener('click', () => {
                         const reason = text.value.trim();
                         if (!reason) { showToast('Give the reason for the higher count'); text.focus(); return; }
                         done({ n: amount, reason });
@@ -4800,6 +4855,7 @@
             runnerCtx.prefilled = prefilled; // what each prefilled answer opened with (refreshRunnerPrefills)
             // Repeating tables: a working copy of each table's saved entries, and a form for the next one.
             loadRunnerTables(runnerCtx);
+            runnerCtx.cleanDraft = JSON.stringify(runnerCtx.draft);   // the answers as opened (runnerDirty)
         }
 
         // The prefill for a question left blank in the runner's current scope (prefillFrom set).
@@ -4831,6 +4887,11 @@
         function refreshRunnerPrefills() {
             const ctx = runnerCtx;
             if (!ctx || ctx.mode === 'init' || !ctx.prefilled) return; // not drafted yet — the open will prefill
+            // Prefills following a live update aren't anyone's typing: a runner nobody had touched stays untouched
+            const wasClean = !runnerDirty(ctx);
+            try { refreshRunnerPrefillsNow(ctx); } finally { if (wasClean) ctx.cleanDraft = JSON.stringify(ctx.draft); }
+        }
+        function refreshRunnerPrefillsNow(ctx) {
             const wiz = wizardForSheet(ctx.sheetId);
             if (!wiz) return;
             const cids = new Set(constantQuestionIds(ctx.sheetId));
@@ -4942,16 +5003,21 @@
             runnerCtx = null;
             const ov = $('wizOverlay');
             if (ov) ov.remove();
-            document.removeEventListener('keydown', runnerEscHandler);
         }
 
-        // ✕, Escape or a click beside the card: asks first when entries would be lost.
+        // Anything entered in this wizard that a close would lose: answers changed since it opened (prefills aside), or
+        // repeating entries added, changed or still in a form
+        function runnerDirty(ctx) {
+            if (!ctx) return false;
+            if (ctx.cleanDraft != null && JSON.stringify(ctx.draft) !== ctx.cleanDraft) return true;
+            return ctx.mode !== 'init' && entriesUnsaved(ctx);
+        }
+        // The only way out is the ✕ (user decision 2026-10-22): a click beside the card or Escape no longer closes it,
+        // and the ✕ asks first when anything entered would be lost.
         function requestCloseRunner() {
-            if (runnerCtx && entriesUnsaved(runnerCtx) && !confirm('Close without saving? The entries you added or changed will be lost.')) return;
+            if (runnerDirty(runnerCtx) && !confirm('Close this wizard without saving?\n\nEverything you entered in it will be lost.')) return;
             closeRunner();
         }
-
-        function runnerEscHandler(e) { if (e.key === 'Escape') requestCloseRunner(); }
 
         // ---- Initialize paperwork (constant fields) ----
         // A step-through quiz over this lot's constant questions — same card UI as the daily
@@ -4991,7 +5057,7 @@
                     draft[s.q.id] = v;
                 }
             }
-            runnerCtx = { mode: 'init', lotId, idx: 0, draft, steps };
+            runnerCtx = { mode: 'init', lotId, idx: 0, draft, steps, cleanDraft: JSON.stringify(draft) };
             renderRunner();
         }
 
@@ -5484,9 +5550,9 @@
                 ov = document.createElement('div');
                 ov.id = 'wizOverlay';
                 ov.className = 'wiz-overlay';
-                ov.addEventListener('mousedown', e => { if (e.target === ov) requestCloseRunner(); });
+                // A tap beside the card used to close it (and lose the day's entry): now it only says how to close
+                ov.addEventListener('mousedown', e => { if (e.target === ov) showToast('Use the ✕ to close the wizard'); });
                 document.body.appendChild(ov);
-                document.addEventListener('keydown', runnerEscHandler);
             }
             ov.innerHTML = `<div class="wiz-card">${card}</div>`;
 
@@ -5501,6 +5567,8 @@
 
             // Day chips: switch the active day and restart at question 1.
             ov.querySelectorAll('.day-chip').forEach(b => b.addEventListener('click', () => {
+                if (b.dataset.day === ctx.day) return;
+                if (runnerDirty(ctx) && !confirm(`Switch to ${fmtShort(b.dataset.day)} without saving?\n\nWhat you entered for ${fmtShort(ctx.day)} will be lost.`)) return;
                 ctx.day = b.dataset.day;
                 ctx.idx = 0;
                 resetRunnerDraft();
@@ -5567,7 +5635,17 @@
         // closes this instance and starts a fresh 7-day page on the SAME day — the double entry:
         // one full entry under the old value (this log, whose move-day row is stamped with the
         // previous value), one to be filled in under the new value (the fresh page).
+        // One save at a time: Enter (or a tablet keyboard's Go key) on the last answer while a save is waiting on a
+        // dialog — the plant-count reasons, strike-out initials, the correction pad — used to start a second save and
+        // stack a second copy of the dialog whose buttons were wired to the first (the screen went dark and Save did
+        // nothing). A second call while one is running is now ignored.
         async function saveRunnerEntry() {
+            const ctx = runnerCtx;
+            if (!ctx || ctx.saving) return;
+            ctx.saving = true;
+            try { await saveRunnerEntryNow(); } finally { ctx.saving = false; }
+        }
+        async function saveRunnerEntryNow() {
             const ctx = runnerCtx;
             // A live update may have made the lot read-only here since the runner opened (e.g. sent
             // to another building) — refuse like the open did; the draft stays.
@@ -5722,6 +5800,7 @@
             if (ctx.countReasons && inst.days?.[ctx.day]) {
                 const d = inst.days[ctx.day];
                 if (ctx.countReasons.removed) d._removed = { ...ctx.countReasons.removed }; else delete d._removed;
+                if (ctx.countReasons.removed && ctx.countReasons.to) d._removedTo = { ...ctx.countReasons.to }; else delete d._removedTo;
                 if (ctx.countReasons.added) d._added = { ...ctx.countReasons.added }; else delete d._added;
             }
             // The repeating tables' entries, table by table, each in order — a table's entry n prints in
@@ -7712,6 +7791,21 @@
                 revokePrintDoc();
                 if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
             });
+
+            // ---- The day rolls over (user decision 2026-10-22), like SitkaTools and DailyWizard: left open overnight,
+            // the cabinet and status bar move to the new day by themselves — once a minute, when the tab is shown again and
+            // on focus — so what's due, missing days and the "📅 Start new week" / "New entry" leaves are today's. An open
+            // runner or dialog is left alone (they're separate overlays; Fill always opens the day it's tapped on).
+            let shownDay = todayStr();
+            const rollDay = () => {
+                const t = todayStr();
+                if (t === shownDay) return;
+                shownDay = t;
+                renderAll();
+            };
+            setInterval(rollDay, 60000);
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') rollDay(); });
+            window.addEventListener('focus', rollDay);
 
             renderAll();
         }

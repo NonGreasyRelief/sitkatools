@@ -28,6 +28,7 @@ Header: tool name on the left, **Active Lot** dropdown on the right (Tasks is lo
 - Tasks are identified by the event `id` (`taskKey`), so a selection survives date or title changes made elsewhere.
 - **Editor:**
   - A day selector across the event's days (today when in range). Per day, add a roster employee with hours + minutes, or a **Temp employee** (name + wage, below the employee picker). Previous days stay editable.
+  - **Adding or changing hours needs a floor manager's sign-off** (user decision 2026-10-22): hours are meant to be logged on the floor in DailyWizard, so hours typed here ask for a floor manager's name, PIN and drawn initials (the shared `FloorPin` dialog with `{ initials: true }`), for adds and changes alike, on every device. Cancel, no initials or a wrong PIN changes nothing; the same hours again ask nothing. With no floor manager PIN set, hours can't be added here. The entry keeps `enteredBy`, `at` and `by`; a change keeps `editedSignoff` (see "Task labour map").
   - **+ Add day:** a calendar popover adds a work day as a `labour_map` key. The event's `date`/`endDate` are not changed, and the task keeps its due state until completed. An added day shows ✕ while it has no entries.
   - Day and task totals (see "Man-Hour Tracking").
   - **Removing an entry (✕)** asks for a floor manager's PIN (the shared `FloorPin` dialog) and goes on record in `_EmployeeWizard.labourRemovals`. Office only: on a building device the ✕ isn't shown, and a note points to DailyWizard's ⏱ hours view, which records removals in the building's own file.
@@ -53,8 +54,8 @@ The accountability page: who did what, on which day, for how long, when and on w
   - DailyWizard chore hours: `_DailyWizard.buildings[<id>].labour[<day>][<task code>]`;
   - every event's `labour_map[<day>]`, from DailyWizard or the Tasks tab (crop, equipment or any other event);
   - removed entries, struck through, with the floor manager who approved each: DailyWizard's `_DailyWizard.buildings[<id>].adjustments` and `_DailyWizard.adjustments` (the office's removals of crop and equipment hours), and the Tasks tab's `_EmployeeWizard.labourRemovals`.
-- **Each row:** who (flagged when not on the roster); the work (chore or task title, kind, building, room, lot); for a room chore, a note naming the lots its hours went to that day (with % when they shared the room by plants) or "no crop in the room that day"; hours; drawn initials (tap to enlarge) or "not signed"; logged `at` / `by` (Tasks-tab entries have no time).
-- **Flags:** typed in the Tasks tab (not signed); logged after the day worked ("⏰ logged 2 days later"); a signed entry changed in the Tasks tab ("✏️ signed for 1h 15m, changed …", from `signedHours` / `editedAt`); removed by the office; a person with more than 12 h in a day (`LOG_LONG_DAY`); a task's day total over 1.5× its estimate (`LOG_OVER_EST`; chores: staff × minutes, crop tasks: `estStaff × estMinutes`).
+- **Each row:** who (flagged when not on the roster); the work (chore or task title, kind, building, room, lot); for a room chore, a note naming the lots its hours went to that day (with % when they shared the room by plants) or "no crop in the room that day"; hours; drawn initials (tap to enlarge): the worker's own, or the floor manager's for hours entered in the Tasks tab ("Casey · office"), else "not signed"; logged `at` / `by` (Tasks-tab entries from before the sign-off have no time).
+- **Flags:** entered in the Tasks tab by a floor manager ("🏢 entered in the Tasks tab by Casey (floor manager)"), or typed there before the sign-off (not signed); logged after the day worked ("⏰ logged 2 days later"); an entry changed in the Tasks tab ("✏️ signed for 1h 15m, changed … · approved by Casey", from `signedHours` / `editedAt` / `editedSignoff`); removed by the office; a person with more than 12 h in a day (`LOG_LONG_DAY`); a task's day total over 1.5× its estimate (`LOG_OVER_EST`; chores: staff × minutes, crop tasks: `estStaff × estMinutes`).
 - **Summary chips:** entries, hours, people, signed, not signed, logged late, changed after signing, days over 12 h, removed. Then an **Hours by person** table (days, entries, hours, not signed), except when grouped by person.
 - **Filters** (session-only): From / To (last 7 days by default), person, building, kind of work (daily chores, crop tasks, equipment, other), Group by (day newest first / person / task), Show removed entries.
 - **An entry's building:** a chore's building; an event's room (`taskRoomId`) → its building; else the building it was logged on (`by`); else "No building known".
@@ -75,9 +76,10 @@ Inputs for the total cost per gram (root `CLAUDE.md` → "Total Cost per Gram"; 
 
 Full spec, metrics, definitions and the harvest-log hook-up steps: `EmployeeWizard/REPORTS.md`. The essentials:
 
-- **Pages:** Overview (8 KPI tiles incl. **Cost / g (all in)**, and Needs attention) · 💲 Costs · Crop Timeline (crop labour and room schedule Gantts) · Labour · Yield & Quality (incl. **What drives yield?**) · Rooms & Environment · Forecast · ⚙️ Setup & data.
+- **Pages:** Overview (8 KPI tiles incl. **Cost / g (all in)**, and Needs attention) · 💲 Costs · Crop Timeline (crop labour and room schedule Gantts) · Labour · Yield & Quality (incl. **What drives yield?**) · Rooms & Environment · Forecast · 📋 CTLS month · ⚙️ Setup & data.
+- **📋 CTLS month:** the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. It covers plants (opening, every dated change with the reason and who they went to, closing, by lot), wet cannabis hanging to dry, and dry flower sent out, plus checks, 🖨️ Print and 📌 Mark as filed (`REPORTS.md` → "CTLS month").
 - **Filter row** (period, building, flower room, strain, **Per** plant / sq ft / light / gram / total) scopes every page. Comparisons are always against the previous period of the same length. **🖨️ Board pack** prints the pages.
-- **Reads every tool's data, read-only.** It writes only `_EmployeeWizard.crops`, `.settings` and (Save summary with wages open) `.cropCosts`.
+- **Reads every tool's data, read-only.** It writes only `_EmployeeWizard.crops`, `.settings`, (Save summary with wages open) `.cropCosts` and (Mark as filed) `.ctls`.
 - **Crop summaries** keep closed-out lots in the trends for 36 months. A lot still in the DB always uses its live numbers.
 - **Privacy:** no $ per person; $ only while Wages.json is open; $ hidden for groups of fewer than 3 people. Live lots use today's wages; closed lots use the cost frozen with their summary.
 - **Redraws** only while the tab is open: tab switch, DB load, live update (not while a Setup input is being typed in) and Active Lot change (which picks the lot for the Gantt and climate charts).
@@ -92,11 +94,12 @@ EmployeeWizard owns `_EmployeeWizard`:
 "_EmployeeWizard": {
   "employees": { "<name>": { "wage": 20, "workDays": [1, 3, 5], "floorManager": true, "pin": { "salt": "…", "hash": "…", "setAt": "2026-10-22" }, "timeOff": [] } },
   "labourRemovals": [{ "at": "<ISO>", "by": "office", "date": "2026-10-22", "eventId": "ev_…", "title": "…", "entry": { "…": "the removed entry" }, "approvedBy": "Kasia" }],
-  "crops":     { "<lotId>": { "version": 2, "savedAt": "…", "costs": { /* frozen non-labour costs */ } /* … REPORTS.md §4 */ } },
+  "crops":     { "<lotId>": { "version": 4, "savedAt": "…", "costs": { /* frozen non-labour costs */ }, "ctls": { /* plant history */ } /* … REPORTS.md §4 */ } },
   "settings":  { "shiftHours": 8 },
   "costs":     { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
                  "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
-  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } }
+  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } },
+  "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } }
 }
 ```
 
@@ -107,10 +110,11 @@ EmployeeWizard owns `_EmployeeWizard`:
   - `floorManager` — `true` for people who sign tasks off in DailyWizard (absent otherwise). Mark done lists only them, or everyone when nobody is ticked.
   - `pin` — a floor manager's PIN as `{ salt, hash, setAt }`: SHA-256 of `<salt>:<PIN>`, never the PIN itself.
 - **`labourRemovals`** — hours removed in the Tasks tab, with who approved it (floor manager PIN). Read by the Labour Log.
-- **`crops`** — saved crop summaries (Reports → Setup & data). Hours per person, never wages; dropped after 36 months; created on the first save.
+- **`crops`** — saved crop summaries (Reports → Setup & data, or 📋 CTLS month → Lots ready to close out). Hours per person, never wages; the lot's dated plant and weight history (`ctls`); dropped after 36 months; created on the first save.
 - **`settings`** — `shiftHours`, the shift length for roster capacity (default 8). Canopy is set on the room (`rooms.<id>.canopySqFt`, Room Manager); `settings.canopySqFt` is read only as a fallback. Created on the first change.
 - **`costs`** — ⚡ Power & Rates (above).
 - **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them.
+- **`ctls`** — months marked as filed on the 📋 CTLS month page, with their closing (and opening) numbers. Next month's opening is checked against them.
 
 ### Time off
 
@@ -143,7 +147,8 @@ The tool writes `labour_map` and `completed` directly onto Labour-wizard events 
 - Roster entries reference the name (wage looked up at report time); temp entries carry their own name + wage.
 - **Entry ids:** `le_` + 10 characters (`newLabourId()`) on every new entry, here and in DailyWizard. SitkaTools merges the office's and a building's hours by them (root `CLAUDE.md` → "Split Database").
 - **DailyWizard entries** also carry `initials` (`{ name, strokes }`), `at` and `by`; a DailyWizard temp may have no `wage`. The Tasks tab tags them **✍️ signed** (and "no wage"), and edits or deletes them like any entry.
-- **Changing a signed entry's hours** ("Add (or update)") records `signedHours` (the hours as signed, set the first time), `editedAt` (ISO time) and `editedBy` (`office` or the building id). The tag reads "✍️ signed · changed", and the Labour Log and DailyWizard's hours view show the change. Deleting an entry needs a floor manager's PIN and is recorded in `labourRemovals` (see "Tasks Tab").
+- **Tasks-tab entries** carry `enteredBy` (`{ name, strokes }`: the floor manager who signed them off), `at` and `by` (`office` or the building id). The Tasks tab tags them "✍️ <floor manager>". Older ones have none of these.
+- **Changing an entry's hours** ("Add (or update)", signed off like an add) records `signedHours` (the hours as first signed, for an entry with `initials` or `enteredBy`, set the first time), `editedAt` (ISO time), `editedBy` (`office` or the building id) and `editedSignoff` (`{ name, strokes }`, the floor manager who approved the latest change). The tag reads "✍️ signed · changed", and the Labour Log and DailyWizard's hours view show the change. Deleting an entry needs a floor manager's PIN and is recorded in `labourRemovals` (see "Tasks Tab").
 - `completed` — set by Mark completed here or by DailyWizard's ✅ Mark done (which also sets `completedBy`). Reopening here deletes `completedBy`.
 - CropLabourWizard carries `labour_map` and `completed` over when it regenerates a schedule (root `CLAUDE.md` → "Event Annotations Survive Regeneration").
 

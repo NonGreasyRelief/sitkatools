@@ -94,7 +94,7 @@ export async function run(b, BASE) {
     await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'L100')]);`);
     await b.sleep(300);
     const saved = await b.run(main, `return DB.data._EmployeeWizard.crops.L100;`);
-    check('the saved summary (version 3) keeps the room chore share', saved?.version === 3 && near(saved.labour?.chores?.['B1:gr01']?.act, 5) && near(saved.labour.act, 5), JSON.stringify(saved?.labour?.chores));
+    check('the saved summary (version 3 or later) keeps the room chore share', saved?.version >= 3 && near(saved.labour?.chores?.['B1:gr01']?.act, 5) && near(saved.labour.act, 5), JSON.stringify(saved?.labour?.chores));
     await b.run(main, `delete DB.data.lots.L100; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'L100'); markUnsaved(); await WorkCopy.flush();`);
     await b.sleep(600);
     r = await model();

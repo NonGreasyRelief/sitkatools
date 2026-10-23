@@ -510,9 +510,20 @@
             max-width: 180px;
         }
 
-        .lot-room-select:focus {
+        .lot-room-select:focus, .lot-from-input:focus {
             outline: none;
             border-color: var(--accent);
+        }
+
+        .lot-from-input {
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            width: 180px;
+            max-width: 100%;
         }
 
         /* Hide native spinner arrows on all number inputs (they only step by ±1) */
@@ -2995,6 +3006,10 @@
                             <option value="flower">Flower room (final destination)</option>
                         </select>
                     </div>
+                    <div class="form-group" id="receivedFromGroup" style="display: none;">
+                        <label for="receivedFrom">Received from (optional)</label>
+                        <input type="text" id="receivedFrom" maxlength="80" placeholder="Nursery or licence holder">
+                    </div>
                     <div class="form-group" id="parentLotGroup" style="display: none;">
                         <label for="parentLot">Parent Lot</label>
                         <select id="parentLot">
@@ -3229,7 +3244,7 @@
 
                 <a class="tool-link module-link" href="../EmployeeWizard/EmployeeWizard.html">
                     <span class="tool-link-name">👥 Labour &amp; Cost Wizard</span>
-                    <span class="tool-link-desc">Roster, time off &amp; labour hours · power bills &amp; total cost per gram</span>
+                    <span class="tool-link-desc">Roster, time off &amp; labour hours · power bills, total cost per gram &amp; monthly CTLS numbers</span>
                 </a>
 
                 <a class="tool-link module-link" href="../DailyWizard/DailyWizard.html">
@@ -5738,6 +5753,9 @@
                 let msg = `Close out lot ${lotId}?\n\nThe lot record, its ${events.length} calendar events (with labour hours), schedule history, ` +
                     `paperwork and transfer history are saved to ${name}, then removed from the database.`;
                 if (upcoming.length) msg = `⚠️ ${upcoming.length} of its tasks are still upcoming or not completed.\n\n` + msg;
+                // The monthly CTLS report counts a closed-out lot from the plant history saved with its crop summary
+                if (!DB.data._EmployeeWizard?.crops?.[lotId]?.ctls) msg = `⚠️ Its plant history isn't saved yet, so the monthly CTLS report and the report trends won't count it. ` +
+                    `Save it first in the Labour & Cost Wizard (📊 Reports → 📋 CTLS month, "Lots ready to close out"), or import the archive file there later.\n\n` + msg;
                 if (!confirm(msg)) return;
 
                 const archive = {
@@ -6339,6 +6357,8 @@
             // Show/hide parent lot selector
             parentLotGroup.style.display = isNotNewLot ? 'flex' : 'none';
             parentLotSelect.required = isNotNewLot;
+            // Who a new lot's plants came from (the monthly CTLS report lists it with the plants received)
+            $('receivedFromGroup').style.display = type === 'new-lot' ? 'flex' : 'none';
 
             // Veg/Cloning rooms apply to new lots and sub-lots (split lots inherit from their parent)
             vegRoomGroup.style.display = isSplitLot ? 'none' : 'flex';
@@ -6397,6 +6417,7 @@
             const plantsTransferred = type === 'split-lot' ? parseInt(plantsTransferredInput.value, 10) : null;
             const createdDate = lotDateInput.value;
             const stage = lotStageSelect.value;
+            const receivedFrom = type === 'new-lot' ? $('receivedFrom').value.trim() : '';
             // Veg/Cloning rooms are settable for new lots and sub-lots (split lots inherit from parent)
             const vegRoom = type === 'split-lot' ? '' : vegRoomInput.value;
             const cloningRoom = type === 'split-lot' ? '' : cloningRoomInput.value;
@@ -6463,7 +6484,9 @@
                 type: type,
                 parentLotId: parentLotId,
                 plantCount: plantCountValue,
+                startPlantCount: plantCountValue,   // the count it started with (plantCount moves with the grow log)
                 plantsTransferred: plantsTransferred,
+                ...(receivedFrom ? { receivedFrom } : {}),
                 createdDate: createdDate,
                 closedDate: null,
                 stage: stage
@@ -6517,6 +6540,7 @@
             lotDateInput.value = localDate();
             lotStageSelect.value = 'cloning';
             parentLotGroup.style.display = 'none';
+            $('receivedFromGroup').style.display = 'none';
             vegRoomGroup.style.display = 'none';
             cloningRoomGroup.style.display = 'none';
             plantsTransferredGroup.style.display = 'none';
@@ -6531,6 +6555,7 @@
             lotDateInput.value = localDate();
             lotStageSelect.value = 'cloning';
             parentLotGroup.style.display = 'none';
+            $('receivedFromGroup').style.display = 'none';
             vegRoomGroup.style.display = 'none';
             cloningRoomGroup.style.display = 'none';
             plantsTransferredGroup.style.display = 'none';
@@ -6726,6 +6751,11 @@
                         ${roomEditorHtml('destRoom', '🌸', 'Destination flower')}
                         ${roomEditorHtml('dryRoom', '❄️', 'Dry')}
                         ${roomEditorHtml('trimRoom', '🪒', 'Trim')}
+                        ${lot.type === 'new-lot' || lot.receivedFrom ? `
+                        <div class="lot-room-editor">
+                            <span title="Received from">📦</span>
+                            <input type="text" class="lot-from-input" data-lot-id="${key}" maxlength="80" value="${escapeHtml(lot.receivedFrom || '')}" placeholder="Received from" title="Who the plants came from (nursery or licence holder)">
+                        </div>` : ''}
                     </div>
                 `;
 
@@ -6807,6 +6837,19 @@
                     } else {
                         lot.plantCount = null;
                     }
+                    // Until a grow log records the lot, the Lot Manager's count is the one it started with
+                    lot.startPlantCount = lot.plantCount;
+                    markUnsaved();
+                });
+            });
+
+            // Received from (new lots): who the plants came from, for the monthly CTLS report
+            lotListEl.querySelectorAll('.lot-from-input').forEach(input => {
+                input.addEventListener('change', () => {
+                    const lot = DB.lots[input.dataset.lotId];
+                    if (!lot) return;
+                    const v = input.value.trim();
+                    if (v) lot.receivedFrom = v; else delete lot.receivedFrom;
                     markUnsaved();
                 });
             });
@@ -10381,12 +10424,43 @@
             }
         };
 
+        // ---- The day rolls over (user decision 2026-10-22) ----
+        // SitkaTools left open overnight (a building tablet) moves to the new day by itself: checked once a minute, when
+        // the tab is shown again and when the window gets focus. Whatever was showing today follows it — the calendar's
+        // current month (or year), a 7-day window starting today or on this week's Sunday, the new-lot form's date —
+        // and anything someone moved to by hand stays put. Every view then redraws, so Today and the task list are current.
+        var DayRollover = {
+            day: null,
+            sundayOf(ds) { const d = parseLocalDate(ds); d.setDate(d.getDate() - d.getDay()); return localDate(d); },
+            check() {
+                const today = localDate();
+                if (!this.day || today === this.day) { this.day = today; return; }
+                const was = this.day, w = parseLocalDate(was), n = parseLocalDate(today);
+                this.day = today;
+                const C = Calendar;
+                const onMonth = C.currentYear === w.getFullYear() && C.currentMonth === w.getMonth();
+                const onYear = C.viewMode === 'year' && C.currentYear === w.getFullYear();
+                if (onMonth || onYear) { C.currentYear = n.getFullYear(); C.currentMonth = n.getMonth(); }
+                if (C.weekAnchorDate === was) C.weekAnchorDate = today;
+                else if (C.weekAnchorDate === this.sundayOf(was)) C.weekAnchorDate = this.sundayOf(today);
+                if (lotDateInput.value === was) lotDateInput.value = today;
+                refreshAllViews();
+            },
+            start() {
+                this.day = localDate();
+                setInterval(() => this.check(), 60000);
+                document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.check(); });
+                window.addEventListener('focus', () => this.check());
+            }
+        };
+
         // ---- Start ----
         init();
         RoomManager.init();
         BuildingManager.init();
         Calendar.init();
         CalendarIO.init();
+        DayRollover.start();
     </script>
 </body>
 </html>

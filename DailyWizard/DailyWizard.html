@@ -2911,6 +2911,9 @@
         // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
         // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
         // developer tools: the drawn initials and the removal records are the real control.
+        // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
+        // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
+        // normalized 0–1, like DailyWizard's hours entries.
         var FloorPin = {
             WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
             WAIT_MS: 60 * 1000,
@@ -2918,6 +2921,8 @@
             _waitUntil: 0,
             _el: null,
             _done: null,
+            _wantInitials: false,
+            _strokes: [],
             tr(s, v) {
                 if (typeof T === 'function') return T(s, v);
                 return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
@@ -2982,14 +2987,19 @@
                 const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
                 return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
             },
-            // Ask a floor manager for their PIN. Resolves { name } once it's right, or null (cancelled).
-            ask(why) {
+            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials). Resolves { name }
+            // (plus initials) once it's right, or null (cancelled).
+            ask(why, opts = {}) {
                 if (this._done) this._finish(null);
                 this._build();
                 const el = this._el, names = this.managers();
                 const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
+                this._wantInitials = !!opts.initials;
+                this._strokes = [];
                 // The words are set on every ask, so they follow DailyWizard's language
-                el.querySelector('.fpin-title').textContent = this.tr('🔒 Floor manager PIN');
+                el.querySelector('.fpin-title').textContent = this.tr(this._wantInitials ? '✍️ Floor manager sign-off' : '🔒 Floor manager PIN');
+                el.querySelector('[data-fpin-sign-label]').textContent = this.tr('Your initials — draw them');
+                el.querySelector('[data-fpin-clear]').textContent = this.tr('Clear initials');
                 el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
                 el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
                 el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
@@ -3001,11 +3011,14 @@
                 el.querySelector('[data-fpin-fields]').hidden = none;
                 el.querySelector('[data-fpin-ok]').hidden = none;
                 el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
+                const sign = el.querySelector('[data-fpin-sign]');
+                sign.hidden = none || !this._wantInitials;
                 who.innerHTML = '';
                 if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
                 for (const n of names) who.appendChild(new Option(n, n));
                 pin.value = '';
                 el.hidden = false;
+                if (!sign.hidden) this._sizePad();
                 (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
                 return new Promise(resolve => { this._done = resolve; });
             },
@@ -3021,9 +3034,10 @@
                 if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
                 if (!name) { err.textContent = this.tr('Pick your name'); return; }
                 if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
+                if (this._wantInitials && !this._strokes.length) { err.textContent = this.tr('Draw your initials'); return; }
                 if (await this.check(name, pinEl.value)) {
                     this._fails = 0;
-                    this._finish({ name });
+                    this._finish(this._wantInitials ? { name, initials: { name, strokes: this._strokes.map(st => st.slice()) } } : { name });
                     return;
                 }
                 pinEl.value = '';
@@ -3040,7 +3054,7 @@
                 css.textContent = `
                     .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
                     .fpin[hidden] { display: none; }
-                    .fpin-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+                    .fpin-card { width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
                     .fpin-title { font-size: 1.1rem; font-weight: 700; }
                     .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
                     .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
@@ -3049,6 +3063,11 @@
                     .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
                     .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
                     .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
+                    .fpin-sign { display: flex; flex-direction: column; gap: 6px; }
+                    .fpin-sign[hidden] { display: none; }
+                    .fpin-sign span { font-size: 0.8rem; color: var(--text-secondary); }
+                    .fpin-pad { width: 100%; height: 120px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
+                    .fpin .fpin-clear { align-self: flex-start; min-height: 40px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
                     .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
                     .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
                     .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
@@ -3071,6 +3090,11 @@
                             <label for="floorPinInput"></label>
                             <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
                         </div>
+                        <div class="fpin-sign" data-fpin-sign hidden>
+                            <span data-fpin-sign-label></span>
+                            <canvas class="fpin-pad" data-fpin-pad></canvas>
+                            <button type="button" class="fpin-clear" data-fpin-clear></button>
+                        </div>
                         <div class="fpin-err" data-fpin-err role="alert"></div>
                         <div class="fpin-actions">
                             <button type="button" class="fpin-cancel" data-fpin-cancel></button>
@@ -3083,8 +3107,56 @@
                     if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
                 });
                 el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
+                // The initials pad: pointer strokes, normalized 0–1
+                const pad = el.querySelector('[data-fpin-pad]');
+                let stroke = null;
+                const at = (e) => {
+                    const r = pad.getBoundingClientRect();
+                    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+                };
+                pad.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    try { pad.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
+                    const [x, y] = at(e);
+                    stroke = [+x.toFixed(3), +y.toFixed(3)];
+                    this._strokes.push(stroke);
+                    this._drawPad();
+                });
+                pad.addEventListener('pointermove', (e) => {
+                    if (!stroke) return;
+                    const [x, y] = at(e);
+                    if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;
+                    stroke.push(+x.toFixed(3), +y.toFixed(3));
+                    this._drawPad();
+                });
+                const end = () => { stroke = null; };
+                pad.addEventListener('pointerup', end);
+                pad.addEventListener('pointercancel', end);
+                el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
                 document.body.appendChild(el);
                 this._el = el;
+            },
+            _sizePad() {
+                const c = this._el.querySelector('[data-fpin-pad]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+                c.width = Math.max(1, Math.round(r.width * dpr));
+                c.height = Math.max(1, Math.round(r.height * dpr));
+                this._drawPad();
+            },
+            _drawPad() {
+                const c = this._el.querySelector('[data-fpin-pad]'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+                ctx.clearRect(0, 0, c.width, c.height);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2.5 * dpr;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                for (const st of this._strokes) {
+                    if (st.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(st[0] * c.width, st[1] * c.height);
+                    for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
+                    if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
+                    ctx.stroke();
+                }
             }
         };
 
@@ -3273,7 +3345,9 @@
             hrs.className = 'hrs';
             hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
             row.append(who, hrs);
-            if (e.initials?.strokes?.length) row.appendChild(initialsSvg(e.initials));
+            // The worker's own initials, or the floor manager who entered the hours in the Labour & Cost Wizard
+            const ini = e.initials?.strokes?.length ? e.initials : e.enteredBy?.strokes?.length ? e.enteredBy : null;
+            if (ini) row.appendChild(initialsSvg(ini));
             if (!removal && index >= 0 && canRemoveEntry(e)) {
                 const del = document.createElement('button');
                 del.type = 'button';
@@ -3286,8 +3360,11 @@
             const when = document.createElement('span');
             when.className = 'when';
             const stamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            const parts = [e.at ? T('Logged {when}', { when: stamp(e.at) }) : T('Entered in the Labour & Cost Wizard')];
-            if (e.editedAt) parts.push(T('signed for {h}, changed in the Labour & Cost Wizard {when}', { h: fmtHoursShort(Number(e.signedHours) || 0), when: stamp(e.editedAt) }));
+            const parts = [e.enteredBy ? T('Entered in the Labour & Cost Wizard by {name}, {when}', { name: e.enteredBy.name || '?', when: e.at ? stamp(e.at) : '' })
+                : e.at ? T('Logged {when}', { when: stamp(e.at) }) : T('Entered in the Labour & Cost Wizard')];
+            if (e.editedAt) parts.push(e.signedHours !== undefined ? T('signed for {h}, changed in the Labour & Cost Wizard {when}', { h: fmtHoursShort(Number(e.signedHours) || 0), when: stamp(e.editedAt) })
+                : T('changed in the Labour & Cost Wizard {when}', { when: stamp(e.editedAt) }));
+            if (e.editedSignoff?.name) parts.push(T('change approved by {name}', { name: e.editedSignoff.name }));
             const gone = removal?.at || e.removedAt;
             if (gone) parts.push(removal?.approvedBy ? T('removed {when}, approved by {name}', { when: stamp(gone), name: removal.approvedBy })
                 : T('removed by the office {when}', { when: stamp(gone) }));
@@ -4142,6 +4219,12 @@
             "Remove this entry": { fr: "Supprimer cette saisie", es: "Quitar este registro", vi: "Xóa mục này", zh: "删除此条目" },
             "Logged {when}": { fr: "Saisi le {when}", es: "Registrado el {when}", vi: "Ghi lúc {when}", zh: "记录于 {when}" },
             "Entered in the Labour & Cost Wizard": { fr: "Saisi dans le Labour & Cost Wizard", es: "Registrado en el Labour & Cost Wizard", vi: "Nhập trong Labour & Cost Wizard", zh: "在 Labour & Cost Wizard 中录入" },
+            "Entered in the Labour & Cost Wizard by {name}, {when}": { fr: "Saisi dans le Labour & Cost Wizard par {name}, le {when}", es: "Registrado en el Labour & Cost Wizard por {name}, el {when}", vi: "{name} nhập trong Labour & Cost Wizard lúc {when}", zh: "由 {name} 于 {when} 在 Labour & Cost Wizard 中录入" },
+            "changed in the Labour & Cost Wizard {when}": { fr: "modifié dans le Labour & Cost Wizard le {when}", es: "cambiado en el Labour & Cost Wizard el {when}", vi: "đã sửa trong Labour & Cost Wizard lúc {when}", zh: "{when} 在 Labour & Cost Wizard 中修改" },
+            "change approved by {name}": { fr: "modification approuvée par {name}", es: "cambio aprobado por {name}", vi: "thay đổi do {name} duyệt", zh: "修改由 {name} 批准" },
+            "✍️ Floor manager sign-off": { fr: "✍️ Validation du chef d’équipe", es: "✍️ Firma del jefe de piso", vi: "✍️ Quản lý ca ký xác nhận", zh: "✍️ 现场主管签核" },
+            "Your initials — draw them": { fr: "Vos initiales — dessinez-les", es: "Sus iniciales — dibújelas", vi: "Chữ ký tắt của bạn — hãy vẽ", zh: "您的签名 — 请写下" },
+            "Draw your initials": { fr: "Dessinez vos initiales", es: "Dibuje sus iniciales", vi: "Hãy vẽ chữ ký tắt", zh: "请写下签名" },
             "signed for {h}, changed in the Labour & Cost Wizard {when}": { fr: "signé pour {h}, modifié dans le Labour & Cost Wizard le {when}", es: "firmado por {h}, cambiado en el Labour & Cost Wizard el {when}", vi: "đã ký {h}, được sửa trong Labour & Cost Wizard lúc {when}", zh: "签名时为 {h}，于 {when} 在 Labour & Cost Wizard 中修改" },
             "removed by the office {when}": { fr: "supprimé par le bureau le {when}", es: "quitado por la oficina el {when}", vi: "văn phòng đã xóa lúc {when}", zh: "办公室于 {when} 删除" },
             "Initials of {name}": { fr: "Initiales de {name}", es: "Iniciales de {name}", vi: "Chữ ký tắt của {name}", zh: "{name} 的签名" },

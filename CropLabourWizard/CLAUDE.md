@@ -94,7 +94,7 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 | `roomPhase` | optional `cloning` / `veg` / `flower`; written onto events, overrides the order-based room split |
 | `minutes`, `staff` | optional labour estimate per day (see "Labour Estimates") |
 
-- **`inputs`** (recipe level, optional): supplies used up per crop — `[{ inputId, name, unit, qty, per: 'crop' | 'plant' }]` (see "🧪 Inputs").
+- **`inputs`** (recipe level, optional): supplies a crop uses — `[{ inputId, name, unit, qty, per: 'crop' | 'plant', at? }]`; `at` (per plant only) is one of the recipe's task types (see "🧪 Inputs").
 - **Old recipes:** `normalizeCloneCut` converts a `clone_cut` that doesn't reference `harvest` to `reference: 'harvest'`, offset −`chain.cloneCutBeforeHarvest` (default 21), unlocked, so every date stays put. It runs on load (`ensureStructure`), on import and in the editor.
 
 ### Validation Rules
@@ -110,7 +110,7 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 - `roomPhase`, when present, is `cloning` / `veg` / `flower`.
 - `minutes` an integer ≥ 5, `staff` an integer ≥ 1, `days` an integer 1–30 (all optional).
 - `chain.cloneCutBeforeHarvest`, when present, a positive integer.
-- `inputs`, when present, an array; each entry has a name, a qty ≥ 0, and `per` of `crop` or `plant`.
+- `inputs`, when present, an array; each entry has a name, a qty ≥ 0, and `per` of `crop` or `plant`; an `at` must be a task type of this recipe, on a per-plant entry.
 
 ### Recipe Selection — Per-Lot `recipeId`
 
@@ -145,7 +145,9 @@ Both buttons are in the recipe manager's list view, next to `＋ New Recipe`.
   - A fertilizer is priced per litre (unit fixed to `L`). Its mL come from the grow logs, where PaperWizard links each mL question to a product **by the same name**.
   - A supply is priced per unit and used up per crop (coco block, peat puck, trellis ft…).
   - ＋ Add Input; ✕ deletes. Deleting an input other recipes use asks first, listing them, and removes it from those recipes on save. Names must be filled in and unique (checked on save).
-- **Supplies this recipe uses:** `recipe.inputs` — a supply, quantity, per crop or per plant, and the cost it comes to. Name and unit travel with `recipe-<id>.json`.
+- **Supplies this recipe uses:** `recipe.inputs` — a supply, quantity, **Per** and the cost it comes to. Name and unit travel with `recipe-<id>.json`.
+  - **Per:** per crop; per plant at the start (the plants started); or **per plant at <task>**, one option per task of the recipe (value `plant@<taskType>`, stored as `per: 'plant', at: <taskType>`; user decision 2026-10-22). The Reports count the plants the grow log recorded on that task's calendar day (the lowest of the day), so plants culled before it aren't charged: clone cubes at ✂️ Cutting Clones, 4″ rockwool at 🌱 Planting Clones (the up-pot), coco blocks at 🪴 Transplanting. A lot whose schedule doesn't have the task (Cutting Clones off for bought clones) isn't charged for it; a bought clone is a per-plant supply in that lot's recipe.
+  - The cost column reads e.g. "≈ $2.00 per plant at 🪴 Transplanting to Flower Room". An entry whose task is no longer in the recipe shows "(not in this recipe)" and fails validation on save.
 - **Import** matches each supply to the price list by name (case-insensitive) and adds unknown ones without a price.
 - The Labour & Cost Wizard's Reports price each crop's supplies from its lot's recipe (`_tool_CropLabourWizard.recipeId`).
 
@@ -315,4 +317,4 @@ Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop
 
 ## Tests
 
-`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `mark-done` (regenerating keeps sign-offs). The projection and push-back logic has no automated test.
+`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs). The projection and push-back logic has no automated test.

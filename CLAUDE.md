@@ -26,6 +26,8 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
     name, strain, stage, createdDate, closedDate, parentLotId,
     destRoom, vegRoom, cloningRoom, dryRoom, trimRoom,  // room NAMES; only destRoom syncs to rooms.<id>.assignedLots
     currentRoom, plantCount,                            // live, kept up to date by PaperWizard's grow logs (only them, once a lot has one)
+    type, plantsTransferred, startPlantCount,           // new-lot | sub-lot | split-lot; a split's plants; the count it started with
+    receivedFrom,                                       // new lots: who the plants came from (optional)
     _tool_<Tool>: { … } } },
   rooms: { <RoomID>: {
     name, description, createdDate, assignedLots: [], buildingId,
@@ -43,7 +45,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 - Renaming or deleting a room nulls the room-name fields on the lots that use it. Deleting a building nulls `buildingId` on its rooms.
 - Dry rooms double as trim rooms: `dryRoom` and `trimRoom` may name the same room, but each has its own clean form.
 - **Ownership:** a tool reads lots, rooms and buildings, and writes only its own keys (`_tool_<Tool>` on a lot, or top-level `_<Tool>`). The exceptions:
-  - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs`.
+  - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs / .ctls`.
   - **PaperWizard may write exactly `lots.plantCount`, `.stage` and `.currentRoom`** when a log entry records a change. No other tool writes another tool's data.
   - **🔒 A lot with a grow log is locked to it** (any daily-weekly page in PaperWizard): its plant count, phase and room then change only through PaperWizard (the grow log, and the harvest log after it). SitkaTools shows them read-only, won't delete the lot, and won't delete or re-home a room it's in; the one other writer is a lot move's Accept (`currentRoom`). A changed count needs a reason, split by reason (`PaperWizard/CLAUDE.md` → "🌱 Why the Plant Count Changed"). Details: `SitkaTools/CLAUDE.md` → "Lot Manager".
   - **Event annotations:** labour tools and SitkaTools add fields to other tools' events in place (see "Event Annotations Survive Regeneration").
@@ -180,13 +182,26 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 | Electricity | rooms' lights, watts and light cycles; the grow log's daily light % (100% when not logged); equipment power | ⚡ Power & Rates: power bills (split by estimated use) **or** estimated kWh × $/kWh |
 | Water | grow log water (L) | $ per 1,000 L |
 | Fertilizer | grow log mL by product (PaperWizard's product link) | price list, $/L (CropLabourWizard → 🧪 Inputs) |
-| Supplies | the recipe's supplies, per crop or per plant | price list, $ per unit |
+| Supplies | the recipe's supplies: per crop, per plant at the start, or per plant at a task (the plants on that task's day: coco blocks at Transplanting, rockwool at Planting, clone cubes at Cutting Clones) | price list, $ per unit |
 | Property | days each crop spends in a building's rooms | the building's monthly rent + fees, shared by the rooms holding a crop (by lights or plants) |
 
 - Electricity is worked out room by room, day by day. An empty room, or a Mother room, passes its kWh to the building's crops that day.
 - **Room chores:** a DailyWizard chore can be tied to one of its building's rooms (`task.roomId`). Its hours go into the labour of the lots scheduled in that room that day (the same room stays electricity uses), split by plants when lots share the room; they count as that lot's own labour cost. Chores without a room, and room-chore hours on a day the room held no crop, are shared over the crops harvested in the period, by grams (the "fully loaded" labour). Nothing is written to the lots: Reports work the split out when they draw, and a crop summary keeps its share.
 - Each part's $/g uses only the crops that part can price; Costs → "What's missing from the cost?" lists the gaps.
 - Prices, rates and bills live in Main.json. Closed lots keep their non-labour costs frozen in their crop summary; labour cost is frozen in Wages.json.
+
+## Monthly CTLS Numbers
+
+The Labour & Cost Wizard's **📋 CTLS month** (Reports) gives the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. Definitions: `EmployeeWizard/REPORTS.md` → "CTLS month".
+
+- **Plants:**
+  - **In:** only from the Lot Manager. New lots are received (with `receivedFrom`), sub-lots are clones cut.
+  - **Out:** only from the grow-log reasons (`days[day]._removed`: destroyed, culled, sampled, harvested, sold). Sold plants name the company and samples may name the lab (`._removedTo`).
+  - **Between lots:** split lots and plants "moved" between lots are shown but not counted.
+  - **On hand:** each lot's last grow-log count.
+- **Wet cannabis** is the harvest log's wet weight, hanging until the lot's dry weight is recorded. **Dry flower sent out** is the dry weight, on the day it's recorded.
+- **Closed-out lots** count from the dated history saved with their crop summary (`_EmployeeWizard.crops[lot].ctls`). SitkaTools' close-out warns when it's missing.
+- **📌 Mark as filed** keeps a month's closing numbers (`_EmployeeWizard.ctls[YYYY-MM]`). The next month's opening is checked against them, because CTLS rejects an opening more than 5 % off the last closing.
 
 ## BC Civic Holidays
 
@@ -220,7 +235,7 @@ Any implementation must reproduce this table. Where holidays are used:
 | GeneralEvent | `GeneralEvent/` | Standalone calendar events (text, date, emoji) |
 | CropLabourWizard | `CropLabourWizard/` | Crop schedules from task recipes, projections, labour estimates, input price list |
 | EquipmentWizard | `EquipmentWizard/` | Equipment maintenance schedules and equipment power |
-| Labour & Cost Wizard | `EmployeeWizard/` | Roster, time off, hours on tasks, 📜 Labour Log, ⚡ Power & Rates, 📊 Reports and total cost per gram |
+| Labour & Cost Wizard | `EmployeeWizard/` | Roster, time off, hours on tasks, 📜 Labour Log, ⚡ Power & Rates, 📊 Reports, total cost per gram and the monthly CTLS numbers |
 | DailyWizard | `DailyWizard/` | Per-building daily lists with check-offs, ⏲ timers, ⏱ hours, ⏰ Still open and ✅ Mark done, translations, step pictures and videos |
 | PaperWizard | `PaperWizard/` | Fills controlled paperwork through wizards, prints it over the form's page images, and keeps corrections traceable (struck-out values, initials, 📝 Change log) |
 
@@ -260,5 +275,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections, number answers and grow-log changes on edited days, DailyWizard's timers, floor manager PINs, lots locked to their grow log, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs (supplies charged at a task included) and a hand-worked cost per gram, a hand-worked CTLS month (filing and who plants went to included), PaperWizard's repeating tables, corrections, number answers, grow-log changes on edited days and closing the wizard only by its ✕, DailyWizard's timers, floor manager PINs (and their sign-off for hours typed in the Tasks tab), lots locked to their grow log, the day rolling over, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

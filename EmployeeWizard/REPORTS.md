@@ -25,17 +25,18 @@ Reports is the last tab and office only (building devices don't get it). The **L
 | **Overview** | 8 KPI tiles (sparkline + change vs previous period): flower yield, g/plant, g/sq ft/year, potency, terpenes, **cost / g (all in)** with its six-part breakdown, labour hours, estimate accuracy. **Needs attention**, each line linking to its page: tasks over estimate, slipping rooms, weeks short of staff, idle flower rooms, past-due tasks, completed tasks with no hours, shipped lots with no weights or no summary, costs left out of the cost per gram. | mixed |
 | **Crop Timeline** | **Crop labour Gantt** (one lot): tasks banded by phase, planned outline vs hours logged per day, ✓ done / ⚠ past due, estimate vs actual, a daily hours strip. **Room schedule Gantt**: every lot's stay in each room, 4 months back to 8 ahead; TBA lots hatched, idle flower-room days amber, BC holidays and today marked, % in use per flower room. | data exists today |
 | **Labour** | **Where do the hours go?** (Pareto by task, estimate outlined). **Which tasks run over their estimate?** (dot per crop, median) + **suggested estimates** at 3+ crops. **What kind of work fills the period?** (crop / chores / equipment, temps' share, logged vs scheduled). **Labour $ per gram by phase** (waterfall). | today; $/g needs harvest numbers + Wages.json |
-| **💲 Costs** | Always per gram of flower. **What does a gram of flower cost?** (this vs previous period, stacked by the six parts). **Cost per gram, crop by crop.** **How much electricity does a crop use?** (kWh: lights vs equipment & shared rooms). **What did the crops use?** (fertilizer by product, supplies, water, electricity, property crop-days, with $). **What's missing from the cost?** (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies, bills not charged to any crop, buildings without a property cost, property cost on days with no crop in the building). | harvest numbers, Room Manager, EquipmentWizard power, grow-log tags, price list, ⚡ Power & Rates |
+| **💲 Costs** | Always per gram of flower. **What does a gram of flower cost?** (this vs previous period, stacked by the six parts). **Cost per gram, crop by crop.** **How much electricity does a crop use?** (kWh: lights vs equipment & shared rooms). **What did the crops use?** (fertilizer by product, supplies — "Coco block · at 🪴 Transplanting…" when charged at a task — water, electricity, property crop-days, with $). **What's missing from the cost?** (no rate, rooms without watts, equipment without power, light % not logged, unpriced or unlinked fertilizer, recipes without supplies, supplies charged at a task with no plant count on or before it (counted from the start), bills not charged to any crop, buildings without a property cost, property cost on days with no crop in the building). | harvest numbers, Room Manager, EquipmentWizard power, grow-log tags, price list, ⚡ Power & Rates |
 | **Yield & Quality** | **Strain scorecard**: yield (Per switch) vs potency → Keep / Potency play / Volume play / Review. **Potency & terpenes by strain** (strip plots). **Weight cascade**: wet → dry → stems & waste → total yield → trim → flower (stacked by grade). **Is any room slipping?** (Per switch). **What drives yield?** Any per-crop measure vs an outcome: dot per harvested crop, fitted line, r and n. | harvest numbers (+ grow-log tags for climate measures) |
 | **Rooms & Environment** | **Climate for one lot**: temperature, RH, VPD vs target bands, IPM flag days marked. **Pest heat map**: rooms × last 16 weeks (days flagged), plus a hermaphrodite marker. | grow-log tags |
 | **Forecast** | **Do we have enough people?** Estimated hours for the next 12 weeks (scheduled and projected crops, daily chores) vs roster capacity. **What will we harvest in the next 6 months?** Expected flower per harvest, best/worst range from past crops. | today; harvest forecast needs harvest numbers |
+| **📋 CTLS month** | The month's cultivation numbers for Health Canada's monthly CTLS report, for the whole facility (no filters; see "CTLS month" below): a month picker (last month by default, 36 months back), five tiles, **Checks** (what could make the numbers wrong), **🌱 Plants** (every dated change with what happened, +/−, to / from whom and the initials, then the totals by reason from the opening to the closing count), **plants on hand at month end by lot** (room, phase, total; by phase), **💧 wet cannabis hanging to dry**, **🌾 dry flower sent out**, and **lots ready to close out** (save their plant history first). **🖨️ Print** and **📌 Mark as filed**. | grow logs with 🌱 plant counts, harvest-log weights tagged |
 | **⚙️ Setup & data** | Canopy sq ft, lights and watts per light per flower room (read-only, from Room Manager). Shift length. **Crop summaries** (save / update / remove, 📂 Import archived lots). **Report metrics**: which question feeds each metric, and its answer count. | — |
 
 ---
 
 ## 2. Decisions
 
-1. Reports may **read every tool's data**, read-only. They write only `_EmployeeWizard.crops`, `.settings` and `.cropCosts` (§4).
+1. Reports may **read every tool's data**, read-only. They write only `_EmployeeWizard.crops`, `.settings`, `.cropCosts` (§4) and `.ctls` (filed CTLS months).
 2. **Metric tags** are a drop-down on PaperWizard questions.
 3. **Closed lots:** a per-lot summary stays in Main.json for **36 months**. Lots closed without one can be imported from their archive file.
 4. **Yield:** flower yield = bigs + mids + smalls + popcorn sent to processing; total yield = flower + trim; **wet weight** = the weight in the drying room on harvest day; **dry weight** = the whole lot after drying.
@@ -101,11 +102,11 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 
 ### The crop object
 
-`rptBuildCrop(lotId, lot, events, paperwork, qmap)` builds one crop's numbers, from the live DB or from an archive file's `lot` / `events` / `paperwork`. While a lot is in the DB, reports use its **live** numbers; its saved summary takes over only after close-out. "Save summary" stores this object (version 2, about 6 KB) in `_EmployeeWizard.crops[lotId]`, with its non-labour costs frozen in `costs`:
+`rptBuildCrop(lotId, lot, events, paperwork, qmap)` builds one crop's numbers, from the live DB or from an archive file's `lot` / `events` / `paperwork`. While a lot is in the DB, reports use its **live** numbers; its saved summary takes over only after close-out. "Save summary" stores this object (version 4, about 6–10 KB) in `_EmployeeWizard.crops[lotId]`, with its non-labour costs frozen in `costs`:
 
 ```js
 {
-  version: 3, lotId, strain, parentLotId, savedAt, recipeId,      // recipeId: the lot's CropLabourWizard recipe (its supplies)
+  version: 4, lotId, strain, parentLotId, savedAt, recipeId,      // recipeId: the lot's CropLabourWizard recipe (its supplies)
   rooms: { cloning, veg, flower, dry, trim },                     // names, as on the lot
   flowerRoomId, buildingId, canopySqFt, lightCount,               // the flower room's canopy and lights (Room Manager)
   dates: { day0, planting, transplant, flip, harvestStart, harvestEnd, tankClean, bucking, trimStart, trimEnd, ship },
@@ -121,10 +122,12 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
   env: { veg: {…}, flower: { temp, rh, vpd, co2, par, feedEc, feedPh, runoffEc, runoffPh }, waterL, nutrientMl,
          nutrientByProduct: { "<product>": mL, "": mL not linked to a product }, lightPct },
   ipm: { flagDays, hermDays },
+  ctls: { v: 1, type, created, start, from, parent, dryRoom, room, stage, logged,   // version 4: the 📋 CTLS month's history
+          counts: [[day, plants, room, phase]], moves: [{ date, kind, reason, n, to, by }], wet: [[day, g]], dry: [[day, g]] },
   costs: {                                                          // saved summaries only — frozen at save (rptFrozenCosts)
     power: { kWh, lights, equip, cost, source: 'bills' | 'estimate', pctMissingDays },
     water: { L, cost }, fert: { byProduct: { "<product>": { mL, cost } }, unpriced: [], cost },
-    supplies: { items: [{ name, unit, qty, cost }], unpriced: [], cost },
+    supplies: { items: [{ name, unit, qty, cost, at?: { task, label, plants, how, date } }], unpriced: [], cost },   // at: charged per plant at a task
     property: { days, cost }, savedAt                               // days: crop-days in a building with a property cost
   }
 }
@@ -151,6 +154,7 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 | `RPT_PER`, `rptPerDenom`, `rptPerHours`, `rptYieldOf` | The Per switch: each crop's divisor (plants harvested, canopy sq ft, flower-room lights, grams of flower) and unit labels |
 | `rptExploreMeasures`, `RPT_OUTCOMES`, `rptExplorer` | What drives yield? (labour per plant and per task, flower days, density, survival, flower-phase climate and feed, water and nutrient per plant, IPM days). Least-squares line and Pearson r. |
 | `rptBoardPack`, `RPT_PRINT_CSS` | The board pack window and its print theme |
+| `ctlsLedger`, `ctlsLots`, `ctlsModel`, `rptCtls`, `ctlsPrint`, `ctlsFile` | 📋 CTLS month: a lot's dated plant and weight history, every lot (live and closed), the month's numbers and checks, the page, its print window, Mark as filed |
 | `rCard`, `rSvg`, `rT`, `rRect`, `rNice`, `rLin` … | Chart kit |
 
 ### PaperWizard additions
@@ -213,7 +217,7 @@ Answers are parsed leniently (`"1,250"`, `"12 kg"`, `"24.0"` all read as numbers
 | **Electricity to a crop** | a room's kWh goes to the crops in it that day, split by plants. A room with no crop (hall, mother room, empty flower room) passes its kWh to the building's crops that day; with none, it's "not charged to any crop". Estimate mode: kWh × $/kWh. Bills mode: each bill spread evenly over its days, each day split across the meter's crops by estimated kWh (by plants when there's no estimate). |
 | **Water $** | `water.total` L × water $ per 1,000 L ÷ 1,000 |
 | **Fertilizer $** | `feed.nutrient` mL by product × the price-list $ per litre ÷ 1,000. Products match by name, case-insensitive; unlinked or unpriced mL is listed, not guessed. |
-| **Supplies $** | the lot's recipe supplies: qty × (plants started when "per plant") × price |
+| **Supplies $** | the lot's recipe supplies: qty × plants × price, the plants being: none for "per crop" (× 1); the plants started for "per plant at the start"; for "per plant at a task" (`at`, e.g. coco blocks at Transplanting) the lowest count the grow logs recorded on that task's calendar days (`plantLows`, the lowest of each day — a move day holds two entries), else the last count before, else the plants started (noted in "What's missing"); today's count while the task is ahead; 0 when the lot's schedule has no such task (Cutting Clones off for bought clones) (`rptPlantsAtTask`) |
 | **Property $** | `buildings.<id>.monthlyPropertyCost` spread evenly over each month's days. Each day's share is split between the building's rooms holding a crop (`rptCropRoomDays`) by **light count** (default) or **plants** (`costs.propertyShare`), then between a room's crops by plants. With lights, a room in use without a light count gets no share (listed under "What's missing"); a day when no room in use has one is shared by plants. A day with no crop in the building is "not charged to any crop". A summary frozen without a property cost works its share out from the buildings when shown. |
 | **Cost $/g by part** | each part's Σ $ ÷ Σ flower of the harvested crops that have that part (labour = fully loaded) |
 | **Cost / g (all in)** | the sum of the parts that can be priced. A crop's own all-in (sparkline, crop-by-crop chart) uses its direct labour, not the overhead. |
@@ -247,6 +251,41 @@ Answers are parsed leniently (`"1,250"`, `"12 kg"`, `"24.0"` all read as numbers
   - Over / under estimate: the existing amber / green, always with ▲ / ▼.
 - **Marks:** thin bars with gaps, 2 px lines, solid hairline grids. Projections hatched with a dashed outline (the suite's projection style).
 - **Never:** two y-scales on one chart, more than 3 slices in the donut, a number on every point.
+
+---
+
+## CTLS month
+
+The cultivation side of Health Canada's monthly CTLS report (user decision 2026-10-22). It reads only the grow logs, the harvest log and the Lot Manager, and writes only filed months.
+
+- **A lot's history** (`ctlsLedger`, stored as `ctls` on the crop summary, version 4):
+  - **Counts:** each day's 🌱 plant count on any daily-weekly sheet (struck-out rows skipped). A move day is on two pages, and the newest page's count is the day's.
+  - **Starting count:** `lots.startPlantCount` (set by SitkaTools at creation, and while the lot has no grow log). Older lots use their first logged count plus that day's removals.
+  - **Changes:** the reasons on the day (`_removed` by reason, `_removedTo`, `_added`) and the initials of who recorded them. A change in the count with no reason on its day is `unexplained`.
+  - **Weights:** `harvest.wetWeight` and `harvest.dryWeight` answers by date, in grams. A weight in a 📌 constant has no date and isn't counted.
+- **Every lot** (`ctlsLots`): the DB's lots, plus closed-out lots' summaries that hold `ctls`. A summary saved before the history existed is flagged when its dates touch the month: import its archive again.
+- **Plants:**
+  - **Opening / closing:** every lot's count at the end of the day before the month / its last day. Before its creation date a lot holds nothing; with no grow log it holds its starting count.
+  - **Additions:** new lots = received (`receivedFrom` shown as from), sub-lots = clones cut (produced).
+  - **Reductions:** destroyed, culled, sampled (lab), sold / transferred (company), harvested (they become wet weight), other.
+  - **Adjustments:** a higher count with a reason (recount), and counts changed with no reason.
+  - **Between lots:** a split lot's creation and the parent's "moved" removal, or a "moved in" addition. They're shown greyed and net to 0.
+  - Opening + every change = closing, by construction. A difference is an error line.
+- **Wet cannabis:** a lot's wet weight counts as hanging from its date until the lot's first dry weight is recorded. Opening + harvested − dried (the wet weight of lots dried this month, with the drying loss) = closing. Wet weight dated after the lot's dry weight is flagged and not counted.
+- **Dry flower sent out:** every dry weight recorded in the month, on its date.
+- **Checks:**
+  - lots in the month with no grow log;
+  - days with plants and no grow-log count (days before today);
+  - counts changed with no reason;
+  - sales with no company;
+  - harvested with no wet weight;
+  - wet weight after dry;
+  - undated weights;
+  - closed lots without plant history;
+  - the previous month's filing not matching this month's opening (CTLS rejects an opening more than 5 % off the last closing; the difference goes under "Other");
+  - this month changed since it was filed.
+- **📌 Mark as filed** (once the month is over): `_EmployeeWizard.ctls[YYYY-MM] = { filedAt, plants, wetG, dryG, openingPlants, openingWetG }`, in Main.json. **Remove filing** deletes it.
+- **Lots ready to close out:** no plants and nothing hanging today. **💾 Save** stores the lot's crop summary (with its history) even when it has no schedule. SitkaTools' close-out warns when it's missing.
 
 ---
 

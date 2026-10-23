@@ -305,16 +305,32 @@ export async function removeHoursOf(b, dw, rowMatch, name, { fm = 'Casey', pin =
     return toast;
 }
 
-// In EmployeeWizard's Tasks tab: set a roster employee's hours on a task day ("Add (or update)")
-export async function ewSetHours(b, ew, lotId, evId, day, name, h, m) {
-    return b.run(ew, `
+// The floor manager sign-off (name, PIN and drawn initials) the Tasks tab asks for when hours are added or changed.
+// Resolves whether the dialog was there.
+export async function answerSignoff(b, ctx, name = 'Casey', pin = FM_PIN, { draw = true } = {}) {
+    const open = await b.waitFor(ctx, `return document.getElementById('floorPin') && !document.getElementById('floorPin').hidden;`, 3000).then(() => true).catch(() => false);
+    if (!open) return false;
+    if (draw) await b.drag(ctx, '#floorPin .fpin-pad', [[0.2, 0.7], [0.3, 0.3], [0.4, 0.7], [0.5, 0.3]]);
+    await b.run(ctx, `const el = document.getElementById('floorPin');
+        const w = el.querySelector('[data-fpin-who]'); if ([...w.options].some(o => o.value === ${JSON.stringify(name)})) w.value = ${JSON.stringify(name)};
+        el.querySelector('[data-fpin-pin]').value = ${JSON.stringify(pin)}; el.querySelector('[data-fpin-ok]').click();`);
+    await b.waitFor(ctx, `return document.getElementById('floorPin').hidden;`, 1500).catch(() => {});
+    await b.sleep(100);
+    return true;
+}
+
+// In EmployeeWizard's Tasks tab: set a roster employee's hours on a task day ("Add (or update)"), signed off by a
+// floor manager (`sign: false` leaves the dialog open)
+export async function ewSetHours(b, ew, lotId, evId, day, name, h, m, { fm = 'Casey', pin = FM_PIN, sign = true } = {}) {
+    await b.run(ew, `
         document.getElementById('tabTasks').click();
         const lot = document.getElementById('activeLot'); lot.value = ${JSON.stringify(lotId)}; lot.dispatchEvent(new Event('change'));
         TASK.selectedKey = ${JSON.stringify(evId)}; TASK.editDate = ${JSON.stringify(day)}; renderTasksTab();
         document.getElementById('lfEmpSelect').value = ${JSON.stringify(name)};
         document.getElementById('lfHours').value = '${h}'; document.getElementById('lfMinutes').value = '${m}';
-        document.getElementById('lfAddBtn').click();
-        return document.querySelector('.toast, #toast')?.textContent || '';`, { user: true });
+        document.getElementById('lfAddBtn').click();`, { user: true });
+    if (sign) await answerSignoff(b, ew, fm, pin);
+    return b.run(ew, `return document.querySelector('.toast, #toast')?.textContent || '';`);
 }
 
 // In DailyWizard: press ✍️ Mark done on a row, pick the floor manager, draw initials (unless `sign` is false), confirm

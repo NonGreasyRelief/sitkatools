@@ -107,7 +107,14 @@ export async function run(b, BASE) {
     await b.run(pw, `document.getElementById('reasonCancel').click();`);
     await b.sleep(150);
     check('Cancel saves nothing', !(await page()).days[D3] && (await b.run(pw, `return document.getElementById('toast').textContent;`)) === 'Nothing was saved — the change in plant count needs a reason');
-    await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
+    // Enter on the last answer saves; pressing it again while the dialog is up must not stack a second dialog
+    await b.run(pw, `(document.getElementById('wizCtl') || document.getElementById('qInitName')).focus();`);
+    await b.keys(pw, '\uE007');
+    await b.sleep(250);
+    await b.keys(pw, '\uE007');
+    await b.sleep(250);
+    const stack = await b.run(pw, `return { n: document.querySelectorAll('#countReasonOverlay').length, inDialog: !!document.activeElement?.closest('#countReasonOverlay') };`);
+    check('Enter twice: one reasons dialog, and it has the keyboard (the screen no longer goes dark with a dead button)', stack.n === 1 && stack.inDialog, JSON.stringify(stack));
     await answerCountReasons(b, pw, { reason: 'moved' });
     pg = await page();
     check('3 plants moved to another lot, kept with the typed comment', pg.days[D3]._removed?.moved === 3 && pg.days[D3].cmt === 'Thinned out [Removed 3: 3 moved to another lot]', JSON.stringify(pg.days[D3]));

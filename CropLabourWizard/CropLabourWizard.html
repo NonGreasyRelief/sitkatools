@@ -1079,10 +1079,11 @@
                             </table>
                         </div>
                         <button type="button" class="btn btn-secondary" id="addInputBtn" style="margin-top:10px;">＋ Add Input</button>
-                        <div class="input-hint">Fertilizers are priced per litre. The grow logs record the mL each crop used: in PaperWizard → Configure Sheets, each mL question is linked to its product, by the same name as here. Supplies are used up once per crop (coco blocks, peat pucks, trellis…) and are counted below.</div>
+                        <div class="input-hint">Fertilizers are priced per litre. The grow logs record the mL each crop used: in PaperWizard → Configure Sheets, each mL question is linked to its product, by the same name as here. Supplies are used up by each crop (coco blocks, rockwool, clone cubes, trellis…) and are counted below.</div>
                     </div>
                     <div class="form-group">
-                        <label>Supplies this recipe uses, per crop</label>
+                        <label>Supplies this recipe uses</label>
+                        <div class="input-hint" style="margin:0 0 8px;">Per crop, per plant at the start, or per plant at a task: e.g. coco blocks at Transplanting count the plants the grow log recorded that day (the lowest count of the day), so plants culled before it aren't charged. A lot whose schedule doesn't have the task (Cutting Clones switched off for bought clones) isn't charged for it.</div>
                         <div style="overflow-x:auto;">
                             <table class="task-table" id="recipeInputsTable">
                                 <thead><tr><th>Supply</th><th>Quantity</th><th>Per</th><th>Cost</th><th></th></tr></thead>
@@ -1592,6 +1593,7 @@
                     if (!x || typeof x !== 'object' || typeof x.name !== 'string' || !x.name.trim()) errors.push(`inputs[${i}]: name is required`);
                     else if (!(Number(x.qty) >= 0)) errors.push(`inputs[${i}] "${x.name}": qty must be a number ≥ 0`);
                     else if (x.per != null && !['crop', 'plant'].includes(x.per)) errors.push(`inputs[${i}] "${x.name}": per must be "crop" or "plant"`);
+                    else if (x.at != null && (x.per !== 'plant' || !(obj.tasks || []).some(t => t?.taskType === x.at))) errors.push(`inputs[${i}] "${x.name}": charged at task "${x.at}", which isn't in this recipe`);
                 });
             }
             if (obj.chain != null) {
@@ -1863,8 +1865,10 @@
         // _CropLabourWizard.inputs[id] = { name, kind: 'fertilizer' | 'supply', unit, price }
         //   fertilizer: priced per litre (unit 'L'); the grow logs record the mL each crop used (PaperWizard links each
         //   mL question to its product by name). supply: used up once per crop, priced per unit ('bag', 'puck', 'ft'…).
-        // recipe.inputs = [{ inputId, name, unit, qty, per: 'crop' | 'plant' }] — supplies only. The name and unit keep a
-        //   recipe-<id>.json meaningful in another database. The Labour & Cost Wizard's reports price them per crop.
+        // recipe.inputs = [{ inputId, name, unit, qty, per: 'crop' | 'plant', at? }] — supplies only. `at` (a task type of
+        //   this recipe, per plant only) charges qty × the plants on that task's day instead of the plants at the start
+        //   (user decision 2026-10-22: clone cubes at Cutting Clones, rockwool at Planting, coco at Transplanting). The name
+        //   and unit keep a recipe-<id>.json meaningful in another database. The Labour & Cost Wizard's reports price them.
         // Edits belong to the editor session: Save Recipe writes the price list and the recipe; Cancel drops both.
         let editorInputs = null;   // working copy of the price list while the editor is open
         const INPUT_KINDS = [['fertilizer', 'Fertilizer'], ['supply', 'Supply (single use)']];
@@ -1917,7 +1921,8 @@
             const item = editorInputs[r.inputId];
             if (!item) return '';
             if (!(item.price > 0)) return 'no price yet';
-            return r.qty > 0 ? `≈ ${money(item.price * r.qty)} per ${r.per === 'plant' ? 'plant' : 'crop'}` : '';
+            const task = r.at ? (editorRecipe.tasks || []).find(t => t.taskType === r.at) : null;
+            return r.qty > 0 ? `≈ ${money(item.price * r.qty)} per ${r.per !== 'plant' ? 'crop' : task ? `plant at ${task.emoji || ''} ${task.name || r.at}`.replace(/\s+/g, ' ') : 'plant'}` : '';
         };
         function renderCatalogRows() {
             const cat = $('inputCatalogBody');
@@ -1938,6 +1943,15 @@
                 cat.appendChild(tr);
             }
         }
+        // Per crop, per plant at the start, or per plant at one of the recipe's tasks (value 'plant@<taskType>')
+        function perOptions(r) {
+            const cur = r.per !== 'plant' ? 'crop' : r.at ? `plant@${r.at}` : 'plant';
+            const tasks = (editorRecipe.tasks || []).filter(t => t?.taskType);
+            const opts = [['crop', 'per crop'], ['plant', 'per plant at the start'],
+                ...tasks.map(t => [`plant@${t.taskType}`, `per plant at ${`${t.emoji || ''} ${t.name || t.taskType}`.trim()}`])];
+            if (r.at && !tasks.some(t => t.taskType === r.at)) opts.push([cur, `per plant at ${r.at} (not in this recipe)`]);
+            return opts.map(([v, l]) => `<option value="${escapeHtml(v)}"${v === cur ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('');
+        }
         function renderRecipeInputRows() {
             const entries = Object.entries(editorInputs);
             const body = $('recipeInputsBody');
@@ -1951,7 +1965,7 @@
                 tr.innerHTML = `
                     <td><select class="ri-input">${supplies.map(([id, x]) => `<option value="${id}"${id === r.inputId ? ' selected' : ''}>${escapeHtml(x.name || '(unnamed)')}${x.unit ? ` (${escapeHtml(x.unit)})` : ''}</option>`).join('')}</select></td>
                     <td><input type="number" class="ri-qty" min="0" step="any" inputmode="decimal" value="${r.qty ?? ''}"></td>
-                    <td><select class="ri-per"><option value="crop"${r.per !== 'plant' ? ' selected' : ''}>per crop</option><option value="plant"${r.per === 'plant' ? ' selected' : ''}>per plant</option></select></td>
+                    <td><select class="ri-per">${perOptions(r)}</select></td>
                     <td class="ri-cost">${recipeInputCost(r)}</td>
                     <td class="t-del"><button type="button" class="danger" data-act="del-ri" title="Remove from this recipe">✕</button></td>`;
                 body.appendChild(tr);
@@ -1973,7 +1987,8 @@
             editorRecipe.inputs = [...$('recipeInputsBody').querySelectorAll('tr[data-i]')].map(tr => {
                 const inputId = tr.querySelector('.ri-input').value, item = editorInputs[inputId];
                 const qty = parseFloat(tr.querySelector('.ri-qty').value);
-                return { inputId, name: item?.name || '', unit: item?.unit || 'each', qty: qty >= 0 ? qty : 0, per: tr.querySelector('.ri-per').value };
+                const perVal = tr.querySelector('.ri-per').value, at = perVal.startsWith('plant@') ? perVal.slice(6) : null;
+                return { inputId, name: item?.name || '', unit: item?.unit || 'each', qty: qty >= 0 ? qty : 0, per: at ? 'plant' : perVal, ...(at ? { at } : {}) };
             }).filter(r => editorInputs[r.inputId]);
         }
 

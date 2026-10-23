@@ -6,6 +6,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-22 · new lots may say who the plants came from (Received from, optional) and keep the count they started with; close-out warns when the lot's plant history isn't saved for the CTLS numbers
+- 2026-10-22 · SitkaTools and PaperWizard left open overnight roll over to the new day by themselves (each minute, tab shown, focus): what showed today follows it, anything picked by hand stays put; DailyWizard already did
 - 2026-10-22 · 🔒 a lot with a grow log is locked to it: plant count, phase and room change only through PaperWizard (Lot Manager read-only, no delete, its room can't be deleted or re-homed; Accept still sets the room); close-out needs 0 plants and finished daily pages with no grow-log gaps (no harvest log required); a split from a locked parent takes only plants its grow log recorded as moved; planned rooms stay editable
 - 2026-10-22 · a session closed without saving stays in the browser however old (no 12-hour limit, tools included) and is offered back on every start ("Session closed without saving on MM/DD at HH:MM. Restore session?") until restored or discarded; a save forgets it. Building tablets stay on SitkaTools and reopen the files only when a lot arrives
 - 2026-10-17 · a Wages.json picked by itself in 📂 Load DB is added to the open split files instead of replacing them
@@ -24,6 +26,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## CropLabourWizard
 
+- 2026-10-22 · a recipe supply can be charged per plant at a task (clone cubes at Cutting Clones, rockwool at Planting, coco at Transplanting): the lowest plant count the grow log recorded on that task's calendar day; a lot without the task isn't charged (bought clones: Cutting Clones off, and the clone itself is a per-plant supply); no spares percentage
 - 2026-10-17 · built-in recipe runs both leaf picks (Early/Late Flower Leaf Pick) for 2 days
 - 2026-10-16 · 🧪 Inputs tab added (shared price list + supplies per recipe) for the total cost per gram
 - undated · never auto-load sibling recipe JSON files; recipes are imported only through an explicit file picker
@@ -57,6 +60,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Labour & Cost Wizard
 
+- 2026-10-22 · hours added or changed in the Tasks tab (rather than on the floor in DailyWizard) need a floor manager's name, PIN and drawn initials; the entry keeps who signed it (enteredBy, editedSignoff) and when
+- 2026-10-22 · 📋 CTLS month in Reports: the whole facility's plants (opening, every dated change with reason and who they went to, closing, by lot), wet cannabis hanging until its dry weight, and dry flower sent out on its dry-weight date; additions only from the Lot Manager (new lots received, sub-lots clones cut), removals only from the grow-log reasons, split lots and moves between lots not counted; closed-out lots from the history in their crop summary (version 4); 📌 Mark as filed keeps the closing numbers and the next month's opening is checked against them
 - 2026-10-22 · removing hours in the Tasks tab needs a floor manager's PIN and is recorded (`labourRemovals`); office only — building devices remove hours in DailyWizard
 - 2026-10-22 · room chores — a DailyWizard chore's hours go to the lots in its room that day, split by plants like electricity; worked out by Reports (nothing written to lots); chores without a room stay shared overhead
 
@@ -87,6 +92,9 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## PaperWizard
 
+- 2026-10-22 · plants sold / transferred need the company they went to (required), samples may name the testing lab (optional); kept as days[day]._removedTo and printed in the comments note
+- 2026-10-22 · the wizard closes only by its ✕ (a tap beside the card or Escape no longer closes it and loses the entry); the ✕, and switching days, ask first when something entered would be lost
+- 2026-10-22 · fixed: pressing Enter twice on the last answer stacked two plant-count reason dialogs, leaving a dark screen and a dead OK button; only one save runs at a time and the dialog keeps the keyboard
 - 2026-10-22 · grow-log changes on edited days fixed: re-opening a page's only day to change its phase / room switches that page in place (it used to strike it and start the new page a day late, with the day put back to the old value); setting a change back rejoins the earlier page; a late re-page never overwrites the later page it stops at
 - 2026-10-22 · a changed plant count needs a reason before the day saves: a drop split by reason (destroyed, culled, sampled, harvested, moved, sold / transferred), a rise with a typed reason; kept on the day and added to its comments answer so it prints
 - 2026-10-22 · the harvest log records the phase (Harvesting / Drying / Curing) and room after the grow log: the last answered write the lot back, no strike-out; with split files the office's Room question lists only the lot's building
