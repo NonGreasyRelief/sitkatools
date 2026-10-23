@@ -1,29 +1,77 @@
 Immediate implementation steps and roadblocks:
 
-Step 1A: Configure a tablet in Building 6 with a floor account, give them access
+Step 1: Configure a tablet in Building 6 with a floor account, give them access
 to the sharepoint folder for databases.
 
-Step 1B: Input ALL lots, mother and flower, into system, with accurate plant counts at months start
+Step 2: Input ALL lots, mother and flower, into system, with accurate plant counts at months start
 
-Step 1C: Create accurate daily wizard todo lists.
+Step 2B : Create accurate daily wizard todo lists.
 
-Step 2: Create growlogs in system that start at next wednesday for all lots. Implement plant transfer log
+Step 3: Create growlogs in system that start at next wednesday for all lots. Implement plant transfer log
 
-Step 3: Get jeremy and matt to do a grow log using the wizard
+Step 4: Get jeremy and matt to do a grow log using the wizard
 
-Step 4: Split the DB up, send lots to their buildings.
+Step 5: Split the DB up, send lots to their buildings.
 
 
 
 TODOs
 
+A. Session memory save forgotten save failsafe.  This software is used on a company device exclusively for using the company
+software.  I want to allow the entire sessions DB to live in browser memory for as long as possible
+so that if a tablet runs out of battery, or the browser is accidentally closed, on the next load
+of sitka tools the popup will show a warning with a black exclamation mark in a yellow triangle
+that says "Session closed without saving on MM/DD at 24:00. Restore session?".  Whenever somebody
+saves it can forget the session.  These tablets should always be left on, charging, and on the
+sitkatools application.  They are the only source of writing to their split database, so they should
+never need to reload the database unless they are accidentally closed.
+
+B. Stop watches.
+  On the DailyWizard, right now it is on the employees to record their own hours.
+I want to add 4 pausable MM:SS stop watches on every task, that can be either started, paused, or
+cleared.  Then, when a user clicks log, they have the option to pick one of the 4 radio buttons
+for "Timer 1 (initals)", "Timer 2 (initals)", "Timer 3 (initals)", "Timer 4 (initals)".  When starting a clock, it asks your initials quickly. 
+If the initials match a registered employees initials, it will autoselect that employee from 
+the drop down when that clock is selected in the log button.  Multiple employees may share one
+clock if they all work a task at once, so selecting a clock does not clear the clock or stop
+other people from logging off of the same timer.  It can round to the closest increment of 5
+minutes as all our tracking is based around 5 minute intervals.
+^NEEDS TESTING
+
+C. Tightening up security on lot modification:
+  After a lot is created, initialized, and has a growlog created for it, it should be
+considered locked into the system and only modification to be aloud is from Paper wizard.
+ Originally this software was just a scheduling tool, but now it is being used to track our active
+plant counts because our paper wizard is now our source for filling out all our official growlogs which is where we legally track our
+plant count percicesily every day.  Currently, you can go to the lot manager and change the current room, and plant count freely.  Current
+room, plant count, and phase strictly belong to the paper wizard.  Every form for modification must be locked once a plant has a growlog
+created.  Any modifications to plant count, phase, and room, can be done through the paper wizard only, ensuring the grow log remains
+the one source of truth for any changes in plant count or location.  Lots can not be closed out if they still have plants in the system, all grow
+logs must be completed. Ask me any questions about design or holes in the traceability I might miss.
+
+7. Set a floor manager password pin configureable from office file, needed to edit daily tasks or delete labour
+
 1. Make sure daily wizard tasks can be assigned to a room, so that lots in that room draw labour from it
+^NEEDS TESTING
 
-1. Create a destruction log viewable by month across all grow logs stored in the system.
-
+1. Create a printable plant transfer and harvested weight monthly summary.  Under the reports tab of
+labour and cost wizard, I want to be able to print a monthly report for our CTLS critical numbers from the 
+cultivation side.  We need to report total plants in our facility at end of month.  They want to know
+How many plants we recieved or created, how many grams of dry flower we sent out, or wet grams are hanging
+in the dry room, how many plants we destroyed or sent away, when, and to who.  All plant count additions
+come from The Lot Manager creating new lots.  All plant count subtractions are tracked in the Paper Wizard
+ Grow Logs.  Dry harvested weight is tracked by the Harvest Logs in the Paper Wizard, Along with Wet Weight.
+ The monthly summary should show all lots and dates in a table with a total at the bottom.
+ These summaries should be for all changes within a calendar month and then a final number for end of month
+ for totals.
+ 
 2. Make a warning when clicking out of the modal for paper wizard entries, and only allow exiting through the X
+   When filling a wizard in the paper wizard, its really easily to accidentally click off the modal and lose 
+   all of your daily entry.  I want to make it so the only way to close the modal is the little white X, and
+   it should confirm with you that you will lose everything youve entered into that wizard.
 
 3. Investigate grow log strikeouts when plant phase or room changes to ensure it triggers a new growlog start
+    It seems like when you go back and modify a day triggering the strike out, its not reliable
 
 4. Configure harvest logs, seperate the sheets into Page 1-2, Page 3s, Page 4-5, page 6s, page 7-10.
 
