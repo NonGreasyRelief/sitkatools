@@ -53,7 +53,12 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
         sleep: (ms) => new Promise(r => setTimeout(r, ms)),
         // Real pointer drag across an element (draws a stroke on a canvas)
         async drag(context, selector, pts) {
-            const box = await api.run(context, `const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return {x: r.left, y: r.top, w: r.width, h: r.height};`);
+            // Scroll it into view twice, a couple of frames apart: a focus() just before (e.g. a name box that
+            // focuses itself) can finish its own scroll after ours and leave the target off screen
+            const box = await api.run(context, `const el = document.querySelector(${JSON.stringify(selector)});
+                const frames = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+                el.scrollIntoView({ block: 'center' }); await frames(); el.scrollIntoView({ block: 'center' }); await frames();
+                const r = el.getBoundingClientRect(); return {x: r.left, y: r.top, w: r.width, h: r.height};`);
             const P = ([fx, fy]) => ({ x: Math.round(box.x + fx * box.w), y: Math.round(box.y + fy * box.h) });
             const actions = [{ type: 'pointerMove', ...P(pts[0]), duration: 0 }, { type: 'pointerDown', button: 0 }];
             for (const p of pts.slice(1)) actions.push({ type: 'pointerMove', ...P(p), duration: 30 });
