@@ -8,11 +8,14 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 - Only `destRoom` syncs to `rooms.<id>.assignedLots`. The other room fields are names stored on the lot.
 - The parent lot is chosen from existing lots. It should also accept typed free text for a parent that isn't in the system (still to do).
 - Creating a lot in, or moving one into, a flowering room runs the projection deletion hook (root `CLAUDE.md` → "Deletion Hook — SitkaTools").
+- **🔒 Locked to its grow log** (`lotLocked`: PaperWizard has a daily-weekly page for the lot): the list shows phase, current room and plant count as read-only chips ("🔒 Flower", "🔒 📍 Grow 1", "🔒 🌱 120", tooltip "Set by the grow log in PaperWizard"), and the ✕ is off ("Close it out … once its plant count is 0"). Every handler checks it too. The planned rooms (clone / veg / flower / dry / trim) stay editable: they're the schedule.
+- **Split lots from a locked parent** take at most the plants its grow log recorded as moved to another lot (`days[day]._removed.moved`) that no split lot has yet (`movedOutUnclaimed`: moved − Σ `plantsTransferred` of its split lots). Otherwise the form says to record the move in the parent's grow log first. Sub-lots (clones) take nothing from the parent.
 
 ## Room and Building Managers
 
 - **Room form:** name, Building dropdown (registers the room in that building's `assignedRooms` on day 1), **Flowering room** checkbox, light count, watts per light, canopy sq ft, veg / bloom light cycles (selects for 24/0 … 12/12, stored as hours on; 18/6 and 12/12 by default) and designation. Every field is also editable in the room's detail panel.
 - Assigning a room to a building first takes it out of any other building. Deleting a room removes it from its building.
+- **A room holding a locked lot** (its `currentRoom`) can't be deleted, moved to another building or taken out of its building, and its building can't be deleted (`refuseRoomChange`, with an alert naming the lots): the grow log records where a lot is, and moving a lot between buildings is Send / Accept.
 - **Buildings** have their own editor below the rooms, styled the same, with an optional **property cost per month** (rent + property fees) on the form and in the detail panel.
 
 ## Calendar
@@ -70,6 +73,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 - **Folder saves** re-check each file on disk and write `<name>-conflict-HHMM.json` instead of overwriting one saved elsewhere since opening. Each saved file's `_meta` records `savedBy`.
 - **Adding Wages.json later (`addWages`):** for each roster employee, the file's wage goes in wherever the current value still equals what was opened; a wage changed in this session is kept and saves to Wages.json as usual. The same goes for frozen `cropCosts`. Nothing is marked unsaved. Toast: "💰 Wages added: N employees … · M change(s) made here kept".
 - **🏢 Building Files card** (Data & Files tab, with calendar import/export, lot move and close-out): Split into building files, the device link (**Set this device…**), Send / Accept for lot moves, and close-out.
+  - **Close out** is refused, with the reasons listed (`closeOutBlockers`), while the lot has plants on record, any of its daily pages (grow logs, and drying or trim logs if it has them) isn't complete (`completedAt`), or days have no grow log (from planting, or `paperBefore`, through the last page). The harvest log isn't required: not every lot is harvested.
   - The lot move lists (`LotActions.render`) redraw with the lot, room and building lists (so a new lot shows at once, and on every tool update). Each list is rebuilt only when what it shows changed, so the picked lot and destination and typed Accept initials survive a redraw.
 
 ## Shared Working Copy — Details

@@ -1,6 +1,6 @@
 // PaperWizard number answers take digits and one decimal point only (plant counts: digits only), in the
 // wizard's own steps and on the repeating-table Entries form. Typed with real key presses.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today } from './lib/helpers.mjs';
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today, answerCountReasons } from './lib/helpers.mjs';
 
 export const title = 'PaperWizard number answers: digits and one decimal point';
 
@@ -72,6 +72,7 @@ export async function run(b, BASE) {
     c = await ctl();
     check('a plant count takes digits only', c.v === '125' && c.draft === '125', JSON.stringify(c));
     await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
+    await answerCountReasons(b, pw);   // 125 plants against the lot's 100 asks why
     await b.sleep(150);
     const day = await b.run(pw, `return DB.paperWizard.entries.L100?.glog?.instances?.['${T}']?.days?.['${T}'] || null;`);
     check('the day saves the cleaned answers', day?.temp === '7' && day?.cnt === '125', JSON.stringify(day));

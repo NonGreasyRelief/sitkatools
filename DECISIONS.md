@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-22 · 🔒 a lot with a grow log is locked to it: plant count, phase and room change only through PaperWizard (Lot Manager read-only, no delete, its room can't be deleted or re-homed; Accept still sets the room); close-out needs 0 plants and finished daily pages with no grow-log gaps (no harvest log required); a split from a locked parent takes only plants its grow log recorded as moved; planned rooms stay editable
 - 2026-10-22 · a session closed without saving stays in the browser however old (no 12-hour limit, tools included) and is offered back on every start ("Session closed without saving on MM/DD at HH:MM. Restore session?") until restored or discarded; a save forgets it. Building tablets stay on SitkaTools and reopen the files only when a lot arrives
 - 2026-10-17 · a Wages.json picked by itself in 📂 Load DB is added to the open split files instead of replacing them
 - 2026-10-17 · property cost (each building's monthly rent + fees) added as the sixth part of the cost per gram
@@ -85,6 +86,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## PaperWizard
 
+- 2026-10-22 · a changed plant count needs a reason before the day saves: a drop split by reason (destroyed, culled, sampled, harvested, moved, sold / transferred), a rise with a typed reason; kept on the day and added to its comments answer so it prints
+- 2026-10-22 · the harvest log records the phase (Harvesting / Drying / Curing) and room after the grow log: the last answered write the lot back, no strike-out; with split files the office's Room question lists only the lot's building
 - 2026-10-19 · corrections & change log for the QAP — reason required (tap chips), dates yyyy/mm/dd, signed logs can be corrected and are flagged, change log prints from its own button
 - 2026-10-19 · corrections print the new value first at full size, then a small stack as tall as it: the old value struck out over the date, with the initials drawn over the date
 - 2026-10-19 · only a box's latest correction prints; every change stays in the change log

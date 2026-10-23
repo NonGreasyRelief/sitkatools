@@ -90,10 +90,21 @@ A box whose value is fixed for a lot's whole paper chain and has no DB source (e
 The write-back is a property of the **type** — no per-question setting (saving a wizard drops any stale `writesTo` from old data). Changing the type changes or removes it. All three work row-scoped or instance-level, and none can be repeating.
 
 - **🌱 Plant count (`plant-count`):** number input; writes `lot.plantCount` (see "Write-Back to the Main DB"). A count that **drops to 0** also strikes out the open log on that day (drawn initials, no fresh page). Only a drop triggers it; re-saving a closed log at 0 does not.
-- **🔄 Phase (`phase`):** a select over the fixed vocabulary `Cloning / Mother / Vegetation / Bloom / Harvesting` (the form's words for the DB stages, `STAGE_TO_FORM`); no custom options. Compared with the lot's **live** stage (`currentLotPhase`), never with saved answers.
+- **🔄 Phase (`phase`):** a select over a fixed vocabulary (the form's words for the DB stages, `STAGE_TO_FORM`); no custom options. Grow logs offer `Cloning / Mother / Vegetation / Bloom / Harvesting`; the harvest log and drying / trim logs offer `Harvesting / Drying / Curing` (`phaseOptionsFor`). Compared with the lot's **live** stage (`currentLotPhase`), never with saved answers.
   - Different → writes `lot.stage` and, after the day's whole entry is saved, strikes out the log and starts a fresh page on the entry's own day (see "Phase & Room Change").
   - Equal → just records the day. This is how the fresh log's first day carries the new phase without another rollover.
-- **🏠 Room (`room`):** a select over every room name in the DB, sorted (a building device offers only its own rooms — see "Relationship to SitkaTools"). Same rules against the live `currentRoom` (`currentLotRoom`); writes `lot.currentRoom`.
+- **🏠 Room (`room`):** a select over every room name in the DB, sorted (a building device, or the office with split files open, offers only the lot's building's rooms — see "Relationship to SitkaTools"). Same rules against the live `currentRoom` (`currentLotRoom`); writes `lot.currentRoom`.
+- **On the harvest log** (the sheet filed as Harvest): its pages are filled at harvest, after trimming and at close-out, so it records the phase and room once the grow log has ended. The **last** phase and room questions answered (in wizard order) are where the lot is now; an answer different from the live value writes `lot.stage` / `lot.currentRoom`, with no strike-out (it has no day rows). Other event and one-shot sheets never write the phase or room back (a room-clean's room question doesn't move the lot).
+
+### 🌱 Why the Plant Count Changed
+
+The grow log is the record of every plant (user decision 2026-10-22). Before a daily-weekly day is saved (`askCountReasons`), its row-scoped plant count is compared with the last recorded count (`lastRecordedPlantCount`; on the first day of the lot's first log, the lot's count):
+
+- **Lower:** a dialog asks how many left for each reason — Destroyed, Culled, Sampled, Harvested, Moved to another lot, Sold / transferred to another company (`REMOVAL_REASONS`). The counts must add up to the drop; tapping a reason gives it the rest.
+- **Higher:** a dialog asks why (chips: "recounted — the last count was wrong", "moved in from another lot", or typed).
+- **Cancel** saves nothing ("Nothing was saved — the change in plant count needs a reason"). A day that already holds a matching reason isn't asked again; a count back where it was drops the old reason.
+- **Kept** on the day as `days[day]._removed = { reason: n }` / `._added = { n, reason }` (not questions: completion, corrections and print ignore them). SitkaTools counts `moved` for split lots (`SitkaTools/CLAUDE.md` → "Lot Manager").
+- **Printed** through the day's comments answer: "[Removed 3: 2 culled, 1 sampled]" / "[Added 2: …]" is added to it (replacing an earlier note of ours), so on an on-file day it is a correction like any other. The comments question is the one picked on the plant-count question in Configure Sheets (**Reasons for a changed count go in**, `q.reasonsTo`: Automatic, a row-scoped text question, or Nowhere); Automatic is a row-scoped text question named like comments / rationale / remarks / notes.
 
 ### Auto-Fill Bindings
 
@@ -171,7 +182,7 @@ Path: `entries[lotId][sheetId].instances[key]`.
 |---|---|
 | `phase` / `room` | Daily-weekly: snapshots of `lot.stage` / `lot.currentRoom` at creation. A closed log keeps them. |
 | `header` | Instance-level answers (`questionId → value`). |
-| `days` | `YYYY-MM-DD → { questionId → value }`. Saving a day stores every row-scoped question, blank ones as `''`; a key being present is what counts as confirmed for completion (see "Completion Rules"). |
+| `days` | `YYYY-MM-DD → { questionId → value }`. Saving a day stores every row-scoped question, blank ones as `''`; a key being present is what counts as confirmed for completion (see "Completion Rules"). A day whose count changed also holds `_removed` / `_added` (see "🌱 Why the Plant Count Changed"). |
 | `rows` | Repeating entries `[{ id, <questionId>: value, …, void? }]` — see "Repeating Rows". |
 | `phaseChangeDate` | Day the log ended early (phase or room change, or plants to 0). Later rows strike through and need no entries. |
 | `strikeInitials` | `{ name, strokes } \| null`. Needed for completion; without it the strike line doesn't print. *Legacy:* a plain string prints as centred text in the initials box. |
@@ -254,7 +265,7 @@ Saving a day that is **followed by later entries or pages** (`isBackfillDay`) ta
 
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
-PaperWizard is the only tool allowed to write another tool's data, and only three lot fields: `plantCount`, `stage`, `currentRoom` (root `CLAUDE.md` → "Shared Database", Ownership). Every write calls `notifySitkaTools()` and travels in the normal full-DB `sitkaGit_db_update`.
+PaperWizard is the only tool allowed to write another tool's data, and only three lot fields: `plantCount`, `stage`, `currentRoom` (root `CLAUDE.md` → "Shared Database", Ownership). Every write calls `notifySitkaTools()` and travels in the normal full-DB `sitkaGit_db_update`. Once a lot has a daily-weekly page, SitkaTools locks those three fields (root `CLAUDE.md` → "🔒 A lot with a grow log is locked to it"), so PaperWizard is where they change.
 
 - **Plant count:** a saved value on the newest day of the chain that differs from `lot.plantCount` updates it (same value = no write). A backfilled day re-derives it from the newest recorded day (see "Backfilled Changes"). SitkaTools sets the starting count at lot creation; the per-day entries are the history.
 - **Phase / room:** an answer different from the live `stage` / `currentRoom` triggers the rollover and writes the new value. When a phase rollover already ran in the same save, the room only writes back (no second strike-out).
@@ -393,7 +404,7 @@ Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessag
 
 - The lot selector lists only the building's lots (current room or flower room in it).
 - **Configure Sheets** is hidden — sheets and wizards live in Main.json.
-- The 🏠 Room question and Start on a chosen day offer only the building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept.
+- The 🏠 Room question and Start on a chosen day offer only the building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept. With split files open (`DeviceView.split`) the office gets the same: the rooms of the lot's current building. A single-file DB has no Send / Accept, so the office sees every room there.
 - **Read-only lots:** `lotElsewhere` returns `{ banner, toast }` for a lot this device may only view and print:
   - **sent** and not yet accepted: "🚚 … was sent to <building>" (frozen so the receiver takes over exactly what was saved);
   - **on its way here:** "🚚 … is on its way here from <building> — accept it in SitkaTools";

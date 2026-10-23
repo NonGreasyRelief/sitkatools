@@ -896,6 +896,14 @@
         .startlog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .startlog-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--text-secondary); }
         .startlog-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 12px; line-height: 1.4; }
+        /* 🌱 Why the plant count changed */
+        .reason-grid { display: grid; grid-template-columns: 1fr 110px; gap: 8px 10px; align-items: center; margin-top: 12px; }
+        .reason-grid .reason-name { min-height: 44px; text-align: left; }
+        .reason-grid .reason-n { min-height: 44px; text-align: center; font-size: 1.1rem; }
+        .reason-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+        .reason-chips .btn { min-height: 44px; }
+        .reason-total { margin-top: 10px; font-weight: 700; color: var(--warning); }
+        .reason-total.ok { color: var(--accent); }
         .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
         .sig-clear {
             background: none; border: 1px dashed var(--border); border-radius: 6px;
@@ -1088,9 +1096,13 @@
         // normalizeStage() maps any known spelling to the form's vocabulary (for prefill,
         // comparison and printing); stageFromForm() maps back for write-backs so a saved
         // entry never corrupts lot.stage. Unknown values pass through unchanged.
-        const STAGE_TO_FORM = { cloning: 'Cloning', mother: 'Mother', veg: 'Vegetation', vegetation: 'Vegetation', flower: 'Bloom', bloom: 'Bloom', harvest: 'Harvesting', harvesting: 'Harvesting' };
-        // Fixed phase vocabulary for phase questions (the form's own words, from STAGE_TO_FORM).
+        const STAGE_TO_FORM = { cloning: 'Cloning', mother: 'Mother', veg: 'Vegetation', vegetation: 'Vegetation', flower: 'Bloom', bloom: 'Bloom', harvest: 'Harvesting', harvesting: 'Harvesting', drying: 'Drying', curing: 'Curing' };
+        // Fixed phase vocabulary for phase questions (the form's own words, from STAGE_TO_FORM): grow logs offer these…
         const PHASE_OPTIONS = ['Cloning', 'Mother', 'Vegetation', 'Bloom', 'Harvesting'];
+        // …and the paperwork after the grow log (the harvest log, drying and trim logs) these (user decision 2026-10-22)
+        const POST_HARVEST_PHASES = ['Harvesting', 'Drying', 'Curing'];
+        const ALL_PHASES = [...PHASE_OPTIONS, 'Drying', 'Curing'];
+        const phaseOptionsFor = sheetId => ['harvest', 'drying-log', 'trim-log'].includes(sheetSection(sheetId)) ? POST_HARVEST_PHASES : PHASE_OPTIONS;
         // Room designation vocabulary — set per room in SitkaTools' Room Manager
         // (room.designation). The lot.roomDesignation binding resolves the INSTANCE's stored
         // room (inst.room, falling back to the live lot.currentRoom) to its room record and
@@ -1106,6 +1118,141 @@
             const s = String(v).trim();
             for (const [db, form] of Object.entries(STAGE_TO_FORM)) if (form === s) return db;
             return s; // unknown phase word — keep as-is rather than drop it
+        }
+
+
+        // ---- 🌱 Why the plant count changed (user decision 2026-10-22) ----
+        // The grow log is the record of every plant. A day whose count is lower than the last recorded one asks how many
+        // left for each reason (they must add up to the drop); a higher count asks why. Kept on the day —
+        // days[day]._removed = { reason: n } and ._added = { n, reason } (SitkaTools counts the "moved" plants a split lot
+        // may take) — and added to the day's comments answer ("[Removed 3: 2 culled, 1 sampled]") so it prints.
+        const REMOVAL_REASONS = [['destroyed', 'Destroyed'], ['culled', 'Culled'], ['sampled', 'Sampled'], ['harvested', 'Harvested'],
+            ['moved', 'Moved to another lot'], ['sold', 'Sold / transferred to another company']];
+        const removalTotal = rec => Object.values(rec || {}).reduce((n, v) => n + (Number(v) || 0), 0);
+        const plantCountQuestion = sheetId => wizardForSheet(sheetId)?.questions.find(q => q.type === 'plant-count' && q.rowScoped) || null;
+        // The comments question the reasons are added to: the one picked on the plant-count question in Configure
+        // Sheets, else a day question named like comments / rationale / notes
+        function reasonsQuestion(sheetId) {
+            const qs = wizardForSheet(sheetId)?.questions || [];
+            const pcQ = plantCountQuestion(sheetId);
+            const picked = pcQ?.reasonsTo ? qs.find(q => q.id === pcQ.reasonsTo && q.type === 'text') : null;
+            if (picked || pcQ?.reasonsTo === '') return picked || null;
+            return qs.find(q => q.type === 'text' && q.rowScoped && /comment|rationale|remark|note/i.test(q.label || '')) || null;
+        }
+        function reasonNote(removed, added) {
+            const parts = [];
+            if (removed) parts.push(`[Removed ${removalTotal(removed)}: ${REMOVAL_REASONS.filter(([k]) => removed[k] > 0).map(([k, l]) => `${removed[k]} ${l.toLowerCase()}`).join(', ')}]`);
+            if (added) parts.push(`[Added ${added.n}: ${added.reason}]`);
+            return parts.join(' ');
+        }
+        // The comments answer with this day's reason note in place of any earlier one
+        function withReasonNote(text, removed, added) {
+            const base = String(text ?? '').replace(/\s*\[(?:Removed|Added) \d+:[^\]]*\]/g, '').trim();
+            return [base, reasonNote(removed, added)].filter(Boolean).join(' ');
+        }
+
+        // Before a grow-log day is saved: ask why its count changed, unless that day already says so. Returns false
+        // when cancelled (nothing is saved); sets ctx.countReasons and adds the note to the comments answer.
+        async function askCountReasons(ctx) {
+            ctx.countReasons = null;
+            const sheet = DB.paperWizard?.sheets?.[ctx.sheetId], pcQ = plantCountQuestion(ctx.sheetId);
+            if (sheet?.cadence !== 'daily-weekly' || !ctx.day || !pcQ) return true;
+            const raw = String(ctx.draft[pcQ.id] ?? '').trim(), n = Number(raw);
+            if (raw === '' || !Number.isFinite(n)) return true;
+            let prev = lastRecordedPlantCount(ctx.lotId, ctx.sheetId, ctx.key, addDaysStr(ctx.day, -1));
+            // The first day of the lot's first log: compared with the lot's count (a backfilled day never is)
+            if (prev === null && !isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day) && hasValue(DB.lots[ctx.lotId]?.plantCount)) prev = Number(DB.lots[ctx.lotId].plantCount);
+            const had = DB.paperWizard.entries?.[ctx.lotId]?.[ctx.sheetId]?.instances?.[ctx.key]?.days?.[ctx.day] || {};
+            let removed = null, added = null;
+            if (prev !== null && Number.isFinite(prev) && n < prev) {
+                const drop = prev - n;
+                removed = had._removed && removalTotal(had._removed) === drop ? had._removed : await openCountReasons('removed', drop, ctx.day, had._removed);
+                if (!removed) return false;
+            } else if (prev !== null && Number.isFinite(prev) && n > prev) {
+                const up = n - prev;
+                added = had._added && had._added.n === up ? had._added : await openCountReasons('added', up, ctx.day, had._added, prev);
+                if (!added) return false;
+            }
+            ctx.countReasons = { removed, added };
+            const cq = reasonsQuestion(ctx.sheetId);
+            if (cq) ctx.draft[cq.id] = withReasonNote(ctx.draft[cq.id], removed, added);
+            return true;
+        }
+
+        // The dialog: per-reason counts that add up to the drop ('removed'), or the reason for more plants ('added').
+        // Resolves { reason: n } / { n, reason }, or null when cancelled.
+        function openCountReasons(kind, amount, day, before, prev) {
+            return new Promise(resolve => {
+                const ov = document.createElement('div');
+                ov.className = 'wiz-overlay';
+                ov.id = 'countReasonOverlay';
+                const when = fmtShort(day);
+                const plants = `${amount} plant${amount === 1 ? '' : 's'}`;
+                ov.innerHTML = kind === 'removed' ? `
+                    <div class="wiz-card">
+                        <div class="wiz-head"><span class="wiz-title">🌱 ${plants} left the lot on ${escapeHtml(when)}: why?</span></div>
+                        <div class="wiz-body">
+                            <div class="startlog-note">Type how many for each reason, or tap a reason to give it the rest. They must add up to ${amount}. The reason is added to the day's comments.</div>
+                            <div class="reason-grid">${REMOVAL_REASONS.map(([k, l]) => `
+                                <button type="button" class="btn btn-secondary reason-name" data-r="${k}">${escapeHtml(l)}</button>
+                                <input ${numberCtlAttrs(true)} class="sig-name reason-n" data-r="${k}" aria-label="${escapeHtml(l)}" value="${before?.[k] > 0 ? before[k] : ''}">`).join('')}
+                            </div>
+                            <div class="reason-total" id="reasonTotal"></div>
+                        </div>
+                        <div class="wiz-foot"><span class="spacer"></span>
+                            <button type="button" class="btn btn-secondary" id="reasonCancel">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="reasonOk">Save the reasons</button></div>
+                    </div>` : `
+                    <div class="wiz-card">
+                        <div class="wiz-head"><span class="wiz-title">🌱 ${plants} more than the last count (${prev} → ${prev + amount}): why?</span></div>
+                        <div class="wiz-body">
+                            <div class="startlog-note">The grow log is the record of every plant, so a higher count needs a reason. It is added to the day's comments.</div>
+                            <div class="reason-chips">
+                                <button type="button" class="btn btn-secondary reason-chip">recounted — the last count was wrong</button>
+                                <button type="button" class="btn btn-secondary reason-chip">moved in from another lot</button>
+                            </div>
+                            <input type="text" class="sig-name" id="reasonText" maxlength="120" placeholder="Reason" value="${escapeHtml(before?.reason || '')}">
+                            <div class="reason-total" id="reasonTotal"></div>
+                        </div>
+                        <div class="wiz-foot"><span class="spacer"></span>
+                            <button type="button" class="btn btn-secondary" id="reasonCancel">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="reasonOk">Save the reason</button></div>
+                    </div>`;
+                document.body.appendChild(ov);
+                const done = (v) => { ov.remove(); resolve(v); };
+                $('reasonCancel').addEventListener('click', () => done(null));
+                if (kind === 'removed') {
+                    const inputs = [...ov.querySelectorAll('.reason-n')];
+                    const counts = () => Object.fromEntries(inputs.map(i => [i.dataset.r, parseInt(i.value, 10) || 0]).filter(([, v]) => v > 0));
+                    const show = () => {
+                        const t = removalTotal(counts());
+                        $('reasonTotal').textContent = `${t} of ${amount}`;
+                        $('reasonTotal').classList.toggle('ok', t === amount);
+                    };
+                    inputs.forEach(i => { wireNumberCtl(i); i.addEventListener('input', show); });
+                    ov.querySelectorAll('.reason-name').forEach(b => b.addEventListener('click', () => {
+                        const input = ov.querySelector(`.reason-n[data-r="${b.dataset.r}"]`);
+                        const others = removalTotal(counts()) - (parseInt(input.value, 10) || 0);
+                        input.value = String(Math.max(0, amount - others) || '');
+                        show();
+                    }));
+                    show();
+                    $('reasonOk').addEventListener('click', () => {
+                        const c = counts();
+                        if (removalTotal(c) !== amount) { showToast(`The reasons must add up to ${amount}`); return; }
+                        done(c);
+                    });
+                } else {
+                    const text = $('reasonText');
+                    ov.querySelectorAll('.reason-chip').forEach(b => b.addEventListener('click', () => { text.value = b.textContent.trim(); }));
+                    $('reasonOk').addEventListener('click', () => {
+                        const reason = text.value.trim();
+                        if (!reason) { showToast('Give the reason for the higher count'); text.focus(); return; }
+                        done({ n: amount, reason });
+                    });
+                    text.focus();
+                }
+            });
         }
 
         // ---- HTML escaping (quote-safe, so results can go into attribute values) ----
@@ -2118,7 +2265,7 @@
         // sources offer the fixed phase vocabulary; room sources offer every room name known
         // to the DB. Anything else stays free text.
         function checkValueOptionsFor(source) {
-            if (source === 'instance.phase' || source === 'lot.stage') return PHASE_OPTIONS;
+            if (source === 'instance.phase' || source === 'lot.stage') return ALL_PHASES;
             if (['lot.destRoom', 'lot.vegRoom', 'lot.cloningRoom', 'lot.dryRoom', 'lot.trimRoom', 'lot.currentRoom'].includes(source))
                 return knownRoomNames().sort((a, b) => a.localeCompare(b));
             if (source === 'lot.roomDesignation') return ROOM_DESIGNATIONS;
@@ -3807,10 +3954,14 @@
 
         // Room names offered when recording where a lot is. A building device offers only its own building's
         // rooms (lots move between buildings with SitkaTools' Send / Accept), plus the values already in play.
+        // `keep[0]` is the lot's current room. With split files open the office gets the rooms of that room's building
+        // too (user decision 2026-10-22): a move to another building goes through SitkaTools' Send / Accept, which the
+        // grow log then follows. A single-file DB has no Send / Accept, so the office sees every room there.
         function pickableRoomNames(...keep) {
-            if (!DeviceView.building) return knownRoomNames();
+            const bid = DeviceView.building || (DeviceView.split ? DeviceView.buildingOfRoomName(keep[0]) : null);
+            if (!bid) return knownRoomNames();
             const names = new Set();
-            Object.values(DB.rooms || {}).forEach(r => { if (r?.name && r.buildingId === DeviceView.building) names.add(String(r.name)); });
+            Object.values(DB.rooms || {}).forEach(r => { if (r?.name && r.buildingId === bid) names.add(String(r.name)); });
             keep.forEach(n => { if (n) names.add(String(n)); });
             return [...names];
         }
@@ -5215,7 +5366,7 @@
                     // records it for the day (how the fresh log's first day carries the new
                     // phase in the double entry — no change, no strike-out).
                     const opts = ['<option value="">— no phase change —</option>']
-                        .concat(PHASE_OPTIONS.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
+                        .concat(phaseOptionsFor(ctx.sheetId).map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
                 } else if (q.type === 'room') {
                     // Known room names from the DB. Picking a room DIFFERENT from the lot's
@@ -5396,6 +5547,9 @@
                 const why = runnerStepBlock(ctx, q);
                 if (why) { showToast(why.replace('before continuing', 'before saving')); return; }
             }
+            // 🌱 A changed plant count needs its reason before anything is saved
+            if (!(await askCountReasons(ctx))) { showToast('Nothing was saved — the change in plant count needs a reason'); return; }
+            if (runnerCtx !== ctx || readOnlyHere(ctx.lotId)) return;   // closed, or made read-only, while it asked
             const pw = DB.paperWizard;
             // The sheet's pages as they were before this save: what was on file, and what Cancel at the
             // correction pad puts back (see confirmCorrections below)
@@ -5515,6 +5669,12 @@
                     inst.header[q.id] = v;
                 }
             }
+            // 🌱 Why the count changed (asked above), kept on the day; a count back where it was drops the old reason
+            if (ctx.countReasons && inst.days?.[ctx.day]) {
+                const d = inst.days[ctx.day];
+                if (ctx.countReasons.removed) d._removed = { ...ctx.countReasons.removed }; else delete d._removed;
+                if (ctx.countReasons.added) d._added = { ...ctx.countReasons.added }; else delete d._added;
+            }
             // The repeating tables' entries, table by table, each in order — a table's entry n prints in
             // its n-th row slot. Rows that match no table stay as they were.
             if (ctx.rep) {
@@ -5548,6 +5708,15 @@
             // 2) Write-backs to the main DB (PaperWizard's special permission).
             if (phaseChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].stage = stageFromForm(nvPhase); // 'Bloom' → 'flower'
             if (roomChanged && DB.lots[ctx.lotId]) DB.lots[ctx.lotId].currentRoom = nvRoom;
+            // The harvest log records the phase and room after the grow log has ended (user decision 2026-10-22): its
+            // pages are filled at harvest, after trimming and at close-out, so the last phase / room question answered
+            // is where the lot is now. A different answer writes the lot's stage / room; no strike-out (no day rows).
+            if (sheetSection(ctx.sheetId) === 'harvest' && DB.lots[ctx.lotId]) {
+                const lastAnswer = type => (wiz.questions || []).filter(q => q.type === type).map(q => String(ctx.draft[q.id] ?? '').trim()).filter(Boolean).pop() || '';
+                const hPhase = lastAnswer('phase'), hRoom = lastAnswer('room');
+                if (hPhase && normalizeStage(prevPhase) !== normalizeStage(hPhase)) DB.lots[ctx.lotId].stage = stageFromForm(hPhase);
+                if (hRoom && String(prevRoom || '').trim().toLowerCase() !== hRoom.toLowerCase()) DB.lots[ctx.lotId].currentRoom = hRoom;
+            }
             let plantZero = false;
             for (const q of pcQs) {
                 const v = String(ctx.draft[q.id] ?? '').trim();
@@ -6677,7 +6846,21 @@
         const REPORT_METRIC_UNITS = { weight: [['g', 'grams'], ['kg', 'kilograms'], ['lb', 'pounds']], temp: [['F', '°F'], ['C', '°C']] };
 
         function metricControlsHtml(q) {
-            if (q.type === 'plant-count') return `<div class="form-group"><label>Report metric</label><div class="q-bind-indicator">🌱 Plant counts feed the reports automatically</div></div>`;
+            if (q.type === 'plant-count') {
+                // 🌱 Where the reason for a changed count is written, so it prints (undefined = automatic, '' = nowhere)
+                const texts = cfgWizard.questions.filter(x => x.type === 'text' && x.rowScoped);
+                const auto = texts.find(x => /comment|rationale|remark|note/i.test(x.label || ''));
+                const cut = t => escapeHtml(String(t || '').slice(0, 60));
+                return `<div class="form-group"><label>Report metric</label><div class="q-bind-indicator">🌱 Plant counts feed the reports automatically</div></div>
+                    <div class="form-group" title="When the count drops or rises, the reason (e.g. [Removed 3: 2 culled, 1 sampled]) is added to this day question's answer, so it prints">
+                        <label>Reasons for a changed count go in</label>
+                        <select class="q-reasons-to">
+                            <option value="__auto"${q.reasonsTo === undefined ? ' selected' : ''}>Automatic${auto ? ` (${cut(auto.label)})` : ' (no comments question found)'}</option>
+                            ${texts.map(x => `<option value="${x.id}"${q.reasonsTo === x.id ? ' selected' : ''}>${cut(x.label || x.id)}</option>`).join('')}
+                            <option value=""${q.reasonsTo === '' ? ' selected' : ''}>Nowhere (kept with the day, not printed)</option>
+                        </select>
+                    </div>`;
+            }
             if (!['text', 'number', 'select'].includes(q.type)) return '';
             const opts = `<option value="">— none —</option>` + REPORT_METRIC_GROUPS.map(([group, list]) =>
                 `<optgroup label="${escapeHtml(group)}">${list.map(([k, l]) => `<option value="${k}"${q.metric === k ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}</optgroup>`).join('');
@@ -6795,6 +6978,7 @@
                     q.type = card.querySelector('.q-type').value;
                     if (!['text', 'number', 'select'].includes(q.type)) { delete q.metric; delete q.metricUnit; delete q.metricProduct; }   // only typed answers feed report metrics
                     if (!REPEAT_TYPES.includes(q.type)) delete q.repeating;   // write-back types are never repeating
+                    if (q.type !== 'plant-count') delete q.reasonsTo;
                     refreshWizardBuilder();
                 });
                 const optsEl = card.querySelector('.q-options');
@@ -6813,6 +6997,9 @@
                     const units = REPORT_METRIC_UNITS[REPORT_METRIC_KIND[q.metric]];
                     if (units) { if (!units.some(([v]) => v === q.metricUnit)) q.metricUnit = units[0][0]; } else delete q.metricUnit;
                     refreshWizardBuilder();   // shows or hides the unit picker
+                });
+                card.querySelector('.q-reasons-to')?.addEventListener('change', (e) => {
+                    if (e.target.value === '__auto') delete q.reasonsTo; else q.reasonsTo = e.target.value;
                 });
                 const unitEl = card.querySelector('.q-metric-unit');
                 if (unitEl) unitEl.addEventListener('change', () => { q.metricUnit = unitEl.value; });
@@ -7131,9 +7318,10 @@
         var DeviceView = {
             OFFICE_ONLY: false,   // true: this whole tool is office work a building device couldn't save
             building: null,
+            split: false,        // split files are open (Main + building files): moves between buildings go through Send / Accept
             // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
             take(msg) {
-                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) this.building = msg.view?.building || null;
+                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) { this.building = msg.view?.building || null; this.split = !!msg.view?.split; }
                 if (!this.OFFICE_ONLY || !this.building) return false;
                 this.showOfficeOnly(msg?.payload?.buildings?.[this.building]?.name || this.building);
                 return true;

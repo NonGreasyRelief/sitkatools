@@ -2245,9 +2245,10 @@
         var DeviceView = {
             OFFICE_ONLY: true,   // true: this whole tool is office work a building device couldn't save
             building: null,
+            split: false,        // split files are open (Main + building files): moves between buildings go through Send / Accept
             // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
             take(msg) {
-                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) this.building = msg.view?.building || null;
+                if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) { this.building = msg.view?.building || null; this.split = !!msg.view?.split; }
                 if (!this.OFFICE_ONLY || !this.building) return false;
                 this.showOfficeOnly(msg?.payload?.buildings?.[this.building]?.name || this.building);
                 return true;

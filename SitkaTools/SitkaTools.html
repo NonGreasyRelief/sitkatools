@@ -352,6 +352,10 @@
             text-overflow: ellipsis;
         }
 
+        /* 🔒 A value the grow log owns (PaperWizard), shown in place of its editor */
+        .lot-locked-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px dashed var(--border); border-radius: 6px; color: var(--text-secondary); font-size: 0.82rem; white-space: nowrap; cursor: help; }
+        .lot-delete-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
         .lot-type-badge {
             padding: 3px 10px;
             border-radius: 20px;
@@ -5176,7 +5180,7 @@
 
             // What tools are sent with the DB
             message() {
-                return { building: this.building };
+                return { building: this.building, split: !!DbSplit.active };
             },
 
             buildingOfRoomName(name) {
@@ -5724,6 +5728,9 @@
                 const lot = DB.data?.lots?.[lotId];
                 if (!lot) return;
                 if (DbSplit.active && DbSplit.role !== 'office') { alert('Only the office device can close out lots.'); return; }
+                // 🔒 Nothing is closed out while it still has plants on record, or its grow logs aren't finished
+                const blockers = closeOutBlockers(lotId);
+                if (blockers.length) { alert(`Lot ${lotId} can't be closed out yet:\n\n• ${blockers.join('\n• ')}`); return; }
                 const today = localDate();
                 const events = DB.data.calendarEvents.filter(e => e.lotId === lotId);
                 const upcoming = events.filter(e => !e.completed && (e.endDate || e.date) >= today);
@@ -6427,6 +6434,17 @@
                 return;
             }
 
+            // 🔒 Plants leaving a parent that has a grow log are recorded there first (plants removed, reason: moved),
+            // so they're never counted in two lots at once
+            if (type === 'split-lot' && lotLocked(parentLotId)) {
+                const free = movedOutUnclaimed(parentLotId);
+                if (plantsTransferred > free) {
+                    alert(`Lot ${parentLotId}'s grow log has ${free} plant${free === 1 ? '' : 's'} recorded as moved out that ${free === 1 ? "isn't" : "aren't"} in a split lot yet.\n\n` +
+                        `Record the plants leaving in ${parentLotId}'s grow log first (lower its plant count; reason: moved to another lot), then create the split with up to that many plants.`);
+                    return;
+                }
+            }
+
             if (DB.lots[lotId]) {
                 alert(`A lot with ID "${lotId}" already exists. Use a unique Lot ID.`);
                 return;
@@ -6519,6 +6537,77 @@
         });
 
         // ---- Render Lot List ----
+        // ---- 🔒 Lots locked to their grow log (user decision 2026-10-22) ----
+        // Once PaperWizard has a grow-log page for a lot (any daily-weekly page), the grow log is the one source of
+        // truth for its plant count, phase and room: only PaperWizard changes them, and its corrections are initialled
+        // and logged. SitkaTools shows them read-only, won't delete the lot (Close out archives it), and won't delete or
+        // move to another building a room such a lot is in. The planned rooms (clone / veg / flower / dry / trim) stay
+        // editable: they are the schedule. Moving a lot between buildings is Send / Accept.
+        const REMOVAL_REASONS = { destroyed: 'destroyed', culled: 'culled', sampled: 'sampled', harvested: 'harvested', moved: 'moved to another lot', sold: 'sold / transferred to another company' };
+        // The lot's daily-weekly pages: [{ sheetId, sheet, key, inst, entry }]
+        function lotDailyPages(lotId) {
+            const pw = DB.data?._PaperWizard || {}, out = [];
+            for (const [sheetId, entry] of Object.entries(pw.entries?.[lotId] || {})) {
+                const sheet = pw.sheets?.[sheetId];
+                if (sheet?.cadence !== 'daily-weekly') continue;
+                for (const [key, inst] of Object.entries(entry?.instances || {})) if (inst) out.push({ sheetId, sheet, key, inst, entry });
+            }
+            return out.sort((a, b) => a.key.localeCompare(b.key));
+        }
+        function lotLocked(lotId) { return lotDailyPages(lotId).length > 0; }
+        // Locked lots whose current room is this room
+        function lockedLotsInRoom(roomName) {
+            const name = String(roomName || '').trim().toLowerCase();
+            if (!name) return [];
+            return Object.keys(DB.data?.lots || {}).filter(id => String(DB.data.lots[id]?.currentRoom || '').trim().toLowerCase() === name && lotLocked(id));
+        }
+        // A room holding a locked lot can't be deleted or change building: the lot's grow log would lose its room,
+        // or the lot would change building without Send / Accept. Says why and returns true when refused.
+        function refuseRoomChange(roomId, what) {
+            const room = DB.data?.rooms?.[roomId];
+            const held = room ? lockedLotsInRoom(room.name) : [];
+            if (!held.length) return false;
+            alert(`Room "${room.name}" can't be ${what}: lot${held.length === 1 ? '' : 's'} ${held.join(', ')} ${held.length === 1 ? 'is' : 'are'} in it, with grow logs.\n\n` +
+                `The grow log records where a lot is. Move ${held.length === 1 ? 'it' : 'them'} out through the grow log in PaperWizard (or 🚚 Send to another building) first.`);
+            return true;
+        }
+
+        // Plants a parent's grow log has recorded as moved to another lot, less those already in its split lots
+        function movedOutUnclaimed(parentId) {
+            let moved = 0;
+            for (const { inst } of lotDailyPages(parentId)) {
+                for (const day of Object.values(inst.days || {})) moved += Math.max(0, Number(day?._removed?.moved) || 0);
+            }
+            const claimed = Object.values(DB.data?.lots || {}).filter(l => l?.parentLotId === parentId && l.type === 'split-lot')
+                .reduce((n, l) => n + (Number(l.plantsTransferred) || 0), 0);
+            return Math.max(0, moved - claimed);
+        }
+        // Why a lot can't be closed out yet: plants still on record, an unfinished grow-log page, or days with no log
+        function closeOutBlockers(lotId) {
+            const lot = DB.data?.lots?.[lotId], out = [];
+            if (!lot) return out;
+            const n = Number(lot.plantCount) || 0;
+            if (n > 0) out.push(`🌱 ${n} plant${n === 1 ? ' is' : 's are'} still on record. The grow log has to record ${n === 1 ? 'it' : 'them'} leaving (count down to 0) first.`);
+            const fmt = ds => parseLocalDate(ds).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            const addDays = (ds, k) => { const d = parseLocalDate(ds); d.setDate(d.getDate() + k); return localDate(d); };
+            const pages = lotDailyPages(lotId);
+            for (const p of pages) if (!p.inst.completedAt) out.push(`📗 ${p.sheet.name || p.sheetId} page from ${fmt(p.key)} isn't complete (every day, initials, strike-out and the master grower's signature).`);
+            // Days with no grow log: from planting (or the day paperwork starts in PaperWizard) through the last page
+            const bySheet = new Map();
+            for (const p of pages) if (!['drying-log', 'trim-log'].includes(p.sheet.document)) (bySheet.get(p.sheetId) || bySheet.set(p.sheetId, []).get(p.sheetId)).push(p);
+            for (const [sheetId, list] of bySheet) {
+                const planting = lot._tool_CropLabourWizard?.plantingDate || null, before = list[0].entry?.paperBefore || null;
+                let cursor = [planting, before].filter(Boolean).sort().pop() || list[0].key;
+                for (const p of list) {
+                    if (p.key > cursor) out.push(`📗 No ${list[0].sheet.name || sheetId} from ${fmt(cursor)} to ${fmt(addDays(p.key, -1))}.`);
+                    const end = p.inst.phaseChangeDate || addDays(p.key, 6);
+                    const next = addDays(end, 1);
+                    if (next > cursor) cursor = next;
+                }
+            }
+            return out;
+        }
+
         function renderLotList() {
             if (DB.data) LotActions.render();   // the lot move / close-out lists show the lots too
             const lots = DB.lots;
@@ -6556,6 +6645,11 @@
                 // 📍 = currentRoom — where the lot actually is now (written by PaperWizard grow logs)
                 const roomInfo = (roomParts.length ? ` → ${roomParts.join(' · ')}` : '') + (lot.currentRoom ? ` 📍${lot.currentRoom}` : '');
 
+                // 🔒 A lot with a grow log: plant count, phase and room are the grow log's (shown, not editable here)
+                const locked = lotLocked(key);
+                const lockTip = 'Set by the grow log in PaperWizard (the record of plant counts, phase and room)';
+                const lockChip = (text) => `<span class="lot-locked-chip" title="${lockTip}">🔒 ${escapeHtml(text)}</span>`;
+
                 // Build stage selector dropdown
                 const stageSelectId = `stage_${key}`;
                 const stages = ['cloning', 'veg', 'flower', 'harvest', 'drying', 'curing'];
@@ -6565,7 +6659,8 @@
                     const selected = lot.stage === s ? 'selected' : '';
                     return `<option value="${s}" ${selected}>${label}</option>`;
                 }).join('');
-                const stageHtml = `
+                const stageLabel = { cloning: 'Cloning', veg: 'Vegetative', flower: 'Flower', harvest: 'Harvest', drying: 'Drying', curing: 'Curing' }[lot.stage] || lot.stage || 'No stage';
+                const stageHtml = locked ? lockChip(stageLabel) : `
                     <div class="lot-stage-editor">
                         <select class="lot-stage-select" id="${stageSelectId}" data-lot-id="${key}" title="Change stage">
                             ${stageOptions}
@@ -6583,7 +6678,7 @@
                 const currentRoomOptions = ['<option value="">— None —</option>']
                     .concat(designatedRooms.map(r => `<option value="${escapeHtml(r)}"${lot.currentRoom === r ? ' selected' : ''}>${escapeHtml(r)}</option>`))
                     .join('');
-                const currentRoomHtml = `
+                const currentRoomHtml = locked ? lockChip(`📍 ${lot.currentRoom || 'no room'}`) : `
                     <div class="lot-stage-editor">
                         <select class="lot-currentroom-select" id="${currentRoomSelectId}" data-lot-id="${key}" title="Current room (where the lot is now)">
                             ${currentRoomOptions}
@@ -6594,7 +6689,7 @@
                 // Build plant count spinbox — always visible
                 const currentCount = lot.plantCount !== null && lot.plantCount !== undefined ? lot.plantCount : 0;
                 const inputId = `plantCount_${key}`;
-                const plantCountHtml = `
+                const plantCountHtml = locked ? lockChip(`🌱 ${currentCount}`) : `
                     <div class="plant-count-editor">
                         <span class="plant-count-emoji">🌱</span>
                         <div class="spinbox-group">
@@ -6645,7 +6740,7 @@
                             ${currentRoomHtml}
                             ${plantCountHtml}
                             <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
-                            <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" title="Delete lot">✕</button>
+                            <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" ${locked ? 'disabled title="This lot has grow logs: it can\'t be deleted. Close it out (Data &amp; Files → 🌱 Lots) once its plant count is 0."' : 'title="Delete lot"'}>✕</button>
                         </div>
                     </div>
                     ${roomEditorsHtml}
@@ -6660,6 +6755,7 @@
                     e.stopPropagation();
                     const lotId = btn.dataset.lotId;
                     const lotName = btn.dataset.lotName;
+                    if (lotLocked(lotId)) { alert(`Lot ${lotId} has grow logs, so it can't be deleted. Close it out instead (Data & Files → 🌱 Lots) once its plant count is 0.`); return; }
                     if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?\n\nThis action cannot be undone.`)) {
                         delete DB.lots[lotId];
                         // Drop the lot from every room's assignedLots so no stale "(deleted)" entry stays behind
@@ -6680,7 +6776,7 @@
                 select.addEventListener('change', () => {
                     const lotId = select.dataset.lotId;
                     const lot = DB.lots[lotId];
-                    if (!lot) return;
+                    if (!lot || lotLocked(lotId)) { renderLotList(); return; }
                     lot.stage = select.value;
                     markUnsaved();
                     renderLotList();
@@ -6692,7 +6788,7 @@
                 select.addEventListener('change', () => {
                     const lotId = select.dataset.lotId;
                     const lot = DB.lots[lotId];
-                    if (!lot) return;
+                    if (!lot || lotLocked(lotId)) { renderLotList(); return; }
                     lot.currentRoom = select.value || null;
                     markUnsaved();
                     renderLotList();
@@ -6704,7 +6800,7 @@
                 input.addEventListener('change', () => {
                     const lotId = input.dataset.lotId;
                     const lot = DB.lots[lotId];
-                    if (!lot) return;
+                    if (!lot || lotLocked(lotId)) { renderLotList(); return; }
                     const newValue = parseInt(input.value, 10);
                     if (!isNaN(newValue) && newValue >= 0) {
                         lot.plantCount = newValue;
@@ -7250,6 +7346,7 @@
                         e.stopPropagation();
                         const roomId = btn.dataset.roomId;
                         const roomName = btn.dataset.roomName;
+                        if (refuseRoomChange(roomId, 'deleted')) return;
                         if (confirm(`Delete room "${roomName}" (${roomId})?\n\nLots assigned to this room will be unassigned.`)) {
                             this.deleteRoom(roomId);
                         }
@@ -7396,6 +7493,7 @@
 
             deleteRoom(roomId) {
                 const room = this.rooms[roomId];
+                if (!room || refuseRoomChange(roomId, 'deleted')) return;
                 // Clear any lot references to this room (assigned, veg, cloning, dry, trim, current)
                 Object.values(DB.lots).forEach(lot => {
                     if (!lot) return;
@@ -10141,6 +10239,7 @@
                         e.stopPropagation();
                         const buildingId = btn.dataset.buildingId;
                         const buildingName = btn.dataset.buildingName;
+                        if ((this.buildings[buildingId]?.assignedRooms || []).some(rid => refuseRoomChange(rid, 'taken out of its building'))) return;
                         if (confirm(`Delete building "${buildingName}" (${buildingId})?\n\nRooms assigned to this building will be unassigned.`)) {
                             this.deleteBuilding(buildingId);
                         }
@@ -10223,6 +10322,7 @@
                 const building = this.buildings[buildingId];
                 const room = RoomManager.rooms[roomId];
                 if (!building || !room) return;
+                if (room.buildingId && room.buildingId !== buildingId && refuseRoomChange(roomId, 'moved to another building')) { this.renderBuildingList(); return; }
 
                 // Unassign the room from any other building first (a room lives in one building)
                 Object.values(DB.buildings).forEach(b => {
@@ -10245,6 +10345,7 @@
             removeRoomFromBuilding(roomId, buildingId) {
                 const building = this.buildings[buildingId];
                 if (!building) return;
+                if (RoomManager.rooms[roomId]?.buildingId === buildingId && refuseRoomChange(roomId, 'taken out of its building')) return;
 
                 building.assignedRooms = (building.assignedRooms || []).filter(id => id !== roomId);
 
@@ -10261,6 +10362,7 @@
             deleteBuilding(buildingId) {
                 const building = this.buildings[buildingId];
                 if (!building) return;
+                if ((building.assignedRooms || []).some(rid => refuseRoomChange(rid, 'taken out of its building'))) return;
 
                 // Unassign all of the building's rooms (room.buildingId → null)
                 (building.assignedRooms || []).forEach(rid => {

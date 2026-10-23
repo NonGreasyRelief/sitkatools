@@ -83,6 +83,19 @@ export async function answerPin(b, ctx, name = 'Casey', pin = FM_PIN) {
     await b.sleep(100);
 }
 
+// PaperWizard: answer the "why did the plant count change?" dialog if a save opened it. A drop gives every plant to
+// `reason` (tap the reason, which takes the rest); a rise gives the reason text. Resolves whether a dialog was there.
+export async function answerCountReasons(b, ctx, { reason = 'culled', text = 'recounted — the last count was wrong' } = {}) {
+    const open = await b.waitFor(ctx, `return !!document.getElementById('countReasonOverlay');`, 800).then(() => true).catch(() => false);
+    if (!open) return false;
+    await b.run(ctx, `const ov = document.getElementById('countReasonOverlay');
+        const btn = ov.querySelector('.reason-name[data-r="${reason}"]');
+        if (btn) btn.click(); else ov.querySelector('#reasonText').value = ${JSON.stringify(text)};
+        document.getElementById('reasonOk').click();`, { user: true });
+    await b.sleep(150);
+    return true;
+}
+
 // DailyWizard: ✏️ Edit tasks, unlocked with a floor manager's PIN
 export async function dwUnlock(b, dw, name = 'Casey', pin = FM_PIN) {
     await b.run(dw, `document.getElementById('editTasksBtn').click();`, { user: true });

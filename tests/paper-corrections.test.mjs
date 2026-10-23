@@ -2,7 +2,7 @@
 // drawn initials and a reason; the printed page shows the new value at full size, then a small stack beside it: the old
 // value struck out, over the date with the drawn initials on it; and every change is in the change log. Also: "Start on a chosen
 // day" defaults to the date the lot was created.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today } from './lib/helpers.mjs';
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today, answerCountReasons } from './lib/helpers.mjs';
 
 export const title = 'PaperWizard corrections: struck-out values, initials, change log';
 
@@ -90,6 +90,7 @@ export async function run(b, BASE) {
             ${initials ? `runnerCtx.draft.init = { name: 'AB', strokes: ${JSON.stringify(pen)} };` : ''}
             runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();`);
         await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
+        await answerCountReasons(b, pw);   // a lower count asks why (one plant culled a day)
         await b.sleep(150);
     };
     const pad = () => b.run(pw, `return !!document.getElementById('corrOverlay');`);

@@ -25,7 +25,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
   lots: { <LotID>: {
     name, strain, stage, createdDate, closedDate, parentLotId,
     destRoom, vegRoom, cloningRoom, dryRoom, trimRoom,  // room NAMES; only destRoom syncs to rooms.<id>.assignedLots
-    currentRoom, plantCount,                            // live, kept up to date by PaperWizard's grow logs
+    currentRoom, plantCount,                            // live, kept up to date by PaperWizard's grow logs (only them, once a lot has one)
     _tool_<Tool>: { … } } },
   rooms: { <RoomID>: {
     name, description, createdDate, assignedLots: [], buildingId,
@@ -45,11 +45,12 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 - **Ownership:** a tool reads lots, rooms and buildings, and writes only its own keys (`_tool_<Tool>` on a lot, or top-level `_<Tool>`). The exceptions:
   - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs`.
   - **PaperWizard may write exactly `lots.plantCount`, `.stage` and `.currentRoom`** when a log entry records a change. No other tool writes another tool's data.
+  - **🔒 A lot with a grow log is locked to it** (any daily-weekly page in PaperWizard): its plant count, phase and room then change only through PaperWizard (the grow log, and the harvest log after it). SitkaTools shows them read-only, won't delete the lot, and won't delete or re-home a room it's in; the one other writer is a lot move's Accept (`currentRoom`). A changed count needs a reason, split by reason (`PaperWizard/CLAUDE.md` → "🌱 Why the Plant Count Changed"). Details: `SitkaTools/CLAUDE.md` → "Lot Manager".
   - **Event annotations:** labour tools and SitkaTools add fields to other tools' events in place (see "Event Annotations Survive Regeneration").
   - SitkaTools' deletion hook removes one projected lot (see "Crop Projection").
 - `calendarEvents` are append-only per tool; `sourceTool` names the tool that made each one.
 - **`_meta`:** built when the user saves and committed only once the save link is used, so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited from the same copy. No tool reads it for logic; tools carry it through untouched.
-- Long term, PaperWizard's grow logs become the source of truth for lot lifecycle events (sub-lots, plant destruction, room and phase changes), and the lot manager will handle only external lots.
+- PaperWizard's grow logs are the source of truth for a lot's plant count, phase and room once it has one, with every removal's reason (destroyed, culled, sampled, harvested, moved, sold). Long term they also become the source for the rest of a lot's lifecycle (sub-lots), and the lot manager will handle only external lots.
 
 ### Event IDs
 
@@ -74,10 +75,10 @@ CropLabourWizard (on Generate) and EquipmentWizard (on every resync) rebuild the
 A tool opens as a centred popup, half the main window's width and 83% of its height (design for that size). On phones it opens as a tab and uses the shared working copy instead.
 
 ```js
-{ type: 'sitkaGit_db', payload, view: { building } }         // SitkaTools → tool on open; retried 5× at 200 ms until ready
+{ type: 'sitkaGit_db', payload, view: { building, split } }  // SitkaTools → tool on open; retried 5× at 200 ms until ready
 { type: 'sitkaGit_ready' }                                   // tool → SitkaTools: got it
 { type: 'sitkaGit_db_update', payload }                      // tool → SitkaTools after every change
-{ type: 'sitkaGit_db_update', payload, view: { building } }  // SitkaTools → every open tool whenever its DB changes
+{ type: 'sitkaGit_db_update', payload, view: { building, split } }  // SitkaTools → every open tool whenever its DB changes
 { type: 'sitkaGit_ping' }                                    // tool → SitkaTools on focus: still linked?
 { type: 'sitkaGit_not_linked', about }                       // SitkaTools → a window it didn't open
 ```
@@ -113,7 +114,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 - **One-time split:** 🏢 Building Files card → **Split into building files** (office; every room must belong to a building).
 - **Lot move:** the lot's building (or the office) **Sends** it: a pending `_LotTransfers` record in the sender's file. The receiving building **Accepts** it (picks one of its rooms, enters initials), which sets `lots.currentRoom`.
 - **Lot hand-off:** Send freezes the lot's paperwork on the sender (PaperWizard shows it read-only). Accept moves the lot's **unsigned** pages and its lot-level paperwork values to the receiver's file; signed pages stay where they are. The old copies are tidied away by the next save that may rewrite that file.
-- **Lot close-out** (office only in split mode): the lot, its events with labour, its schedule history, its paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json`. The lot leaves the DB only once the archive is written or its link used. Its crop summary stays, so it stays in the report trends for 36 months.
+- **Lot close-out** (office only in split mode) needs a plant count of 0 and, for a lot with grow logs, every daily page complete with no grow-log days missing (a harvest log isn't required: not every lot is harvested). Then the lot, its events with labour, its schedule history, its paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json`. The lot leaves the DB only once the archive is written or its link used. Its crop summary stays, so it stays in the report trends for 36 months.
 
 ### Shared Working Copy (tablets)
 
@@ -133,7 +134,7 @@ A building device sees only its own building and only what it can save. It appli
 
 - **What belongs to a building:** its rooms (`buildingId`); lots whose `currentRoom` **or** `destRoom` is one of them; events tied to one of those lots (`lotId`) or rooms (`roomId`). Events tied to no lot and no room (general events, time off) show everywhere. Events of a removed lot or room show nowhere.
 - **SitkaTools:** see `SitkaTools/CLAUDE.md` → "On a Building Device".
-- **Tools get the view with the DB** (`view: { building }` on every message, and in the shared copy). Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
+- **Tools get the view with the DB** (`view: { building, split }` on every message, and in the shared copy; `split` = split files are open). Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
   - **Office-only tools** (CropLabourWizard, EquipmentWizard, GeneralEvent) show "Office only" and stop before loading.
   - **DailyWizard** opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). Its floor manager signs tasks off with ✅ Mark done, and unlocks task editing and approves deletions with their own PIN, on every device (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
   - **PaperWizard** lists only the building's lots, hides Configure Sheets, offers only the building's rooms, and shows some lots read-only (`lotElsewhere`, see `PaperWizard/CLAUDE.md`).
@@ -259,5 +260,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, floor manager PINs, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, floor manager PINs, lots locked to their grow log, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.
