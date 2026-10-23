@@ -32,6 +32,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-22 · ⏲ four pausable timers always shown on every row with ⏱ Log (today only); a timer is labelled by whoever starts it (no matching to the roster); ⏱ Log fills hours from one, rounded to the nearest 5 min, without stopping it; kept in the DB as start times (`_DailyWizard.buildings[<id>].timers`)
 - 2026-10-22 · a daily chore can be tied to one of its building's rooms (optional `roomId`); changing it moves the chore's past hours too (closed-out lots keep their saved share)
 
 - 2026-10-18 · ⏰ Still open is also shown in All Buildings (every building's open crop/equipment tasks in one view)

@@ -5,11 +5,11 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 - **Planning (manager):** pick a building; add, edit and reorder its daily tasks and write their steps.
 - **Floor (staff, tablet):** open it from SitkaTools (a tab), pick the building or All Buildings, and work down the list.
 - For any date (default today) it shows the building's tasks for that day, then that building's calendar events for the day (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent).
-- Ticks save per day ("Check-offs — Saved Per Day"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
+- Ticks save per day ("Check-offs — Saved Per Day"); four **⏲ timers** on every row time the work ("⏲ Timers"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
 
 ## What It Reads and Writes
 
-- **`_DailyWizard`:** only DailyWizard writes it (task lists, chore hours, check-offs, adjustments). EmployeeWizard's Reports and Labour Log read the chore hours.
+- **`_DailyWizard`:** only DailyWizard writes it (task lists, chore hours, check-offs, timers, adjustments). EmployeeWizard's Reports and Labour Log read the chore hours.
 - **Calendar events:** never created, edited, moved or deleted, and nothing is appended. On a crop or equipment event it writes only the floor fields `labour_map` ("⏱ Hours") and `completed` / `completedBy` ("✅ Mark done").
 - **Reads:** events' `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, `estStaff` / `estMinutes`; `rooms`, `buildings`, `lots` (attribution); `_EmployeeWizard.employees` (names for hours, `floorManager` for Mark done).
 - No network calls (🗣️ Talk only opens a link). No browser storage beyond SitkaTools' shared working copy. Emoji data is embedded.
@@ -59,6 +59,7 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
   "labour": { "2026-10-12": { "j234": [ { "id": "le_k3m9qa2xtd", "employee": "Kasia", "hours": 1.25,
                "initials": { "name": "Kasia", "strokes": [[0.2, 0.6, 0.3, 0.4]] }, "at": "<ISO>", "by": "B6" } ] } },
   "checks": { "2026-10-12": { "j234": { "at": "<ISO>", "by": "B6" }, "ev:<event id>": { "at": "<ISO>", "by": "B6" } } },
+  "timers": { "j234": { "1": { "label": "KN", "ms": 0, "since": "<ISO>" }, "2": { "ms": 310000 } }, "ev:<event id>": { … } },
   "adjustments": [
     { "at": "<ISO>", "by": "office", "date": "2026-10-12", "code": "j234", "entry": { "…": "the removed entry" } },
     { "at": "<ISO>", "by": "office", "date": "2026-10-11", "eventId": "ev_…", "title": "…", "entry": { "…": "…" } },
@@ -121,15 +122,36 @@ Events show on every day of `[date, endDate]`. `buildingForEvent(ev)` resolves a
 - Ticked rows stay in place, with an accent check, muted text and a struck-through name.
 - Progress: `✅ done/total` in the status bar; `done/total` per section header in All Buildings.
 
+## ⏲ Timers
+
+Four pausable stopwatches on every row that has **⏱ Log** (chores, and crop and equipment tasks under Scheduled today and Still open), on a second line inside the row.
+
+- **Shown** only while the date on screen is today, and only for buildings the device can change (`canEditBuilding`). Other days, other buildings on a building device, projections, general events and Upcoming rows get none.
+- **Each timer:** a number badge and its label above the time (`MM:SS`, `H:MM:SS` past an hour), **▶ / ⏸**, and **✕** once it's in use. Running: accent border and time; paused: white time.
+  - ▶ on a cleared timer asks for **initials or a label** (optional, up to 12 characters; Enter starts, Cancel starts nothing). Labels aren't matched to the roster.
+  - ▶ on a paused or labelled timer starts it straight away; ⏸ banks the run.
+  - Tapping the label changes it, without stopping the timer.
+  - ✕ clears the time and label; it asks first when the timer has time on it.
+- **Where they're kept:** `_DailyWizard.buildings[<id>].timers[<item>][<1–4>] = { label?, ms, since? }`.
+  - `item` is the task `code` or `ev:<event id>`, as for ticks.
+  - `ms` is the time banked by earlier runs; `since` is the ISO start of the run in progress (absent while paused).
+  - The time shown is `ms + (now − since)`, so nothing is written while a timer runs, and it keeps counting through a closed window, a reload or a sleeping tablet. Start, pause, relabel and clear each call `notifySitkaTools()`; they save in the building's own file.
+- **Per row, not per day:** a timer left running shows the next day until someone clears it.
+- **Tidy:** every timer change drops empty slots and the timers of chores that were deleted and of events that are gone, or done with their last day past.
+- **In ⏱ Log** (today only): **Time from a timer** lists Timer 1–4 with label, time and what it would log (`→ 25m`), plus **None — type the time** (picked by default). Timers with no time are greyed out.
+  - Picking one fills Hours and Minutes with its time rounded to the **nearest 5 minutes, at least 5** (`timerLogMinutes`); the boxes stay editable.
+  - It doesn't pause or clear the timer, so everyone who worked together logs from the same timer. After **Add hours** the pick goes back to None.
+  - The entry is an ordinary hours entry; nothing else reads timers.
+
 ## ⏱ Hours
 
-Each entry is the person's name, the hours and minutes they type, and their own drawn initials.
+Each entry is the person's name, the hours and minutes they type (or fill from a timer, "⏲ Timers"), and their own drawn initials.
 
 - **The button:** on every daily-task row and every CropLabourWizard / EquipmentWizard row (Scheduled today and Still open) whose building is known. Projections, general events and Upcoming rows get none. It reads `⏱ Log`, or the selected day's total (`⏱ 1h 15m`, accent colour). Disabled for future dates; tapping it never opens the detail view.
 - **The hours view** (full-screen overlay):
   - the row's entries for that day: name, hours, initials thumbnail, time logged. EmployeeWizard entries say they were entered there. A signed entry later changed in EmployeeWizard's Tasks tab keeps `signedHours` / `editedAt` / `editedBy`, and the view shows what it was signed for;
   - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`); a room chore adds "🚪 {room}: hours count toward the lots in this room";
-  - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Hours**, **Minutes**, **initials pad**.
+  - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Time from a timer** (today), **Hours**, **Minutes**, **initials pad**.
 - **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke.
 - **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
 - **Removing:**
@@ -185,7 +207,7 @@ Translations cover daily chores only, not crop or equipment task names; the scre
 
 Uses the standard subtool pattern (root `CLAUDE.md` → "Cross-Window Database Workflow", "Shared Working Copy"). Popup on laptops; tab fed from the shared working copy on tablets. Opened alone: "Open this tool from SitkaTools"; before the DB arrives: "Waiting for SitkaTools to deliver the database…".
 
-- `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, Reset Day, and every Mark done or reopen.
+- `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, Reset Day, every Mark done or reopen, and every timer start, pause, relabel or clear.
 - **Live `sitkaGit_db_update`:** refresh the selector, status bar and list without disturbing ticks or an open editor. An open task detail view refreshes too, except while a step is being typed: it refreshes when the edit ends, and the edit is written into the fresh DB. Step buttons (▲ ▼ 🗑, + Add Step) look their task up again by building + code when tapped; if it is gone they only re-render (the view closes).
 
 ## UI
@@ -204,9 +226,11 @@ Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **+ 
 
 ### Task Rows
 
-Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · 🚪 room chip (room chores) · labour chips · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
+Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · 🚪 room chip (room chores) · labour chips · **⏱ Log** · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
 
 Event rows: same without code chip and moves; emoji from the title; labour chips only on crop tasks with an estimate ("Labour Display").
+
+Below them, inside the row, the four **⏲ timers** ("⏲ Timers"): four across, two on a portrait tablet, one on a phone (container queries on `.timer-strip`). Tapping them never opens the detail view.
 
 ### Upcoming
 

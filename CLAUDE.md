@@ -218,7 +218,7 @@ Any implementation must reproduce this table. Where holidays are used:
 | CropLabourWizard | `CropLabourWizard/` | Crop schedules from task recipes, projections, labour estimates, input price list |
 | EquipmentWizard | `EquipmentWizard/` | Equipment maintenance schedules and equipment power |
 | Labour & Cost Wizard | `EmployeeWizard/` | Roster, time off, hours on tasks, 📜 Labour Log, ⚡ Power & Rates, 📊 Reports and total cost per gram |
-| DailyWizard | `DailyWizard/` | Per-building daily lists with check-offs, ⏱ hours, ⏰ Still open and ✅ Mark done, translations, step pictures and videos |
+| DailyWizard | `DailyWizard/` | Per-building daily lists with check-offs, ⏲ timers, ⏱ hours, ⏰ Still open and ✅ Mark done, translations, step pictures and videos |
 | PaperWizard | `PaperWizard/` | Fills controlled paperwork through wizards, prints it over the form's page images, and keeps corrections traceable (struck-out values, initials, 📝 Change log) |
 
 Don't add details, APIs or schemas for a planned tool until asked.
@@ -257,5 +257,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

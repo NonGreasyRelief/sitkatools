@@ -602,6 +602,46 @@
         .hours-card input, .hours-card select { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
         .hours-note { font-size: 0.82rem; color: var(--text-secondary); max-width: 60%; }
 
+        /* ---- ⏲ Timers: four stopwatches on a second line inside each row that takes hours ---- */
+        .task-row.with-timers { flex-wrap: wrap; row-gap: 8px; }
+        .timer-strip { flex-basis: 100%; container-type: inline-size; }
+        .timer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+        @container (max-width: 900px) { .timer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @container (max-width: 440px) { .timer-grid { grid-template-columns: minmax(0, 1fr); } }
+        .timer-slot { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius); }
+        .timer-slot.running { border-color: var(--accent); }
+        /* The label (tap to change it) sits above the time, so both fit four across */
+        .timer-label { flex: 1; min-width: 0; min-height: 48px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; padding: 0 4px; background: none; border: none; color: var(--text-primary); font-family: inherit; text-align: left; cursor: pointer; }
+        .timer-head { display: flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; font-size: 0.8rem; font-weight: 700; }
+        .timer-num { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); display: grid; place-content: center; font-size: 0.68rem; font-weight: 600; color: var(--text-secondary); }
+        .timer-slot.running .timer-num { background: var(--accent); border-color: var(--accent); color: #08301f; }
+        .timer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .timer-time { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--text-secondary); }
+        .timer-slot.running .timer-time { color: var(--accent); }
+        .timer-slot.paused .timer-time { color: var(--text-primary); }
+        .timer-btn { flex-shrink: 0; width: 48px; height: 48px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 1rem; cursor: pointer; }
+        .timer-btn:hover { border-color: var(--accent); }
+        .timer-btn.timer-clear { color: var(--danger); }
+        .timer-btn.timer-clear.unused { visibility: hidden; }
+        /* The label asked for when a cleared timer starts (or its label is tapped) */
+        .timer-dialog { position: fixed; inset: 0; z-index: 250; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .timer-dialog[hidden] { display: none; }
+        .timer-dialog-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+        .timer-dialog-title { font-weight: 700; }
+        .timer-dialog-card label { font-size: 0.85rem; color: var(--text-secondary); }
+        .timer-dialog-card input { min-height: 52px; padding: 8px 12px; font-size: 1.4rem; letter-spacing: 2px; text-align: center; }
+        .timer-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        /* ⏱ Log: fill the hours from one of the row's timers */
+        .timer-picks { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label.timer-pick { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-primary); color: var(--text-primary); font-size: 0.95rem; text-transform: none; letter-spacing: 0; cursor: pointer; }
+        .form-group label.timer-pick:has(input:checked) { border-color: var(--accent); }
+        .form-group label.timer-pick.empty { opacity: 0.45; cursor: not-allowed; }
+        .hours-card .timer-pick input { width: 22px; height: 22px; min-height: 0; padding: 0; flex-shrink: 0; accent-color: var(--accent); }
+        .timer-pick .tp-name { flex: 1; min-width: 0; font-weight: 600; }
+        .timer-pick .tp-time { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+        .timer-pick.running .tp-time { color: var(--accent); }
+        .timer-pick .tp-log { min-width: 72px; text-align: right; font-weight: 700; color: var(--accent); }
+
         /* ---- ✅ Mark done + ⏰ Still open ---- */
         .done-btn { min-height: 48px; min-width: 48px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
         .done-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
@@ -854,6 +894,12 @@
                         <input type="text" id="hoursOther" placeholder="Name (not on the roster)" data-t-ph autocomplete="off" hidden>
                         <input type="number" id="hoursWage" placeholder="Their hourly wage, $ (optional — used for labour cost)" data-t-ph min="0" step="0.5" inputmode="decimal" hidden>
                     </div>
+                    <!-- ⏲ Fill the hours from one of the row's timers (today only) -->
+                    <div class="form-group" id="hoursTimerGroup" hidden>
+                        <label id="hoursTimerLbl" data-t>Time from a timer</label>
+                        <div class="timer-picks" id="hoursTimerPicks" role="radiogroup" aria-labelledby="hoursTimerLbl"></div>
+                        <div class="field-hint" data-t>Fills in the hours and minutes, to the nearest 5 minutes. The timer keeps going, so everyone who worked on it can log from it.</div>
+                    </div>
                     <div class="editor-row">
                         <div class="form-group">
                             <label for="hoursH" data-t>Hours</label>
@@ -876,6 +922,19 @@
             <span class="hours-note" id="hoursNote"></span>
             <button class="btn btn-primary" id="hoursAddBtn" data-t>Add hours</button>
         </footer>
+    </div>
+
+    <!-- ⏲ A timer's initials or label: asked when a cleared timer starts, or when its label is tapped -->
+    <div class="timer-dialog" id="timerDialog" hidden>
+        <div class="timer-dialog-card" role="dialog" aria-modal="true" aria-labelledby="timerDialogTitle">
+            <div class="timer-dialog-title" id="timerDialogTitle"></div>
+            <label for="timerLabelInput" data-t>Your initials or a label (optional)</label>
+            <input type="text" id="timerLabelInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <div class="timer-dialog-actions">
+                <button type="button" class="btn btn-secondary" id="timerDialogCancel" data-t>Cancel</button>
+                <button type="button" class="btn btn-primary" id="timerDialogOk"></button>
+            </div>
+        </div>
     </div>
 
     <!-- ✅ Mark done — the floor manager signs a crop / equipment task off as done (name + drawn initials) -->
@@ -917,7 +976,7 @@
     <script>
         // =====================================================
         // DailyWizard — Daily task list builder & floor view
-        // Database Keys: "_DailyWizard" (read/write — task lists and chore hours), "calendarEvents" (read-only),
+        // Database Keys: "_DailyWizard" (read/write — task lists, chore hours, ticks and ⏲ timers), "calendarEvents" (read-only),
         //                "_EmployeeWizard.employees" (read-only — roster names for the hours log)
         // 🌐 Language picker: the screen in English, French, Spanish, Vietnamese or Chinese, plus translated task
         //    names and steps (task.translations / step.translations — English stays the master)
@@ -1757,7 +1816,7 @@
             // Tapping anywhere on the row body (except the checkbox / move buttons)
             // opens the task's detail view (CLAUDE.md "Task Rows").
             row.addEventListener('click', (e) => {
-                if (e.target.closest('.task-check') || e.target.closest('.move-btns') || e.target.closest('.hours-btn')) return;
+                if (e.target.closest('.task-check') || e.target.closest('.move-btns') || e.target.closest('.hours-btn') || e.target.closest('.timer-strip')) return;
                 openTaskDetail(buildingId, task.code);
             });
 
@@ -1793,6 +1852,11 @@
                 moveBtns.appendChild(up);
                 moveBtns.appendChild(down);
                 row.appendChild(moveBtns);
+            }
+
+            if (timersShown(buildingId)) {
+                row.classList.add('with-timers');
+                row.appendChild(makeTimerStrip(buildingId, task.code, `${task.emoji || '📋'} ${taskName(task)}`));
             }
 
             return row;
@@ -1892,6 +1956,10 @@
                 if (buildingId) {
                     row.appendChild(makeHoursButton({ kind: 'event', buildingId, eventId: ev.id, date: selectedDateStr() }));
                     row.appendChild(makeDoneButton(ev, buildingId));
+                    if (timersShown(buildingId)) {
+                        row.classList.add('with-timers');
+                        row.appendChild(makeTimerStrip(buildingId, 'ev:' + ev.id, `${emoji} ${text || ev.title || T('Task')}`));
+                    }
                 }
             }
 
@@ -2883,6 +2951,7 @@
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursTimerPicks').innerHTML = '';
             padStrokes = [];
             renderHours();
             $('hoursOverlay').classList.add('open');
@@ -2928,6 +2997,7 @@
             $('hoursNote').textContent = DeviceView.building
                 ? T('You can remove an entry on the day you logged it. After that, ask the office.')
                 : T('Office: an entry removed after its day is kept on record.');
+            renderHourTimers();   // keeps the timer picked
         }
 
         // One entry; `removal` is its record in the adjustments log when the office removed it
@@ -3065,6 +3135,7 @@
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursTimerPicks').innerHTML = '';   // back to "None"; the timer itself is left running for the others
             padStrokes = [];
             drawPad();
             renderHours();
@@ -3096,6 +3167,234 @@
             renderHours();
             renderAll();
             showToast(sameDay ? T('Entry removed') : T('Entry removed — kept on record as an office adjustment'));
+        }
+
+        // ---- ⏲ Timers — four pausable stopwatches on every row that takes hours (user decision 2026-10-22) ----
+        // Shown on a second line in each chore and crop / equipment row while the date on screen is today, in the
+        // buildings this device can change. Starting a cleared timer asks for initials or a label (optional). ⏱ Log can
+        // fill its hours from one, rounded to the nearest 5 minutes; that doesn't pause or clear it, so everyone who
+        // worked together logs from the same timer. Kept with the building's list, so they save in its own file:
+        //   _DailyWizard.buildings[<id>].timers[<item>][<1–4>] = { label?, ms, since? }
+        //   item: a chore's code or 'ev:<event id>' (as for ticks); ms: time banked by earlier runs; since: ISO time
+        //   the run in progress started (absent while paused). A running timer counts from `since`, so nothing is
+        //   written while it runs, and it keeps counting through a closed window or a reload. Timers belong to the
+        //   row, not the day: one left running shows the next day until someone clears it.
+        const TIMER_SLOTS = [1, 2, 3, 4];
+        const timerItem = ctx => ctx.kind === 'event' ? 'ev:' + ctx.eventId : ctx.code;
+        const timersShown = bid => !!bid && selectedDateStr() === todayStr() && canEditBuilding(bid);
+        const timerOf = (bid, item, n) => DB.dailyBuildings[bid]?.timers?.[item]?.[n] || null;
+        function timerMs(t, now = Date.now()) {
+            if (!t) return 0;
+            const run = t.since ? now - Date.parse(t.since) : 0;
+            return Math.max(0, (Number(t.ms) || 0) + (run > 0 ? run : 0));
+        }
+        // 83 s → "01:23"; past an hour, "1:02:05"
+        function fmtClock(ms) {
+            const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), p = v => String(v).padStart(2, '0');
+            return (h ? `${h}:` : '') + `${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+        }
+        // A timer's time as logged: the nearest 5 minutes, at least 5
+        const timerLogMinutes = ms => Math.max(5, Math.round(ms / 300000) * 5);
+        const timerName = (n, label) => label ? T('Timer {n} ({label})', { n, label }) : T('Timer {n}', { n });
+
+        // A row's four timers: number and label above the time, ▶ / ⏸, and ✕ (only once the timer is in use)
+        function makeTimerStrip(bid, item, title) {
+            const strip = document.createElement('div');
+            strip.className = 'timer-strip';
+            const grid = document.createElement('div');
+            grid.className = 'timer-grid';
+            for (const n of TIMER_SLOTS) {
+                const t = timerOf(bid, item, n), ms = timerMs(t);
+                const slot = document.createElement('div');
+                slot.className = 'timer-slot' + (t?.since ? ' running' : ms > 0 ? ' paused' : '');
+                Object.assign(slot.dataset, { building: bid, item, slot: n });
+                const label = document.createElement('button');
+                label.type = 'button';
+                label.className = 'timer-label';
+                label.title = T('Timer {n} — tap to label it', { n });
+                const num = document.createElement('span');
+                num.className = 'timer-num';
+                num.textContent = n;
+                const name = document.createElement('span');
+                name.className = 'timer-name';
+                name.textContent = t?.label || '';
+                const head = document.createElement('span');
+                head.className = 'timer-head';
+                head.append(num, name);
+                const time = document.createElement('span');
+                time.className = 'timer-time';
+                time.textContent = fmtClock(ms);
+                label.append(head, time);
+                label.addEventListener('click', () => openTimerDialog('label', bid, item, n, title));
+                const go = document.createElement('button');
+                go.type = 'button';
+                go.className = 'timer-btn timer-go';
+                go.textContent = t?.since ? '⏸' : '▶';
+                go.title = t?.since ? T('Pause') : ms > 0 ? T('Resume') : T('Start');
+                go.setAttribute('aria-label', go.title);
+                go.addEventListener('click', () => toggleTimer(bid, item, n, title));
+                const clear = document.createElement('button');
+                clear.type = 'button';
+                clear.className = 'timer-btn timer-clear' + (t ? '' : ' unused');
+                clear.textContent = '✕';
+                clear.title = T('Clear this timer');
+                clear.setAttribute('aria-label', clear.title);
+                clear.disabled = !t;
+                clear.addEventListener('click', () => clearTimer(bid, item, n));
+                slot.append(label, go, clear);
+                grid.appendChild(slot);
+            }
+            strip.appendChild(grid);
+            return strip;
+        }
+
+        // A row's timers, made when missing
+        function timerSlotsFor(bid, item) {
+            const buildings = DB.ensureStructure()._DailyWizard.buildings;
+            const b = buildings[bid] || (buildings[bid] = { tasks: [] });
+            const all = b.timers || (b.timers = {});
+            return all[item] || (all[item] = {});
+        }
+        // Drop empty slots and rows, and the timers of chores and events that are gone (or done and past)
+        function tidyTimers(bid) {
+            const b = DB.dailyBuildings[bid];
+            if (!b?.timers) return;
+            const codes = new Set((b.tasks || []).map(t => t.code)), today = todayStr();
+            for (const [item, slots] of Object.entries(b.timers)) {
+                for (const n of Object.keys(slots || {})) if (!slots[n]) delete slots[n];
+                let keep = !!slots && Object.keys(slots).length > 0;
+                if (keep && item.startsWith('ev:')) {
+                    const ev = DB.calendarEvents.find(e => e.id === item.slice(3));
+                    keep = !!ev && !(ev.completed === true && (ev.endDate || ev.date) < today);
+                } else if (keep) keep = codes.has(item);
+                if (!keep) delete b.timers[item];
+            }
+            if (!Object.keys(b.timers).length) delete b.timers;
+        }
+        function timersChanged(bid) {
+            tidyTimers(bid);
+            notifySitkaTools();
+            renderAll();
+            if (hoursCtx) renderHourTimers();
+        }
+
+        // ▶ starts (asking for a label first when the timer is cleared) or resumes; ⏸ banks the run
+        function toggleTimer(bid, item, n, title) {
+            if (!timersShown(bid)) return;
+            const t = timerOf(bid, item, n);
+            if (t?.since) {
+                t.ms = timerMs(t);
+                delete t.since;
+            } else if (!t || (!t.label && !(t.ms > 0))) {
+                openTimerDialog('start', bid, item, n, title);
+                return;
+            } else t.since = new Date().toISOString();
+            timersChanged(bid);
+        }
+        function clearTimer(bid, item, n) {
+            if (!timersShown(bid)) return;
+            const t = timerOf(bid, item, n);
+            if (!t) return;
+            const ms = timerMs(t);
+            if (ms >= 1000 && !confirm(T('Clear {timer} at {time}?', { timer: timerName(n, t.label), time: fmtClock(ms) }))) return;
+            delete DB.dailyBuildings[bid].timers[item][n];
+            timersChanged(bid);
+        }
+
+        // The label box: 'start' (a cleared timer's ▶) or 'label' (its label tapped)
+        let timerDialog = null;   // { mode, bid, item, n } while open
+        function openTimerDialog(mode, bid, item, n, title) {
+            if (!timersShown(bid)) return;
+            timerDialog = { mode, bid, item, n };
+            $('timerDialogTitle').textContent = `⏲ ${T('Timer {n}', { n })} · ${title}`;
+            $('timerLabelInput').value = timerOf(bid, item, n)?.label || '';
+            $('timerDialogOk').textContent = mode === 'start' ? T('▶ Start') : T('Save');
+            $('timerDialog').hidden = false;
+            $('timerLabelInput').focus();
+        }
+        function closeTimerDialog() {
+            $('timerDialog').hidden = true;
+            timerDialog = null;
+        }
+        function confirmTimerDialog() {
+            const d = timerDialog;
+            if (!d) return;
+            const label = $('timerLabelInput').value.trim().slice(0, 12);
+            closeTimerDialog();
+            if (!timersShown(d.bid)) return;
+            let t = timerOf(d.bid, d.item, d.n);
+            if (d.mode === 'start' && t?.since) return;   // started meanwhile (a live update)
+            if (!t) {
+                if (d.mode !== 'start' && !label) return;
+                t = timerSlotsFor(d.bid, d.item)[d.n] = { ms: 0 };
+            }
+            if (label) t.label = label; else delete t.label;
+            if (d.mode === 'start') t.since = new Date().toISOString();
+            else if (!t.label && !t.since && !(t.ms > 0)) delete DB.dailyBuildings[d.bid].timers[d.item][d.n];
+            timersChanged(d.bid);
+        }
+
+        // ⏱ Log: one radio per timer of the row (greyed when it has no time) and "None — type the time". Today only.
+        function renderHourTimers() {
+            const ctx = hoursCtx, box = $('hoursTimerPicks');
+            const shown = !!ctx && ctx.date === todayStr() && canEditBuilding(ctx.buildingId);
+            $('hoursTimerGroup').hidden = !shown;
+            const picked = box.querySelector('input:checked')?.value || '';
+            box.innerHTML = '';
+            if (!shown) return;
+            const item = timerItem(ctx);
+            const add = (value, t) => {
+                const ms = timerMs(t), empty = value !== '' && ms <= 0;
+                const lbl = document.createElement('label');
+                lbl.className = 'timer-pick' + (empty ? ' empty' : '') + (t?.since ? ' running' : '');
+                if (value) lbl.dataset.slot = value;
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = 'hoursTimer';
+                input.value = value;
+                input.disabled = empty;
+                input.checked = value === picked && !empty;
+                const name = document.createElement('span');
+                name.className = 'tp-name';
+                name.textContent = value ? timerName(value, t?.label) : T('None — type the time');
+                lbl.append(input, name);
+                if (value) {
+                    const time = document.createElement('span');
+                    time.className = 'tp-time';
+                    const log = document.createElement('span');
+                    log.className = 'tp-log';
+                    lbl.append(time, log);
+                    setPickTime(lbl, ms);
+                }
+                box.appendChild(lbl);
+            };
+            for (const n of TIMER_SLOTS) add(String(n), timerOf(ctx.buildingId, item, n));
+            add('', null);
+            if (!box.querySelector('input:checked')) box.querySelector('input[value=""]').checked = true;
+        }
+        function setPickTime(lbl, ms) {
+            lbl.querySelector('.tp-time').textContent = fmtClock(ms);
+            lbl.querySelector('.tp-log').textContent = ms > 0 ? `→ ${fmtHoursShort(timerLogMinutes(ms) / 60)}` : '';
+        }
+        // Picking a timer fills Hours and Minutes with its time, rounded; the boxes stay editable
+        function pickHourTimer(value) {
+            if (!hoursCtx || !value) return;
+            const t = timerOf(hoursCtx.buildingId, timerItem(hoursCtx), value), ms = timerMs(t);
+            if (ms <= 0) return;
+            const min = timerLogMinutes(ms);
+            $('hoursH').value = String(Math.floor(min / 60));
+            $('hoursM').value = String(min % 60);
+        }
+
+        // Once a second: running timers' times, on the rows and in the ⏱ Log view
+        function tickTimers() {
+            const now = Date.now();
+            for (const el of document.querySelectorAll('.timer-slot.running')) {
+                el.querySelector('.timer-time').textContent = fmtClock(timerMs(timerOf(el.dataset.building, el.dataset.item, el.dataset.slot), now));
+            }
+            if (hoursCtx) for (const el of document.querySelectorAll('#hoursTimerPicks .timer-pick.running')) {
+                setPickTime(el, timerMs(timerOf(hoursCtx.buildingId, timerItem(hoursCtx), el.dataset.slot), now));
+            }
         }
 
         // ---- ✅ Mark done — the floor manager signs a crop / equipment task off as done ----
@@ -3601,7 +3900,22 @@
             " The sign-off by {name} is removed.": { fr: " L’approbation de {name} sera retirée.", es: " Se quitará la aprobación de {name}.", vi: " Xác nhận của {name} sẽ bị xóa.", zh: "{name} 的签字将被删除。" },
             "this task": { fr: "cette tâche", es: "esta tarea", vi: "công việc này", zh: "此任务" },
             "Reopened": { fr: "Rouvert", es: "Reabierto", vi: "Đã mở lại", zh: "已重新打开" },
-            "Reopened — the sign-off is kept on record as an office adjustment": { fr: "Rouvert — l’approbation reste au dossier comme correction du bureau", es: "Reabierto — la aprobación queda archivada como ajuste de la oficina", vi: "Đã mở lại — xác nhận vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "已重新打开 — 签字作为办公室调整留档" }
+            "Reopened — the sign-off is kept on record as an office adjustment": { fr: "Rouvert — l’approbation reste au dossier comme correction du bureau", es: "Reabierto — la aprobación queda archivada como ajuste de la oficina", vi: "Đã mở lại — xác nhận vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "已重新打开 — 签字作为办公室调整留档" },
+            // ⏲ Timers
+            "Timer {n}": { fr: "Chrono {n}", es: "Cronómetro {n}", vi: "Đồng hồ {n}", zh: "计时器 {n}" },
+            "Timer {n} ({label})": { fr: "Chrono {n} ({label})", es: "Cronómetro {n} ({label})", vi: "Đồng hồ {n} ({label})", zh: "计时器 {n}（{label}）" },
+            "Timer {n} — tap to label it": { fr: "Chrono {n} — touchez pour le nommer", es: "Cronómetro {n} — toque para ponerle nombre", vi: "Đồng hồ {n} — chạm để đặt tên", zh: "计时器 {n} — 轻触以命名" },
+            "Start": { fr: "Démarrer", es: "Iniciar", vi: "Bắt đầu", zh: "开始" },
+            "Pause": { fr: "Pause", es: "Pausar", vi: "Tạm dừng", zh: "暂停" },
+            "Resume": { fr: "Reprendre", es: "Reanudar", vi: "Tiếp tục", zh: "继续" },
+            "Clear this timer": { fr: "Remettre ce chrono à zéro", es: "Borrar este cronómetro", vi: "Xóa đồng hồ này", zh: "清除此计时器" },
+            "Clear {timer} at {time}?": { fr: "Remettre {timer} à zéro ({time}) ?", es: "¿Borrar {timer} ({time})?", vi: "Xóa {timer} ({time})?", zh: "清除{timer}（{time}）？" },
+            "Your initials or a label (optional)": { fr: "Vos initiales ou un nom (facultatif)", es: "Sus iniciales o un nombre (opcional)", vi: "Chữ viết tắt tên của bạn hoặc một nhãn (không bắt buộc)", zh: "您的姓名缩写或标签（可选）" },
+            "▶ Start": { fr: "▶ Démarrer", es: "▶ Iniciar", vi: "▶ Bắt đầu", zh: "▶ 开始" },
+            "Save": { fr: "Enregistrer", es: "Guardar", vi: "Lưu", zh: "保存" },
+            "Time from a timer": { fr: "Temps d’un chrono", es: "Tiempo de un cronómetro", vi: "Thời gian từ đồng hồ", zh: "使用计时器的时间" },
+            "None — type the time": { fr: "Aucun — saisir le temps", es: "Ninguno — escribir el tiempo", vi: "Không — tự nhập thời gian", zh: "不用 — 手动输入时间" },
+            "Fills in the hours and minutes, to the nearest 5 minutes. The timer keeps going, so everyone who worked on it can log from it.": { fr: "Remplit les heures et les minutes, arrondies aux 5 minutes. Le chrono continue, pour que chaque personne qui a travaillé puisse s’en servir.", es: "Rellena las horas y los minutos, redondeados a 5 minutos. El cronómetro sigue, para que todos los que trabajaron puedan usarlo.", vi: "Tự điền giờ và phút, làm tròn đến 5 phút. Đồng hồ vẫn chạy, để mọi người cùng làm có thể ghi giờ từ đó.", zh: "自动填入小时和分钟，四舍五入到 5 分钟。计时器继续运行，所有参与的人都可以用它记录。" }
         };
 
         // ---- Init ----
@@ -3672,6 +3986,17 @@
                 if (other) $('hoursOther').focus();
             });
             window.addEventListener('resize', () => { if (hoursCtx) sizePad(); });
+            $('hoursTimerPicks').addEventListener('change', (e) => { if (e.target.name === 'hoursTimer') pickHourTimer(e.target.value); });
+
+            // ⏲ Timers
+            $('timerDialogOk').addEventListener('click', confirmTimerDialog);
+            $('timerDialogCancel').addEventListener('click', closeTimerDialog);
+            $('timerDialog').addEventListener('click', (e) => { if (e.target === $('timerDialog')) closeTimerDialog(); });
+            $('timerLabelInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); confirmTimerDialog(); }
+                else if (e.key === 'Escape') closeTimerDialog();
+            });
+            setInterval(tickTimers, 1000);
 
             // ✅ Mark done
             wirePad('donePad');
