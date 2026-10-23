@@ -2232,6 +2232,14 @@
         }
         .save-required-card .db-overlay-actions { flex-direction: column; align-items: center; gap: 12px; }
 
+        /* ⚠️ A session closed without saving, offered back on the next start (over the start screen) */
+        .restore-overlay { z-index: 10000; padding: 16px; }
+        .restore-card { border-color: #f5c518; }
+        .restore-icon { width: 72px; height: 63px; display: block; margin: 0 auto 16px; }
+        .restore-card .db-overlay-title { font-size: 1.25rem; line-height: 1.4; }
+        .restore-card .db-overlay-actions { flex-wrap: wrap; }
+        .restore-card .db-overlay-actions .hidden { display: none; }
+
         /* Text utilities */
         .text-secondary {
             color: var(--text-secondary);
@@ -2750,6 +2758,25 @@
             <div class="db-overlay-actions">
                 <button class="btn-load-db" id="overlayLoadBtn">📂 Load DB</button>
                 <button class="btn-cancel-db" id="overlayCancelBtn">Skip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⚠️ A session that closed without saving (flat battery, browser closed), offered back on the next start -->
+    <div class="db-overlay restore-overlay hidden" id="restoreOverlay" role="alertdialog" aria-modal="true" aria-labelledby="restoreTitle" aria-describedby="restoreDesc">
+        <div class="db-overlay-card restore-card">
+            <!-- Drawn here (not the ⚠️ emoji) so it is a yellow triangle with a black mark on every device -->
+            <svg class="restore-icon" viewBox="0 0 64 56" aria-hidden="true">
+                <path d="M32 4 L60 52 H4 Z" fill="#f5c518" stroke="#f5c518" stroke-width="6" stroke-linejoin="round"/>
+                <rect x="28.5" y="17" width="7" height="21" rx="3.5" fill="#111"/>
+                <circle cx="32" cy="45" r="4" fill="#111"/>
+            </svg>
+            <div class="db-overlay-title" id="restoreTitle"></div>
+            <div class="db-overlay-desc" id="restoreDesc"></div>
+            <div class="db-overlay-actions">
+                <button class="btn-load-db" id="restoreBtn">Restore session</button>
+                <button class="btn-cancel-db" id="restoreDiscardBtn">Discard</button>
+                <button class="btn-load-db hidden" id="restoreOkBtn">OK</button>
             </div>
         </div>
     </div>
@@ -5192,13 +5219,16 @@
         // The open DB is mirrored into IndexedDB ('sitkatools' → 'work') so tools opened as plain tabs (tablets,
         // where the popup / postMessage hand-off doesn't work) load it and write their changes back; a
         // BroadcastChannel keeps every open tab in step. Saving to SharePoint still happens here. The copy is
-        // deleted when you leave with everything saved and never kept longer than 12 hours; if a session ends
-        // with unsaved work, the next visit offers it back once.
+        // deleted when you leave with everything saved. If a session ends with unsaved work (a flat battery, the
+        // browser closed), it is kept however long it takes and offered back on the next start until it's restored
+        // or discarded (user decision 2026-10-22, "⚠️ Session closed without saving").
         // =====================================================
         var WorkCopy = {
-            MAX_AGE: 12 * 60 * 60 * 1000,
             channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
             _timer: null,
+            ready: false,    // the start check is done: a session left behind is restored or discarded before anything overwrites it
+            wrote: false,    // this tab has written the copy, so it holds the session (another SitkaTools tab never deletes it)
+            _keepAsked: false,
             async read() {
                 try {
                     return (await FolderStore._tx('readonly', store => store.get('current'), 'work'))?.value || null;
@@ -5213,6 +5243,7 @@
             async flush() {
                 clearTimeout(this._timer);
                 if (!DB.data) return;
+                if (!this.ready) { this.schedule(); return; }
                 // Every DB change or (re)load lands here (markUnsaved / clearUnsaved schedule it): push it to
                 // open tool windows too, so none keeps an old copy that its next edit would write back
                 broadcastToSubtools();
@@ -5223,8 +5254,19 @@
                 };
                 try {
                     await FolderStore._tx('readwrite', store => store.put({ key: 'current', value }), 'work');
+                    this.wrote = true;
+                    this.keepStorage();
                     if (this.channel) this.channel.postMessage({ type: 'db-updated', from: 'SitkaTools' });
                 } catch (_) { /* storage unavailable — popups still get the DB by postMessage */ }
+            },
+            // Ask the browser not to clear this site's storage when the device runs low on space (once per page).
+            // Chrome grants it quietly (a site on the home screen, or used a lot); Firefox asks once.
+            keepStorage() {
+                if (this._keepAsked) return;
+                this._keepAsked = true;
+                try {
+                    navigator.storage?.persisted?.().then(kept => kept || navigator.storage.persist()).catch(() => {});
+                } catch (_) { /* not supported */ }
             },
             async clear() {
                 clearTimeout(this._timer);
@@ -5296,6 +5338,9 @@
         if (WorkCopy.channel) {
             WorkCopy.channel.addEventListener('message', async (e) => {
                 const type = e.data?.type;
+                // Another SitkaTools tab starting up asks whether this device's session is open here
+                if (type === 'sitka-alive?') { if (WorkCopy.wrote) WorkCopy.channel.postMessage({ type: 'sitka-alive' }); return; }
+                if (type === 'sitka-alive') { RestoreCard.elsewhere(); return; }   // another tab restored it meanwhile
                 if ((type !== 'db-updated' && type !== 'save-request') || e.data.from === 'SitkaTools') return;
                 await takeToolCopy(toolDisplayName(e.data.from));
                 if (type !== 'save-request') return;
@@ -5304,35 +5349,125 @@
             });
         }
 
-        // Leaving with everything saved forgets the copy; unsaved work stays for the one-time recovery offer
+        // Leaving with everything saved forgets the copy; unsaved work stays to be offered back on the next start.
+        // A tab that never wrote the copy leaves it alone: it's still on the start screen (or on the restore question),
+        // or the session belongs to SitkaTools in another tab.
         window.addEventListener('pagehide', () => {
+            if (!WorkCopy.wrote) return;
             if (hasUnsavedChanges) WorkCopy.flush();
             else WorkCopy.clear();
             // The delete above may not finish while the page unloads; open tool tabs finish it for us
             if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-closing', unsaved: hasUnsavedChanges });
         });
 
-        async function checkWorkCopyOnStart() {
-            const copy = await WorkCopy.read();
-            if (!copy) return;
-            if (!copy.unsaved || !copy.db || Date.now() - (copy.at || 0) > WorkCopy.MAX_AGE || DB.data) {
-                if (!DB.data) await WorkCopy.clear();
-                return;
+        // Is SitkaTools open in another tab on this device with a database (it answers within `wait` ms)?
+        function otherSitkaOpen(wait = 400) {
+            const ch = WorkCopy.channel;
+            if (!ch) return Promise.resolve(false);
+            return new Promise(resolve => {
+                const done = (v) => { clearTimeout(timer); ch.removeEventListener('message', on); resolve(v); };
+                const on = (e) => { if (e.data?.type === 'sitka-alive') done(true); };
+                const timer = setTimeout(() => done(false), wait);
+                ch.addEventListener('message', on);
+                ch.postMessage({ type: 'sitka-alive?' });
+            });
+        }
+
+        // MM/DD and 24-hour HH:MM, local time
+        function sessionStamp(t) {
+            const d = new Date(t), p = v => String(v).padStart(2, '0');
+            return { date: `${p(d.getMonth() + 1)}/${p(d.getDate())}`, time: `${p(d.getHours())}:${p(d.getMinutes())}` };
+        }
+
+        // ⚠️ "Session closed without saving on MM/DD at HH:MM. Restore session?" — Restore / Discard. The time is when
+        // the copy was last written: the close itself, or (after a flat battery) the last change.
+        var RestoreCard = {
+            _resolve: null,
+            el: id => document.getElementById(id),
+            show(mode) {
+                const offer = mode === 'offer';
+                this.el('restoreBtn').classList.toggle('hidden', !offer);
+                this.el('restoreDiscardBtn').classList.toggle('hidden', !offer);
+                this.el('restoreOkBtn').classList.toggle('hidden', offer);
+                this.el('restoreOverlay').classList.remove('hidden');
+                (offer ? this.el('restoreBtn') : this.el('restoreOkBtn')).focus();
+            },
+            hide() { this.el('restoreOverlay').classList.add('hidden'); },
+            // Resolves 'restore' or 'discard' ('elsewhere' if another tab restores it first)
+            ask(copy) {
+                const { date, time } = sessionStamp(copy.at || Date.now());
+                this.stamp = `${date} at ${time}`;
+                this.el('restoreTitle').textContent = `Session closed without saving on ${date} at ${time}. Restore session?`;
+                this.el('restoreDesc').textContent = describeSession(copy);
+                this.show('offer');
+                return new Promise(resolve => { this._resolve = resolve; });
+            },
+            finish(choice) {
+                const resolve = this._resolve;
+                this._resolve = null;
+                if (resolve) resolve(choice);
+            },
+            // SitkaTools holds this device's session in another tab: say so instead of offering it
+            elsewhere(force = false) {
+                if (!force && !this._resolve) return;
+                this.el('restoreTitle').textContent = 'SitkaTools is already open in another tab';
+                this.el('restoreDesc').textContent = 'This device’s database is open there. Switch to that tab to keep working and save. ' +
+                    'Opening the files here too would make two copies that overwrite each other’s work.';
+                this.show('elsewhere');
+                this.finish('elsewhere');
             }
-            const when = new Date(copy.at).toLocaleString();
-            if (confirm(`Unsaved work from ${when} (${copy.fileName || 'database'}) was left open on this device.\n\n` +
-                `OK — recover it, then save it.\nCancel — discard it.`)) {
-                DB.data = copy.db;
-                DB.ensureStructure();
-                DB.fileName = copy.fileName || 'Recovered';
-                if (copy.split) DbSplit.importState(copy.split);
-                else DbSplit.reset();
-                hideOverlay();
-                markUnsaved();
-                refreshAllViews();
-                showSyncToast('Recovered unsaved work — save it when ready');
-            } else {
-                await WorkCopy.clear();
+        };
+        $('restoreBtn').addEventListener('click', () => { RestoreCard.hide(); RestoreCard.finish('restore'); });
+        $('restoreDiscardBtn').addEventListener('click', () => {
+            if (!confirm(`Discard the session from ${RestoreCard.stamp}? Its unsaved changes can't be brought back.`)) return;
+            RestoreCard.hide();
+            RestoreCard.finish('discard');
+        });
+        $('restoreOkBtn').addEventListener('click', () => RestoreCard.hide());
+
+        // "Building 6 · Main + 3 building files", or the single file's name; plus a note when the page's link names
+        // another device (restoring keeps the session's own device, whose files it saves)
+        function describeSession(copy) {
+            const db = copy.db || {};
+            if (!copy.split) return copy.fileName || 'Database';
+            const name = role => role === 'office' ? 'Office' : (db.buildings?.[role]?.name || role || 'No device');
+            const role = copy.split.role || null;
+            let text = `${name(role)} · ${copy.fileName || 'split files'}`;
+            const link = DbSplit.matchRole(new URLSearchParams(location.search).get('device')?.trim() || null, db.buildings);
+            if (link && role && link !== role) text += `. This page's link is for ${name(link)}; restoring keeps it as ${name(role)}.`;
+            return text;
+        }
+
+        function restoreWorkCopy(copy) {
+            DB.data = copy.db;
+            DB.ensureStructure();
+            DB.fileName = copy.fileName || 'Recovered';
+            if (copy.split) DbSplit.importState(copy.split);
+            else DbSplit.reset();
+            hideOverlay();
+            markUnsaved();
+            refreshAllViews();
+            DeviceView.apply();
+            updateIOStatusBar();
+            updateSplitCard();
+            if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-alive' });   // another tab still asking: it's here now
+            showSyncToast('Session restored — save it with 💾 Save DB when ready');
+        }
+
+        // On start: a copy left with unsaved work is offered back, however old. A saved one is forgotten. Nothing is
+        // offered (or deleted) while another SitkaTools tab on this device holds the session.
+        async function checkWorkCopyOnStart() {
+            try {
+                const copy = await WorkCopy.read();
+                if (!copy?.db) return;
+                if (await otherSitkaOpen()) { RestoreCard.elsewhere(true); return; }
+                if (DB.fileName || hasUnsavedChanges) return;   // a database was opened meanwhile
+                if (!copy.unsaved) { await WorkCopy.clear(); return; }
+                const choice = await RestoreCard.ask(copy);
+                if (choice === 'restore') restoreWorkCopy(copy);
+                else if (choice === 'discard') await WorkCopy.clear();
+            } finally {
+                WorkCopy.ready = true;
             }
         }
 
@@ -6635,7 +6770,7 @@
             hasUnsavedChanges = false;
             exportBtn.classList.remove('unsaved');
             updateFolderUi();
-            WorkCopy.schedule();
+            WorkCopy.flush();   // at once, so a save forgets the session even if the tab closes right after
             if (typeof SaveRequired !== 'undefined' && SaveRequired) SaveRequired.hide();
         }
 

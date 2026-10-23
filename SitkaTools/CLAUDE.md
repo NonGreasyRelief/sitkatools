@@ -75,7 +75,19 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 ## Shared Working Copy — Details
 
 - **"Save before you continue":** when a tool tab sends `save-request` and something is unsaved, SitkaTools covers the page below its header until the save happens (💾 Save DB stays reachable). "I can't save right now" closes it after a confirmation.
-- **Forgetting:** closing SitkaTools with everything saved deletes the copy, and open tool tabs finish the delete on the `sitka-closing` broadcast. Saved copies are removed on the next start.
+- **Forgetting:** closing SitkaTools with everything saved deletes the copy, and open tool tabs finish the delete on the `sitka-closing` broadcast. Saved copies are removed on the next start. `clearUnsaved()` writes the copy at once (not debounced), so a save is on record even if the tab closes right after.
+- **⚠️ Session closed without saving** (`checkWorkCopyOnStart`, `RestoreCard`): on start, a copy holding unsaved work is offered back however old, on a card over the start screen.
+  - The card has a yellow triangle with a black "!" (inline SVG, not the emoji, so it looks the same everywhere) and the text "Session closed without saving on MM/DD at HH:MM. Restore session?" (local time, 24-hour).
+  - The line under it shows the file name, or for split files the device and files ("Building 1 · Main + 2 building files"). If the page's `?device=` link names another device it adds "This page's link is for …; restoring keeps it as …": a restore keeps the session's own role, whose files it saves.
+  - The time is the copy's `at`: the close itself (`pagehide` writes it), or after a flat battery the last change.
+  - **Restore session:** the DB, file name and split bookkeeping (`DbSplit.importState`) come back, marked unsaved. A restored session saves with the save links (folder mode isn't reconnected).
+  - **Discard** asks first ("Discard the session from … ? Its unsaved changes can't be brought back."), then deletes the copy.
+  - Leaving without answering keeps the session for the next start.
+- **Nothing overwrites a session before it's answered:** `WorkCopy.flush()` waits until the start check is done (`WorkCopy.ready`), and `pagehide` touches the copy only in a tab that wrote it (`WorkCopy.wrote`).
+- **Another SitkaTools tab on the device** (a home-screen shortcut can open a second one): the start check asks `sitka-alive?` on the channel and waits 400 ms. A tab that has written the copy answers `sitka-alive`.
+  - With an answer, the new tab offers nothing and deletes nothing. Its card says "SitkaTools is already open in another tab", with only OK.
+  - When two tabs ask at once, restoring in one broadcasts `sitka-alive` and turns the other's card into that note.
+- **Storage kept:** after its first write, SitkaTools asks the browser to keep the site's storage (`navigator.storage.persist()`) so a full device doesn't clear it.
 
 ## On a Building Device
 

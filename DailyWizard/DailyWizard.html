@@ -1302,7 +1302,6 @@
         var WorkCopy = {
             TOOL: 'DailyWizard',
             LIVE: true,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
-            MAX_AGE: 12 * 60 * 60 * 1000,
             inUse: false,            // the DB in this tab came from the shared copy
             gotDb: false,            // SitkaTools delivered the DB by postMessage
             channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
@@ -1328,7 +1327,7 @@
                     });
                     idb.close();
                     const copy = row && row.value;
-                    return copy && copy.db && (Date.now() - copy.at) < this.MAX_AGE ? copy : null;
+                    return copy && copy.db ? copy : null;   // however old: SitkaTools keeps an unsaved session until it's saved or discarded
                 } catch (_) {
                     return null;
                 }

@@ -122,7 +122,9 @@ All tools are served from one site, so they share browser storage. SitkaTools mi
 - A tool with no opener (a tablet tab), or whose `sitkaGit_db` doesn't arrive within 1.5 s, loads the shared copy and shows **Go back to SitkaTools to save**. It feeds the DB to its own message handler as a synthetic, untrusted `message` event.
 - `notifySitkaTools()` also writes the shared copy when the tool uses it; SitkaTools takes it in like any tool update.
 - **Go back to SitkaTools to save:** writes the copy, broadcasts `save-request`, focuses the opener. SitkaTools covers itself with "Save before you continue" until the save happens.
-- The copy deletes itself when SitkaTools closes with everything saved. Nothing older than 12 hours is used, and unsaved work left behind is offered back once on the next start.
+- The copy deletes itself when SitkaTools closes with everything saved (a save marks it saved at once).
+- **⚠️ Session closed without saving:** unsaved work left behind (a flat battery, the browser closed) is kept however old it gets. The next SitkaTools start offers it back, "Session closed without saving on MM/DD at HH:MM. Restore session?", until someone restores or discards it. Restoring brings back the device and the split bookkeeping, so the device saves its own files with no reload. Details: `SitkaTools/CLAUDE.md` → "Shared Working Copy — Details".
+- Tools take the copy however old it is.
 - IndexedDB version is **3** everywhere (`folders`, `settings`, `work`); every copy of the open/upgrade code must match.
 
 ### Building Device View
@@ -257,5 +259,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

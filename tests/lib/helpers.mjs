@@ -72,13 +72,36 @@ export function makeChecker() {
     return { results, check };
 }
 
-// Close every window but one and blank it; return its context
+// Close every window but one and blank it; return its context. The shared working copy is deleted too, so a session
+// a test left unsaved isn't offered back ("Session closed without saving") to the next test.
 export async function fresh(b) {
     const ctxs = await b.contexts();
     for (const c of ctxs.slice(1)) await b.send('browsingContext.close', { context: c.context, promptUnload: false }).catch(() => {});
     await b.run(ctxs[0].context, 'window.onbeforeunload = null; if (typeof clearUnsaved === "function") clearUnsaved();').catch(() => {});
+    await forgetWorkCopy(b, ctxs[0].context);
     await b.navigate(ctxs[0].context, 'about:blank').catch(() => {});
     return ctxs[0].context;
+}
+
+// Delete the shared working copy (IndexedDB 'sitkatools' → 'work' → 'current') from a page of the site, and stop
+// that page writing it again as it's left. A page of another origin (about:blank) has none to delete.
+export async function forgetWorkCopy(b, ctx) {
+    await b.run(ctx, `
+        if (typeof WorkCopy !== 'undefined' && 'wrote' in WorkCopy) { WorkCopy.wrote = false; WorkCopy.ready = false; clearTimeout(WorkCopy._timer); }
+        await new Promise(res => {
+            try {
+                const r = indexedDB.open('sitkatools', 3);
+                r.onupgradeneeded = () => { for (const n of ['folders', 'settings', 'work']) if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n, { keyPath: 'key' }); };
+                r.onsuccess = () => {
+                    try {
+                        const tx = r.result.transaction('work', 'readwrite');
+                        tx.objectStore('work').delete('current');
+                        tx.oncomplete = tx.onerror = () => { r.result.close(); res(); };
+                    } catch (_) { r.result.close(); res(); }
+                };
+                r.onerror = () => res();
+            } catch (_) { res(); }
+        });`).catch(() => {});
 }
 
 // Let a page be left without the unsaved-changes prompt

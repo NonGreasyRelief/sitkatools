@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-22 · a session closed without saving stays in the browser however old (no 12-hour limit, tools included) and is offered back on every start ("Session closed without saving on MM/DD at HH:MM. Restore session?") until restored or discarded; a save forgets it. Building tablets stay on SitkaTools and reopen the files only when a lot arrives
 - 2026-10-17 · a Wages.json picked by itself in 📂 Load DB is added to the open split files instead of replacing them
 - 2026-10-17 · property cost (each building's monthly rent + fees) added as the sixth part of the cost per gram
 - 2026-10-16 · total cost per gram — light cycles set per room (18/6 and 12/12 by default); a power bill is split between crops by estimated usage; fertilizer products are linked to their mL questions in PaperWizard's Configure Sheets (paper form unchanged); prices, rates and bills live in Main.json
