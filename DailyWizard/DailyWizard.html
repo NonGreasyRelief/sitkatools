@@ -310,8 +310,9 @@
         .view-only-note .btn { min-height: 44px; }
 
         /* ---- Add Task bar (single-building mode) ---- */
-        .add-task-bar { margin-bottom: 14px; }
+        .add-task-bar { margin-bottom: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
         .add-task-bar .btn { min-height: 48px; }
+        .edit-mode-note { color: var(--accent); font-size: 0.9rem; font-weight: 600; }
 
         /* ---- Muted inline note (empty day lines) ---- */
         .muted-line {
@@ -977,7 +978,7 @@
         // =====================================================
         // DailyWizard — Daily task list builder & floor view
         // Database Keys: "_DailyWizard" (read/write — task lists, chore hours, ticks and ⏲ timers), "calendarEvents" (read-only),
-        //                "_EmployeeWizard.employees" (read-only — roster names for the hours log)
+        //                "_EmployeeWizard.employees" (read-only — roster names for the hours log, floor managers and their PIN hashes)
         // 🌐 Language picker: the screen in English, French, Spanish, Vietnamese or Chinese, plus translated task
         //    names and steps (task.translations / step.translations — English stays the master)
         // Stage 3: + task editor (add/edit) and full embedded emoji picker
@@ -1831,7 +1832,7 @@
 
             row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
 
-            if (allowMove && canEditBuilding(buildingId)) {
+            if (allowMove && canEditTasks(buildingId)) {
                 const moveBtns = document.createElement('div');
                 moveBtns.className = 'move-btns';
                 const up = document.createElement('button');
@@ -1969,7 +1970,8 @@
         // Swaps the two tasks by code: the row shown next to it may not be its neighbour in the
         // full list when some tasks don't run on the selected date.
         function moveTask(buildingId, code, otherCode) {
-            if (!canEditBuilding(buildingId)) return;
+            if (!canEditTasks(buildingId)) return;
+            EditMode.touch();
             const tasks = DB.dailyBuildings[buildingId]?.tasks;
             if (!tasks) return;
             const i = tasks.findIndex(t => t.code === code);
@@ -2254,7 +2256,8 @@
         }
 
         function openTaskEditor(buildingId, code) {
-            if (!canEditBuilding(buildingId)) return;   // another building's list: view only
+            if (!canEditTasks(buildingId)) return;   // another building's list, or editing not unlocked
+            EditMode.touch();
             editorBuildingId = buildingId;
             editorTaskCode = code || null;
             const task = editorTaskCode
@@ -2334,6 +2337,8 @@
         }
 
         function saveTaskFromEditor() {
+            if (!editorBuildingId || !canEditBuilding(editorBuildingId) || !EditMode.by) { closeTaskEditor(); return; }
+            EditMode.touch();
             const name = $('taskNameInput').value.trim();
             const minutes = parseInt($('taskMinutesInput').value, 10);
             const staff = parseInt($('taskStaffInput').value, 10);
@@ -2635,13 +2640,16 @@
             rec.textContent = `🔁 ${describeRecurrence(task) || T('Never')}`;
             sum.appendChild(rec);
 
-            // Another building's task on a building device: steps, pictures and videos to look at, nothing to change
+            // Another building's task on a building device: steps, pictures and videos to look at, nothing to change.
+            // This building's task: changed only in edit mode (✏️ Edit tasks, floor manager PIN).
             const viewOnly = !canEditBuilding(detailBuildingId);
-            for (const id of ['editTaskBtn', 'deleteTaskBtn']) $(id).style.display = viewOnly ? 'none' : '';
-            if (viewOnly) {
+            const locked = !viewOnly && !EditMode.on();
+            for (const id of ['editTaskBtn', 'deleteTaskBtn']) $(id).style.display = viewOnly || locked ? 'none' : '';
+            if (viewOnly || locked) {
                 const note = document.createElement('div');
                 note.className = 'summary-line';
-                note.textContent = T('👀 View only — {building}’s task', { building: DB.buildings[detailBuildingId]?.name || detailBuildingId });
+                note.textContent = viewOnly ? T('👀 View only — {building}’s task', { building: DB.buildings[detailBuildingId]?.name || detailBuildingId })
+                    : T('🔒 To change this task, tap ✏️ Edit tasks on the list (floor manager PIN)');
                 sum.appendChild(note);
             }
 
@@ -2665,7 +2673,7 @@
             top.appendChild(num);
 
             const shown = stepText(steps[index]);
-            const viewOnly = !canEditBuilding(detailBuildingId);
+            const viewOnly = !canEditTasks(detailBuildingId);   // another building's, or editing not unlocked
             const text = document.createElement('span');
             if (shown) {
                 text.className = 'step-text';
@@ -2709,7 +2717,8 @@
 
         // Tap-to-edit: swap the text span for an input; commit on Enter/blur, discard on Escape.
         function beginStepEdit(rowEl, task, index) {
-            if (!canEditBuilding(detailBuildingId) || rowEl.querySelector('.step-text-input')) return;
+            if (!canEditTasks(detailBuildingId) || rowEl.querySelector('.step-text-input')) return;
+            EditMode.touch();
             const textEl = rowEl.querySelector('.step-text');
             if (!textEl) return;
 
@@ -2766,7 +2775,7 @@
             list.innerHTML = '';
             const steps = task.steps || [];
             steps.forEach((s, i) => list.appendChild(makeStepRow(task, i)));
-            if (!canEditBuilding(detailBuildingId)) {   // another building's task: nothing to add
+            if (!canEditTasks(detailBuildingId)) {   // another building's task, or editing not unlocked: nothing to add
                 if (!steps.length) list.appendChild(mutedLine(T('No steps yet.')));
                 return;
             }
@@ -2781,6 +2790,8 @@
             addBtn.disabled = LANG !== 'en';
             const bid = detailBuildingId, code = task.code;
             addBtn.addEventListener('click', () => {
+                if (!canEditTasks(bid)) { renderDetail(); return; }
+                EditMode.touch();
                 const cur = findStepTask(bid, code);
                 if (!cur) { renderDetail(); return; } // task gone (changed elsewhere) — the view closes
                 cur.steps = cur.steps || [];
@@ -2803,7 +2814,8 @@
         }
 
         function moveStep(bid, code, index, dir) {
-            if (!canEditBuilding(bid)) return;
+            if (!canEditTasks(bid)) return;
+            EditMode.touch();
             const steps = findStepTask(bid, code)?.steps || [];
             const j = index + dir;
             if (index >= steps.length || j < 0 || j >= steps.length) { renderDetail(); return; }
@@ -2813,7 +2825,8 @@
         }
 
         function deleteStep(bid, code, index) {
-            if (!canEditBuilding(bid)) return;
+            if (!canEditTasks(bid)) return;
+            EditMode.touch();
             const task = findStepTask(bid, code);
             if (!task?.steps?.[index]) { renderDetail(); return; } // task or step gone (changed elsewhere)
             task.steps.splice(index, 1);
@@ -2847,19 +2860,251 @@
             });
         }
 
-        function deleteCurrentTask() {
+        // Deleting a whole task asks for a floor manager's PIN again (it's a deletion, even in edit mode). The task
+        // goes on record in the building's adjustments; its logged hours stay where they are.
+        async function deleteCurrentTask() {
             const task = getDetailTask();
-            if (!task || !canEditBuilding(detailBuildingId)) return;
-            if (!confirm(T('Delete task "{name}" ({code})?\nThis removes it from _DailyWizard.', { name: taskName(task), code: task.code }))) return;
-            const tasks = DB.dailyBuildings[detailBuildingId]?.tasks || [];
-            const i = tasks.findIndex(t => t.code === detailTaskCode);
-            if (i !== -1) tasks.splice(i, 1);
+            if (!task || !canEditTasks(detailBuildingId)) return;
+            const bid = detailBuildingId, code = task.code;
+            const ok = await FloorPin.ask(T('Delete the task "{name}" ({code})', { name: taskName(task), code }));
+            if (!ok) return;
+            const tasks = DB.dailyBuildings[bid]?.tasks || [];
+            const i = tasks.findIndex(t => t.code === code);
+            if (i === -1) { renderAll(); return; }   // gone meanwhile
+            tasks.splice(i, 1);
+            const b = DB.dailyBuildings[bid];
+            (b.adjustments || (b.adjustments = [])).push({
+                at: new Date().toISOString(), by: DeviceView.building || 'office', date: todayStr(), code, deletedTask: task, approvedBy: ok.name
+            });
+            EditMode.touch();
             for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (isTaskMediaKey(k, task.code)) delete cache[k];
             notifySitkaTools(); // definition mutation → sync
             closeTaskDetail();
             renderAll();
             showToast(T('Task deleted'));
         }
+
+        // ---- 🔒 Floor manager PINs (user decision 2026-10-22) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
+        // Each floor manager (_EmployeeWizard.employees[name].floorManager) has their own PIN, set by the office in the
+        // Labour & Cost Wizard's employee editor and kept in Main.json only as a salted SHA-256 hash:
+        //   employees[name].pin = { salt, hash, setAt }
+        // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
+        // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
+        // developer tools: the drawn initials and the removal records are the real control.
+        var FloorPin = {
+            WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
+            WAIT_MS: 60 * 1000,
+            _fails: 0,
+            _waitUntil: 0,
+            _el: null,
+            _done: null,
+            tr(s, v) {
+                if (typeof T === 'function') return T(s, v);
+                return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
+            },
+            // Floor managers who have a PIN, by name
+            managers() {
+                const emps = (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {};
+                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.pin?.hash && emps[n]?.pin?.salt)
+                    .sort((a, b) => a.localeCompare(b));
+            },
+            // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
+            async hash(salt, pin) {
+                const text = `${salt}:${pin}`;
+                try {
+                    if (window.crypto?.subtle) {
+                        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+                        return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+                    }
+                } catch (_) { /* fall back */ }
+                return this.sha256(text);
+            },
+            sha256(text) {
+                const K = [], H = [];
+                const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
+                for (let n = 2, c = 0; c < 64; n++) {
+                    let prime = true;
+                    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+                    if (!prime) continue;
+                    if (c < 8) H[c] = frac(Math.sqrt(n));
+                    K[c++] = frac(Math.cbrt(n));
+                }
+                const bytes = Array.from(new TextEncoder().encode(text));
+                const bits = bytes.length * 8;
+                bytes.push(0x80);
+                while (bytes.length % 64 !== 56) bytes.push(0);
+                for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
+                const rot = (x, r) => (x >>> r) | (x << (32 - r));
+                const w = new Array(64);
+                for (let o = 0; o < bytes.length; o += 64) {
+                    for (let j = 0; j < 16; j++) w[j] = (bytes[o + 4 * j] << 24) | (bytes[o + 4 * j + 1] << 16) | (bytes[o + 4 * j + 2] << 8) | bytes[o + 4 * j + 3];
+                    for (let j = 16; j < 64; j++) {
+                        const s0 = rot(w[j - 15], 7) ^ rot(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+                        const s1 = rot(w[j - 2], 17) ^ rot(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+                        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+                    }
+                    let [a, b, c, d, e, f, g, h] = H;
+                    for (let j = 0; j < 64; j++) {
+                        const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[j] + w[j]) | 0;
+                        const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+                        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+                    }
+                    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
+                }
+                return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+            },
+            // A new PIN's record (4–8 digits; the caller checks the format)
+            async make(pin) {
+                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                return { salt, hash: await this.hash(salt, pin) };
+            },
+            async check(name, pin) {
+                const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
+                return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
+            },
+            // Ask a floor manager for their PIN. Resolves { name } once it's right, or null (cancelled).
+            ask(why) {
+                if (this._done) this._finish(null);
+                this._build();
+                const el = this._el, names = this.managers();
+                const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
+                // The words are set on every ask, so they follow DailyWizard's language
+                el.querySelector('.fpin-title').textContent = this.tr('🔒 Floor manager PIN');
+                el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
+                el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
+                el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
+                el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
+                el.querySelector('[data-fpin-why]').textContent = why || '';
+                el.querySelector('[data-fpin-err]').textContent = '';
+                const none = !names.length;
+                el.querySelector('[data-fpin-none]').hidden = !none;
+                el.querySelector('[data-fpin-fields]').hidden = none;
+                el.querySelector('[data-fpin-ok]').hidden = none;
+                el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
+                who.innerHTML = '';
+                if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
+                for (const n of names) who.appendChild(new Option(n, n));
+                pin.value = '';
+                el.hidden = false;
+                (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                return new Promise(resolve => { this._done = resolve; });
+            },
+            _finish(result) {
+                const done = this._done;
+                this._done = null;
+                if (this._el) this._el.hidden = true;
+                if (done) done(result);
+            },
+            async _submit() {
+                const el = this._el, err = el.querySelector('[data-fpin-err]');
+                const name = el.querySelector('[data-fpin-who]').value, pinEl = el.querySelector('[data-fpin-pin]');
+                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                if (!name) { err.textContent = this.tr('Pick your name'); return; }
+                if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
+                if (await this.check(name, pinEl.value)) {
+                    this._fails = 0;
+                    this._finish({ name });
+                    return;
+                }
+                pinEl.value = '';
+                pinEl.focus();
+                if (++this._fails >= this.WAIT_AFTER) {
+                    this._fails = 0;
+                    this._waitUntil = Date.now() + this.WAIT_MS;
+                    err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again');
+                } else err.textContent = this.tr('Wrong PIN — try again');
+            },
+            _build() {
+                if (this._el) return;
+                const css = document.createElement('style');
+                css.textContent = `
+                    .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+                    .fpin[hidden] { display: none; }
+                    .fpin-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+                    .fpin-title { font-size: 1.1rem; font-weight: 700; }
+                    .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
+                    .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
+                    .fpin-fields[hidden], .fpin-none[hidden], .fpin button[hidden] { display: none; }
+                    .fpin label { font-size: 0.8rem; color: var(--text-secondary); }
+                    .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+                    .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
+                    .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
+                    .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
+                    .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+                    .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
+                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }`;
+                document.head.appendChild(css);
+                const el = document.createElement('div');
+                el.className = 'fpin';
+                el.id = 'floorPin';
+                el.hidden = true;
+                el.setAttribute('role', 'dialog');
+                el.setAttribute('aria-modal', 'true');
+                el.innerHTML = `
+                    <div class="fpin-card">
+                        <div class="fpin-title"></div>
+                        <div class="fpin-why" data-fpin-why></div>
+                        <div class="fpin-none" data-fpin-none></div>
+                        <div class="fpin-fields" data-fpin-fields>
+                            <label for="floorPinWho"></label>
+                            <select id="floorPinWho" data-fpin-who></select>
+                            <label for="floorPinInput"></label>
+                            <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
+                        </div>
+                        <div class="fpin-err" data-fpin-err role="alert"></div>
+                        <div class="fpin-actions">
+                            <button type="button" class="fpin-cancel" data-fpin-cancel></button>
+                            <button type="button" class="fpin-ok" data-fpin-ok></button>
+                        </div>
+                    </div>`;
+                el.querySelector('[data-fpin-ok]').addEventListener('click', () => this._submit());
+                el.querySelector('[data-fpin-cancel]').addEventListener('click', () => this._finish(null));
+                el.querySelector('[data-fpin-pin]').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
+                });
+                el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
+                document.body.appendChild(el);
+                this._el = el;
+            }
+        };
+
+        // ---- ✏️ Edit mode: changing the daily task lists needs a floor manager's PIN (user decision 2026-10-22) ----
+        // Adding, editing, reordering and deleting tasks, and their steps and translations, happen only in edit mode,
+        // which a floor manager unlocks with their PIN (✏️ Edit tasks). Deleting a whole task asks for a PIN again. It
+        // ends with ✅ Done editing, or after 10 minutes without an edit (never while the task editor or a step is open).
+        // It lasts for this window only and is never stored.
+        const EDIT_IDLE_MS = 10 * 60 * 1000;
+        var EditMode = {
+            by: null,
+            last: 0,
+            on() { return !!this.by && Date.now() - this.last < EDIT_IDLE_MS; },
+            touch() { if (this.by) this.last = Date.now(); },
+            async start() {
+                if (this.on()) return;
+                const ok = await FloorPin.ask(T('Unlock editing of the daily tasks'));
+                if (!ok) return;
+                this.by = ok.name;
+                this.touch();
+                renderAll();
+                if (detailTaskCode) renderDetail();
+                showToast(T('✏️ Editing as {name} — ✅ Done editing locks it again', { name: ok.name }));
+            },
+            end(idle = false) {
+                if (!this.by) return;
+                this.by = null;
+                renderAll();
+                if (detailTaskCode) renderDetail();
+                showToast(idle ? T('🔒 Editing locked after 10 minutes without changes') : T('🔒 Editing locked'));
+            },
+            // Every 15 s: lock again once idle, unless something is still being edited
+            tick() {
+                if (!this.by || this.on()) return;
+                const busy = $('editorOverlay').classList.contains('open') || !!document.querySelector('#stepsList .step-text-input');
+                if (busy) this.touch(); else this.end(true);
+            }
+        };
+        // The device may change this building (canEditBuilding) and a floor manager has unlocked editing
+        function canEditTasks(bid) { return canEditBuilding(bid) && EditMode.on(); }
 
         // ---- ⏱ Hours on chores and on crop / equipment tasks (ROADMAP Phase 1 "Labour in DailyWizard") ----
         // Staff log who worked on a row, for how long, and sign it with drawn initials, on the day.
@@ -2909,8 +3154,9 @@
             if (!(labour[ctx.date][ctx.code] || []).length) delete labour[ctx.date][ctx.code];
             if (!Object.keys(labour[ctx.date]).length) delete labour[ctx.date];
         }
-        // Office removals on record for this row and day
-        const ctxRemoved = ctx => (DB.dailyBuildings[ctx.buildingId]?.adjustments || [])
+        // Removals on record for this row and day: in the building's adjustments, plus (crop and equipment tasks) the
+        // office's in _DailyWizard.adjustments
+        const ctxRemoved = ctx => [...(DB.dailyBuildings[ctx.buildingId]?.adjustments || []), ...(ctx.kind === 'event' ? DB.data?._DailyWizard?.adjustments || [] : [])]
             .filter(a => a.entry && a.date === ctx.date && (ctx.kind === 'event' ? a.eventId === ctx.eventId : a.code === ctx.code));
         const liveHours = list => list.filter(e => e && !e.removedAt).reduce((s, e) => s + (Number(e.hours) || 0), 0);
         function fmtHoursShort(h) { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return hh ? (mm ? T('{h}h {m}m', { h: hh, m: mm }) : T('{h}h', { h: hh })) : T('{m}m', { m: mm }); }
@@ -2920,9 +3166,8 @@
             return 'le_' + Array.from(bytes, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
         }
         function rosterNames() { return Object.keys(DB.data?._EmployeeWizard?.employees || {}).sort((a, b) => a.localeCompare(b)); }
-        const loggedToday = e => !!e?.at && dateToStr(new Date(e.at)) === todayStr();
-        // Office: any entry. Building device: an entry it logged itself, today.
-        const canRemoveEntry = e => !e.removedAt && (!DeviceView.building || (loggedToday(e) && (!e.by || e.by === DeviceView.building)));
+        // Any live entry, anyone's, any day, in a building this device may change — with a floor manager's PIN (removeHours)
+        const canRemoveEntry = e => !e.removedAt;
 
         function makeHoursButton(ctx) {
             const h = liveHours(ctxEntries(ctx));
@@ -2993,9 +3238,7 @@
             removed.forEach(a => list.appendChild(makeHoursEntry(a.entry || {}, -1, a)));
             const total = liveHours(entries);
             $('hoursTotal').textContent = total > 0 ? T('Total {h}', { h: fmtHoursShort(total) }) + (est ? T(' · estimate {h}', { h: fmtHoursShort(est.staff * est.minutes / 60) }) : '') : '';
-            $('hoursNote').textContent = DeviceView.building
-                ? T('You can remove an entry on the day you logged it. After that, ask the office.')
-                : T('Office: an entry removed after its day is kept on record.');
+            $('hoursNote').textContent = T('Removing an entry needs a floor manager’s PIN. Removed entries stay on record.');
             renderHourTimers();   // keeps the timer picked
         }
 
@@ -3026,7 +3269,8 @@
             const parts = [e.at ? T('Logged {when}', { when: stamp(e.at) }) : T('Entered in the Labour & Cost Wizard')];
             if (e.editedAt) parts.push(T('signed for {h}, changed in the Labour & Cost Wizard {when}', { h: fmtHoursShort(Number(e.signedHours) || 0), when: stamp(e.editedAt) }));
             const gone = removal?.at || e.removedAt;
-            if (gone) parts.push(T('removed by the office {when}', { when: stamp(gone) }));
+            if (gone) parts.push(removal?.approvedBy ? T('removed {when}, approved by {name}', { when: stamp(gone), name: removal.approvedBy })
+                : T('removed by the office {when}', { when: stamp(gone) }));
             when.textContent = parts.join(' · ');
             row.appendChild(when);
             return row;
@@ -3142,30 +3386,37 @@
             showToast(T('Logged {h} for {name}', { h: fmtHoursShort(hours), name }));
         }
 
-        function removeHours(index) {
+        // Removing an entry needs a floor manager's PIN, on every device (user decision 2026-10-22). It's always kept on
+        // record in the building's adjustments (its own file) with who approved it, so the hours stay clean for every
+        // tool that reads them and the removal still shows in the hours view and the Labour Log.
+        async function removeHours(index) {
             if (!hoursCtx) return;
             const ctx = hoursCtx;
+            const e = ctxEntries(ctx)[index];
+            if (!e || !canRemoveEntry(e) || !canEditBuilding(ctx.buildingId)) return;
+            const ok = await FloorPin.ask(T('Remove {h} logged by {name} on {date}', { h: fmtHoursShort(Number(e.hours) || 0), name: e.employee || e.temp || '?', date: shortDate(ctx.date) }));
+            if (!ok || hoursCtx !== ctx) return;
+            // The list may have been redrawn from a live update meanwhile: find the entry again by its id
             const list = ctxEntries(ctx);
-            const e = list[index];
-            if (!e || !canRemoveEntry(e)) return;
-            if (!confirm(T('Remove {h} logged by {name}?', { h: fmtHoursShort(Number(e.hours) || 0), name: e.employee || e.temp }))) return;
-            const sameDay = loggedToday(e);
-            list.splice(index, 1);
-            if (!sameDay) {
-                // A later office correction stays on record (with the building, in its own file)
-                const buildings = DB.ensureStructure()._DailyWizard.buildings;
-                const b = buildings[ctx.buildingId] || (buildings[ctx.buildingId] = { tasks: [] });
-                (b.adjustments || (b.adjustments = [])).push({
-                    at: new Date().toISOString(), by: DeviceView.building || 'office', date: ctx.date,
-                    ...(ctx.kind === 'event' ? { eventId: ctx.eventId, title: ctxEvent(ctx)?.title || '' } : { code: ctx.code }),
-                    entry: e
-                });
-            }
+            const at = e.id ? list.findIndex(x => x?.id === e.id) : list.indexOf(e);
+            if (at === -1) { renderHours(); return; }
+            const [removed] = list.splice(at, 1);
+            // The record goes in the file the removal is saved in: a building device's own file; for the office, a
+            // chore's building (chore hours live there) or, for a crop / equipment task, Main.json — the task's hours
+            // merge through Main, and a building tablet saving later would overwrite a record put in its file.
+            const daily = DB.ensureStructure()._DailyWizard;
+            const inMain = !DeviceView.building && ctx.kind === 'event';
+            const b = inMain ? daily : daily.buildings[ctx.buildingId] || (daily.buildings[ctx.buildingId] = { tasks: [] });
+            (b.adjustments || (b.adjustments = [])).push({
+                at: new Date().toISOString(), by: DeviceView.building || 'office', date: ctx.date,
+                ...(ctx.kind === 'event' ? { eventId: ctx.eventId, title: ctxEvent(ctx)?.title || '' } : { code: ctx.code }),
+                entry: removed, approvedBy: ok.name
+            });
             ctxTidy(ctx);
             notifySitkaTools();
             renderHours();
             renderAll();
-            showToast(sameDay ? T('Entry removed') : T('Entry removed — kept on record as an office adjustment'));
+            showToast(T('Entry removed — kept on record'));
         }
 
         // ---- ⏲ Timers — four pausable stopwatches on every row that takes hours (user decision 2026-10-22) ----
@@ -3551,15 +3802,30 @@
                 // A building device looking at another building
                 container.appendChild(viewOnlyNote(T('👀 Viewing {building} — view only', { building: b?.name || buildingId })));
             } else {
-                // + Add Task bar (single-building mode only)
+                // ✏️ Edit tasks (floor manager PIN) → + Add Task and ✅ Done editing (single-building mode only)
                 const addBar = document.createElement('div');
                 addBar.className = 'add-task-bar';
-                const addBtn = document.createElement('button');
-                addBtn.type = 'button';
-                addBtn.className = 'btn btn-primary';
-                addBtn.textContent = T('+ Add Task');
-                addBtn.addEventListener('click', () => openTaskEditor(buildingId));
-                addBar.appendChild(addBtn);
+                const mk = (cls, text, fn) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'btn ' + cls;
+                    btn.textContent = text;
+                    btn.addEventListener('click', fn);
+                    addBar.appendChild(btn);
+                    return btn;
+                };
+                if (EditMode.on()) {
+                    mk('btn-primary', T('+ Add Task'), () => openTaskEditor(buildingId)).id = 'addTaskBtn';
+                    mk('btn-secondary', T('✅ Done editing'), () => EditMode.end()).id = 'doneEditingBtn';
+                    const who = document.createElement('span');
+                    who.className = 'edit-mode-note';
+                    who.textContent = T('✏️ Editing as {name}', { name: EditMode.by });
+                    addBar.appendChild(who);
+                } else {
+                    const edit = mk('btn-secondary', T('✏️ Edit tasks'), () => EditMode.start());
+                    edit.id = 'editTasksBtn';
+                    edit.title = T('Adding or changing tasks needs a floor manager’s PIN');
+                }
                 container.appendChild(addBar);
             }
 
@@ -3900,6 +4166,30 @@
             "this task": { fr: "cette tâche", es: "esta tarea", vi: "công việc này", zh: "此任务" },
             "Reopened": { fr: "Rouvert", es: "Reabierto", vi: "Đã mở lại", zh: "已重新打开" },
             "Reopened — the sign-off is kept on record as an office adjustment": { fr: "Rouvert — l’approbation reste au dossier comme correction du bureau", es: "Reabierto — la aprobación queda archivada como ajuste de la oficina", vi: "Đã mở lại — xác nhận vẫn lưu hồ sơ như một điều chỉnh của văn phòng", zh: "已重新打开 — 签字作为办公室调整留档" },
+            // 🔒 Floor manager PIN and ✏️ edit mode
+            "🔒 Floor manager PIN": { fr: "🔒 NIP du superviseur", es: "🔒 PIN del supervisor", vi: "🔒 Mã PIN của tổ trưởng", zh: "🔒 现场主管 PIN" },
+            "No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.": { fr: "Aucun superviseur n’a encore de NIP. Le bureau les définit dans le Labour & Cost Wizard : Employés → cocher Superviseur → NIP.", es: "Ningún supervisor tiene PIN todavía. La oficina los define en el Labour & Cost Wizard: Empleados → marcar Supervisor → PIN.", vi: "Chưa tổ trưởng nào có mã PIN. Văn phòng đặt mã trong Labour & Cost Wizard: Nhân viên → chọn Tổ trưởng → PIN.", zh: "还没有现场主管设置 PIN。办公室在 Labour & Cost Wizard 中设置：员工 → 勾选现场主管 → PIN。" },
+            "PIN": { fr: "NIP", es: "PIN", vi: "Mã PIN", zh: "PIN" },
+            "OK": { fr: "OK", es: "Aceptar", vi: "OK", zh: "确定" },
+            "Close": { fr: "Fermer", es: "Cerrar", vi: "Đóng", zh: "关闭" },
+            "Pick your name": { fr: "Choisissez votre nom", es: "Elija su nombre", vi: "Chọn tên của bạn", zh: "请选择您的名字" },
+            "Enter your PIN": { fr: "Entrez votre NIP", es: "Escriba su PIN", vi: "Nhập mã PIN", zh: "请输入 PIN" },
+            "Wrong PIN — try again": { fr: "NIP incorrect — réessayez", es: "PIN incorrecto — inténtelo de nuevo", vi: "Sai mã PIN — thử lại", zh: "PIN 错误 — 请重试" },
+            "Too many wrong PINs — wait a minute, then try again": { fr: "Trop de NIP incorrects — attendez une minute, puis réessayez", es: "Demasiados PIN incorrectos — espere un minuto y vuelva a intentarlo", vi: "Sai mã PIN quá nhiều lần — đợi một phút rồi thử lại", zh: "PIN 错误次数过多 — 请等待一分钟后再试" },
+            "Unlock editing of the daily tasks": { fr: "Déverrouiller la modification des tâches quotidiennes", es: "Desbloquear la edición de las tareas diarias", vi: "Mở khóa chỉnh sửa công việc hằng ngày", zh: "解锁每日任务的编辑" },
+            "✏️ Editing as {name} — ✅ Done editing locks it again": { fr: "✏️ Modification par {name} — ✅ Terminer la modification verrouille à nouveau", es: "✏️ Editando como {name} — ✅ Terminar edición lo bloquea de nuevo", vi: "✏️ Đang chỉnh sửa: {name} — ✅ Xong chỉnh sửa sẽ khóa lại", zh: "✏️ {name} 正在编辑 — ✅ 完成编辑后重新锁定" },
+            "🔒 Editing locked after 10 minutes without changes": { fr: "🔒 Modification verrouillée après 10 minutes sans changement", es: "🔒 Edición bloqueada tras 10 minutos sin cambios", vi: "🔒 Đã khóa chỉnh sửa sau 10 phút không thay đổi", zh: "🔒 10 分钟无改动，编辑已锁定" },
+            "🔒 Editing locked": { fr: "🔒 Modification verrouillée", es: "🔒 Edición bloqueada", vi: "🔒 Đã khóa chỉnh sửa", zh: "🔒 编辑已锁定" },
+            "✏️ Edit tasks": { fr: "✏️ Modifier les tâches", es: "✏️ Editar tareas", vi: "✏️ Sửa công việc", zh: "✏️ 编辑任务" },
+            "✅ Done editing": { fr: "✅ Terminer la modification", es: "✅ Terminar edición", vi: "✅ Xong chỉnh sửa", zh: "✅ 完成编辑" },
+            "✏️ Editing as {name}": { fr: "✏️ Modification par {name}", es: "✏️ Editando como {name}", vi: "✏️ Đang chỉnh sửa: {name}", zh: "✏️ {name} 正在编辑" },
+            "Adding or changing tasks needs a floor manager’s PIN": { fr: "Ajouter ou modifier des tâches demande le NIP d’un superviseur", es: "Añadir o cambiar tareas requiere el PIN de un supervisor", vi: "Thêm hoặc sửa công việc cần mã PIN của tổ trưởng", zh: "添加或更改任务需要现场主管的 PIN" },
+            "🔒 To change this task, tap ✏️ Edit tasks on the list (floor manager PIN)": { fr: "🔒 Pour modifier cette tâche, touchez ✏️ Modifier les tâches dans la liste (NIP du superviseur)", es: "🔒 Para cambiar esta tarea, toque ✏️ Editar tareas en la lista (PIN del supervisor)", vi: "🔒 Để sửa công việc này, chạm ✏️ Sửa công việc trong danh sách (mã PIN tổ trưởng)", zh: "🔒 要更改此任务，请在列表中轻触 ✏️ 编辑任务（现场主管 PIN）" },
+            "Delete the task \"{name}\" ({code})": { fr: "Supprimer la tâche « {name} » ({code})", es: "Eliminar la tarea «{name}» ({code})", vi: "Xóa công việc \"{name}\" ({code})", zh: "删除任务“{name}”（{code}）" },
+            "Remove {h} logged by {name} on {date}": { fr: "Retirer {h} enregistré(es) par {name} le {date}", es: "Quitar {h} registradas por {name} el {date}", vi: "Xóa {h} do {name} ghi ngày {date}", zh: "删除 {name} 在 {date} 记录的 {h}" },
+            "Entry removed — kept on record": { fr: "Entrée retirée — gardée au dossier", es: "Registro quitado — queda archivado", vi: "Đã xóa mục — vẫn lưu hồ sơ", zh: "已删除记录 — 已留档" },
+            "removed {when}, approved by {name}": { fr: "retiré le {when}, approuvé par {name}", es: "quitado el {when}, aprobado por {name}", vi: "đã xóa {when}, do {name} duyệt", zh: "{when} 删除，由 {name} 批准" },
+            "Removing an entry needs a floor manager’s PIN. Removed entries stay on record.": { fr: "Retirer une entrée demande le NIP d’un superviseur. Les entrées retirées restent au dossier.", es: "Quitar un registro requiere el PIN de un supervisor. Los registros quitados quedan archivados.", vi: "Xóa một mục cần mã PIN của tổ trưởng. Mục đã xóa vẫn được lưu hồ sơ.", zh: "删除记录需要现场主管的 PIN。已删除的记录会留档。" },
             // ⏲ Timers
             "Timer {n}": { fr: "Chrono {n}", es: "Cronómetro {n}", vi: "Đồng hồ {n}", zh: "计时器 {n}" },
             "Timer {n} ({label})": { fr: "Chrono {n} ({label})", es: "Cronómetro {n} ({label})", vi: "Đồng hồ {n} ({label})", zh: "计时器 {n}（{label}）" },
@@ -3996,6 +4286,7 @@
                 else if (e.key === 'Escape') closeTimerDialog();
             });
             setInterval(tickTimers, 1000);
+            setInterval(() => EditMode.tick(), 15000);   // ✏️ edit mode locks again after 10 minutes without an edit
 
             // ✅ Mark done
             wirePad('donePad');

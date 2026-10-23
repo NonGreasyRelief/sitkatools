@@ -2,7 +2,7 @@
 
 Per-building **daily chore lists** plus that day's calendar events, as a tablet floor view. CropLabourWizard covers the big crop jobs; DailyWizard covers the small daily ones (watering, mixing fertilizer, scouting rooms, stocking paper towels, uniforms, glove holders…).
 
-- **Planning (manager):** pick a building; add, edit and reorder its daily tasks and write their steps.
+- **Planning (floor manager):** pick a building, unlock ✏️ edit mode with their PIN, then add, edit and reorder its daily tasks and write their steps ("🔒 Edit Mode and Floor Manager PINs").
 - **Floor (staff, tablet):** open it from SitkaTools (a tab), pick the building or All Buildings, and work down the list.
 - For any date (default today) it shows the building's tasks for that day, then that building's calendar events for the day (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent).
 - Ticks save per day ("Check-offs — Saved Per Day"); four **⏲ timers** on every row time the work ("⏲ Timers"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
@@ -11,7 +11,7 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 
 - **`_DailyWizard`:** only DailyWizard writes it (task lists, chore hours, check-offs, timers, adjustments). EmployeeWizard's Reports and Labour Log read the chore hours.
 - **Calendar events:** never created, edited, moved or deleted, and nothing is appended. On a crop or equipment event it writes only the floor fields `labour_map` ("⏱ Hours") and `completed` / `completedBy` ("✅ Mark done").
-- **Reads:** events' `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, `estStaff` / `estMinutes`; `rooms`, `buildings`, `lots` (attribution); `_EmployeeWizard.employees` (names for hours, `floorManager` for Mark done).
+- **Reads:** events' `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, `estStaff` / `estMinutes`; `rooms`, `buildings`, `lots` (attribution); `_EmployeeWizard.employees` (names for hours, `floorManager` for Mark done, `pin` for edit mode and deletions).
 - No network calls (🗣️ Talk only opens a link). No browser storage beyond SitkaTools' shared working copy. Emoji data is embedded.
 
 ## Task Model
@@ -61,11 +61,13 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
   "checks": { "2026-10-12": { "j234": { "at": "<ISO>", "by": "B6" }, "ev:<event id>": { "at": "<ISO>", "by": "B6" } } },
   "timers": { "j234": { "1": { "label": "KN", "ms": 0, "since": "<ISO>" }, "2": { "ms": 310000 } }, "ev:<event id>": { … } },
   "adjustments": [
-    { "at": "<ISO>", "by": "office", "date": "2026-10-12", "code": "j234", "entry": { "…": "the removed entry" } },
-    { "at": "<ISO>", "by": "office", "date": "2026-10-11", "eventId": "ev_…", "title": "…", "entry": { "…": "…" } },
+    { "at": "<ISO>", "by": "B6", "date": "2026-10-12", "code": "j234", "entry": { "…": "the removed entry" }, "approvedBy": "Kasia" },
+    { "at": "<ISO>", "by": "B6", "date": "2026-10-11", "eventId": "ev_…", "title": "…", "entry": { "…": "…" }, "approvedBy": "Kasia" },
+    { "at": "<ISO>", "by": "B6", "date": "2026-10-12", "code": "k7m2", "deletedTask": { "…": "the deleted task" }, "approvedBy": "Kasia" },
     { "at": "<ISO>", "by": "office", "date": "…", "eventId": "ev_…", "title": "…", "reopened": { "…": "the sign-off" } }
   ]
-} } }
+} },
+  "adjustments": [ { "…": "the office's removals of crop and equipment hours (same shape), saved in Main.json" } ] }
 ```
 
 - **Labour entry** (chores here; crop and equipment tasks use the same shape in the event's `labour_map[<day>]`):
@@ -73,7 +75,8 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
   - `employee` (roster name), or `temp` (typed name) with optional `wage`.
   - `hours` (decimal); `initials` (`{ name, strokes }`, PaperWizard's stroke format); `at` (ISO time logged); `by` (device: building id or `office`).
   - EmployeeWizard's own `labour_map` entries have no `initials` / `at` / `by`.
-- **`adjustments`** is the record of office corrections made after their day: removed hours (`entry`) and reopened sign-offs (`reopened`, no `entry`, so the hours view and Labour Log skip it). Nothing reads it for totals.
+- **`adjustments`** is the record of removals and corrections: removed hours (`entry`, with the floor manager who approved it in `approvedBy`), deleted tasks (`deletedTask`) and office reopens of sign-offs after their day (`reopened`). Records without `entry` are skipped by the hours view and the Labour Log. Nothing reads it for totals.
+  - It goes in the file the change is saved in: a building device's own building; for the office, the chore's building, or for a crop or equipment task the top-level `_DailyWizard.adjustments` in Main.json (those hours merge through Main, and a building tablet saving later would overwrite a record kept in its file).
 - Buildings are keyed by building id. An absent entry means no daily tasks. A building with no tasks gets a bare `{ tasks: [] }` the first time it needs one (a tick on one of its event rows, an office removal or reopen).
 - The whole building entry saves in that building's `Building-<ID>.json` (root `CLAUDE.md` → "Split Database").
 - **Orphans:** a `_DailyWizard` building missing from `DB.data.buildings` still appears in the selector with ⚠️ so its list can be reviewed and deleted. It is left out of All Buildings (and of the selector on a building device).
@@ -154,13 +157,22 @@ Each entry is the person's name, the hours and minutes they type (or fill from a
   - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Time from a timer** (today), **Hours**, **Minutes**, **initials pad**.
 - **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke.
 - **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
-- **Removing:**
-  - a building device may remove only an entry it logged itself, on the day it was logged; it is deleted;
-  - the office (or a single-file DB) may remove any entry, including EmployeeWizard ones;
-  - an entry the office removes after its day is deleted from the hours and kept in the building's `adjustments`, shown struck through in the hours view.
+- **Removing** needs a floor manager's PIN on every device ("🔒 Edit Mode and Floor Manager PINs"): ✕ on any entry in a building the device may change, anyone's and any day's, including Labour & Cost Wizard ones. The entry leaves the hours and goes in `adjustments` with `approvedBy`; the hours view shows it struck through ("removed …, approved by …").
 - **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`, leaving the form and the initials being drawn alone.
 - **Lost link:** if SitkaTools is reloaded or closed, a cover says so and an entry added anyway is reported as not kept (root `CLAUDE.md` → postMessage rule 10).
 - **Elsewhere:** EmployeeWizard's 📜 Labour Log lists every entry (office: all buildings; building device: its own), with a room chore's room and the lots its hours went to that day. Its Reports read chore hours (`rptChoreLabour`) and `labour_map`. A temp's typed wage is used for cost; a temp with no wage counts in hours only, and a crop with such hours is left out of $ figures (the missing-wage rule).
+
+## 🔒 Edit Mode and Floor Manager PINs
+
+Each floor manager has their own PIN, set by the office in the Labour & Cost Wizard's employee editor (`EmployeeWizard/CLAUDE.md`) and kept in Main.json only as a salted SHA-256 hash (`_EmployeeWizard.employees[name].pin = { salt, hash, setAt }`). The `FloorPin` snippet (checking a PIN and the PIN dialog) is the same in DailyWizard and the Labour & Cost Wizard. It uses Web Crypto, or its own small SHA-256 where a page has no Web Crypto.
+
+- **The PIN dialog:** pick a floor manager (only those ticked Floor manager with a PIN; preselected when there's one) and type the PIN. A wrong PIN says so; after 5 wrong in a row, even the right one waits a minute. With no PIN set anywhere it says the office sets them, with only Close.
+- **✏️ Edit mode** (`EditMode`, `canEditTasks(bid)` = `canEditBuilding(bid)` and edit mode on): needed to add, edit, reorder and delete tasks, and to write, move or delete steps and translations. Every entry point checks it (`openTaskEditor`, `saveTaskFromEditor`, `moveTask`, step edits, `deleteCurrentTask`), not just the buttons.
+  - **✏️ Edit tasks** asks for the PIN. Then the bar shows **+ Add Task**, **✅ Done editing** and "✏️ Editing as {name}", the rows show ▲ ▼, and the detail view shows Edit Task, Delete Task and step editing.
+  - It ends with ✅ Done editing, or after 10 minutes without an edit (checked every 15 s; never while the task editor is open or a step is being typed). It lasts for this window only and is never stored.
+- **Deletions ask every time:** removing an hours entry, and deleting a whole task even in edit mode. Each goes in `adjustments` with `approvedBy` (see "Database Key"). Deleting a step in edit mode needs no extra PIN.
+- **Applies on every device**, the office included. Ticks, ⏱ Log, timers and ✅ Mark done need no PIN.
+- **Limits:** a PIN slows people down but can't stop someone with the files or the browser's developer tools; the drawn initials and the records are the real control. A PIN set or changed at the office reaches a tablet when it reopens the files.
 
 ## ⏰ Still open and ✅ Mark done
 
@@ -212,7 +224,7 @@ Uses the standard subtool pattern (root `CLAUDE.md` → "Cross-Window Database W
 
 ## UI
 
-Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **+ Add Task** (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer.
+Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **✏️ Edit tasks**, or in edit mode **+ Add Task** and **✅ Done editing** (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer.
 
 ### Header
 
@@ -226,7 +238,7 @@ Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **+ 
 
 ### Task Rows
 
-Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · 🚪 room chip (room chores) · labour chips · **⏱ Log** · **▲ ▼** (single building only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
+Left to right: **checkbox** (≥ 48×48 px touch target, ~32 px box; toggles the tick only) · emoji (~1.5 rem) · name (tapping the row elsewhere opens the detail view) · code chip · 🚪 room chip (room chores) · labour chips · **⏱ Log** · **▲ ▼** (single building, edit mode only; disabled at the ends of the shown list; swaps with the shown neighbour, so tasks not running that day keep their places).
 
 Event rows: same without code chip and moves; emoji from the title; labour chips only on crop tasks with an estimate ("Labour Display").
 
@@ -247,7 +259,7 @@ Below them, inside the row, the four **⏲ timers** ("⏲ Timers"): four across,
 
 A building device opens on its own building and stays there until someone picks another (`pickedBuilding`), also through live DB updates. It can look at any building and at All Buildings but changes only its own.
 
-- **The rule:** `canEditBuilding(bid)` — true on the office (or a single-file DB) and for the device's own building. The entry points check it too (`setChecked`, `openHours`, `openDone`, `openTaskEditor`, step and task moves and deletes), not just the buttons.
+- **The rule:** `canEditBuilding(bid)` — true on the office (or a single-file DB) and for the device's own building. The entry points check it too (`setChecked`, `openHours`, `openDone`, `openTaskEditor`, step and task moves and deletes), not just the buttons. Changing tasks also needs edit mode (`canEditTasks`, "🔒 Edit Mode and Floor Manager PINs").
 - In the selector, other buildings are marked `· 👀 view only`; orphans are left out.
 - **Another building:** a note **👀 Viewing {building} — view only** with **Back to {own building}**; no + Add Task or ▲ ▼. Ticks show but can't change; ⏱ Log shows the total but doesn't open; Mark done / ✅ Done don't open. Still open, Scheduled today and Upcoming all show.
 - **Its detail view:** steps, pictures and videos (any language, uploaded too) to read; no Edit Task, Delete Task, ▲ ▼ 🗑, + Add Step or step editing.
@@ -260,7 +272,7 @@ Full-screen overlay:
 - Header: large emoji + name, code chip, ← back.
 - Summary: labour (`👥 staff · ⏱ minutes · ≈ N.N h labour`), the room (room chores), and recurrence in plain words ("Every day", "Mon, Wed, Fri", "1st & 15th of each month", combined with "and").
 - **Steps:** ordered; tap to edit inline; + Add Step, delete, ▲ ▼. Each shows its picture / video or the not-found chip ("Step Pictures"); **🔄 Refresh images** and the upload buttons sit at the top.
-- Footer: **Edit Task** (editor pre-filled), **Delete Task** (confirm, then `notifySitkaTools()`).
+- Footer (edit mode only): **Edit Task** (editor pre-filled), **Delete Task** (floor manager PIN again, then `notifySitkaTools()`). Out of edit mode the summary says "🔒 To change this task, tap ✏️ Edit tasks on the list (floor manager PIN)", and steps can't be tapped, moved, deleted or added.
 
 ### Task Editor (Add / Edit)
 

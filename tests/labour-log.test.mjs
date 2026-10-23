@@ -1,6 +1,6 @@
 // EmployeeWizard's 📜 Labour Log: every hours entry with who, what, when, how long and the drawn initials.
 // The office sees every building; a building device sees only the work done in its own building.
-import { today, fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, dwDate, logHours, removeHoursOf, ewSetHours, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, withFloorManager, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, dwDate, logHours, removeHoursOf, ewSetHours, leave } from './lib/helpers.mjs';
 
 export const title = 'EmployeeWizard Labour Log';
 
@@ -20,7 +20,7 @@ export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const T = today(), Y = today(-1);
     const office = await fresh(b);
-    const files = await splitFiles(b, office, BASE, fixtureDb());
+    const files = await splitFiles(b, office, BASE, withFloorManager(fixtureDb()));   // Casey approves removals with her PIN
     await openSplit(b, office, BASE, 'office', files);
 
     // Hours on both buildings, and an office removal of an older entry (kept on record)

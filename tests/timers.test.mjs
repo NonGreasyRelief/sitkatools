@@ -2,7 +2,7 @@
 // timer asks for initials or a label; ⏱ Log fills its hours from one, rounded to the nearest 5 minutes, without
 // pausing or clearing it, so several people log from one timer. Timers keep their start time in the DB, so a running
 // one keeps counting through a reopen, and on a building device they save in its own file.
-import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, saveSingle, splitFiles, openSplit, saveSplit, openTool, dwBuilding, dwDate, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, withFloorManager, answerPin, dwUnlock, makeChecker, fresh, openSitka, loadSingle, saveSingle, splitFiles, openSplit, saveSplit, openTool, dwBuilding, dwDate, leave } from './lib/helpers.mjs';
 
 export const title = 'DailyWizard timers';
 
@@ -13,7 +13,7 @@ export async function run(b, BASE) {
     const T = today(), Y = today(-1);
     let main = await fresh(b);
     await openSitka(b, main, BASE);
-    await loadSingle(b, main, fixtureDb());
+    await loadSingle(b, main, withFloorManager(fixtureDb()));
     let dw = await openTool(b, main, 'DailyWizard');
     await dwBuilding(b, dw, 'B1');
     await b.run(dw, `window.confirm = () => true;`);
@@ -143,7 +143,9 @@ export async function run(b, BASE) {
     // ---- A deleted chore's timers are tidied away with the next timer change ----
     await b.run(dw, `DB.data._DailyWizard.buildings.B1.timers.scu1 = { 1: { label: 'Z', ms: 5000 } }; renderAll();`);
     check('Scout rooms has a timer', (await slots('Scout rooms'))[0].label === 'Z');
-    await b.run(dw, `openTaskDetail('B1', 'scu1'); deleteCurrentTask();`);
+    await dwUnlock(b, dw);   // deleting a task: edit mode, then the floor manager's PIN again
+    await b.run(dw, `openTaskDetail('B1', 'scu1'); document.getElementById('deleteTaskBtn').click();`, { user: true });
+    await answerPin(b, dw);
     await tap('Water plants', 1, 'go');
     await b.run(dw, `document.getElementById('timerDialogOk').click();`);
     const all = await b.run(dw, 'return DB.data._DailyWizard.buildings.B1.timers;');

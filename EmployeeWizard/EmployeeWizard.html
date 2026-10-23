@@ -498,6 +498,9 @@
 
         .emp-fields input:focus { outline: none; border-color: var(--accent); }
         .emp-fields .emp-fm { grid-column: 1 / -1; padding-bottom: 0; }
+        .emp-fields .emp-pin { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .emp-fields .emp-pin[hidden] { display: none; }
+        .emp-pin-status { grid-column: 1 / -1; font-size: 0.8rem; color: var(--text-secondary); }
         .emp-fields .emp-fm input { padding: 0; width: 18px; height: 18px; accent-color: var(--accent); }
 
         .emp-actions {
@@ -1217,6 +1220,18 @@
                                     <input type="number" id="empWageInput" min="0" step="0.5" placeholder="not set">
                                 </div>
                                 <label class="report-chk emp-fm" title="Floor managers sign crop and equipment tasks off as done in DailyWizard"><input type="checkbox" id="empFloorManager"> Floor manager — signs tasks off as done in DailyWizard</label>
+                                <!-- 🔒 Each floor manager's own PIN: DailyWizard's edit mode and deletions, deletions in the Tasks tab -->
+                                <div class="emp-pin" id="empPinRow" hidden>
+                                    <div class="form-group">
+                                        <label for="empPinInput">🔒 Floor manager PIN (4–8 digits)</label>
+                                        <input type="password" id="empPinInput" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="empPin2Input">Repeat the PIN</label>
+                                        <input type="password" id="empPin2Input" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
+                                    </div>
+                                    <div class="emp-pin-status" id="empPinStatus"></div>
+                                </div>
                             </div>
                             <div class="emp-actions">
                                 <button type="button" class="btn btn-primary" id="saveEmpBtn">Save Changes</button>
@@ -2143,6 +2158,7 @@
             $('empNameInput').value = name;
             $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
             $('empFloorManager').checked = e?.floorManager === true;
+            showPinRow(e);
             setViewMode('editor');
         }
 
@@ -2267,10 +2283,19 @@
         }
 
         // ---- Save employee changes (name / wage / work days) ----
-        $('saveEmpBtn').addEventListener('click', () => {
+        $('saveEmpBtn').addEventListener('click', async () => {
             const emps = getEmployees();
             const oldName = EMP.selectedName;
             if (!oldName || !emps[oldName]) return;
+
+            // A new floor manager PIN (blank = keep the one they have): 4–8 digits, typed twice, kept only as a hash
+            let newPin = null;
+            const pin1 = $('empPinInput').value.trim(), pin2 = $('empPin2Input').value.trim();
+            if ($('empFloorManager').checked && (pin1 || pin2)) {
+                if (!/^\d{4,8}$/.test(pin1)) { showToast('The PIN must be 4 to 8 digits'); return; }
+                if (pin1 !== pin2) { showToast('The two PINs don\u2019t match'); return; }
+                newPin = { ...(await FloorPin.make(pin1)), setAt: localDateStr(new Date()) };
+            }
 
             const newName = $('empNameInput').value.trim();
             // Blank wage = no wage (Wages.json not opened, or cleared) — left unset, never a made-up default.
@@ -2309,16 +2334,36 @@
 
             if (wageRaw === null) delete emp.wage;
             else emp.wage = wageRaw;
-            if ($('empFloorManager').checked) emp.floorManager = true;
-            else delete emp.floorManager;
+            if ($('empFloorManager').checked) {
+                emp.floorManager = true;
+                if (newPin) emp.pin = newPin;
+            } else {
+                delete emp.floorManager;
+                delete emp.pin;   // only floor managers have a PIN
+            }
             emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
 
             EMP.selectedName = newName;
+            showPinRow(emp);
             renderEmpList();
             renderWorkweek();
             updateStatusBar();
             notifySitkaTools();
-            showToast(`Saved ${newName}`);
+            showToast(newPin ? `Saved ${newName} — PIN set` : `Saved ${newName}`);
+        });
+
+        // 🔒 The PIN fields show for floor managers; blank keeps the PIN they have
+        function showPinRow(emp) {
+            $('empPinRow').hidden = !$('empFloorManager').checked;
+            $('empPinInput').value = '';
+            $('empPin2Input').value = '';
+            const has = !!emp?.pin?.hash, set = emp?.pin?.setAt;
+            $('empPinStatus').textContent = has
+                ? `PIN set${set ? ' ' + parseISO(set).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Type a new one to change it; leave blank to keep it.`
+                : 'No PIN yet: this floor manager can\u2019t unlock DailyWizard\u2019s edit mode or approve deletions until one is set.';
+        }
+        $('empFloorManager').addEventListener('change', () => {
+            $('empPinRow').hidden = !$('empFloorManager').checked;
         });
 
         // ---- Time-off view ----
@@ -2889,9 +2934,9 @@
                     return `<div class="entry-row">
                         <span class="entry-name">${who}</span>
                         <span class="entry-hours">${fmtHours(en.hours)}</span>
-                        <button type="button" class="emp-del" data-idx="${i}" title="Remove entry">✕</button>
+                        ${DeviceView.building ? '' : `<button type="button" class="emp-del" data-idx="${i}" title="Remove entry (floor manager PIN)">✕</button>`}
                     </div>`;
-                }).join('');
+                }).join('') + (DeviceView.building ? '<div class="task-empty" style="padding:6px 4px;">To remove hours, use the task\u2019s ⏱ in DailyWizard (floor manager PIN).</div>' : '');
                 list.querySelectorAll('[data-idx]').forEach(b => {
                     b.addEventListener('click', () => deleteLabourEntry(Number(b.dataset.idx)));
                 });
@@ -3341,15 +3386,214 @@
             renderTasksTab();
         });
 
-        function deleteLabourEntry(idx) {
-            const ev = selectedTask();
-            if (!ev) return;
-            const entries = ev.labour_map?.[TASK.editDate];
-            if (!entries || !entries[idx]) return;
-            entries.splice(idx, 1);
-            if (!entries.length) delete ev.labour_map[TASK.editDate];
+        // ---- 🔒 Floor manager PINs (user decision 2026-10-22) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
+        // Each floor manager (_EmployeeWizard.employees[name].floorManager) has their own PIN, set by the office in the
+        // Labour & Cost Wizard's employee editor and kept in Main.json only as a salted SHA-256 hash:
+        //   employees[name].pin = { salt, hash, setAt }
+        // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
+        // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
+        // developer tools: the drawn initials and the removal records are the real control.
+        var FloorPin = {
+            WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
+            WAIT_MS: 60 * 1000,
+            _fails: 0,
+            _waitUntil: 0,
+            _el: null,
+            _done: null,
+            tr(s, v) {
+                if (typeof T === 'function') return T(s, v);
+                return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
+            },
+            // Floor managers who have a PIN, by name
+            managers() {
+                const emps = (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {};
+                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.pin?.hash && emps[n]?.pin?.salt)
+                    .sort((a, b) => a.localeCompare(b));
+            },
+            // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
+            async hash(salt, pin) {
+                const text = `${salt}:${pin}`;
+                try {
+                    if (window.crypto?.subtle) {
+                        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+                        return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+                    }
+                } catch (_) { /* fall back */ }
+                return this.sha256(text);
+            },
+            sha256(text) {
+                const K = [], H = [];
+                const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
+                for (let n = 2, c = 0; c < 64; n++) {
+                    let prime = true;
+                    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+                    if (!prime) continue;
+                    if (c < 8) H[c] = frac(Math.sqrt(n));
+                    K[c++] = frac(Math.cbrt(n));
+                }
+                const bytes = Array.from(new TextEncoder().encode(text));
+                const bits = bytes.length * 8;
+                bytes.push(0x80);
+                while (bytes.length % 64 !== 56) bytes.push(0);
+                for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
+                const rot = (x, r) => (x >>> r) | (x << (32 - r));
+                const w = new Array(64);
+                for (let o = 0; o < bytes.length; o += 64) {
+                    for (let j = 0; j < 16; j++) w[j] = (bytes[o + 4 * j] << 24) | (bytes[o + 4 * j + 1] << 16) | (bytes[o + 4 * j + 2] << 8) | bytes[o + 4 * j + 3];
+                    for (let j = 16; j < 64; j++) {
+                        const s0 = rot(w[j - 15], 7) ^ rot(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+                        const s1 = rot(w[j - 2], 17) ^ rot(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+                        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+                    }
+                    let [a, b, c, d, e, f, g, h] = H;
+                    for (let j = 0; j < 64; j++) {
+                        const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[j] + w[j]) | 0;
+                        const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+                        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+                    }
+                    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
+                }
+                return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+            },
+            // A new PIN's record (4–8 digits; the caller checks the format)
+            async make(pin) {
+                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                return { salt, hash: await this.hash(salt, pin) };
+            },
+            async check(name, pin) {
+                const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
+                return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
+            },
+            // Ask a floor manager for their PIN. Resolves { name } once it's right, or null (cancelled).
+            ask(why) {
+                if (this._done) this._finish(null);
+                this._build();
+                const el = this._el, names = this.managers();
+                const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
+                // The words are set on every ask, so they follow DailyWizard's language
+                el.querySelector('.fpin-title').textContent = this.tr('🔒 Floor manager PIN');
+                el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
+                el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
+                el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
+                el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
+                el.querySelector('[data-fpin-why]').textContent = why || '';
+                el.querySelector('[data-fpin-err]').textContent = '';
+                const none = !names.length;
+                el.querySelector('[data-fpin-none]').hidden = !none;
+                el.querySelector('[data-fpin-fields]').hidden = none;
+                el.querySelector('[data-fpin-ok]').hidden = none;
+                el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
+                who.innerHTML = '';
+                if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
+                for (const n of names) who.appendChild(new Option(n, n));
+                pin.value = '';
+                el.hidden = false;
+                (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                return new Promise(resolve => { this._done = resolve; });
+            },
+            _finish(result) {
+                const done = this._done;
+                this._done = null;
+                if (this._el) this._el.hidden = true;
+                if (done) done(result);
+            },
+            async _submit() {
+                const el = this._el, err = el.querySelector('[data-fpin-err]');
+                const name = el.querySelector('[data-fpin-who]').value, pinEl = el.querySelector('[data-fpin-pin]');
+                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                if (!name) { err.textContent = this.tr('Pick your name'); return; }
+                if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
+                if (await this.check(name, pinEl.value)) {
+                    this._fails = 0;
+                    this._finish({ name });
+                    return;
+                }
+                pinEl.value = '';
+                pinEl.focus();
+                if (++this._fails >= this.WAIT_AFTER) {
+                    this._fails = 0;
+                    this._waitUntil = Date.now() + this.WAIT_MS;
+                    err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again');
+                } else err.textContent = this.tr('Wrong PIN — try again');
+            },
+            _build() {
+                if (this._el) return;
+                const css = document.createElement('style');
+                css.textContent = `
+                    .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+                    .fpin[hidden] { display: none; }
+                    .fpin-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+                    .fpin-title { font-size: 1.1rem; font-weight: 700; }
+                    .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
+                    .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
+                    .fpin-fields[hidden], .fpin-none[hidden], .fpin button[hidden] { display: none; }
+                    .fpin label { font-size: 0.8rem; color: var(--text-secondary); }
+                    .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+                    .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
+                    .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
+                    .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
+                    .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+                    .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
+                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }`;
+                document.head.appendChild(css);
+                const el = document.createElement('div');
+                el.className = 'fpin';
+                el.id = 'floorPin';
+                el.hidden = true;
+                el.setAttribute('role', 'dialog');
+                el.setAttribute('aria-modal', 'true');
+                el.innerHTML = `
+                    <div class="fpin-card">
+                        <div class="fpin-title"></div>
+                        <div class="fpin-why" data-fpin-why></div>
+                        <div class="fpin-none" data-fpin-none></div>
+                        <div class="fpin-fields" data-fpin-fields>
+                            <label for="floorPinWho"></label>
+                            <select id="floorPinWho" data-fpin-who></select>
+                            <label for="floorPinInput"></label>
+                            <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
+                        </div>
+                        <div class="fpin-err" data-fpin-err role="alert"></div>
+                        <div class="fpin-actions">
+                            <button type="button" class="fpin-cancel" data-fpin-cancel></button>
+                            <button type="button" class="fpin-ok" data-fpin-ok></button>
+                        </div>
+                    </div>`;
+                el.querySelector('[data-fpin-ok]').addEventListener('click', () => this._submit());
+                el.querySelector('[data-fpin-cancel]').addEventListener('click', () => this._finish(null));
+                el.querySelector('[data-fpin-pin]').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
+                });
+                el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
+                document.body.appendChild(el);
+                this._el = el;
+            }
+        };
+
+        // Removing hours needs a floor manager's PIN (user decision 2026-10-22) and is kept on record in
+        // _EmployeeWizard.labourRemovals (Main.json), which the Labour Log shows struck through. Office only: a
+        // building device removes hours in DailyWizard's ⏱ hours view, which records them in its own building file.
+        async function deleteLabourEntry(idx) {
+            if (DeviceView.building) return;
+            const ev = selectedTask(), day = TASK.editDate;
+            const en = ev?.labour_map?.[day]?.[idx];
+            if (!en) return;
+            const ok = await FloorPin.ask(`Remove ${fmtHours(en.hours)} logged by ${en.employee || en.temp || '?'} on ${parseISO(day).toLocaleDateString([], { month: 'short', day: 'numeric' })}`);
+            if (!ok) return;
+            // A live update may have replaced the task meanwhile: find it and the entry again
+            const evNow = DB.data.calendarEvents.find(e => e.id === ev.id);
+            const entries = evNow?.labour_map?.[day];
+            const at = !entries ? -1 : en.id ? entries.findIndex(x => x?.id === en.id) : entries.indexOf(en);
+            if (at === -1) { renderTasksTab(); return; }
+            const [removed] = entries.splice(at, 1);
+            if (!entries.length) delete evNow.labour_map[day];
+            const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = {});
+            (ew.labourRemovals || (ew.labourRemovals = [])).push({
+                at: new Date().toISOString(), by: 'office', date: day, eventId: evNow.id, title: evNow.title || '', entry: removed, approvedBy: ok.name
+            });
             notifySitkaTools();
             renderTasksTab();
+            showToast(`Removed ${fmtHours(removed.hours)} — kept on record (approved by ${ok.name})`);
         }
 
         // ---- Mark task completed / reopen ----
@@ -5733,7 +5977,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
         // drew. Reads (the Reports' read-everything permission, user decision 2026-10-13):
         //   • DailyWizard chore hours — _DailyWizard.buildings[<id>].labour[<day>][<task code>]
         //   • hours on calendar events — calendarEvents[].labour_map[<day>] (logged in DailyWizard or the Tasks tab)
-        //   • entries the office removed later, kept on record — _DailyWizard.buildings[<id>].adjustments
+        //   • removed entries, kept on record — _DailyWizard.buildings[<id>].adjustments (DailyWizard) and
+        //     _EmployeeWizard.labourRemovals (the Tasks tab), with the floor manager who approved each
         // Writes nothing. The office sees every building; a building device sees the work done in its building.
         // Hours only — no wages or $.
         // =====================================================
@@ -5807,8 +6052,16 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     const info = !a.eventId ? choreInfo(a.code)
                         : ev ? { ...evInfo(ev), building: bid }
                         : { kind: 'other', building: bid, key: `ev|${a.eventId}`, label: a.title || '(task since removed)', where: '', est: null };
-                    rows.push({ ...info, day: a.date, en: a.entry, removed: { at: a.at, by: a.by } });
+                    rows.push({ ...info, day: a.date, en: a.entry, removed: { at: a.at, by: a.by, approvedBy: a.approvedBy } });
                 }
+            }
+            // Hours removed in the Tasks tab, and the office's removals in DailyWizard of crop and equipment hours
+            // (both kept in Main.json, with the floor manager who approved each)
+            for (const a of [...(DB.data._EmployeeWizard?.labourRemovals || []), ...(DB.data._DailyWizard?.adjustments || [])]) {
+                if (!a?.entry || !a.date) continue;
+                const ev = evById.get(a.eventId);
+                const info = ev ? evInfo(ev) : { kind: 'other', building: null, key: `ev|${a.eventId}`, label: a.title || '(task since removed)', where: '', est: null };
+                rows.push({ ...info, day: a.date, en: a.entry, removed: { at: a.at, by: a.by, approvedBy: a.approvedBy } });
             }
             return rows;
         }
@@ -5841,7 +6094,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 (!LOG.kind || r.kind === LOG.kind) && (LOG.removed || !r.removed));
             const flags = (r) => {
                 const out = [], en = r.en;
-                if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}`]);
+                if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}${r.removed.approvedBy ? ` · approved by ${r.removed.approvedBy}` : ''}`]);
                 if (!en.initials?.strokes?.length) out.push(['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
                 if (en.at) {
                     const loggedDay = localDateStr(new Date(en.at));

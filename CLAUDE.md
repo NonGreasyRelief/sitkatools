@@ -97,7 +97,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 
 | File | Saved by | Holds |
 |---|---|---|
-| `Main.json` | office | lots and schedules, rooms and buildings, the roster **without wages**, crop summaries and report settings, power bills and rates, recipes and the input price list, equipment, general events, paperwork templates, `_fieldStamps` |
+| `Main.json` | office | lots and schedules, rooms and buildings, the roster **without wages** (with floor managers' PIN hashes), crop summaries and report settings, power bills and rates, recipes and the input price list, equipment, general events, paperwork templates, the office's records of removed hours, `_fieldStamps` |
 | `Wages.json` | office only, never opened on building devices | `{ wages: { name: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }` |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]`, the `_PaperWizard.entries` pages filled there, `_LotTransfers`, and `_overlays` (that building's updates to office records) |
 | `Archive/Lot-<id>-<date>.json` | office, at close-out | everything about a closed lot |
@@ -135,7 +135,7 @@ A building device sees only its own building and only what it can save. It appli
 - **SitkaTools:** see `SitkaTools/CLAUDE.md` → "On a Building Device".
 - **Tools get the view with the DB** (`view: { building }` on every message, and in the shared copy). Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
   - **Office-only tools** (CropLabourWizard, EquipmentWizard, GeneralEvent) show "Office only" and stop before loading.
-  - **DailyWizard** opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). Its floor manager signs tasks off with ✅ Mark done.
+  - **DailyWizard** opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). Its floor manager signs tasks off with ✅ Mark done, and unlocks task editing and approves deletions with their own PIN, on every device (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
   - **PaperWizard** lists only the building's lots, hides Configure Sheets, offers only the building's rooms, and shows some lots read-only (`lotElsewhere`, see `PaperWizard/CLAUDE.md`).
   - **The Labour & Cost Wizard** shows only the Tasks tab and the 📜 Labour Log, limited to work in the building.
 
@@ -259,5 +259,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs and a hand-worked cost per gram, PaperWizard's repeating tables, corrections and number answers, DailyWizard's timers, floor manager PINs, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

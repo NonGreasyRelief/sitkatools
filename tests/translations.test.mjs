@@ -1,6 +1,6 @@
 // DailyWizard's 🌐 language picker: the screen's own text in French, Spanish, Vietnamese and Chinese, and translated
 // task names and steps that sit next to the English (the master) without changing it.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, leave } from './lib/helpers.mjs';
+import { fixtureDb, withFloorManager, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, dwUnlock, leave } from './lib/helpers.mjs';
 
 export const title = 'DailyWizard translations';
 
@@ -18,13 +18,14 @@ export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const main = await fresh(b);
     await openSitka(b, main, BASE);
-    await loadSingle(b, main, fixtureDb());
+    await loadSingle(b, main, withFloorManager(fixtureDb()));
     const dw = await openTool(b, main, 'DailyWizard');
     await dwBuilding(b, dw, 'B1');
 
     const langs = await b.run(dw, `return [...document.getElementById('langSelect').options].map(o => o.value).join(',');`);
     check('the picker offers English, French, Spanish, Vietnamese and Chinese (English first)', langs === 'en,fr,es,vi,zh', langs);
     check('English by default', (await text(b, dw, 'listContainer')).includes('⏱ Log'));
+    await dwUnlock(b, dw);   // ✏️ Edit tasks: writing steps and translations needs a floor manager's PIN
 
     // A step written in English (the master)
     await b.run(dw, `openTaskDetail('B1', 'wat1'); [...document.querySelectorAll('#stepsList button')].find(x => x.textContent.includes('Add Step')).click();`);

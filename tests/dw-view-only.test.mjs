@@ -1,14 +1,14 @@
 // DailyWizard on a building device: it opens on its own building, and can also look at every other building and at
 // All Buildings, view only — no ticks, hours, sign-offs or task changes there. Its own rows still work in All
 // Buildings, and saving touches only its own file. All Buildings shows every building's ⏰ Still open.
-import { today, fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, withFloorManager, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, dwUnlock, leave } from './lib/helpers.mjs';
 
 export const title = 'DailyWizard: other buildings view only on a building device';
 
 export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const T = today();
-    const db = fixtureDb();
+    const db = withFloorManager(fixtureDb());
     // Building 2's chore has a step, and was ticked today in Building 2
     db._DailyWizard.buildings.B2.tasks[0].steps = [{ text: 'Check the Grow A drip lines' }];
     db._DailyWizard.buildings.B2.checks = { [T]: { wat2: { at: `${T}T15:00:00.000Z`, by: 'B2' } } };
@@ -17,6 +17,7 @@ export async function run(b, BASE) {
 
     check('B1 device opened the files', await openSplit(b, main, BASE, 'B1', files));
     const dw = await openTool(b, main, 'DailyWizard');
+    check('a floor manager unlocks ✏️ edit mode on the device\'s own building', await dwUnlock(b, dw));
     const sel = () => b.run(dw, `const s = document.getElementById('buildingSelect');
         return { disabled: s.disabled, value: s.value, options: [...s.options].map(o => o.value + '=' + o.textContent) };`);
     let s = await sel();

@@ -33,6 +33,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-22 · 🔒 each floor manager has their own PIN (set by the office, kept as a salted hash in Main.json); DailyWizard asks for it to go into ✏️ edit mode and for every deletion (hours entries, whole tasks), on every device including the office; with it a floor manager may remove any entry in their building, and every removal is recorded with who approved it
 - 2026-10-22 · ⏲ four pausable timers always shown on every row with ⏱ Log (today only); a timer is labelled by whoever starts it (no matching to the roster); ⏱ Log fills hours from one, rounded to the nearest 5 min, without stopping it; kept in the DB as start times (`_DailyWizard.buildings[<id>].timers`)
 - 2026-10-22 · a daily chore can be tied to one of its building's rooms (optional `roomId`); changing it moves the chore's past hours too (closed-out lots keep their saved share)
 
@@ -54,6 +55,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Labour & Cost Wizard
 
+- 2026-10-22 · removing hours in the Tasks tab needs a floor manager's PIN and is recorded (`labourRemovals`); office only — building devices remove hours in DailyWizard
 - 2026-10-22 · room chores — a DailyWizard chore's hours go to the lots in its room that day, split by plants like electricity; worked out by Reports (nothing written to lots); chores without a room stay shared overhead
 
 - 2026-10-17 · property cost shared by lights in use (default) or plants, so four running rooms carry a quarter each

@@ -1,6 +1,6 @@
 // 🚪 Room chores: a DailyWizard chore tied to a room gives its hours to the lots in that room that day, split by
 // plants when lots share it; chores without a room (and room-chore hours on a day the room is empty) stay shared.
-import { today, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, leave } from './lib/helpers.mjs';
+import { today, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, withFloorManager, dwUnlock, leave } from './lib/helpers.mjs';
 
 export const title = 'room chores (hours go to the lots in the room)';
 
@@ -48,7 +48,7 @@ export async function run(b, BASE) {
     const D = n => today(-120 + n);
     const main = await fresh(b);
     await openSitka(b, main, BASE);
-    await loadSingle(b, main, choreDb());
+    await loadSingle(b, main, withFloorManager(choreDb()));
     const ew = await openTool(b, main, 'EmployeeWizard');
     const model = () => b.run(ew, `const M = rptModel(), get = id => M.crops.find(c => c.lotId === id);
         const pool = M.other.filter(r => r.kind === 'chore');
@@ -110,6 +110,7 @@ export async function run(b, BASE) {
     await dwBuilding(b, dw, 'B1');
     const list = await b.run(dw, `return document.getElementById('listContainer').innerText;`);
     check('a room chore shows its room on the row', list.includes('🚪 Grow 1'), list.slice(0, 200));
+    await dwUnlock(b, dw);   // ✏️ Edit tasks: floor manager PIN
     const opts = await b.run(dw, `openTaskEditor('B1', 'hal1'); return [...document.getElementById('taskRoomSelect').options].map(o => o.value + '=' + o.textContent);`);
     check('the editor offers whole building, then the building\'s rooms', opts[0] === '=— Whole building (no room) —' && opts.includes('R1G1=R1G1 — Grow 1') && opts.includes('R1HL=R1HL — Hall 1') && opts.length === 4, opts.join(' | '));
     await b.run(dw, `const s = document.getElementById('taskRoomSelect'); s.value = 'R1HL'; saveTaskFromEditor();`);

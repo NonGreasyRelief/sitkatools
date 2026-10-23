@@ -86,7 +86,7 @@ Still to do:
 - [ ] **Labour in DailyWizard.**
   - The goal: staff log their own hours on every task type, only the floor manager marks tasks done, and check-offs are saved but each day starts blank.
   - Built: chore hours, hours on crop and equipment rows, the Labour Log, entry-by-entry labour merge, the lost-link warning, floor-manager ✅ Mark done and saved check-offs.
-  - [ ] Deleting an entry in EmployeeWizard's Tasks tab leaves no record. DailyWizard's office removals do leave one (the adjustments log).
+  - [x] Every removal of hours is recorded with the floor manager who approved it (PIN), in DailyWizard and in EmployeeWizard's Tasks tab.
 - [ ] **Drawn initials for lot Accept** (still typed), reusing PaperWizard's draw pad. Labour entries already use drawn initials.
 
 ### Phase 2: Features

@@ -1,7 +1,7 @@
 // Hours on one task from two devices between saves: the office's and a building's entries merge one by one.
 // Removals stay removed, the newer edit wins, a building's updates shrink once Main holds them, and files saved
 // by the previous build (whole-list updates, entries without ids) still open the way they did.
-import { today, fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, logHours, removeHoursOf, ewSetHours, evNames, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, withFloorManager, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, dwBuilding, logHours, removeHoursOf, ewSetHours, evNames, leave } from './lib/helpers.mjs';
 
 export const title = 'office + building hours on the same task (entry-by-entry merge)';
 
@@ -9,7 +9,7 @@ export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const T = today();
     const office = await fresh(b);
-    const files = await splitFiles(b, office, BASE, fixtureDb());
+    const files = await splitFiles(b, office, BASE, withFloorManager(fixtureDb()));   // Casey approves removals with her PIN
     const cropOn = async (ctx) => evNames(await b.run(ctx, 'return DB.data;'), 'ev_cropb1', T).sort().join(',');
     const entryOf = async (ctx, name) => b.run(ctx, `return (DB.data.calendarEvents.find(e => e.id === 'ev_cropb1').labour_map?.['${T}'] || []).find(e => e.employee === ${JSON.stringify(name)}) || null;`);
     let disk = { ...files };   // the files in the shared folder

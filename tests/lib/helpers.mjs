@@ -1,5 +1,6 @@
 // Shared helpers for the browser tests: a made-up database (no real staff or lot names) and the steps a person
 // takes in SitkaTools and DailyWizard, done with real clicks and real pen strokes.
+import { createHash } from 'node:crypto';
 
 export function today(offset = 0) {
     const d = new Date();
@@ -60,6 +61,33 @@ export function fixtureDb() {
             }
         }
     };
+}
+
+// 🔒 A floor manager with a PIN, stored the way the tools store it (salted SHA-256, never the PIN itself)
+export const FM_PIN = '2468';
+export function withFloorManager(db, name = 'Casey', pin = FM_PIN) {
+    const salt = `fixture${name.toLowerCase()}`;
+    const emp = db._EmployeeWizard.employees[name];
+    emp.floorManager = true;
+    emp.pin = { salt, hash: createHash('sha256').update(`${salt}:${pin}`).digest('hex'), setAt: '2026-10-01' };
+    return db;
+}
+
+// Answer the open floor manager PIN dialog; resolves once it has closed (or the wrong PIN left it open)
+export async function answerPin(b, ctx, name = 'Casey', pin = FM_PIN) {
+    await b.waitFor(ctx, `return document.getElementById('floorPin') && !document.getElementById('floorPin').hidden;`, 3000).catch(() => {});
+    await b.run(ctx, `const el = document.getElementById('floorPin'); if (!el || el.hidden) return;
+        const w = el.querySelector('[data-fpin-who]'); if ([...w.options].some(o => o.value === ${JSON.stringify(name)})) w.value = ${JSON.stringify(name)};
+        el.querySelector('[data-fpin-pin]').value = ${JSON.stringify(pin)}; el.querySelector('[data-fpin-ok]').click();`);
+    await b.waitFor(ctx, `return document.getElementById('floorPin').hidden;`, 1500).catch(() => {});
+    await b.sleep(100);
+}
+
+// DailyWizard: ✏️ Edit tasks, unlocked with a floor manager's PIN
+export async function dwUnlock(b, dw, name = 'Casey', pin = FM_PIN) {
+    await b.run(dw, `document.getElementById('editTasksBtn').click();`, { user: true });
+    await answerPin(b, dw, name, pin);
+    return b.run(dw, 'return EditMode.on();');
 }
 
 export function makeChecker() {
@@ -225,8 +253,8 @@ export async function logHours(b, dw, rowMatch, who, h, m, { temp = null } = {})
     return { ok: strokes === 2 && toast.startsWith('Logged'), toast, strokes };
 }
 
-// In DailyWizard: remove entry `index` from a row's hours view (the confirm is accepted)
-export async function removeHoursEntry(b, dw, rowMatch, index) {
+// In DailyWizard: remove entry `index` from a row's hours view, approved with a floor manager's PIN
+export async function removeHoursEntry(b, dw, rowMatch, index, { fm = 'Casey', pin = FM_PIN } = {}) {
     await b.run(dw, `
         const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .hours-btn'));
         rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)})).querySelector(':scope > .hours-btn').click();`, { user: true });
@@ -234,28 +262,34 @@ export async function removeHoursEntry(b, dw, rowMatch, index) {
         const dels = document.querySelectorAll('#hoursList .hours-del');
         if (!dels[${index}]) return 'no remove button';
         dels[${index}].click();
-        return document.querySelector('.toast, #toast')?.textContent || '';`, { user: true });
+        return '';`, { user: true });
+    if (res) { await b.run(dw, 'closeHours();'); return res; }
+    await answerPin(b, dw, fm, pin);
+    const toast = await b.run(dw, `return document.querySelector('.toast, #toast')?.textContent || '';`);
     await b.run(dw, 'closeHours();');
-    return res;
+    return toast;
 }
 
 // Labour entries on an event / a chore, by name
 export const evNames = (db, evId, day) => (db.calendarEvents.find(e => e.id === evId)?.labour_map?.[day] || []).map(e => e.employee || e.temp);
 export const choreNames = (db, bid, code, day) => (db._DailyWizard?.buildings?.[bid]?.labour?.[day]?.[code] || []).map(e => e.employee || e.temp);
 
-// In DailyWizard: remove the entry of `name` from a row's hours view (the confirm is accepted)
-export async function removeHoursOf(b, dw, rowMatch, name) {
+// In DailyWizard: remove the entry of `name` from a row's hours view, approved with a floor manager's PIN
+export async function removeHoursOf(b, dw, rowMatch, name, { fm = 'Casey', pin = FM_PIN } = {}) {
     await b.run(dw, `
         const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .hours-btn'));
         rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)})).querySelector(':scope > .hours-btn').click();`, { user: true });
     const res = await b.run(dw, `
-        const row = [...document.querySelectorAll('#hoursList .hours-entry')].find(r => r.querySelector('.who')?.textContent.startsWith(${JSON.stringify(name)}));
+        const row = [...document.querySelectorAll('#hoursList .hours-entry')].find(r => !r.classList.contains('removed') && r.querySelector('.who')?.textContent.startsWith(${JSON.stringify(name)}));
         const del = row?.querySelector('.hours-del');
         if (!del) return 'no remove button';
         del.click();
-        return document.querySelector('.toast, #toast')?.textContent || '';`, { user: true });
+        return '';`, { user: true });
+    if (res) { await b.run(dw, 'closeHours();'); return res; }
+    await answerPin(b, dw, fm, pin);
+    const toast = await b.run(dw, `return document.querySelector('.toast, #toast')?.textContent || '';`);
     await b.run(dw, 'closeHours();');
-    return res;
+    return toast;
 }
 
 // In EmployeeWizard's Tasks tab: set a roster employee's hours on a task day ("Add (or update)")
