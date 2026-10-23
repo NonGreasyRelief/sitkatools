@@ -87,6 +87,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## PaperWizard
 
+- 2026-10-22 · grow-log changes on edited days fixed: re-opening a page's only day to change its phase / room switches that page in place (it used to strike it and start the new page a day late, with the day put back to the old value); setting a change back rejoins the earlier page; a late re-page never overwrites the later page it stops at
 - 2026-10-22 · a changed plant count needs a reason before the day saves: a drop split by reason (destroyed, culled, sampled, harvested, moved, sold / transferred), a rise with a typed reason; kept on the day and added to its comments answer so it prints
 - 2026-10-22 · the harvest log records the phase (Harvesting / Drying / Curing) and room after the grow log: the last answered write the lot back, no strike-out; with split files the office's Room question lists only the lot's building
 - 2026-10-19 · corrections & change log for the QAP — reason required (tap chips), dates yyyy/mm/dd, signed logs can be corrected and are flagged, change log prints from its own button

@@ -3285,6 +3285,14 @@
             const first = originals[0].inst;
             const reuse = day === key;
             for (const o of originals.slice(1)) delete sheetData.instances[o.key];
+            // The change is taken back (plan.undoInto): the page before continues — no strike-out — and these days go
+            // back onto it, then onto fresh pages past its 7 days
+            const base = reuse && plan.undoInto ? sheetData.instances[plan.undoInto] : null;
+            if (base) {
+                base.phaseChangeDate = null;
+                base.strikeInitials = null;
+                delete sheetData.instances[key];
+            }
             if (!reuse) {
                 // The log the change was recorded in ends on that day; its row keeps the OLD value
                 // (double entry), like a phase/room change recorded on the day.
@@ -3307,9 +3315,12 @@
             const dates = [...rows.keys()].sort();
             const newKeys = [];
             const srcOf = new Map();   // rebuilt page → the original page its header came from
-            let page = null;
+            let page = base ? { key: plan.undoInto, inst: base } : null;
             for (const ds of dates) {
                 if (!page || ds > addDaysStr(page.key, 6)) {
+                    // Never a page on or after the page re-paging stopped at — it owns that day. The change there fell on
+                    // a page boundary, so the rebuilt page before it just ends (it used to overwrite that page).
+                    if (plan.stop && ds >= plan.stop.key) continue;
                     const src = coverOf(ds);
                     page = { key: ds, inst: { phase: src.phase ?? null, room: src.room ?? null, header: {}, days: {},
                         phaseChangeDate: null, strikeInitials: null, snapshots: {}, signature: null, completedAt: null, printedAt: null } };
@@ -3343,7 +3354,7 @@
             }
             // Change history goes with the days: a moved day's corrections go to the page it is on now, and
             // a page that was rebuilt passes its page-level corrections to the pages made from it.
-            const rebuilt = newKeys.map(k => sheetData.instances[k]).filter(Boolean);
+            const rebuilt = [...(base ? [base] : []), ...newKeys.map(k => sheetData.instances[k]).filter(Boolean)];
             for (const o of originals) {
                 const list = o.inst.changes || [];
                 if (!list.length) continue;
@@ -3360,7 +3371,7 @@
                 }
                 if (kept) o.inst.changes = stay;
             }
-            for (const k of new Set([key, ...newKeys])) {
+            for (const k of new Set([key, plan.undoInto, ...newKeys].filter(Boolean))) {
                 if (!sheetData.instances[k]) continue;
                 captureSnapshots(sheetId, lotId, k, sheetData.instances[k]);
                 evaluateCompletion(sheetId, k, sheetData.instances[k]);
@@ -3428,9 +3439,17 @@
                     return null;
                 }
                 const plan = repagePlan(lotId, sheetId, key, day, changes);
+                // Set back, on a page's first day, to the page before it (struck on that day for the change): undo
+                if (day === key) {
+                    const ph = changes.find(c => c.field === 'phase')?.newValue ?? inst.phase;
+                    const rm = changes.find(c => c.field === 'room')?.newValue ?? inst.room;
+                    plan.undoInto = undoTarget(lotId, sheetId, key, ph, rm);
+                }
                 const movedDays = [...plan.moved.keys()].sort();
                 let msg = `⚠️ You changed the ${what} on ${fmtShort(day)}, but the days after it were logged under the old value.\n\n`;
-                msg += day === key
+                msg += plan.undoInto
+                    ? `That takes back the change recorded on ${fmtShort(day)}: the log starting ${fmtShort(plan.undoInto)} continues (its strike-out goes)`
+                    : day === key
                     ? `This log starts on ${fmtShort(day)}, so it switches to the new value`
                     : `The log starting ${fmtShort(key)} will be struck out on ${fmtShort(day)}, and a new page starts that day`;
                 msg += movedDays.length
@@ -3471,7 +3490,8 @@
             if (repage) {
                 const savedRow = { ...(inst.days[day] || {}) };
                 const r = applyRepage(lotId, sheetId, key, day, changes, repage, savedRow, drawn);
-                notes.push(`re-paged from ${fmtShort(day)} (${r.newKeys.length} page${r.newKeys.length === 1 ? '' : 's'})`);
+                notes.push(repage.undoInto ? `change on ${fmtShort(day)} taken back — the log from ${fmtShort(repage.undoInto)} continues`
+                    : `re-paged from ${fmtShort(day)} (${r.newKeys.length} page${r.newKeys.length === 1 ? '' : 's'})`);
                 if (r.reprint.length) notes.push(`reprint ${r.reprint.map(fmtShort).join(', ')}`);
                 // The lot's live phase/room follows the change only when nothing later overrides it
                 if (!repage.stop && DB.lots[lotId]) {
@@ -3613,6 +3633,24 @@
                 && (cfg.freshOnly
                     ? dayKeys.length <= 1 && dayKeys.every(k => k === today)
                     : dayKeys.length === 0 && headerEmpty)) {
+                // Set back to the page before it (struck on this day for that change): the change is taken back —
+                // that page continues and this day rejoins it
+                const nextPhase = cfg.instField === 'phase' ? value : (normalizeStage(DB.lots[ctx.lotId]?.stage) || oldInst.phase || null);
+                const nextRoom = cfg.instField === 'room' ? value : (DB.lots[ctx.lotId]?.currentRoom || oldInst.room || null);
+                const backTo = undoTarget(ctx.lotId, ctx.sheetId, ctx.key, nextPhase, nextRoom);
+                if (backTo) {
+                    const prev = sheetData.instances[backTo];
+                    prev.phaseChangeDate = null;
+                    prev.strikeInitials = null;
+                    const row = { ...(oldInst.days?.[today] || {}) };
+                    if (q?.rowScoped) row[q.id] = value;
+                    prev.days[today] = row;
+                    delete sheetData.instances[ctx.key];
+                    if (writeBack) cfg.writeBackFn(value);
+                    captureSnapshots(ctx.sheetId, ctx.lotId, backTo, prev);
+                    evaluateCompletion(ctx.sheetId, backTo, prev);
+                    return { inst: prev, newKey: backTo, value, reused: true, merged: true };
+                }
                 oldInst[cfg.instField] = value;
                 // The OTHER snapshot follows the live lot record — a same-save double change
                 // already wrote the other new value back before this rollover ran (and the DB
@@ -4313,6 +4351,16 @@
 
         // Previous daily-weekly instance key for this lot+sheet (for same-as-last at a chain start).
         // The current instance may be an unsaved draft, so take the largest stored key before it.
+        // Taking a change back: a page whose first day is set back to the phase and room of the page before it — which
+        // was struck on that very day for the change — rejoins that page (no strike-out, no extra page). Returns the
+        // earlier page's key, or null.
+        function undoTarget(lotId, sheetId, key, phase, room) {
+            const pk = prevInstanceKey(lotId, sheetId, key);
+            const prev = pk ? DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances?.[pk] : null;
+            if (!prev || prev.signature || prev.phaseChangeDate !== key) return null;
+            return sameTracked('phase', prev.phase, phase) && sameTracked('room', prev.room, room) ? pk : null;
+        }
+
         function prevInstanceKey(lotId, sheetId, key) {
             const keys = Object.keys(DB.paperWizard?.entries?.[lotId]?.[sheetId]?.instances || {}).sort();
             let best = null;
@@ -5642,8 +5690,9 @@
             // new or completely empty log), a change recorded on the window's first day can
             // repurpose the instance in place as the fresh page instead of shifting it forward.
             // Computed before step 1 writes the current day.
-            const preExisting = !instIsNew && (Object.keys(inst.days || {}).length > 0
-                || Object.values(inst.header || {}).some(v => String(v ?? '').trim() !== ''));
+            // Only OTHER days count: re-saving a page's only day (to change its phase or room) is not earlier content,
+            // so the page switches to the new value in place instead of being struck on its first day.
+            const preExisting = !instIsNew && Object.keys(inst.days || {}).some(ds => ds !== ctx.day);
 
             // 1) Save the day's FULL entry — every question as answered, including the change
             //    question. The old log's move-day row is a complete entry under the old value;
@@ -5766,8 +5815,10 @@
             const nCorr = await confirmCorrections();
             if (nCorr === null) return;
 
-            captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
-            evaluateCompletion(ctx.sheetId, ctx.key, inst);
+            if (!rolled?.merged) {
+                captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, inst);
+                evaluateCompletion(ctx.sheetId, ctx.key, inst);
+            }
             if (rolled && !rolled.reused) {
                 captureSnapshots(ctx.sheetId, ctx.lotId, rolled.newKey, rolled.inst);
                 evaluateCompletion(ctx.sheetId, rolled.newKey, rolled.inst);
@@ -5775,7 +5826,9 @@
             notifySitkaTools();
             closeRunner();
             renderAll();
-            if (rolled && phaseChanged && roomChanged) {
+            if (rolled?.merged) {
+                showToast(`Entry saved · the change on ${fmtShort(moveDay)} is taken back — the log from ${fmtShort(rolled.newKey)} continues` + corrNote(nCorr));
+            } else if (rolled && phaseChanged && roomChanged) {
                 showToast(`Entry saved · phase change to ${rolled.value} + room change to ${nvRoom} recorded` + corrNote(nCorr));
                 if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);
             } else if (rolled) {

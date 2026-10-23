@@ -234,6 +234,8 @@ A phase change (Clone → Veg → Bloom) or a room move (e.g. into the dry room)
    - **Cross-snapshot:** the fresh instance also carries the value that didn't change (from the old instance, or `lot.stage` / `lot.currentRoom` when absent).
    - **Same-save double change:** one strike-out records both; the fresh log carries the new phase and the new room, both write-backs fire, and no second rollover runs (it would make a phantom zero-day log). The old move-day row keeps both previous values.
 4. **Strike-out policy:** a diagonal across the remaining day rows, the confirmer's initials above the line and the change date below. Those rows need no entries.
+5. **A page's only day, re-opened and changed** (its first day, nothing else on it yet): the page switches to the new value in place, with no strike-out. Only other days count as earlier content (`preExisting`); before 2026-10-22 such a change struck the page on its first day, put the day back to the old value and started the new page the next day.
+6. **Taking a change back** (`undoTarget`): setting a page's first day back to the phase and room of the page before it — which was struck on that very day for the change — rejoins that page: its strike-out goes, the day (and any later days, re-paged) go back onto it, then onto fresh pages past its 7 days. The lot's phase / room follow. Signed pages are never rejoined.
 
 **Strike-out computation** (derived, never stored): a pure function of `phaseChangeDate`, `strikeInitials` and the placed day-row boxes returns, **per page**:
 
@@ -257,7 +259,7 @@ Saving a day that is **followed by later entries or pages** (`isBackfillDay`) ta
 
 - **Plant count (row-scoped):** the difference (new − old) is applied to every later recorded count in **unsigned** logs, so later culls stay right (540→538 becomes 500→498). Later pages count from the edited date itself: after a phase / room change the move day is on both pages, so editing the old page's move-day row also corrects the new page's row for that date. "Cancel" saves the day only. Every unsigned later page's `lot.plantCount` snapshot moves by the same amount, even before it has rows.
 - **Phase / room:** the log is struck out on that day (drawn initials, `phaseChangeDate` = the day, its row stamped with the old value) and the unsigned pages after it are **re-paged**: their days move onto fresh 7-day pages starting that day under the new value, and later answers still carrying the old value are updated. A later page that already holds the new value (a change recorded late) merges in. On a log's first day there's nothing to strike — the page switches to the new value in place.
-- **Stops:** propagation never changes a log the master grower has **signed**, and re-paging stops at a page recording a different change. If the last rebuilt page would run into the page it stopped at, it is struck where it ends (on the linked change day, or the day before a signed log).
+- **Stops:** propagation never changes a log the master grower has **signed**, and re-paging stops at a page recording a different change. If the last rebuilt page would run into the page it stopped at, it is struck where it ends (on the linked change day, or the day before a signed log). A rebuilt page never starts on or after the page it stopped at: when the later change falls on a page boundary, the rebuilt page just ends the day before (it used to overwrite that page). The stopped page keeps what it recorded, the other tracked value included.
 - **Live lot values:** a backfilled day never drags the lot backwards. `lot.plantCount` follows the newest recorded day in the chain; `lot.stage` / `lot.currentRoom` take the new value only when re-paging reached the end of the chain.
 - **Reprint:** the toast names pages that were already printed.
 - Opening an older page (one with a later page after it) never shows the "Lot is now in … — close this log?" prompt; only the newest page is checked.
@@ -432,4 +434,4 @@ Root UI Standards apply. Specifics:
 
 ## Tests
 
-`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tools-smoke`, `link-lost`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").
+`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tests/grow-log-changes.test.mjs` covers phase / room changes recorded on edited days (newest day, earlier days, a page's only day, moved earlier, taken back, re-paged up to a later change, Cancel at the correction pad); `tools-smoke`, `link-lost`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").
