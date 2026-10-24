@@ -183,7 +183,7 @@ Both buttons are in the recipe manager's list view, next to `＋ New Recipe`.
 
 ## Crop Projection (Projected Lots)
 
-Projected lots are placeholder future crops in flowering rooms (`rooms.<id>.isFlowering === true`, set in SitkaTools' Room Manager; only this tool reads the flag). They are never in `DB.lots` and never shown in SitkaTools' lot manager. Two separate operations act on a room's chain — don't conflate them:
+Projected lots are placeholder future crops in flowering rooms (`rooms.<id>.isFlowering === true`, set in SitkaTools' Room Manager; only this tool reads the flag), and the next mother lots in rooms designated **Mother** ("🌿 Mother Rooms" below). They are never in `DB.lots` and never shown in SitkaTools' lot manager. Two separate operations act on a room's chain — don't conflate them:
 
 - **Projection** (Project Crop) builds or refreshes the full 5-lot chain of a room that isn't pending reprojection.
 - **Reprojection** (Reproject) shifts the surviving chain down one slot after a real lot took TBA-1, and tops it back up to 5.
@@ -230,6 +230,15 @@ Every code path that would read `DB.lots[lotId]` goes through these helpers. Use
   - Lots are never pulled earlier, and never re-anchored to a lot's harvest.
   - The plan is computed before anything changes. If any push is needed, a blocking `confirm()` lists every lot (`TBA-01: +5d (Mar 14 → Mar 19)`, `TBA-03: unchanged (planned delay absorbs it)`, `TBA-05: new — transplants Jul 31`) under a headline naming the push to the next lot. **Cancel = no changes.**
 - **Project Crop** (`generateProjectionsForRoom`): checks the room is flowering and the gate passes (else a toast naming the newest lot). Ensures 5 map entries (never prunes; refreshes `roomName`). Snapshots events and map, places Lot 1 (`reAnchorProjectedLot(roomId, 1, day0, recipeBloomDays(projRecipe))`), then `pushIfRoomNotReady` and `cascadeProjections(roomId, 2, …)` for the rest. If anything was pushed, a confirm lists it; cancel restores the snapshot.
+
+### 🌿 Mother Rooms
+
+User decision 2026-10-23 ("these still have the ability to do repeating crops"). A room designated **Mother** projects its next mother lots the same way, with these differences (`isMotherRoom`, `projectableRoom`, `chainRecipeFor`):
+
+- **The chain follows the room's mothers:** its recipe is the newest real lot's 🌿 vegetative recipe (the Projection Recipe dropdown holds bloom recipes only). Each next mother lot starts on the previous one's **Cut Clones to Replace Mothers** day (`nextLotDay0`, fallback Retire Mothers − its clone-cut days).
+- **No replacement cut, no chain:** Project Crop is disabled ("… has no "Cut Clones to Replace Mothers" task") when the recipe has none, or when the room's newest lot has no vegetative schedule. Mothers can still come from another lot's extra clones, created by hand.
+- **No room-ready rule:** no push-back on Project Crop, Generate or Reproject (Reproject does a plain shift-down and tops up TBA-05 with the mothers' recipe).
+- A projected mother lot has every task in the Mother room (projected lots have no cloning or veg room), repeats included. SitkaTools' deletion hook frees TBA-01 when a real lot moves into the Mother room, as for flowering rooms.
 
 ### Reprojection
 

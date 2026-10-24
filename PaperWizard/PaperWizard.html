@@ -6389,6 +6389,11 @@
                     sections['room-clean'].push({ html: cabLeaf(`🧼 ${label}`, { text: '— not assigned', cls: '' }), missing: false });
                     continue;
                 }
+                // 🌿 New mothers move into a Mother room without a room clean (user decision 2026-10-23)
+                if (Object.values(DB.rooms || {}).some(r => r?.name === name && r.designation === 'Mother')) {
+                    sections['room-clean'].push({ html: cabLeaf(`🧼 ${escapeHtml(name)}`, { text: '— not needed (Mother room)', cls: '' }), missing: false });
+                    continue;
+                }
                 const clean = cleanBefore(name, moveIn[role] || todayStr(), activeLotId);
                 sections['room-clean'].push(clean
                     ? { html: cabLeaf(`🧼 ${escapeHtml(name)} · ${fmtShort(clean.date)}`, { text: '✓ on file', cls: 'ok' }, { ref: true, from: clean.lotId, print: { lotId: clean.lotId, sheetId: clean.sheetId, key: clean.key } }), missing: false }

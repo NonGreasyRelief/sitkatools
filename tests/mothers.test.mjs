@@ -99,7 +99,44 @@ export async function run(b, BASE) {
     const asked = await b.run(clw, 'return window.__asked;');
     check('retiring the mothers sooner asks before dropping a later repeat that holds work', asked.includes('with recorded work will be removed') && asked.includes(`Prune Mothers (${prunes.length}/${prunes.length})`), asked.slice(0, 200));
 
+    // ---- 🔮 Project Crop in a Mother room: the next mother lots, each from the previous one's replacement cut ----
+    await b.run(clw, `window.confirm = () => { window.__pushAsked = true; return true; }; window.__pushAsked = false;
+        const l = document.getElementById('activeLot'); l.value = 'M100'; l.dispatchEvent(new Event('change')); updateProjectBtnState();`);
+    const btn = await b.run(clw, `const b = document.getElementById('generateProjectionsBtn'); return { disabled: b.disabled, title: b.title };`);
+    check('Project Crop is offered for the Mother room once its mother lot is scheduled', !btn.disabled, JSON.stringify(btn));
+    await b.run(clw, `generateProjectionsForRoom('R1MO');`);
+    const proj = await b.run(main, `const ev = DB.data.calendarEvents.filter(e => e.sourceTool === 'CropProjection' && e.roomId === 'R1MO');
+        const by = id => ev.filter(e => e.lotId === id); const d0 = id => by(id).find(e => e.taskType === 'clone_cut_prep')?.date; const cut = id => by(id).find(e => e.taskType === 'clone_cut')?.date;
+        return { ids: [...new Set(ev.map(e => e.lotId))].sort(), m100cut: DB.data.calendarEvents.find(e => e.lotId === 'M100' && e.taskType === 'clone_cut')?.date,
+            d0: [1,2,3,4,5].map(i => d0('R1MO-TBA-0' + i)), cut: [1,2,3,4,5].map(i => cut('R1MO-TBA-0' + i)),
+            retire: !!by('R1MO-TBA-01').find(e => e.taskType === 'retire'), harvest: ev.some(e => e.taskType === 'harvest'), prunes: by('R1MO-TBA-01').filter(e => e.taskType === 'mother_prune').length,
+            recipe: DB.data._CropLabourWizard.projectedLots['R1MO-TBA-01']?.config?.recipeId };`);
+    check('five projected mother lots in the Mother room, from its mothers\' own 🌿 recipe', JSON.stringify(proj.ids) === JSON.stringify(['R1MO-TBA-01', 'R1MO-TBA-02', 'R1MO-TBA-03', 'R1MO-TBA-04', 'R1MO-TBA-05'])
+        && proj.recipe === rid && proj.retire && !proj.harvest && proj.prunes === prunes.length, JSON.stringify(proj));
+    check('each starts on the previous one\'s "Cut Clones to Replace Mothers" day', proj.d0[0] === proj.m100cut && [1, 2, 3, 4].every(i => proj.d0[i] === proj.cut[i - 1]), JSON.stringify([proj.m100cut, proj.d0, proj.cut]));
+    check('…with no room-ready push-back to ask about', !(await b.run(clw, 'return window.__pushAsked;')));
+    // A mother recipe with no replacement cut has no next generation to plan
+    const noCut = await b.run(clw, `const r = JSON.parse(JSON.stringify(DB.data._CropLabourWizard.recipes['${rid}'])); r.id = 'nocut1'; r.name = 'No cut'; r.tasks = r.tasks.filter(t => t.taskType !== 'clone_cut');
+        DB.data._CropLabourWizard.recipes.nocut1 = r; DB.lots.M100._tool_CropLabourWizard.recipeId = 'nocut1'; const res = resolveProjectionRoom('M100');
+        DB.lots.M100._tool_CropLabourWizard.recipeId = '${rid}'; delete DB.data._CropLabourWizard.recipes.nocut1; return res.disabledReason || '';`);
+    check('a mother recipe with no replacement cut can\'t be projected, and says why', noCut.includes('no "Cut Clones to Replace Mothers"'), noCut);
+
     await leave(b, clw); await b.send('browsingContext.close', { context: clw });
+    // SitkaTools: a new mother lot in the Mother room takes its first projected slot; the Lot Manager has a Mother stage
+    const stages = await b.run(main, `return [...document.getElementById('lotStage').options].map(o => o.value);`);
+    check('the Lot Manager offers a Mother stage', stages.includes('mother'), stages.join());
+    await b.run(main, `window.alert = () => {}; const t = document.getElementById('lotType'); t.value = 'new-lot'; t.dispatchEvent(new Event('change'));
+        document.getElementById('lotId').value = 'M200'; document.getElementById('lotStrain').value = 'Test Kush'; document.getElementById('plantCount').value = '10';
+        document.getElementById('destRoom').value = 'Mother 1'; document.getElementById('lotStage').value = 'mother'; document.getElementById('lotForm').requestSubmit();`, { user: true });
+    const hook = await b.run(main, `return { lot: DB.lots.M200?.stage, tba1: !!DB.data._CropLabourWizard.projectedLots['R1MO-TBA-01'], tba2: !!DB.data._CropLabourWizard.projectedLots['R1MO-TBA-02'],
+        ev1: DB.data.calendarEvents.some(e => e.lotId === 'R1MO-TBA-01') };`);
+    check('a new mother lot in the Mother room takes TBA-01 (the room waits for Reproject), like a flower room', hook.lot === 'mother' && !hook.tba1 && !hook.ev1 && hook.tba2, JSON.stringify(hook));
+    // PaperWizard: a Mother room needs no pre-move-in clean
+    const pw = await openTool(b, main, 'PaperWizard');
+    await b.run(pw, `switchTab('cabinet'); const l = document.getElementById('activeLot') || document.getElementById('lotSelect'); l.value = 'M100'; l.dispatchEvent(new Event('change'));`);
+    const cab = await b.run(pw, `return document.body.textContent;`);
+    check('PaperWizard: the Mother room needs no pre-move-in clean', cab.includes('not needed (Mother room)'), cab.slice(cab.indexOf('pre-move-in'), cab.indexOf('pre-move-in') + 300));
+    await leave(b, pw); await b.send('browsingContext.close', { context: pw });
     await leave(b, main);
 
     // ---- DailyWizard: a room chore shows only while a lot is in the room ----

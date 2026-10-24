@@ -2969,7 +2969,7 @@
                         <input type="text" id="lotStrain" placeholder="e.g., Kush Mints">
                     </div>
                     <div class="form-group">
-                        <label for="destRoom">Destination Room (flower)</label>
+                        <label for="destRoom" title="Where the lot ends up: its flower room, or for mother plants their Mother room">Destination Room (flower, or Mother room)</label>
                         <select id="destRoom">
                             <option value="">— No room assigned —</option>
                         </select>
@@ -3041,6 +3041,7 @@
                         <select id="lotStage">
                             <option value="cloning">Cloning</option>
                             <option value="veg">Vegetative</option>
+                            <option value="mother">Mother</option>
                             <option value="flower">Flowering</option>
                             <option value="harvest">Harvest</option>
                             <option value="drying">Drying</option>
@@ -6518,7 +6519,7 @@
             // A real lot taking a flowering room's slot "takes" TBA-1: delete only the TBA-01 map
             // entry + its events. TBA-2…TBA-5 survive — the room is now pending reprojection.
             let projNote = '';
-            if (matchedRoomId && DB.data.rooms[matchedRoomId] && DB.data.rooms[matchedRoomId].isFlowering) {
+            if (matchedRoomId && projectedRoom(DB.data.rooms[matchedRoomId])) {
                 const res = deleteTBA1Projection(matchedRoomId);
                 if (res.removedEntry || res.deletedEvents > 0) {
                     projNote = `\n\n🔮 TBA-01 projection for this room was removed — the room is flagged for reprojection. Generate a schedule for this lot, then run Reproject in CropLabourWizard.`;
@@ -6677,14 +6678,14 @@
 
                 // Build stage selector dropdown
                 const stageSelectId = `stage_${key}`;
-                const stages = ['cloning', 'veg', 'flower', 'harvest', 'drying', 'curing'];
+                const stages = ['cloning', 'veg', 'mother', 'flower', 'harvest', 'drying', 'curing'];
                 const stageOptions = stages.map(s => {
-                    const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Vegetative' : s === 'flower' ? 'Flower' :
+                    const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Vegetative' : s === 'mother' ? 'Mother' : s === 'flower' ? 'Flower' :
                                   s === 'harvest' ? 'Harvest' : s === 'drying' ? 'Drying' : 'Curing';
                     const selected = lot.stage === s ? 'selected' : '';
                     return `<option value="${s}" ${selected}>${label}</option>`;
                 }).join('');
-                const stageLabel = { cloning: 'Cloning', veg: 'Vegetative', flower: 'Flower', harvest: 'Harvest', drying: 'Drying', curing: 'Curing' }[lot.stage] || lot.stage || 'No stage';
+                const stageLabel = { cloning: 'Cloning', veg: 'Vegetative', mother: 'Mother', flower: 'Flower', harvest: 'Harvest', drying: 'Drying', curing: 'Curing' }[lot.stage] || lot.stage || 'No stage';
                 const stageHtml = locked ? lockChip(stageLabel) : `
                     <div class="lot-stage-editor">
                         <select class="lot-stage-select" id="${stageSelectId}" data-lot-id="${key}" title="Change stage">
@@ -6885,7 +6886,7 @@
                     markUnsaved();
 
                     // A real lot taking a flowering room's slot "takes" TBA-1, as in the Room Manager's moveLot
-                    if (flowerRoomChanged && targetId && rooms[targetId].isFlowering) {
+                    if (flowerRoomChanged && targetId && projectedRoom(rooms[targetId])) {
                         const res = deleteTBA1Projection(targetId);
                         if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${rooms[targetId].name} — room flagged for reprojection`);
                     }
@@ -6934,6 +6935,8 @@
         // entry and its CropProjection calendar events. TBA-2…TBA-5 survive untouched (entries +
         // events) — the room becomes *pending reprojection*, which CLW infers from the missing
         // TBA-1 entry. Idempotent: a no-op when the room has no TBA-1 projection.
+        // Rooms CropLabourWizard projects future crops in: flowering rooms, and Mother rooms (their next mother lots)
+        const projectedRoom = room => !!room && (room.isFlowering || room.designation === 'Mother');
         function deleteTBA1Projection(roomId) {
             const result = { deletedEvents: 0, removedEntry: false };
             if (!DB.data || !roomId) return result;
@@ -7583,7 +7586,7 @@
 
                 // Moving a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
                 // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
-                if (toRoom.isFlowering) {
+                if (projectedRoom(toRoom)) {
                     const res = deleteTBA1Projection(toRoomId);
                     if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${toRoom.name} — room flagged for reprojection`);
                 }
@@ -7629,7 +7632,7 @@
 
                 // Assigning a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
                 // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
-                if (room.isFlowering) {
+                if (projectedRoom(room)) {
                     const res = deleteTBA1Projection(roomId);
                     if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${room.name} — room flagged for reprojection`);
                 }

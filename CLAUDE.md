@@ -144,13 +144,13 @@ A building device sees only its own building and only what it can save. It appli
 
 ## Crop Projection
 
-CropLabourWizard plans future crops in flowering rooms (`isFlowering`) as **projected lots**: a 5-lot chain per room, ids `{roomId}-TBA-01`…`-05`. They live in `_CropLabourWizard.projectedLots` (owned by CropLabourWizard), never in `DB.lots`, and their events carry `sourceTool: 'CropProjection'`, `lotId`, and always a `roomId`. Chain rules, reprojection and push-backs: `CropLabourWizard/CLAUDE.md` → "Crop Projection".
+CropLabourWizard plans future crops in flowering rooms (`isFlowering`), and the next mother lots in rooms designated **Mother**, as **projected lots**: a 5-lot chain per room, ids `{roomId}-TBA-01`…`-05`. They live in `_CropLabourWizard.projectedLots` (owned by CropLabourWizard), never in `DB.lots`, and their events carry `sourceTool: 'CropProjection'`, `lotId`, and always a `roomId`. Chain rules, reprojection and push-backs: `CropLabourWizard/CLAUDE.md` → "Crop Projection".
 
 - SitkaTools draws projection events dashed and muted (`.day-event.projection`); ICS export adds " (projected)" to their titles.
 
 ### Deletion Hook — SitkaTools
 
-When a real lot is created in, or moved into, a flowering room, SitkaTools:
+When a real lot is created in, or moved into, a flowering room or a Mother room (`projectedRoom`), SitkaTools:
 1. deletes `projectedLots["{roomId}-TBA-01"]` (the only entry SitkaTools may ever touch) and its `CropProjection` events;
 2. leaves TBA-02…05 alone, so the room is now *pending reprojection*;
 3. says so in its confirmation, telling the user to run **Reproject** in CropLabourWizard once the new lot has a schedule.
@@ -278,5 +278,5 @@ Don't add details, APIs or schemas for a planned tool until asked.
 ### Tests
 - `node tests/run.mjs [filter]` runs every `tests/*.test.mjs` in headless Firefox over WebDriver BiDi, with the repo served on 127.0.0.1: real clicks, real pen strokes, real right-click save links. Needs Node 22+ and Firefox (`FIREFOX=/path/to/firefox` if it isn't on the PATH). No npm packages.
 - Tests use the made-up DB in `tests/lib/helpers.mjs` (`fixtureDb()`) and never touch real DB files.
-- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs (supplies charged at a task included) and a hand-worked cost per gram, a hand-worked CTLS month (filing and who plants went to included), PaperWizard's repeating tables, corrections, number answers, grow-log changes on edited days and closing the wizard only by its ✕, DailyWizard's timers, floor manager PINs (and their sign-off for hours typed in the Tasks tab), lots locked to their grow log, the day rolling over, and every tool opening without page errors.
+- They cover saving and merging (single file, split files, tablet tabs, the office and a building on the same task, lost links, Wages.json added later, restoring a session closed without saving), every tool's main flows, the cost inputs (supplies charged at a task included) and a hand-worked cost per gram, a hand-worked CTLS month (filing and who plants went to included), mother crops (vegetative recipes, repeating tasks, Mother-room projections, a hand-worked cost per clone, DailyWizard's room chores only while a lot is in the room), PaperWizard's repeating tables, corrections, number answers, grow-log changes on edited days and closing the wizard only by its ✕, DailyWizard's timers, floor manager PINs (and their sign-off for hours typed in the Tasks tab), lots locked to their grow log, the day rolling over, and every tool opening without page errors.
 - Run them before any change to saving, merging or the postMessage protocol goes out.

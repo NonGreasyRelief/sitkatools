@@ -3843,14 +3843,15 @@
         // shifted by the delta (preserving every per-task offset); when bloomDays is provided,
         // bloom-dependent tasks additionally shift to enforce that bloom length (overriding any
         // custom bloom). Stale lots (no events) are regenerated fresh from defaults at their new position.
-        function reAnchorProjectedLot(roomId, index, day0, bloomDays) {
+        // `recipe`: the chain's recipe, for a lot with no stored config yet (a Mother room's chain follows its mothers' recipe)
+        function reAnchorProjectedLot(roomId, index, day0, bloomDays, recipe) {
             const lotId = projectedLotId(roomId, index);
             const entry = getProjectedLots()[lotId];
             if (!entry) return;
 
-            // The recipe this lot was generated from (per-lot override; header selection for
+            // The recipe this lot was generated from (per-lot override; the chain's / header selection for
             // lots with no stored config). Drives the bloom-dependent task set + stale regen.
-            const lotRecipe = getRecipeById(entry.config?.recipeId || projectionRecipeId);
+            const lotRecipe = entry.config?.recipeId ? getRecipeById(entry.config.recipeId) : (recipe || getRecipeById(projectionRecipeId));
 
             const events = eventsForLot(lotId);
             const oldDay0 = entry.config?.plantingDate;
@@ -3904,17 +3905,32 @@
         // Re-project lots fromIndex..5 forward in the chain: each lot starts (Day 0) on the previous lot's
         // "Cut Clones to Replace Lot" day, read from its current events (nextLotDay0). Then the room-ready
         // check (pushIfRoomNotReady). Returns the lots that check pushed back.
-        function cascadeProjections(roomId, fromIndex, bloomDays) {
-            const pushes = [];
+        function cascadeProjections(roomId, fromIndex, bloomDays, recipe) {
+            const pushes = [], mothers = isMotherRoom(DB.data.rooms?.[roomId]);
             for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) {
                 const prevId = projectedLotId(roomId, i - 1);
                 const day0 = nextLotDay0(prevId);
                 if (!day0) continue; // previous lot has no schedule — nothing to chain from
-                reAnchorProjectedLot(roomId, i, day0, bloomDays);
+                reAnchorProjectedLot(roomId, i, day0, bloomDays, recipe);
+                if (mothers) continue;   // new mothers move in without a room clean: no room-ready rule
                 const push = pushIfRoomNotReady(roomId, i, prevId);
                 if (push) pushes.push(push);
             }
             return pushes;
+        }
+
+        // ---- 🌿 Mother rooms (designation "Mother") project their next mother lots too ----
+        // The chain follows the room's newest real lot's 🌿 vegetative recipe; each next mother lot starts on the previous
+        // one's "Cut Clones to Replace Mothers" day. No room-ready rule and no push-backs.
+        const isMotherRoom = room => room?.designation === 'Mother';
+        const projectableRoom = room => !!room && (room.isFlowering || isMotherRoom(room));
+        // The recipe a room's chain follows: a flowering room the Projection Recipe; a Mother room its newest lot's 🌿 recipe
+        function chainRecipeFor(roomId) {
+            const room = DB.data.rooms?.[roomId];
+            if (!isMotherRoom(room)) return getProjectionRecipe();
+            const lotId = newestRealLotId(roomId);
+            const r = lotId && getScheduleConfig(lotId) ? getRecipeById(getScheduleConfig(lotId).recipeId) : null;
+            return isVegRecipe(r) ? r : null;
         }
 
         // Day 0 of the lot that follows `lotId` in its room: its "Cut Clones to Replace Lot" day (which may
@@ -3924,7 +3940,7 @@
             const events = eventsForLot(lotId);
             const cut = events.find(ev => ev.taskType === 'clone_cut');
             if (cut) return cut.date;
-            const h = events.find(ev => ev.taskType === 'harvest');
+            const h = events.find(ev => ev.taskType === 'harvest') || events.find(ev => ev.taskType === 'retire');   // mothers: from Retire Mothers
             return h ? computeTaskDate(h.endDate || h.date, -cloneCutDays(lotRecipeFor(lotId))) : null;
         }
 
@@ -3988,6 +4004,8 @@
             if (events.length === 0) return null; // newest lot not scheduled yet — gate fails
             const cut = events.find(ev => ev.taskType === 'clone_cut');
             let anchorDate = cut ? cut.date : null;
+            // Mothers: the next mother lot starts on the replacement clone cut — without one there's no next generation to plan
+            if (!anchorDate && isMotherRoom(DB.data.rooms?.[roomId])) return null;
             if (!anchorDate) {
                 const cfg = getScheduleConfig(lotId);
                 anchorDate = cfg ? cfg.plantingDate : null; // start day / Day 0 fallback
@@ -4004,10 +4022,13 @@
         function generateProjectionsForRoom(roomId) {
             const room = (DB.data.rooms || {})[roomId];
             if (!room) return;
-            if (!room.isFlowering) {
-                alert(`"${room.name}" is not flagged as a flowering room.`);
+            if (!projectableRoom(room)) {
+                alert(`"${room.name}" is not flagged as a flowering room, or designated a Mother room.`);
                 return;
             }
+            const mothers = isMotherRoom(room);
+            const projRecipe = chainRecipeFor(roomId);
+            if (!projRecipe) { showToast(`🔮 "${room.name}"'s newest lot needs a 🌿 vegetative schedule before its next mothers can be projected`); return; }
 
             // Gate: the room's newest real lot must have a generated schedule to anchor off.
             const anchor = resolveProjectionAnchor(roomId);
@@ -4035,9 +4056,9 @@
             }
 
             // Lot 1 anchor: the newest real lot's clone_cut day (or its start day if no clone_cut)
-            const projRecipe = getProjectionRecipe();
-            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, recipeBloomDays(projRecipe));
-            const pushes = [pushIfRoomNotReady(roomId, 1, anchor.lotId), ...cascadeProjections(roomId, 2, recipeBloomDays(projRecipe))].filter(Boolean);
+            const bloom = mothers ? undefined : recipeBloomDays(projRecipe);
+            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, bloom, projRecipe);
+            const pushes = [mothers ? null : pushIfRoomNotReady(roomId, 1, anchor.lotId), ...cascadeProjections(roomId, 2, bloom, projRecipe)].filter(Boolean);
 
             // Room-ready check: lots that would move in before the room is clean were pushed back. Ask
             // before keeping that; cancel puts everything back as it was.
@@ -4332,7 +4353,7 @@
             if (!map[tba5Id]) {
                 map[tba5Id] = { name: tba5Id, roomId, roomName: room.name, strain: 'TBA', index: PROJECTION_LOT_COUNT };
             }
-            const projRecipe = getProjectionRecipe();
+            const projRecipe = chainRecipeFor(roomId) || getProjectionRecipe();   // a Mother room: its mothers' recipe
             generateLotSchedule(tba5Id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), {
                 trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
             }, projRecipe);
@@ -4623,7 +4644,12 @@
             }
             const room = roomId ? (DB.data.rooms || {})[roomId] : null;
             if (!room) return { roomId: null, room: null, disabledReason: 'This lot has no flower room — projections need a room.' };
-            if (!room.isFlowering) return { roomId, room, disabledReason: `"${room.name}" is not flagged as a flowering room. Enable the flag in SitkaTools' Room Manager first.` };
+            if (!projectableRoom(room)) return { roomId, room, disabledReason: `"${room.name}" is not flagged as a flowering room, or designated a Mother room. Set it in SitkaTools' Room Manager first.` };
+            if (isMotherRoom(room) && !isPendingReprojection(roomId)) {
+                const r = chainRecipeFor(roomId);
+                if (!r) return { roomId, room, disabledReason: `${room.name}'s newest lot needs a 🌿 vegetative schedule before its next mothers can be projected.` };
+                if (!r.tasks.some(t => t.taskType === 'clone_cut')) return { roomId, room, disabledReason: `"${r.name}" has no "Cut Clones to Replace Mothers" task, so there's no next generation of mothers to plan.` };
+            }
 
             return { roomId, room, disabledReason: null };
         }
