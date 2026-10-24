@@ -1776,6 +1776,22 @@
         }
 
         /* Holiday detail panel */
+        /* A clone cut that doesn't match the projections (the real lot's vs TBA-01's) */
+        .day-event.cut-mismatch, .week-event.cut-mismatch { border-left: 3px solid var(--warning); }
+        .day-event.projection.cut-mismatch, .week-event.projection.cut-mismatch { border-left-style: dashed; }
+        .event-tooltip .tt-warn { color: var(--warning); font-weight: 600; }
+        .cut-mismatch-banner {
+            background: rgba(243, 156, 18, 0.15);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            font-weight: 700;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .cut-mismatch-banner .cut-mismatch-detail { color: var(--text-primary); font-weight: 400; margin-top: 4px; }
+
         .holiday-banner {
             background: rgba(243, 156, 18, 0.15);
             border: 1px solid var(--warning);
@@ -6982,6 +6998,46 @@
             return result;
         }
 
+        // ---- Clone cut vs projections (user request 2026-10-24) ----
+        // A room's newest real lot (latest createdDate, the lot CropLabourWizard's TBA-01 follows) has its own "Cut Clones
+        // to Replace Lot" task, and TBA-01's clones are cut on its "Cutting Clones" day. When those differ the floor sees two
+        // clone cuts, so both bars get a ⚠️, and the tooltip and event panel say why. Read from the events alone (not
+        // CropLabourWizard's projection map); CropLabourWizard shows the same warning on the task (cloneCutMismatch).
+        // Returns Map(event → { lotId, tbaId, realCut, tbaCut, harvestEnd, realDays, tbaDays }).
+        const CUT_MISMATCH_TEXT = 'Does not match projection schedule. Adjust in real lot to match distance from harvest to projections.';
+        function cloneCutMismatches(data) {
+            const out = new Map();
+            const evs = data?.calendarEvents || [];
+            const dayNum = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+            for (const [roomId, room] of Object.entries(data?.rooms || {})) {
+                const tbaId = `${roomId}-TBA-01`;
+                const tbaEv = evs.find(e => e.sourceTool === 'CropProjection' && e.lotId === tbaId && e.taskType === 'clone_cut_prep');
+                if (!tbaEv) continue;
+                // The newest real lot, as CropLabourWizard picks it (ties → later in assignedLots)
+                let lotId = null, best = '';
+                for (const id of room.assignedLots || []) {
+                    if (/-TBA-\d+$/.test(id)) continue;
+                    const d = data.lots?.[id]?.createdDate || '';
+                    if (!lotId || d.localeCompare(best) >= 0) { lotId = id; best = d; }
+                }
+                const own = t => evs.find(e => e.sourceTool === 'CropLabourWizard' && e.lotId === lotId && e.taskType === t);
+                const harvest = lotId && own('harvest'), cutEv = lotId && own('clone_cut');
+                if (!harvest || !cutEv || cutEv.date === tbaEv.date) continue;   // mothers have no harvest: nothing to compare
+                const harvestEnd = harvest.endDate || harvest.date;
+                const info = { lotId, tbaId, realCut: cutEv.date, tbaCut: tbaEv.date, harvestEnd,
+                    realDays: dayNum(harvestEnd) - dayNum(cutEv.date), tbaDays: dayNum(harvestEnd) - dayNum(tbaEv.date) };
+                out.set(cutEv, info);
+                out.set(tbaEv, info);
+            }
+            return out;
+        }
+        // "Lot 1226 cuts clones Fri Jan 1, 21 days before its harvest ends (Fri Jan 22). The projections cut them Sat Dec 26, 27 days before."
+        function cloneCutMismatchDetail(m) {
+            const day = s => { const [y, mo, d] = s.split('-').map(Number); return new Date(y, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', ''); };
+            const rel = n => n === 0 ? 'on the day' : `${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'} ${n > 0 ? 'before' : 'after'}`;
+            return `Lot ${m.lotId} cuts clones ${day(m.realCut)}, ${rel(m.realDays)} its harvest ends (${day(m.harvestEnd)}). The projections cut them ${day(m.tbaCut)}, ${rel(m.tbaDays)}.`;
+        }
+
         // What a tool window was last sent (the DB without SitkaTools' save stamp, plus the view)
         function subtoolSyncKey(payload, view) {
             return JSON.stringify({ db: { ...payload, _meta: undefined }, view });
@@ -8019,6 +8075,10 @@
                     }
                 }
 
+                // The real lot's clone cut and TBA-01's on different days
+                const cut = this._cutMismatchFor(event);
+                if (cut) html += `<div class="tt-row tt-warn">⚠️ ${escapeHtml(CUT_MISMATCH_TEXT)}</div><div class="tt-row">${escapeHtml(cloneCutMismatchDetail(cut))}</div>`;
+
                 // CropLabourWizard's labour estimate, and the hours recorded in EmployeeWizard
                 const labour = this._labourTooltipText(event);
                 if (labour) html += `<div class="tt-row">${escapeHtml(labour)}</div>`;
@@ -8058,6 +8118,12 @@
             _getClusterMap() {
                 if (!this._clusterMap) this._clusterMap = this._annualClusters();
                 return this._clusterMap;
+            },
+
+            // Clone cuts that don't match the projections (cloneCutMismatches), cached per render like the cluster map
+            _cutMismatchFor(event) {
+                if (!this._cutMismatch) this._cutMismatch = cloneCutMismatches(DB.data);
+                return this._cutMismatch.get(event) || null;
             },
 
             // Tooltip for a calendar day (month + annual views): lists every event
@@ -8405,9 +8471,11 @@
                             }
                             if (isCompleted) cssClass += ' completed';
                             if (event.sourceTool === 'CropProjection') cssClass += ' projection';
+                            const cutMismatch = this._cutMismatchFor(event);
+                            if (cutMismatch) cssClass += ' cut-mismatch';
 
                             // Time prefix, same format as the month grid
-                            let displayText = event.title || 'Event';
+                            let displayText = (cutMismatch ? '⚠️ ' : '') + (event.title || 'Event');
                             if (event.startTime) {
                                 const [h, m] = event.startTime.split(':');
                                 const hour = parseInt(h, 10);
@@ -8933,6 +9001,7 @@
                 this._rebuildFilterCache();
                 this._visibleEvents = this.filteredEvents();
                 this._clusterMap = null; // invalidate cached cluster map for the new visible set
+                this._cutMismatch = null; // and the clone-cut warnings (the DB may have changed)
 
                 console.log('[Calendar] Rendering - events count:', this.events.length, 'visible:', this._visibleEvents.length);
                 if (this.events.length > 0) {
@@ -9081,10 +9150,12 @@
                         }
                         if (isCompleted) cssClass += ' completed';
                         if (event.sourceTool === 'CropProjection') cssClass += ' projection';
+                        const cutMismatch = this._cutMismatchFor(event);
+                        if (cutMismatch) cssClass += ' cut-mismatch';
                         eventEl.className = cssClass;
 
                         // Build display text with optional time prefix
-                        let displayText = event.title || 'Event';
+                        let displayText = (cutMismatch ? '⚠️ ' : '') + (event.title || 'Event');
                         if (event.startTime) {
                             const [h, m] = event.startTime.split(':');
                             const hour = parseInt(h, 10);
@@ -9269,6 +9340,10 @@
                         <span class="completed-label" id="completedLabel">${isCompleted ? 'Completed' : 'Not Completed'}${isCompleted && event.completedBy?.name ? escapeHtml(` — signed off by ${event.completedBy.name}${event.completedBy.at ? ', ' + new Date(event.completedBy.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}`) : ''}</span>
                     </div>
                 `;
+
+                // The real lot's clone cut and TBA-01's on different days
+                const cutMismatch = cloneCutMismatches(DB.data).get(event);
+                if (cutMismatch) html += `<div class="cut-mismatch-banner">⚠️ ${escapeHtml(CUT_MISMATCH_TEXT)}<div class="cut-mismatch-detail">${escapeHtml(cloneCutMismatchDetail(cutMismatch))}</div></div>`;
 
                 html += '<div class="event-detail-grid">';
 

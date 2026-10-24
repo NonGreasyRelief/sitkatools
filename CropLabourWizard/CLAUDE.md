@@ -51,7 +51,7 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
 
 `clone_cut` is the day the next lot's clones are cut, counted back from harvest end. In the recipe it sets when the next lot is planted and moved into the flower room, and how long each cycle is.
 
-- **The task:** an ordinary task, reference fixed to `harvest` in the recipe editor. In the preview it can be moved per lot (spinbox or date picker, down to −200). The move is kept on the lot's event (the floor's task and the readout below follow it), but projections don't: the next projected lot always counts back from this lot's last harvest day ("Projection Chain", user decision 2026-10-24).
+- **The task:** an ordinary task, reference fixed to `harvest` in the recipe editor. In the preview it can be moved per lot (spinbox or date picker, down to −200). The move is kept on the lot's event (the floor's task and the readout below follow it), but projections don't: the next projected lot always counts back from this lot's last harvest day ("Projection Chain", user decision 2026-10-24). When the two differ, both clone-cut tasks show a ⚠️ ("⚠️ Clone Cut vs Projections").
 - **Readout** (`nextLotTurnaround` → `turnaroundHtml`):
   - In the recipe editor, from the task table as it stands, with a single-day harvest (`recipeTurnaround`). In the preview, a box below the list from the lot's own dates (says "harvest ends" when harvest is multi-day). Both assume the next lot follows the same recipe (its planting and transplant days from `freshLotDay0Offsets`).
   - Shows clones cut / planted / transplanted in days from harvest, and where the transplant lands: ✅ the day after Tank & Irrigation Clean (as tight as the room allows), 🕒 room empty N days, or ⚠️ room not ready, N days short. Plus "A new lot every N days" (Day 0 to clone cut; hidden when clones are off).
@@ -240,6 +240,16 @@ Every code path that would read `DB.lots[lotId]` goes through these helpers. Use
   - The plan is computed before anything changes. If any push is needed, a blocking `confirm()` lists every lot (`TBA-01: +5d (Mar 14 → Mar 19)`, `TBA-03: unchanged (planned delay absorbs it)`, `TBA-05: new — transplants Jul 31`) under a headline naming the push to the next lot. **Cancel = no changes.**
 - **Project Crop** (`generateProjectionsForRoom`): checks the room is flowering and the gate passes (else a toast naming the newest lot). Ensures 5 map entries (never prunes; refreshes `roomName`). Snapshots events and map, places Lot 1 (`reAnchorProjectedLot(roomId, 1, day0, recipeBloomDays(projRecipe))`), then `pushIfRoomNotReady` and `cascadeProjections(roomId, 2, …)` for the rest. If anything was pushed, a confirm lists it; cancel restores the snapshot.
 
+### ⚠️ Clone Cut vs Projections
+
+User request 2026-10-24. The room's newest real lot (the one TBA-01 follows) has its own "Cut Clones to Replace Lot" task, and TBA-01's clones are cut on its Day 0 ("Cutting Clones"). When those are on different days the floor would see two clone cuts, so both tasks say so (`cloneCutMismatch(roomId, live?)`):
+
+- **Shown** under the task in the preview and the saved schedule list, on the real lot's `clone_cut` and on TBA-01's `clone_cut_prep` (`cloneCutMismatchTask`): "⚠️ Does not match projection schedule. Adjust in real lot to match distance from harvest to projections.", then e.g. "Lot 1226 cuts clones Fri Jan 1, 21 days before its harvest ends (Fri Jan 22). The projections cut them Sat Dec 26, 27 days before."
+- **Live in the preview:** it uses the dates as you edit them, so moving the real lot's clone cut to the projections' distance (−27 with the default) clears it before Generate.
+- Bloom crops only (the real lot has a harvest). Nothing is changed by it.
+- SitkaTools shows the same warning on both calendar bars (`SitkaTools/CLAUDE.md` → "Calendar").
+- Projections made before 2026-10-24 started on the real lot's own clone cut, so they match it and show no warning until Project Crop re-places them from the harvest.
+
 ### 🌿 Mother Rooms
 
 User decision 2026-10-23 ("these still have the ability to do repeating crops"). A room designated **Mother** projects its next mother lots the same way, with these differences (`isMotherRoom`, `projectableRoom`, `chainRecipeFor`):
@@ -362,4 +372,4 @@ Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop
 
 ## Tests
 
-`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `builtin-recipes` (the three built-ins: dropdowns and manager, each one's turnaround, generating on real weekdays, Project Crop's 70-day chain, re-importing an exported built-in), `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs), `projection-harvest-end` (lots with a two-day harvest ending Friday and an old clone cut: Project Crop moves the next lots in on the Monday after and flips them on the Friday, also over projections made the old way; Reproject after a lot that harvests a week late pushes the chain back a week and keeps the rhythm). Overwrite push-backs have no automated test.
+`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `builtin-recipes` (the three built-ins: dropdowns and manager, each one's turnaround, generating on real weekdays, Project Crop's 70-day chain, re-importing an exported built-in), `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs), `projection-harvest-end` (lots with a two-day harvest ending Friday and an old clone cut: Project Crop moves the next lots in on the Monday after and flips them on the Friday, also over projections made the old way; the ⚠️ on both clone cuts here and on the SitkaTools calendar, cleared by moving the real lot's clone cut to −27; Reproject after a lot that harvests a week late pushes the chain back a week and keeps the rhythm). Overwrite push-backs have no automated test.

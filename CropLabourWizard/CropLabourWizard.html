@@ -418,6 +418,9 @@
         }
 
         .preview-task-est { color: var(--text-primary); white-space: nowrap; }
+        /* The clone cut that doesn't match the projections (real lot vs TBA-01) */
+        .cut-mismatch-note { font-size: 0.75rem; color: var(--warning); font-weight: 600; margin-top: 4px; line-height: 1.35; }
+        .cut-mismatch-detail { display: block; font-weight: 400; color: var(--text-secondary); }
         .preview-task-repeat { color: var(--accent); white-space: nowrap; }
         .recipe-kind { display: inline-block; font-size: 0.8rem; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--accent); color: var(--accent); }
 
@@ -3387,6 +3390,9 @@
             // Start dates of the enabled tasks, for the next-lot readout
             const taskDates = {};
 
+            // The clone-cut row that says when it doesn't match the projections (as you edit it)
+            const cutWarn = cloneCutMismatchTask(activeLotSelect.value);
+
             taskOffsets.forEach((entry, idx) => {
                 const def = entry.def;
                 const isEnabled = entry.enabled !== false;
@@ -3470,6 +3476,11 @@
                 // Offset label: show sign for negative offsets
                 const offsetLabel = effectiveOffset >= 0 ? `+${effectiveOffset}d` : `${effectiveOffset}d`;
 
+                // The real lot's clone cut, or TBA-01's Cutting Clones, on a different day from the other one
+                const cutWarnHtml = isEnabled && cutWarn.taskType === def.taskType && !isVegRecipe(activeRecipe)
+                    ? cloneCutMismatchHtml(cloneCutMismatch(cutWarn.roomId, def.taskType === 'clone_cut' ? { cut: startDate, harvestEnd: anchors.harvestEnd } : { tbaCut: startDate }))
+                    : '';
+
                 // Computed-date badge — clickable (opens the date picker) unless locked or disabled
                 const canPickDate = isEnabled && !isLockedDisplay;
                 const dateBadgeCls = `preview-computed-date${isMultiDayTask(def) ? ' multi' : ''}`;
@@ -3508,6 +3519,7 @@
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
                         <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}${estHtml}${repeatHtml}</div>
+                        ${cutWarnHtml}
                     </div>
                     ${offsetGroupHtml}
                     ${durationControlsHtml}
@@ -3979,6 +3991,43 @@
         function projectedSlotRecipe(roomId, index, chainRecipe) {
             const id = getProjectedLots()[projectedLotId(roomId, index)]?.config?.recipeId;
             return id ? getRecipeById(id) : (chainRecipe || getProjectionRecipe());
+        }
+
+        // ---- The real lot's clone cut against the projections (user request 2026-10-24) ----
+        // The room's newest real lot (the one TBA-01 follows) has its own "Cut Clones to Replace Lot" task, and TBA-01's
+        // clones are cut on its Day 0 ("Cutting Clones"). When those two days differ the floor would see two clone cuts,
+        // so both rows say so. SitkaTools draws the same warning on the calendar (cloneCutMismatches there).
+        // `live` swaps in the preview's dates: { cut, harvestEnd } for the real lot, { tbaCut } for TBA-01.
+        const CUT_MISMATCH_TEXT = 'Does not match projection schedule. Adjust in real lot to match distance from harvest to projections.';
+        function cloneCutMismatch(roomId, live = {}) {
+            const lotId = roomId ? newestRealLotId(roomId) : null;
+            const tbaId = roomId ? projectedLotId(roomId, 1) : null;
+            if (!lotId || !getProjectedLots()[tbaId]) return null;
+            const evs = eventsForLot(lotId);
+            const h = evs.find(ev => ev.taskType === 'harvest');
+            if (!h) return null;   // mothers: their chain starts on this very clone cut
+            const realCut = live.cut ?? evs.find(ev => ev.taskType === 'clone_cut')?.date;
+            const harvestEnd = live.harvestEnd ?? (h.endDate || h.date);
+            const tbaCut = live.tbaCut ?? eventsForLot(tbaId).find(ev => ev.taskType === 'clone_cut_prep')?.date;
+            if (!realCut || !tbaCut || realCut === tbaCut) return null;
+            return { lotId, tbaId, realCut, tbaCut, harvestEnd, realDays: daysBetween(realCut, harvestEnd), tbaDays: daysBetween(tbaCut, harvestEnd) };
+        }
+        // "21 days before" / "on the day" / "2 days after"
+        const daysBeforeText = n => n === 0 ? 'on the day' : `${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'} ${n > 0 ? 'before' : 'after'}`;
+        // The warning line under the clone-cut task (preview and saved schedule)
+        function cloneCutMismatchHtml(m) {
+            if (!m) return '';
+            const day = d => `${weekdayShort(d)} ${shortDate(d)}`;
+            return `<div class="cut-mismatch-note">⚠️ ${escapeHtml(CUT_MISMATCH_TEXT)}` +
+                `<span class="cut-mismatch-detail">Lot ${escapeHtml(m.lotId)} cuts clones ${day(m.realCut)}, ${daysBeforeText(m.realDays)} its harvest ends (${day(m.harvestEnd)}). ` +
+                `The projections cut them ${day(m.tbaCut)}, ${daysBeforeText(m.tbaDays)}.</span></div>`;
+        }
+        // Which clone-cut row of `lotId` the warning belongs on: the newest real lot's clone_cut, TBA-01's clone_cut_prep
+        function cloneCutMismatchTask(lotId) {
+            const { roomId } = resolveProjectionRoom(lotId);
+            if (!roomId) return { roomId: null, taskType: null };
+            if (isProjectedLot(lotId)) return { roomId, taskType: getProjectedLots()[lotId].index === 1 ? 'clone_cut_prep' : null };
+            return { roomId, taskType: newestRealLotId(roomId) === lotId ? 'clone_cut' : null };
         }
 
         // Room-ready rule (as in the push-back plans): projected lot `index` must be transplanted at least
@@ -4895,6 +4944,10 @@
             const listWrapper = document.createElement('div');
             listWrapper.className = 'task-list';
 
+            // The clone-cut task that doesn't match the projections (the real lot's, or TBA-01's)
+            const cutWarn = cloneCutMismatchTask(lotId);
+            const cutWarnHtml = cutWarn.taskType ? cloneCutMismatchHtml(cloneCutMismatch(cutWarn.roomId)) : '';
+
             lotEvents.forEach((ev, idx) => {
                 const item = document.createElement('div');
                 item.className = 'task-item';
@@ -4922,6 +4975,7 @@
                         <div class="task-name">${escapeHtml(nameWithoutEmoji)}</div>
                         <span class="task-type-badge">${escapeHtml(ev.taskType || '')}</span>
                         ${estHtml}
+                        ${ev.taskType === cutWarn.taskType ? cutWarnHtml : ''}
                     </div>
                     <span class="task-date-badge">${displayDate}</span>
                     ${holidayFlagHtml(holiday)}
