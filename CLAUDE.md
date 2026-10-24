@@ -138,7 +138,7 @@ A building device sees only its own building and only what it can save. It appli
 - **SitkaTools:** see `SitkaTools/CLAUDE.md` → "On a Building Device".
 - **Tools get the view with the DB** (`view: { building, split }` on every message, and in the shared copy; `split` = split files are open). Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
   - **Office-only tools** (CropLabourWizard, EquipmentWizard, GeneralEvent) show "Office only" and stop before loading.
-  - **DailyWizard** opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). Its floor manager signs tasks off with ✅ Mark done, and unlocks task editing and approves deletions with their own PIN, on every device (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
+  - **DailyWizard** lists a chore tied to a room only while a lot's current room is that room (`DailyWizard/CLAUDE.md` → "🚪 Room Chores"). It opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). Its floor manager signs tasks off with ✅ Mark done, and unlocks task editing and approves deletions with their own PIN, on every device (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
   - **PaperWizard** lists only the building's lots, hides Configure Sheets, offers only the building's rooms, and shows some lots read-only (`lotElsewhere`, see `PaperWizard/CLAUDE.md`).
   - **The Labour & Cost Wizard** shows only the Tasks tab and the 📜 Labour Log, limited to work in the building.
 
@@ -163,7 +163,6 @@ CropLabourWizard's tasks come from recipes: the built-in `sitka-9week` in code, 
 
 - **🌿 Mother lots:** a recipe with `kind: 'vegetative'` schedules mother plants (no flip, harvest or trim; retired on a planned day). A lot scheduled with one is a mother lot, and its `_tool_CropLabourWizard.kind` is `'vegetative'`. Its destination room (`destRoom`) is its Mother room. Nothing else flags mothers.
 - **Repeating tasks:** a recipe task may repeat every N days; each repeat is its own event with `repeat: 1, 2, …`.
-
 - **`taskType` ids are stable** (32 built-in). SitkaTools and DailyWizard map labels and emoji from hard-coded maps first, then `_CropLabourWizard.taskTypes` (a registry merged on every recipe save and import), then the raw id. Calendar filters work on any `taskType`.
 - **Task order against `transplant` is load-bearing:** it decides the room a task happens in (before transplant → cloning or veg room, after → flower room) in CropLabourWizard and SitkaTools (`_CLW_TASK_ORDER`). An unknown type falls back to the flower room.
 - Recipe files are `recipe-<id>.json`, imported only through a file picker; nothing is ever fetched.

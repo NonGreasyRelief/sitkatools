@@ -1,9 +1,9 @@
 // 🌿 Mother crops: a vegetative recipe in CropLabourWizard (no flip, harvest or trim; mothers retired on a planned day;
 // a replacement clone cut that starts the next mother lot; tasks that repeat every N days), generated for a mother lot
 // whose destination room is the Mother room.
-import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, withFloorManager, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, dwUnlock, leave } from './lib/helpers.mjs';
 
-export const title = 'mother crops: vegetative recipes, repeating tasks';
+export const title = 'mother crops: vegetative recipes, repeating tasks, room chores only while a lot is in the room';
 
 const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 export function addDaysIso(s, n) {
@@ -101,5 +101,44 @@ export async function run(b, BASE) {
 
     await leave(b, clw); await b.send('browsingContext.close', { context: clw });
     await leave(b, main);
+
+    // ---- DailyWizard: a room chore shows only while a lot is in the room ----
+    const dwDb = withFloorManager(motherDb());
+    const chore = (code, name, roomId) => ({ code, emoji: '🚪', name, minutes: 15, staff: 1, days: [0, 1, 2, 3, 4, 5, 6], monthDays: [], steps: [], ...(roomId ? { roomId } : {}) });
+    dwDb._DailyWizard.buildings.B1.tasks.push(chore('mom1', 'Water mothers', 'R1MO'), chore('cln1', 'Check clone domes', 'R1CL'), chore('veg1', 'Water veg room', 'R1VG'), chore('gr01', 'Water Grow 1', 'R1G1'));
+    const m2 = await fresh(b);
+    await openSitka(b, m2, BASE);
+    await loadSingle(b, m2, dwDb);
+    const dw = await openTool(b, m2, 'DailyWizard');
+    await dwBuilding(b, dw, 'B1');
+    const listed = () => b.run(dw, `return [...document.querySelectorAll('#listContainer .task-row')].map(r => r.textContent).join(' | ');`);
+    let txt = await listed();
+    check('rooms holding a lot keep their chores (the Mother room, Grow 1); whole-building chores stay', txt.includes('Water mothers') && txt.includes('Water Grow 1') && txt.includes('Water plants'), txt.slice(0, 300));
+    check('the empty clone and veg rooms\' chores are hidden', !txt.includes('Check clone domes') && !txt.includes('Water veg room'), txt.slice(0, 300));
+    const tog = await b.run(dw, `return document.querySelector('.empty-room-toggle')?.textContent || '';`);
+    check('…with a button to show them', tog === '🚪 Show 2 chores for empty rooms', tog);
+    const status = await b.run(dw, `return document.getElementById('statusText').textContent;`);
+    await b.run(dw, `document.querySelector('.empty-room-toggle').click();`, { user: true });
+    txt = await listed();
+    check('the button shows them, dimmed, and hides them again', txt.includes('Check clone domes') && (await b.run(dw, `return document.querySelectorAll('.task-row.empty-room').length;`)) === 2
+        && (await b.run(dw, `return document.querySelector('.empty-room-toggle').textContent;`)) === 'Hide the chores for empty rooms (2)', txt.slice(0, 300));
+    await b.run(dw, `document.querySelector('.empty-room-toggle').click();`, { user: true });
+    // A lot moving into the clone room brings its chore back
+    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Clone 1'; markUnsaved(); broadcastToSubtools();`);
+    await b.waitFor(dw, `return DB.lots.L200.currentRoom === 'Clone 1';`);
+    txt = await listed();
+    check('a lot moving into the room brings its chore back', txt.includes('Check clone domes') && !txt.includes('Water veg room'), txt.slice(0, 300));
+    // A chore already done today stays, even when its room empties
+    await b.run(dw, `const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes('Check clone domes')); row.querySelector('input[type=checkbox]').click();`, { user: true });
+    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Grow A'; markUnsaved(); broadcastToSubtools();`);
+    await b.waitFor(dw, `return DB.lots.L200.currentRoom === 'Grow A';`);
+    txt = await listed();
+    check('a chore ticked today stays even after its room empties', txt.includes('Check clone domes'), txt.slice(0, 300));
+    check('the status bar counts only the chores shown', /\d+\/\d+/.test(status) && !status.includes('/7'), status);
+    await dwUnlock(b, dw);
+    txt = await listed();
+    check('edit mode lists every chore, so the floor manager can still edit them', txt.includes('Water veg room') && !(await b.run(dw, `return !!document.querySelector('.empty-room-toggle');`)), txt.slice(0, 300));
+    await leave(b, dw); await b.send('browsingContext.close', { context: dw });
+    await leave(b, m2);
     return results;
 }

@@ -37,12 +37,17 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 - **DailyWizard writes only `task.roomId`.** It never works out the split or writes to lots; the hours entries are unchanged.
 - **Editor:** **Room** — "— Whole building (no room) —", then the building's rooms (`id — name`). Saving with the first option removes `roomId`.
 - **Shown as** a `🚪 {room}` chip on the task row, a line in the detail view's summary, and a note in the hours view.
+- **Only while a lot is in the room** (user decision 2026-10-23): a room chore is listed only while some open lot's current room (`lots.<id>.currentRoom`) is that room, so "Water Grow 2" isn't asked for an empty Grow 2, and "Check the trim room" only while a lot is in it (`choreForEmptyRoom`, `choresToShow`).
+  - A chore already ticked, with hours logged or a timer going that day stays listed. Whole-building chores, and chores whose room is gone, always show.
+  - **🚪 Show N chores for empty rooms** under the list reveals them, dimmed (this page session only; "Hide the chores for empty rooms" puts them away). All Buildings has the same button per building.
+  - The status bar and the building's ✅ count leave them out. Edit mode lists every chore, so the floor manager can still edit or reorder them.
+  - It reads the lots' current room as it is now, for any date shown.
 - **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
 - **Changing the room** re-attributes the chore's past hours too (Reports read the room from the task). A closed-out lot keeps the share saved in its summary.
 
 ### Recurrence Rules
 
-A task appears on a date when its weekday is in `days` **or** its day of month is in `monthDays`. Saving needs at least one weekday or one month-day.
+A task appears on a date when its weekday is in `days` **or** its day of month is in `monthDays`, and, for a room chore, a lot is in its room ("🚪 Room Chores"). Saving needs at least one weekday or one month-day.
 
 ### Labour Display
 

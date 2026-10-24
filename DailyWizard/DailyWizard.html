@@ -157,6 +157,8 @@
         .status-pics-note { color: var(--accent); font-weight: 600; }
 
         /* ---- Task rows (core tablet UI) ---- */
+        .task-row.empty-room { opacity: 0.55; }
+        .empty-room-toggle { display: block; width: 100%; margin: 10px 0 4px; }
         .task-row {
             display: flex;
             align-items: center;
@@ -1653,7 +1655,7 @@
                 let taskCount = 0, doneCount = 0;
                 const bids = sel === 'ALL' ? Object.keys(DB.buildings) : [sel];
                 for (const bid of bids) {
-                    const tasks = tasksForBuilding(bid, dateStr);
+                    const tasks = choresToShow(bid, dateStr).shown;   // chores for empty rooms don't count
                     taskCount += tasks.length;
                     doneCount += tasks.filter(t => isChecked(checkSpotForTask(bid, t.code), dateStr)).length;
                 }
@@ -1678,6 +1680,42 @@
         function tasksForBuilding(buildingId, dateStr) {
             const list = DB.dailyBuildings[buildingId]?.tasks || [];
             return list.filter(t => taskOccursOn(t, dateStr));
+        }
+
+        // ---- 🚪 Room chores only while a lot is in the room (user decision 2026-10-23) ----
+        // A chore tied to a room shows only while some open lot's current room (lots.<id>.currentRoom) is that room, so the
+        // list never asks for "Water Grow 2" when Grow 2 is empty. A chore already ticked, with hours or a timer going that
+        // day still shows. Whole-building chores, and chores whose room is gone, always show. "Show N chores for empty
+        // rooms" reveals the rest (this page session only); edit mode lists every chore.
+        let showEmptyRoomChores = false;
+        function roomHoldsLot(roomId) {
+            const name = String(DB.rooms[roomId]?.name || '').trim().toLowerCase();
+            return !!name && Object.values(DB.lots).some(l => l && !l.closedDate && String(l.currentRoom || '').trim().toLowerCase() === name);
+        }
+        function choreForEmptyRoom(buildingId, task, dateStr) {
+            const room = choreRoom(buildingId, task);
+            if (!room || room.missing || roomHoldsLot(room.id)) return false;
+            if (isChecked(checkSpotForTask(buildingId, task.code), dateStr)) return false;
+            if ((DB.dailyBuildings[buildingId]?.labour?.[dateStr]?.[task.code] || []).length) return false;
+            if (Object.values(DB.dailyBuildings[buildingId]?.timers?.[task.code] || {}).some(t => t && (t.since || Number(t.ms) > 0))) return false;
+            return true;
+        }
+        // The day's chores to show, and the room chores hidden because their room is empty
+        function choresToShow(buildingId, dateStr) {
+            const shown = [], hidden = [];
+            for (const t of tasksForBuilding(buildingId, dateStr)) (choreForEmptyRoom(buildingId, t, dateStr) ? hidden : shown).push(t);
+            return { shown, hidden };
+        }
+        // The button under a list that shows or hides the empty rooms' chores
+        function emptyRoomToggle(n) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-secondary empty-room-toggle';
+            btn.textContent = showEmptyRoomChores ? T('Hide the chores for empty rooms ({n})', { n })
+                : n === 1 ? T('🚪 Show 1 chore for an empty room') : T('🚪 Show {n} chores for empty rooms', { n });
+            btn.title = T('Chores tied to a room show only while a lot is in that room');
+            btn.addEventListener('click', () => { showEmptyRoomChores = !showEmptyRoomChores; renderAll(); });
+            return btn;
         }
 
         // CropLabourWizard taskType → lot room phase rules (for event attribution)
@@ -3892,7 +3930,10 @@
         function renderBuildingView(container, buildingId, dateStr) {
             const b = DB.buildings[buildingId];
             const allTasks = DB.dailyBuildings[buildingId]?.tasks || [];
-            const tasks = allTasks.filter(t => taskOccursOn(t, dateStr));
+            // Edit mode lists every chore; otherwise a room chore waits for a lot in its room
+            const vis = choresToShow(buildingId, dateStr);
+            const listAll = EditMode.on() || showEmptyRoomChores;
+            const tasks = listAll ? allTasks.filter(t => taskOccursOn(t, dateStr)) : vis.shown;
             const events = eventsOnDate(dateStr).filter(ev => buildingForEvent(ev) === buildingId);
 
             if (!canEditBuilding(buildingId)) {
@@ -3929,10 +3970,15 @@
             if (allTasks.length === 0) {
                 container.appendChild(mutedLine(T('No daily tasks defined for {building} yet.', { building: b?.name || buildingId })));
             } else if (tasks.length === 0) {
-                container.appendChild(mutedLine(T('No daily tasks scheduled for this date.')));
+                container.appendChild(mutedLine(vis.hidden.length ? T('No chores today: their rooms are empty.') : T('No daily tasks scheduled for this date.')));
             } else {
-                tasks.forEach((t, i) => container.appendChild(makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true)));
+                tasks.forEach((t, i) => {
+                    const row = makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true);
+                    if (vis.hidden.includes(t)) row.classList.add('empty-room');
+                    container.appendChild(row);
+                });
             }
+            if (vis.hidden.length && !EditMode.on()) container.appendChild(emptyRoomToggle(vis.hidden.length));
 
             appendStillOpenSection(container, dateStr, buildingId);
             appendEventsSection(container, events);
@@ -3967,7 +4013,8 @@
                 const section = document.createElement('div');
                 section.className = 'building-section';
 
-                const tasks = tasksForBuilding(bid, dateStr);
+                const vis = choresToShow(bid, dateStr);
+                const tasks = showEmptyRoomChores ? [...vis.shown, ...vis.hidden] : vis.shown;
                 const done = tasks.filter(t => isChecked(checkSpotForTask(bid, t.code), dateStr)).length;
                 const events = dayEvents.filter(ev => buildingForEvent(ev) === bid);
 
@@ -3983,10 +4030,15 @@
                 section.appendChild(header);
 
                 if (tasks.length === 0) {
-                    section.appendChild(mutedLine(T('No daily tasks for this date.')));
+                    section.appendChild(mutedLine(vis.hidden.length ? T('No chores today: their rooms are empty.') : T('No daily tasks for this date.')));
                 } else {
-                    tasks.forEach(t => section.appendChild(makeTaskRow(bid, t, null, null, false)));
+                    tasks.forEach(t => {
+                        const row = makeTaskRow(bid, t, null, null, false);
+                        if (vis.hidden.includes(t)) row.classList.add('empty-room');
+                        section.appendChild(row);
+                    });
                 }
+                if (vis.hidden.length) section.appendChild(emptyRoomToggle(vis.hidden.length));
 
                 appendStillOpenSection(section, dateStr, bid);
                 appendEventsSection(section, events);
@@ -4219,6 +4271,11 @@
             "Remove this entry": { fr: "Supprimer cette saisie", es: "Quitar este registro", vi: "Xóa mục này", zh: "删除此条目" },
             "Logged {when}": { fr: "Saisi le {when}", es: "Registrado el {when}", vi: "Ghi lúc {when}", zh: "记录于 {when}" },
             "Entered in the Labour & Cost Wizard": { fr: "Saisi dans le Labour & Cost Wizard", es: "Registrado en el Labour & Cost Wizard", vi: "Nhập trong Labour & Cost Wizard", zh: "在 Labour & Cost Wizard 中录入" },
+            "🚪 Show {n} chores for empty rooms": { fr: "🚪 Afficher {n} tâches de salles vides", es: "🚪 Mostrar {n} tareas de salas vacías", vi: "🚪 Hiện {n} việc của phòng trống", zh: "🚪 显示 {n} 项空房间的任务" },
+            "🚪 Show 1 chore for an empty room": { fr: "🚪 Afficher 1 tâche d’une salle vide", es: "🚪 Mostrar 1 tarea de una sala vacía", vi: "🚪 Hiện 1 việc của phòng trống", zh: "🚪 显示 1 项空房间的任务" },
+            "Hide the chores for empty rooms ({n})": { fr: "Masquer les tâches des salles vides ({n})", es: "Ocultar las tareas de salas vacías ({n})", vi: "Ẩn việc của phòng trống ({n})", zh: "隐藏空房间的任务（{n}）" },
+            "Chores tied to a room show only while a lot is in that room": { fr: "Les tâches liées à une salle n’apparaissent que si un lot s’y trouve", es: "Las tareas de una sala solo aparecen si hay un lote en ella", vi: "Việc gắn với phòng chỉ hiện khi có lô trong phòng đó", zh: "与房间关联的任务只在该房间有批次时显示" },
+            "No chores today: their rooms are empty.": { fr: "Aucune tâche aujourd’hui : leurs salles sont vides.", es: "No hay tareas hoy: sus salas están vacías.", vi: "Hôm nay không có việc: các phòng đều trống.", zh: "今天没有任务：相关房间都是空的。" },
             "Entered in the Labour & Cost Wizard by {name}, {when}": { fr: "Saisi dans le Labour & Cost Wizard par {name}, le {when}", es: "Registrado en el Labour & Cost Wizard por {name}, el {when}", vi: "{name} nhập trong Labour & Cost Wizard lúc {when}", zh: "由 {name} 于 {when} 在 Labour & Cost Wizard 中录入" },
             "changed in the Labour & Cost Wizard {when}": { fr: "modifié dans le Labour & Cost Wizard le {when}", es: "cambiado en el Labour & Cost Wizard el {when}", vi: "đã sửa trong Labour & Cost Wizard lúc {when}", zh: "{when} 在 Labour & Cost Wizard 中修改" },
             "change approved by {name}": { fr: "modification approuvée par {name}", es: "cambio aprobado por {name}", vi: "thay đổi do {name} duyệt", zh: "修改由 {name} 批准" },

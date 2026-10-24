@@ -38,6 +38,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-23 · a chore tied to a room shows only while a lot's current room is that room (ticked, hour-logged or timed chores stay); "Show N chores for empty rooms" reveals the rest; edit mode lists every chore
 - 2026-10-22 · step picture packs load from the main screen for every building at once (a folder per building, or many files); the steps view keeps its buttons
 - 2026-10-22 · 🔒 each floor manager has their own PIN (set by the office, kept as a salted hash in Main.json); DailyWizard asks for it to go into ✏️ edit mode and for every deletion (hours entries, whole tasks), on every device including the office; with it a floor manager may remove any entry in their building, and every removal is recorded with who approved it
 - 2026-10-22 · ⏲ four pausable timers always shown on every row with ⏱ Log (today only); a timer is labelled by whoever starts it (no matching to the roster); ⏱ Log fills hours from one, rounded to the nearest 5 min, without stopping it; kept in the DB as start times (`_DailyWizard.buildings[<id>].timers`)
