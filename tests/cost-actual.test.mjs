@@ -1,9 +1,9 @@
 // Costs follow what the grow log recorded, day by day (user decision 2026-10-23): the room a lot was really in, and its
 // plant count that day, share a room's electricity, its chores and the building's property. Lot A reached Grow 1 three
 // days after its plan and lost half its plants 3 days ago; lot B (no grow log) was in Grow 1 throughout.
-import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSplit, openTool, leave } from './lib/helpers.mjs';
 
-export const title = 'costs follow the grow log: rooms and plant counts day by day';
+export const title = 'costs follow the grow log (rooms and plant counts day by day); overhead frozen by month';
 
 function iso(dt) { return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 const dayList = (a, b) => { const out = []; for (let n = a; n <= b; n++) out.push(today(n)); return out; };
@@ -72,5 +72,41 @@ export async function run(b, BASE) {
     check('property is shared by the plants in the building each day (A alone, then half, then a third)', near(R.prop.A, pa, 0.01) && near(R.prop.B, pb, 0.01), JSON.stringify([R.prop, pa, pb]));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, main);
+
+    // ---- 🔒 Overhead frozen by month ----
+    // Shared labour in past months: a room-chore hour on a day Grow 1 was empty (60 days ago), a whole-building chore
+    // (40 days ago) and an equipment task (45 days ago)
+    const odb = actualDb();
+    const L = odb._DailyWizard.buildings.B1.labour;
+    L[today(-60)] = { gr01: [{ id: 'le_ov1', employee: 'Casey', hours: 1 }] };
+    L[today(-40)] = { wat1: [{ id: 'le_ov2', employee: 'Alex', hours: 2 }] };
+    odb.calendarEvents.push({ id: 'ev_eqold', date: today(-45), title: '🌀 Clean fans', sourceTool: 'EquipmentWizard', roomId: 'R1G1', equipmentId: 'eq1', taskId: 't1',
+        labour_map: { [today(-45)]: [{ id: 'le_ov3', employee: 'Blair', hours: 1 }] } });
+    const files = await splitFiles(b, await fresh(b), BASE, odb);
+    const office = await fresh(b);
+    await openSplit(b, office, BASE, 'office', files);
+    const ew2 = await openTool(b, office, 'EmployeeWizard');
+    await b.run(ew2, `document.getElementById('tabReports').click(); RPT.page = 'settings'; renderReports();`, { user: true });
+    await b.sleep(300);
+    // Expected per month, at Alex $20, Blair $21, Casey $22 (whichever months those days fall in)
+    const exp = {};
+    for (const [n, c, h] of [[-60, 22, 1], [-40, 40, 2], [-45, 21, 1]]) { const ym = today(n).slice(0, 7); exp[ym] = exp[ym] || { cost: 0, hours: 0 }; exp[ym].cost += c; exp[ym].hours += h; }
+    const fz = await b.run(office, `const o = DB.data._EmployeeWizard.overheadCosts || {}; return Object.fromEntries(Object.entries(o).map(([ym, f]) => [ym, { cost: f.rows.reduce((t, r) => t + r[5], 0), hours: f.rows.reduce((t, r) => t + r[4], 0) }]));`);
+    const thisMonth = today().slice(0, 7);
+    check('opening the Reports freezes each finished month\'s shared labour (not this month)', Object.keys(exp).filter(ym => ym < thisMonth).every(ym => near(fz[ym]?.cost, exp[ym].cost) && near(fz[ym]?.hours, exp[ym].hours)) && !fz[thisMonth], JSON.stringify([fz, exp]));
+    const saved = await saveSplit(b, office);
+    const mainF = JSON.parse(saved['Main.json'] || files['Main.json']), wagesF = JSON.parse(saved['Wages.json'] || '{}');
+    check('it is money, so it is saved in Wages.json, never Main.json', !!wagesF.overheadCosts && Object.keys(wagesF.overheadCosts).length === Object.keys(fz).length && !mainF._EmployeeWizard?.overheadCosts, JSON.stringify(Object.keys(wagesF)));
+    // A raise: the live figure changes, the frozen one doesn't
+    const sep = today(-40).slice(0, 7);
+    await b.run(ew2, `DB.data._EmployeeWizard.employees.Alex.wage = 30; renderReports();`);
+    const cmp = await b.run(ew2, `const M = rptModel(); const x = rptOverheadCompare(M).find(x => x.ym === '${sep}'); return { x, cost: rptOtherCost(M, '${sep}-01', '${sep}-31').cost, text: document.getElementById('rptBody').innerText };`);
+    check('after a raise the month shows as changed, frozen against now, and the cost keeps the frozen figure',
+        cmp.x?.changed && near(cmp.x.frozen.cost, exp[sep].cost) && near(cmp.x.now.cost, exp[sep].cost + 20) && near(cmp.cost, exp[sep].cost) && cmp.text.includes('Changed since it was frozen'), JSON.stringify(cmp.x));
+    await b.run(ew2, `window.confirm = () => true; document.querySelector('[data-refreeze="${sep}"]').click();`, { user: true });
+    const re = await b.run(ew2, `const f = DB.data._EmployeeWizard.overheadCosts['${sep}']; return { cost: f.rows.reduce((t, r) => t + r[5], 0), copies: (f.history || []).length, old: (f.history?.[0]?.rows || []).reduce((t, r) => t + r[5], 0) };`);
+    check('"Use today\'s numbers" re-freezes it and keeps the earlier copy', near(re.cost, exp[sep].cost + 20) && re.copies === 1 && near(re.old, exp[sep].cost), JSON.stringify(re));
+    await leave(b, ew2); await b.send('browsingContext.close', { context: ew2 });
+    await leave(b, office);
     return results;
 }

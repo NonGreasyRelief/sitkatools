@@ -3839,6 +3839,7 @@
             return i >= 0 && h >= 0 && i >= h ? 'post' : 'flower';
         }
         const RPT_PHASES = { clone: 'Cloning', veg: 'Veg', flower: 'Flower', post: 'Harvest & post', mother: 'Mothers' };
+        const RPT_CROP_PHASES = ['clone', 'veg', 'flower', 'post'];   // a bloom crop's phases (the labour-by-phase chart)
 
         // BC civic holidays (root CLAUDE.md → "BC Civic Holidays"). Reports use them only to take holidays out of
         // roster capacity; the rest of EmployeeWizard stays holiday-unaware (design decision 6).
@@ -4281,6 +4282,7 @@
                 today, qmap, crops, topStrains, roomColors, flowerRooms,
                 per: { from, to: today, prevFrom: dAdd(from, -len), prevTo: dAdd(from, -1) },
                 other: other.filter(r => r.hours > 1e-9 && rptRowMatch(r)),
+                otherAll: other.filter(r => r.hours > 1e-9),   // every building and room (the overhead frozen by month)
                 strainColor: s => ['var(--rv-blue)', 'var(--rv-orange)', 'var(--rv-aqua)'][topStrains.indexOf(s)] || 'var(--rv-neutral)'
             };
         }
@@ -4339,15 +4341,77 @@
         }
 
         // Cost of non-crop labour in [from, to] with today's wages (null when wages aren't open)
+        // The overhead's $ in [from, to] — whole-building chores, equipment and other events' hours, room chores on a day their
+        // room held no lot. A month that's over uses what was frozen for it; days not frozen are priced at today's wages.
         function rptOtherCost(M, from, to) {
             if (!wagesLoaded()) return null;
+            const frozen = rptFrozenOverhead();
             let cost = 0, missing = 0;
             for (const r of M.other) {
-                if (!inRange(r.date, from, to)) continue;
+                if (!inRange(r.date, from, to) || frozen[r.date.slice(0, 7)]) continue;
                 const w = r.temp ? r.wage : Number(rptEmployees()[r.person]?.wage);
                 if (w > 0) cost += r.hours * w; else missing += r.hours;
             }
+            for (const [ym, f] of Object.entries(frozen)) {
+                if (`${ym}-31` < from || `${ym}-01` > to) continue;
+                for (const [d, bid, roomId, , , c, miss] of f.rows || []) {
+                    if (!inRange(d, from, to) || !rptRowMatch({ buildingId: bid || null, roomId: roomId || null })) continue;
+                    cost += c; missing += miss;
+                }
+            }
             return { cost, missing };
+        }
+
+        // =====================================================
+        // 🔒 Overhead frozen by month (user decision 2026-10-23)
+        // Overhead labour is priced at the wages of the day, so a raise would change a past period's fully loaded labour. Once
+        // a month is over, the first time the office opens the Reports with wages, that month's overhead is frozen, day by day,
+        // building and room: _EmployeeWizard.overheadCosts[YYYY-MM] = { frozenAt, rows: [[day, buildingId, roomId, kind, hours,
+        // cost, missingHours]], history?: [earlier copies] }. It is money, so SitkaTools keeps it in Wages.json beside the
+        // frozen crop labour costs. The live figure is still worked out every time: Setup & data lists a month whose live
+        // overhead no longer matches its frozen copy, and "Use today's numbers" re-freezes it, keeping the earlier copy.
+        // =====================================================
+        const rptFrozenOverhead = () => DB.data._EmployeeWizard?.overheadCosts || {};
+        // One month's overhead as it stands now (today's wages): rows by day, building, room and kind
+        function rptOverheadRows(M, ym) {
+            const agg = new Map();
+            for (const r of M.otherAll || []) {
+                if (r.date.slice(0, 7) !== ym) continue;
+                const key = [r.date, r.buildingId || '', r.roomId || '', r.kind].join('|');
+                const a = agg.get(key) || agg.set(key, [r.date, r.buildingId || '', r.roomId || '', r.kind, 0, 0, 0]).get(key);
+                const w = r.temp ? r.wage : Number(rptEmployees()[r.person]?.wage);
+                a[4] += r.hours;
+                if (w > 0) a[5] += r.hours * w; else a[6] += r.hours;
+            }
+            const r2 = v => Math.round(v * 100) / 100;
+            return [...agg.values()].map(a => [a[0], a[1], a[2], a[3], r2(a[4]), r2(a[5]), r2(a[6])]).sort((x, y) => x[0].localeCompare(y[0]));
+        }
+        const rptRowsTotal = rows => ({ hours: rSum(rows, r => r[4]), cost: rSum(rows, r => r[5]), missing: rSum(rows, r => r[6]) });
+        // Freeze every finished month with overhead that isn't frozen yet. Office only, with wages. Returns the months frozen.
+        function rptFreezeOverhead(M) {
+            if (!wagesLoaded() || DeviceView.building || !DB.data) return [];
+            const thisMonth = M.today.slice(0, 7), frozen = rptFrozenOverhead();
+            const months = [...new Set((M.otherAll || []).map(r => r.date.slice(0, 7)))].filter(ym => ym < thisMonth && !frozen[ym]).sort();
+            if (!months.length) return [];
+            const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = { employees: {} });
+            const store = ew.overheadCosts || (ew.overheadCosts = {});
+            for (const ym of months) store[ym] = { frozenAt: new Date().toISOString(), rows: rptOverheadRows(M, ym) };
+            return months;
+        }
+        // "Use today's numbers": re-freeze a month, keeping the earlier copy
+        function rptRefreezeOverhead(ym) {
+            const store = DB.data._EmployeeWizard?.overheadCosts;
+            if (!store?.[ym]) return;
+            const M = rptModel(), was = store[ym];
+            store[ym] = { frozenAt: new Date().toISOString(), rows: rptOverheadRows(M, ym), history: [...(was.history || []), { frozenAt: was.frozenAt, rows: was.rows }] };
+        }
+        // Frozen months against their live figure: [{ ym, frozen: {hours, cost, missing}, now: {…}, changed }]
+        function rptOverheadCompare(M) {
+            return Object.entries(rptFrozenOverhead()).sort(([a], [b]) => b.localeCompare(a)).map(([ym, f]) => {
+                const frozen = rptRowsTotal(f.rows || []), now = rptRowsTotal(rptOverheadRows(M, ym));
+                return { ym, frozenAt: f.frozenAt, copies: (f.history || []).length, frozen, now,
+                    changed: Math.abs(frozen.cost - now.cost) > 0.005 || Math.abs(frozen.hours - now.hours) > 0.005 || Math.abs(frozen.missing - now.missing) > 0.005 };
+            });
         }
 
         // =====================================================
@@ -5376,7 +5440,7 @@
                 for (const ch of Object.values(c.labour.chores || {})) for (const [ph, h] of Object.entries(ch.byPhase || {})) by[ph in by ? ph : 'flower'] += h * rate;
             }
             const other = rptOtherCost(M, M.per.from, M.per.to);
-            const steps = [...Object.keys(RPT_PHASES).map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Shared chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
+            const steps = [...RPT_CROP_PHASES.map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Shared chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
             const total = rSum(steps, x => x.v);
             const dp = per === 'g' ? 3 : per === 'total' ? 0 : 2, money = v => rMoney(v, dp);
             const W = 640, H = 270, X0 = 62, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
@@ -5405,7 +5469,7 @@
             const per = RPT.per;
             const noHours = per === 'total' ? rEmpty('No crop-task hours logged in this period.', 'Hours come from the Tasks tab (labour_map on each crop task).')
                 : rEmpty(`No harvested crops with hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'light' ? ' and a light count (set in SitkaTools’ Room Manager)' : ''} in this period.`, `Per ${per === 'sqft' ? 'sq ft' : per === 'g' ? 'gram' : per === 'light' ? 'light' : 'plant'} uses every hour of the crops harvested in the period. Switch Per to Total to see hours as they were logged.`);
-            const phaseLegend = Object.keys(RPT_PHASES).map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
+            const phaseLegend = RPT_CROP_PHASES.map(k => rSw(`var(--rv-ph-${k})`, RPT_PHASES[k])).join('');
             const parSub = !par ? '' : per === 'total'
                 ? `${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of the hours logged on crops in this period (crop tasks and room chores). Bars are hours logged; outlines are the estimate.`
                 : `In <b>${rEsc(par.unit)}</b>, across the ${par.nCrops} crop${par.nCrops > 1 ? 's' : ''} harvested in this period. ${par.k} task${par.k > 1 ? 's' : ''} make${par.k > 1 ? '' : 's'} up <b>${rPct(par.share)}</b> of their hours. Outlines are the estimate.`;
@@ -6000,6 +6064,9 @@
             if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building, so no crop carries it.`);
             const idleChores = rSum(M.other.filter(r => r.kind === 'chore' && r.shares && !r.shares.length && inRange(r.date, M.per.from, M.per.to)), r => r.hours);
             if (idleChores > 0) miss.push(`${rN(idleChores, 1)} h of room chores fell on days with no crop scheduled in the room, so they’re shared like whole-building chores.`);
+            // 🔒 Frozen months whose overhead has changed since
+            const ovChanged = !wagesLoaded() ? [] : rptOverheadCompare(M).filter(x => x.changed && `${x.ym}-31` >= M.per.from && `${x.ym}-01` <= M.per.to);
+            if (ovChanged.length) miss.push(`Shared labour changed after these months were frozen, so the cost per gram uses the frozen figure: ${ovChanged.map(x => `${ctlsMonthName(x.ym)} (frozen ${rMoney(x.frozen.cost)}, now ${rMoney(x.now.cost)})`).join(', ')} — see ⚙️ Setup & data.`);
             // 🌿 Clones cut on site: from a mother lot with no cost per clone yet
             const CM = rptCloneModel(M);
             const noPrice = cur.filter(c => rptCloneCharge(c, M)?.unpriced).map(c => `${c.lotId} (from ${CM.motherOf(c)})`);
@@ -6528,6 +6595,17 @@ ${ctlsBody(C, true)}
                     control: `<button type="button" class="rpt-tbtn" id="rptSaveAll"${ready.length ? '' : ' disabled'}>💾 Save ${ready.length} shipped</button><button type="button" class="rpt-tbtn" id="rptImportBtn">📂 Import archived lots</button>`,
                     body: live.length || closed.length ? `<div class="rpt-tbl"><table><thead><tr><th>Lot</th><th>Strain</th><th>Harvest</th><th class="n">Flower</th><th class="n">THC</th><th>Summary</th><th></th></tr></thead><tbody>${sumRows}</tbody></table></div>` : rEmpty('No lots with a harvest scheduled yet.', ''),
                     source: '_EmployeeWizard.crops · Archive/Lot-<id>-<date>.json files from SitkaTools close-out' }) +
+                (wagesLoaded() ? rCard({ wide: true, title: '🔒 Overhead frozen by month', sub: 'Shared labour — whole-building chores, equipment and other tasks’ hours, room chores on days their room held no lot — is priced at the wages of the day. Each month is frozen once it’s over, the first time the Reports open, so a later raise doesn’t change it. The live figure is still worked out every time: a month that no longer matches its frozen copy is marked, and “Use today’s numbers” re-freezes it (the earlier copy is kept).',
+                    body: (() => {
+                        const cmp = rptOverheadCompare(M);
+                        if (!cmp.length) return rEmpty('No month frozen yet.', 'A month is frozen once it’s over and has shared labour logged.');
+                        const h = v => rN(v, 1) + ' h';
+                        return `<div class="rpt-tbl"><table><thead><tr><th>Month</th><th>Frozen</th><th class="n">Hours (frozen / now)</th><th class="n">$ (frozen / now)</th><th>Status</th><th></th></tr></thead><tbody>${cmp.map(x =>
+                            `<tr><td>${rEsc(ctlsMonthName(x.ym))}</td><td>${rEsc(dFmtY(rSavedDay(x.frozenAt)))}${x.copies ? ` <span class="rpt-muted">· ${x.copies} earlier cop${x.copies === 1 ? 'y' : 'ies'} kept</span>` : ''}</td>` +
+                            `<td class="n">${h(x.frozen.hours)}${x.changed ? ` / ${h(x.now.hours)}` : ''}</td><td class="n">${rMoney(x.frozen.cost)}${x.changed ? ` / ${rMoney(x.now.cost)}` : ''}</td>` +
+                            `<td>${x.changed ? '<span class="rpt-warn">⚠️ Changed since it was frozen</span>' : '<span class="rpt-ok">✓ Unchanged</span>'}</td>` +
+                            `<td>${x.changed ? `<button type="button" class="rpt-tbtn" data-refreeze="${rEsc(x.ym)}">Use today’s numbers</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
+                    })(), source: '_EmployeeWizard.overheadCosts (kept in Wages.json)' }) : '') +
                 rCard({ wide: true, title: 'Report metrics — which paperwork questions feed the charts', sub: 'Tag a question in PaperWizard → Configure Sheets → the question’s “Report metric” drop-down. Weights can be asked in g, kg or lb; they are converted to grams. Flower yield = bigs + mids + smalls + popcorn (or “Flower — total” when the grades aren’t weighed separately); total yield adds trim. 🌱 plant-count questions are read without a tag.',
                     body: `<div class="rpt-tbl"><table><thead><tr><th>Metric</th><th>Meaning</th><th>Tagged question</th></tr></thead><tbody>${metricRows}</tbody></table></div>`, source: '_PaperWizard.wizards[*].questions[*].metric · answers in _PaperWizard.entries' }) +
                 `</div>`;
@@ -6641,6 +6719,12 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             $('paneReports').classList.toggle('rpt-ctls-page', RPT.page === 'ctls');   // the CTLS month is for the whole facility: no filters
             try {
                 const M = rptModel();
+                // 🔒 Finished months' overhead is frozen the first time the Reports open after the month ends
+                const froze = rptFreezeOverhead(M);
+                if (froze.length) {
+                    notifySitkaTools();
+                    showToast(`🔒 Overhead frozen for ${froze.map(ym => ctlsMonthName(ym)).join(', ')} (Setup & data) — save to keep it`);
+                }
                 const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, yield: rptYield, rooms: rptRooms, forecast: rptForecast, ctls: rptCtls, settings: rptSetup };
                 body.innerHTML = (pages[RPT.page] || rptOverview)(M);
             } catch (err) {
@@ -6728,6 +6812,16 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 if (!c) return;
                 const dropped = rptSaveSummaries([c]);
                 showToast(`Crop summary saved for lot ${c.lotId}${dropped ? ` · ${dropped} older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+                renderReports();
+                return;
+            }
+            const refreeze = t.closest('[data-refreeze]');
+            if (refreeze) {
+                const ym = refreeze.dataset.refreeze;
+                if (!confirm(`Re-freeze ${ctlsMonthName(ym)}'s overhead at today's numbers? The copy frozen before is kept.`)) return;
+                rptRefreezeOverhead(ym);
+                notifySitkaTools();
+                showToast(`🔒 ${ctlsMonthName(ym)}'s overhead re-frozen — the earlier copy is kept`);
                 renderReports();
                 return;
             }

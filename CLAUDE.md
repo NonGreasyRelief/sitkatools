@@ -45,7 +45,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 - Renaming or deleting a room nulls the room-name fields on the lots that use it. Deleting a building nulls `buildingId` on its rooms.
 - Dry rooms double as trim rooms: `dryRoom` and `trimRoom` may name the same room, but each has its own clean form.
 - **Ownership:** a tool reads lots, rooms and buildings, and writes only its own keys (`_tool_<Tool>` on a lot, or top-level `_<Tool>`). The exceptions:
-  - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs / .ctls`.
+  - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs / .ctls / .overheadCosts`.
   - **PaperWizard may write exactly `lots.plantCount`, `.stage` and `.currentRoom`** when a log entry records a change. No other tool writes another tool's data.
   - **🔒 A lot with a grow log is locked to it** (any daily-weekly page in PaperWizard): its plant count, phase and room then change only through PaperWizard (the grow log, and the harvest log after it). SitkaTools shows them read-only, won't delete the lot, and won't delete or re-home a room it's in; the one other writer is a lot move's Accept (`currentRoom`). A changed count needs a reason, split by reason (`PaperWizard/CLAUDE.md` → "🌱 Why the Plant Count Changed"). Details: `SitkaTools/CLAUDE.md` → "Lot Manager".
   - **Event annotations:** labour tools and SitkaTools add fields to other tools' events in place (see "Event Annotations Survive Regeneration").
@@ -101,7 +101,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
 | File | Saved by | Holds |
 |---|---|---|
 | `Main.json` | office | lots and schedules, rooms and buildings, the roster **without wages** (with floor managers' PIN hashes), crop summaries and report settings, power bills and rates, recipes and the input price list, equipment, general events, paperwork templates, the office's records of removed hours, `_fieldStamps` |
-| `Wages.json` | office only, never opened on building devices | `{ wages: { name: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt } } }` |
+| `Wages.json` | office only, never opened on building devices | `{ wages: { name: $/h }, cropCosts?: { lotId: { cost, missingHours, savedAt, cloneLabour? } }, overheadCosts?: { 'YYYY-MM': { frozenAt, rows, history? } } }` |
 | `Building-<ID>.json` | that building (the office may too) | `_DailyWizard.buildings[<ID>]`, the `_PaperWizard.entries` pages filled there, `_LotTransfers`, and `_overlays` (that building's updates to office records) |
 | `Archive/Lot-<id>-<date>.json` | office, at close-out | everything about a closed lot |
 
@@ -193,6 +193,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 - **Room chores:** a DailyWizard chore can be tied to one of its building's rooms (`task.roomId`). Its hours go into the labour of the lots in that room that day (the same room stays electricity uses), split by their plants that day when lots share the room; they count as that lot's own labour cost. Chores without a room, and room-chore hours on a day the room held no crop, are shared over the crops harvested in the period, by grams (the "fully loaded" labour). Nothing is written to the lots: Reports work the split out when they draw, and a crop summary keeps its share.
 - Each part's $/g uses only the crops that part can price; Costs → "What's missing from the cost?" lists the gaps.
 - Prices, rates and bills live in Main.json. Closed lots keep their non-labour costs frozen in their crop summary; labour cost is frozen in Wages.json.
+- **Shared labour (overhead) is frozen by month:** once a month is over, its whole-building chores, equipment and other tasks' hours (and room chores on empty-room days) are priced and kept in Wages.json (`overheadCosts`) the first time the office opens the Reports. The live figure is still worked out and compared; a changed month can be re-frozen, keeping the earlier copy.
 
 ## Monthly CTLS Numbers
 

@@ -80,7 +80,8 @@ Full spec, metrics, definitions and the harvest-log hook-up steps: `EmployeeWiza
 - **🌿 Cost per clone** (💲 Costs page), broken down like the cost per gram: growing the mothers, per clone, by part, for the clones cut in the period, and mother lot by mother lot. A lot cut on site from a mother lot carries its clones at that price in its cost per gram, and pays its own cutting (`REPORTS.md` §6).
 - **📋 CTLS month:** the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. It covers plants (opening, every dated change with the reason and who they went to, closing, by lot), wet cannabis hanging to dry, and dry flower sent out, plus checks, 🖨️ Print and 📌 Mark as filed (`REPORTS.md` → "CTLS month").
 - **Filter row** (period, building, flower room, strain, **Per** plant / sq ft / light / gram / total) scopes every page. Comparisons are always against the previous period of the same length. **🖨️ Board pack** prints the pages.
-- **Reads every tool's data, read-only.** It writes only `_EmployeeWizard.crops`, `.settings`, (Save summary with wages open) `.cropCosts` and (Mark as filed) `.ctls`.
+- **Reads every tool's data, read-only.** It writes only `_EmployeeWizard.crops`, `.settings`, (Save summary with wages open) `.cropCosts`, (Mark as filed) `.ctls` and (automatically, each finished month, with wages) `.overheadCosts`.
+- **🔒 Overhead frozen by month** (⚙️ Setup & data): once a month is over, its shared labour's $ is frozen the first time the office opens the Reports with wages, and the cost per gram uses it. The card compares each frozen month with today's figure; "Use today's numbers" re-freezes a changed month and keeps the earlier copy (`REPORTS.md` → "Overhead frozen by month").
 - **Crop summaries** keep closed-out lots in the trends for 36 months. A lot still in the DB always uses its live numbers.
 - **Privacy:** no $ per person; $ only while Wages.json is open; $ hidden for groups of fewer than 3 people. Live lots use today's wages; closed lots use the cost frozen with their summary.
 - **Redraws** only while the tab is open: tab switch, DB load, live update (not while a Setup input is being typed in) and Active Lot change (which picks the lot for the Gantt and climate charts).
@@ -100,11 +101,12 @@ EmployeeWizard owns `_EmployeeWizard`:
   "costs":     { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
                  "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
   "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…", "cloneLabour": 312.5 } },   // cloneLabour: a lot cut from a mother, its clones' share of the mother's labour
-  "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } }
+  "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } },
+  "overheadCosts": { "2026-09": { "frozenAt": "<ISO>", "rows": [["2026-09-14", "B1", "", "chore", 2, 40, 0]], "history": [] } }   // in Wages.json
 }
 ```
 
-- **Split files** (root `CLAUDE.md` → "Split Database"): all of it lives in Main.json except wages and `cropCosts`, which are money and go to Wages.json (office only).
+- **Split files** (root `CLAUDE.md` → "Split Database"): all of it lives in Main.json except wages, `cropCosts` and `overheadCosts`, which are money and go to Wages.json (office only).
 - **`employees`** is keyed by name. The name is the identity (labour maps reference it), so a duplicate name is rejected.
   - `wage` — $/h, optional, **no default**. New employees get no `wage` key, and a blank wage (e.g. Wages.json not opened) stays unset. Never invent one: it would become a fake $ figure or a wage change SitkaTools can't save. Editable in the employee editor, but never shown per person on any dash or report; used only for cost math.
   - `workDays` — `Date.getDay()` numbers (`0` = Sun … `6` = Sat), shown Monday-first. New employees default to Mon–Fri `[1, 2, 3, 4, 5]`.
@@ -115,6 +117,7 @@ EmployeeWizard owns `_EmployeeWizard`:
 - **`settings`** — `shiftHours`, the shift length for roster capacity (default 8). Canopy is set on the room (`rooms.<id>.canopySqFt`, Room Manager); `settings.canopySqFt` is read only as a fallback. Created on the first change.
 - **`costs`** — ⚡ Power & Rates (above).
 - **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. A lot cut from a mother lot also freezes its clones' labour (`cloneLabour`).
+- **`overheadCosts`** — each finished month's shared labour, frozen: rows `[day, buildingId, roomId, kind, hours, $, hours with no wage]`, `frozenAt`, and `history` (earlier copies, kept when a month is re-frozen).
 - **`ctls`** — months marked as filed on the 📋 CTLS month page, with their closing (and opening) numbers. Next month's opening is checked against them.
 
 ### Time off

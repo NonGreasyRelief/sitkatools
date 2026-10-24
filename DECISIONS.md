@@ -63,6 +63,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Labour & Cost Wizard
 
+- 2026-10-23 · shared labour (overhead) is frozen by month automatically, the first time the office opens the Reports after a month ends, kept in Wages.json; the live figure is still compared, a changed month is marked, and re-freezing keeps the earlier copy
 - 2026-10-23 · costs follow the grow log: the room and phase it recorded each day place a lot (the schedule only before the log starts, and the dry and trim rooms after the plants reach 0), and each day's count shares rooms, their chores and property (the starting count only for lots with no grow log)
 - 2026-10-23 · each bloom lot pays its own cutting (its Cutting Clones hours and supplies stay in its own costs); the cost per clone is growing the mothers only, broken down like the cost per gram (period vs previous by part, mother lot by mother lot); the cutting per clone is shown beside it, at the wages of the people who logged the hours (supersedes moving the cutting into the clone price)
 - 2026-10-23 · an empty Mother room counts as dark (it used to be assumed lit and shared by the building's crops); with a mother lot in it, its lights run at its veg hours × the light % from that lot's grow log

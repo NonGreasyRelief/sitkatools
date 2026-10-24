@@ -3546,7 +3546,10 @@
             }
         }
 
-        // Is this the text of a wages file (Wages.json, whatever it's called now)? { wages: {…}, cropCosts? } and none
+        // The Labour & Cost Wizard's money that lives in Wages.json beside the wages: labour cost frozen with crop summaries
+        // (by lot) and overhead frozen by month
+        const WAGES_MONEY_KEYS = ['cropCosts', 'overheadCosts'];
+        // Is this the text of a wages file (Wages.json, whatever it's called now)? { wages: {…}, cropCosts?, overheadCosts? } and none
         // of a database's own keys
         function isWagesFile(text) {
             let parsed;
@@ -4256,10 +4259,13 @@
                         if (db._EmployeeWizard.employees[name]) db._EmployeeWizard.employees[name].wage = wage;
                     }
                 }
-                // Labour costs frozen with EmployeeWizard's crop summaries are money too: they live in Wages.json
-                if (wages?.cropCosts && typeof wages.cropCosts === 'object') {
-                    if (!db._EmployeeWizard) db._EmployeeWizard = { employees: {} };
-                    db._EmployeeWizard.cropCosts = JSON.parse(JSON.stringify(wages.cropCosts));
+                // Labour costs frozen with EmployeeWizard's crop summaries, and its overhead frozen by month, are money too:
+                // they live in Wages.json
+                for (const key of WAGES_MONEY_KEYS) {
+                    if (wages?.[key] && typeof wages[key] === 'object') {
+                        if (!db._EmployeeWizard) db._EmployeeWizard = { employees: {} };
+                        db._EmployeeWizard[key] = JSON.parse(JSON.stringify(wages[key]));
+                    }
                 }
 
                 for (const bf of buildingFiles) {
@@ -4534,7 +4540,7 @@
                 const main = JSON.parse(JSON.stringify(db));
                 delete main._meta;
                 for (const emp of Object.values(main._EmployeeWizard?.employees || {})) delete emp.wage;
-                if (main._EmployeeWizard) delete main._EmployeeWizard.cropCosts;   // money → Wages.json
+                if (main._EmployeeWizard) for (const key of WAGES_MONEY_KEYS) delete main._EmployeeWizard[key];   // money → Wages.json
                 const dailyAll = main._DailyWizard?.buildings || {};
                 if (main._DailyWizard) {
                     const orphans = {};
@@ -4555,8 +4561,10 @@
                     if (emp && emp.wage !== undefined) wages[name] = emp.wage;
                 }
                 parts[SPLIT_WAGES] = { wages };
-                const cropCosts = db._EmployeeWizard?.cropCosts;
-                if (cropCosts && Object.keys(cropCosts).length) parts[SPLIT_WAGES].cropCosts = JSON.parse(JSON.stringify(cropCosts));
+                for (const key of WAGES_MONEY_KEYS) {
+                    const v = db._EmployeeWizard?.[key];
+                    if (v && Object.keys(v).length) parts[SPLIT_WAGES][key] = JSON.parse(JSON.stringify(v));
+                }
 
                 const bparts = {};
                 const partFor = (id) => bparts[id] || (bparts[id] = {
@@ -4895,7 +4903,6 @@
                 const file = JSON.parse(text);
                 const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
                 const fileWages = file.wages;
-                const fileCosts = isMap(file.cropCosts) ? file.cropCosts : {};
                 const base = JSON.parse(this.baseline);   // the DB as opened / last saved
                 const copy = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
                 let kept = 0;
@@ -4912,16 +4919,19 @@
                 for (const [name, emp] of Object.entries(emps)) {
                     if (emp) put(emp, baseEmps[name], 'wage', fileWages[name]);
                 }
-                const lotIds = new Set([...Object.keys(fileCosts), ...Object.keys(DB.data._EmployeeWizard?.cropCosts || {}),
-                    ...Object.keys(base._EmployeeWizard?.cropCosts || {})]);
-                if (lotIds.size) {
+                // Frozen crop labour costs (by lot) and frozen overhead (by month), entry by entry like the wages
+                for (const key of WAGES_MONEY_KEYS) {
+                    const fileMap = isMap(file[key]) ? file[key] : {};
+                    const ids = new Set([...Object.keys(fileMap), ...Object.keys(DB.data._EmployeeWizard?.[key] || {}),
+                        ...Object.keys(base._EmployeeWizard?.[key] || {})]);
+                    if (!ids.size) continue;
                     const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = { employees: {} });
                     const baseEw = base._EmployeeWizard || (base._EmployeeWizard = { employees: {} });
-                    const cur = ew.cropCosts || (ew.cropCosts = {});
-                    const was = baseEw.cropCosts || (baseEw.cropCosts = {});
-                    for (const lotId of lotIds) put(cur, was, lotId, fileCosts[lotId]);
-                    if (!Object.keys(cur).length) delete ew.cropCosts;
-                    if (!Object.keys(was).length) delete baseEw.cropCosts;
+                    const cur = ew[key] || (ew[key] = {});
+                    const was = baseEw[key] || (baseEw[key] = {});
+                    for (const id of ids) put(cur, was, id, fileMap[id]);
+                    if (!Object.keys(cur).length) delete ew[key];
+                    if (!Object.keys(was).length) delete baseEw[key];
                 }
 
                 // Wages.json now counts as opened: its changes may be saved, and it is the base for them

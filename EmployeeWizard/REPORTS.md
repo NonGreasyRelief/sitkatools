@@ -36,7 +36,7 @@ Reports is the last tab and office only (building devices don't get it). The **L
 
 ## 2. Decisions
 
-1. Reports may **read every tool's data**, read-only. They write only `_EmployeeWizard.crops`, `.settings`, `.cropCosts` (§4) and `.ctls` (filed CTLS months).
+1. Reports may **read every tool's data**, read-only. They write only `_EmployeeWizard.crops`, `.settings`, `.cropCosts` (§4), `.ctls` (filed CTLS months) and `.overheadCosts` (overhead frozen by month).
 2. **Metric tags** are a drop-down on PaperWizard questions.
 3. **Closed lots:** a per-lot summary stays in Main.json for **36 months**. Lots closed without one can be imported from their archive file.
 4. **Yield:** flower yield = bigs + mids + smalls + popcorn sent to processing; total yield = flower + trim; **wet weight** = the weight in the drying room on harvest day; **dry weight** = the whole lot after drying.
@@ -212,7 +212,7 @@ Answers are parsed leniently (`"1,250"`, `"12 kg"`, `"24.0"` all read as numbers
 | **Per (normalized)** | Plant / sq ft / light / gram use the crops **harvested in the period**: every hour (or $) on them ÷ Σ plants harvested, Σ canopy sq ft, Σ flower-room lights or Σ grams of flower. Hours read as minutes per plant or sq ft, hours per light, hours per kg. Total shows hours as logged by work date. |
 | **r (What drives yield?)** | Pearson correlation over the period's harvested crops with both values. < 0.2 "no clear link", < 0.4 weak, < 0.6 moderate, else strong. Under 8 crops: "too few to tell". |
 | **Labour $/g, direct** | Σ crop cost ÷ Σ flower, for harvested crops in the period |
-| **Labour $/g, fully loaded** | direct + (equipment and whole-building chore cost in the period ÷ the same flower) |
+| **Labour $/g, fully loaded** | direct + (equipment and whole-building chore cost in the period ÷ the same flower). A finished month's shared labour is its frozen figure (`overheadCosts`); days not frozen are priced at today's wages |
 | **Room chore** | a DailyWizard chore with a room. Each hour goes to the crops in that room that day (where a crop is: below), split by their plants that day when crops share it, and is part of that crop's **direct** labour (hours, cost, Gantt, hours by task, cost by phase by the phase it was in). On a day the room held no crop it is shared like a whole-building chore (listed under "What's missing"). |
 | **Plants that day** | the grow log's count that day (`rptPlantsOn`); before the lot's first count, the count it started with; after its plants reach 0 (dry and trim rooms), the last count it had. A lot with no grow log: its starting count every day. Used to share rooms, their chores and the building's property |
 | **Where a crop is** | **The grow log first** (user decision 2026-10-23): from its first logged day until its plants reach 0 (or today, for a lot still growing), the room and phase it recorded each day; before that, the schedule; after the plants reach 0, only the planned dry and trim rooms. A lot with no grow log follows its schedule: cloning room Day 0 → planting, veg room → transplant, flower room → end of harvest, dry room → bucking, trim room → ship (the lot's room names; `rptCropRoomDays`). A 🌿 mother lot: cloning room → planting, veg room → transplant, then its destination room (its Mother room) → its end: Retire Mothers, or the day its grow log reaches 0 plants, if sooner (`dates.end`) |
@@ -293,6 +293,18 @@ The cultivation side of Health Canada's monthly CTLS report (user decision 2026-
   - this month changed since it was filed.
 - **📌 Mark as filed** (once the month is over): `_EmployeeWizard.ctls[YYYY-MM] = { filedAt, plants, wetG, dryG, openingPlants, openingWetG }`, in Main.json. **Remove filing** deletes it.
 - **Lots ready to close out:** no plants and nothing hanging today. **💾 Save** stores the lot's crop summary (with its history) even when it has no schedule. SitkaTools' close-out warns when it's missing.
+
+---
+
+## Overhead frozen by month
+
+User decision 2026-10-23. Shared labour (overhead) — whole-building chores, equipment and other events' hours, room chores on a day their room held no lot — is priced at the wages of the day, so a raise would change a past period's fully loaded labour.
+
+- **Frozen automatically:** the first time the office opens the Reports with wages after a month ends, that month's overhead is frozen (`rptFreezeOverhead`): `_EmployeeWizard.overheadCosts[YYYY-MM] = { frozenAt, rows: [[day, buildingId, roomId, kind, hours, $, hours with no wage]] }`, day by day, building and room, so the filters and part-month periods still work. A toast says so; Save DB keeps it.
+- **Kept in Wages.json** (money), beside `cropCosts`. SitkaTools splits, merges and adds it like them (`WAGES_MONEY_KEYS`).
+- **Used:** `rptOtherCost` takes a frozen month's rows, and prices only days not frozen at today's wages.
+- **Compared:** the live figure is still worked out (`rptOverheadCompare`). ⚙️ Setup & data → **🔒 Overhead frozen by month** lists each month, frozen hours and $ against now; a changed month is marked, and the Costs page's "What's missing" names it. **Use today's numbers** re-freezes it and keeps the earlier copy in `history`.
+- Building devices and sessions without wages never freeze.
 
 ---
 
