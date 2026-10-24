@@ -77,6 +77,7 @@ Inputs for the total cost per gram (root `CLAUDE.md` → "Total Cost per Gram"; 
 Full spec, metrics, definitions and the harvest-log hook-up steps: `EmployeeWizard/REPORTS.md`. The essentials:
 
 - **Pages:** Overview (8 KPI tiles incl. **Cost / g (all in)**, and Needs attention) · 💲 Costs · Crop Timeline (crop labour and room schedule Gantts) · Labour · Yield & Quality (incl. **What drives yield?**) · Rooms & Environment · Forecast · 📋 CTLS month · ⚙️ Setup & data.
+- **🌿 Cost per clone** (💲 Costs page): each mother lot's cost per clone, by part. A lot cut on site from a mother lot carries its clones at that price in its cost per gram, and its own cutting isn't counted again (`REPORTS.md` §6).
 - **📋 CTLS month:** the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. It covers plants (opening, every dated change with the reason and who they went to, closing, by lot), wet cannabis hanging to dry, and dry flower sent out, plus checks, 🖨️ Print and 📌 Mark as filed (`REPORTS.md` → "CTLS month").
 - **Filter row** (period, building, flower room, strain, **Per** plant / sq ft / light / gram / total) scopes every page. Comparisons are always against the previous period of the same length. **🖨️ Board pack** prints the pages.
 - **Reads every tool's data, read-only.** It writes only `_EmployeeWizard.crops`, `.settings`, (Save summary with wages open) `.cropCosts` and (Mark as filed) `.ctls`.
@@ -98,7 +99,7 @@ EmployeeWizard owns `_EmployeeWizard`:
   "settings":  { "shiftHours": 8 },
   "costs":     { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
                  "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
-  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…" } },
+  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…", "cloneLabour": 312.5 } },   // cloneLabour: its clones' share of a mother lot's labour
   "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } }
 }
 ```
@@ -113,7 +114,7 @@ EmployeeWizard owns `_EmployeeWizard`:
 - **`crops`** — saved crop summaries (Reports → Setup & data, or 📋 CTLS month → Lots ready to close out). Hours per person, never wages; the lot's dated plant and weight history (`ctls`); dropped after 36 months; created on the first save.
 - **`settings`** — `shiftHours`, the shift length for roster capacity (default 8). Canopy is set on the room (`rooms.<id>.canopySqFt`, Room Manager); `settings.canopySqFt` is read only as a fallback. Created on the first change.
 - **`costs`** — ⚡ Power & Rates (above).
-- **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them.
+- **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. A lot cut from a mother lot also freezes its clones' labour (`cloneLabour`).
 - **`ctls`** — months marked as filed on the 📋 CTLS month page, with their closing (and opening) numbers. Next month's opening is checked against them.
 
 ### Time off

@@ -140,5 +140,62 @@ export async function run(b, BASE) {
     check('edit mode lists every chore, so the floor manager can still edit them', txt.includes('Water veg room') && !(await b.run(dw, `return !!document.querySelector('.empty-room-toggle');`)), txt.slice(0, 300));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
     await leave(b, m2);
+
+    // ---- Reports: cost per clone, and a bloom lot cut on site pays for its clones once ----
+    const T = today();
+    const rdb = motherDb();
+    const ev = (id, lot, tt, date, more = {}) => ({ id, date, title: `T ${tt}`, sourceTool: 'CropLabourWizard', lotId: lot, taskType: tt, ...more });
+    rdb.calendarEvents = [
+        ev('m0', 'M100', 'clone_cut_prep', today(-100)), ev('m1', 'M100', 'planting', today(-86)), ev('m2', 'M100', 'transplant', today(-72)), ev('m9', 'M100', 'retire', today(94)),
+        ev('m3', 'M100', 'mother_prune', today(-30), { repeat: 1, labour_map: { [today(-30)]: [{ id: 'le_mprune1', employee: 'Alex', hours: 2 }] } }),
+        ev('k0', 'K1', 'clone_cut_prep', today(-40), { labour_map: { [today(-40)]: [{ id: 'le_kcut1', employee: 'Blair', hours: 3 }] } }), ev('k1', 'K1', 'planting', today(-26))
+    ];
+    rdb.lots.M100._tool_CropLabourWizard = { plantingDate: today(-100), recipeId: 'rvM', kind: 'vegetative' };
+    rdb.lots.K1 = { name: 'K1', strain: 'Test Kush', stage: 'veg', createdDate: today(-40), closedDate: null, type: 'sub-lot', parentLotId: 'M100', startPlantCount: 100, plantCount: 100,
+        cloningRoom: 'Clone 1', vegRoom: 'Veg 1', destRoom: 'Grow 1', currentRoom: 'Veg 1', _tool_CropLabourWizard: { plantingDate: today(-40), recipeId: 'rcpK' } };
+    rdb.lots.K2 = { name: 'K2', strain: 'Test Kush', stage: 'cloning', createdDate: today(-5), closedDate: null, type: 'sub-lot', parentLotId: 'M100', startPlantCount: 50, plantCount: 50,
+        cloningRoom: 'Clone 1', currentRoom: 'Clone 1' };
+    rdb._CropLabourWizard = {
+        inputs: { inK: { name: 'Clone cube', kind: 'supply', unit: 'cube', price: 0.1 } },
+        recipes: {
+            rvM: { id: 'rvM', name: 'Mothers', kind: 'vegetative', version: 1, tasks: [{ taskType: 'planting', name: 'Planting', emoji: '🌱', reference: 'cloning', defaultOffset: 14 }, { taskType: 'retire', name: 'Retire Mothers', emoji: '🍂', reference: 'planting', defaultOffset: 180 }] },
+            rcpK: { id: 'rcpK', name: 'Bloom', version: 1, tasks: [{ taskType: 'clone_cut_prep', name: 'Cutting Clones', emoji: '✂️' }, { taskType: 'planting', name: 'Planting', emoji: '🌱' }],
+                inputs: [{ inputId: 'inK', name: 'Clone cube', unit: 'cube', qty: 1, per: 'plant', at: 'clone_cut_prep' }] }
+        }
+    };
+    rdb._EmployeeWizard.costs = { electricity: 'estimate', kWhRate: 0.1, bills: [] };
+    const m3 = await fresh(b);
+    await openSitka(b, m3, BASE);
+    await loadSingle(b, m3, rdb);
+    const ew = await openTool(b, m3, 'EmployeeWizard');
+    const near = (a, x, eps = 0.005) => a != null && Math.abs(a - x) < eps;
+    const R = await b.run(ew, `const M = rptModel(), CM = rptCloneModel(M), pr = CM.priceOf('M100'), k1 = M.crops.find(c => c.lotId === 'K1'), mom = M.crops.find(c => c.lotId === 'M100');
+        return { mother: !!mom.mother, stays: rptCropRoomDays(mom).map(st => [st.roomId, st.phase, st.from, st.to]), clones: pr.clones, kids: pr.kids.map(k => [k.lotId, k.n]),
+            own: pr.own, cut: pr.cut, per: pr.perClone, charge: rptCloneCharge(k1, M), parts: rptCropCostParts(k1, M), k1raw: rptCropCost(k1).cost };`);
+    check('a mother lot is a crop living in its Mother room from the transplant to its retire day', R.mother && R.stays.some(st => st[0] === 'R1MO' && st[1] === 'mother' && st[2] === today(-72) && st[3] === today(94)), JSON.stringify(R.stays));
+    check('its clones: the lots cut from it, scheduled or not (100 + 50)', R.clones === 150 && JSON.stringify(R.kids) === JSON.stringify([['K1', 100], ['K2', 50]]), JSON.stringify(R.kids));
+    // Its Mother room's lights (2 kW × 18 h × $0.10 = $3.60 a day): 73 days while it's in there, and the 28 days before,
+    // when the room held no tracked mothers — its lights still run and the building's crops (only M100 then) share them
+    check('its own costs: 2 h at $20, and its Mother room\'s lights over 101 days ($363.60)', near(R.own.labour, 40) && near(R.own.power, 363.6), JSON.stringify(R.own));
+    check('the cutting of K1 goes into it: 3 h at $21 and 100 clone cubes at $0.10', near(R.cut.labour, 63) && near(R.cut.supplies, 10) && R.cut.hours === 3, JSON.stringify(R.cut));
+    check('cost per clone: labour $103 ÷ 150, power $363.60 ÷ 150, supplies $10 ÷ 150', near(R.per.labour, 103 / 150, 1e-6) && near(R.per.power, 2.424, 1e-6) && near(R.per.supplies, 10 / 150, 1e-6) && R.per.water == null, JSON.stringify(R.per));
+    check('K1 pays for its 100 clones at that price', R.charge.n === 100 && R.charge.mother === 'M100' && near(R.charge.parts.labour, 68.6667) && near(R.charge.parts.power, 242.4), JSON.stringify(R.charge));
+    check('…and its own cutting isn\'t counted again: labour $63 − $63 + $68.67, supplies $10 − $10 + $6.67, power $242.40',
+        near(R.k1raw, 63) && near(R.parts.labour, 68.6667) && near(R.parts.supplies, 6.6667) && near(R.parts.power, 242.4), JSON.stringify(R.parts));
+    // The Costs page
+    await b.run(ew, `document.getElementById('tabReports').click(); RPT.page = 'costs'; renderReports();`, { user: true });
+    const page = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
+    check('the 💲 Costs page shows each mother lot\'s cost per clone', page.includes('What does a clone cost?') && /M100[\s\S]*150[\s\S]*\$3\.177/.test(page), page.slice(page.indexOf('What does a clone cost?'), page.indexOf('What does a clone cost?') + 500));
+    // Saving K1's summary freezes the charge; closed out, it keeps it when the mother's costs change
+    await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'K1')]);`);
+    const fz = await b.run(m3, `return { c: DB.data._EmployeeWizard.crops.K1?.costs?.clones, l: DB.data._EmployeeWizard.cropCosts?.K1 };`);
+    check('a crop summary freezes the clone charge (labour with the wages, the rest in Main.json)', fz.c?.n === 100 && fz.c.mother === 'M100' && near(fz.c.parts.power, 242.4) && near(fz.l?.cloneLabour, 68.67) && near(fz.l?.cost, 63), JSON.stringify(fz));
+    await b.run(m3, `delete DB.data.lots.K1; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'K1');
+        DB.data.calendarEvents.find(e => e.id === 'm3').labour_map[DB.data.calendarEvents.find(e => e.id === 'm3').date][0].hours = 20; markUnsaved(); broadcastToSubtools();`);
+    await b.waitFor(ew, `return !DB.lots.K1;`);
+    const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), per: rptCloneModel(M).priceOf('M100').perClone };`);
+    check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 68.67) && near(after.parts.power, 242.4) && !near(after.per.labour, 103 / 150), JSON.stringify(after));
+    await leave(b, ew); await b.send('browsingContext.close', { context: ew });
+    await leave(b, m3);
     return results;
 }

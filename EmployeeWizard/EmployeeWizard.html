@@ -1056,7 +1056,7 @@
             --rv-blue: #3987e5; --rv-orange: #d95926; --rv-aqua: #199e70; --rv-yellow: #c98500;
             --rv-magenta: #d55181; --rv-green: #008300; --rv-violet: #9085e9; --rv-red: #e66767;
             --rv-neutral: #626b92; --rv-total: #d6d8e6;
-            --rv-ph-clone: var(--rv-violet); --rv-ph-veg: var(--rv-green); --rv-ph-flower: var(--rv-magenta); --rv-ph-post: var(--rv-yellow);
+            --rv-ph-clone: var(--rv-violet); --rv-ph-veg: var(--rv-green); --rv-ph-flower: var(--rv-magenta); --rv-ph-post: var(--rv-yellow); --rv-ph-mother: var(--rv-aqua);
             --rv-seq-0: #1c2848; --rv-seq-1: #184f95; --rv-seq-2: #1c5cab; --rv-seq-3: #256abf;
             --rv-seq-4: #2a78d6; --rv-seq-5: #3987e5; --rv-seq-6: #5598e7; --rv-seq-7: #86b6ef;
             --rv-grid: #222d4f; --rv-axis: #3a4670; --rv-zebra: #19244a; --rv-muted: #8789a6;
@@ -3838,7 +3838,7 @@
             const order = Object.keys(rptTaskTypes()), i = order.indexOf(tt), h = order.indexOf('harvest');
             return i >= 0 && h >= 0 && i >= h ? 'post' : 'flower';
         }
-        const RPT_PHASES = { clone: 'Cloning', veg: 'Veg', flower: 'Flower', post: 'Harvest & post' };
+        const RPT_PHASES = { clone: 'Cloning', veg: 'Veg', flower: 'Flower', post: 'Harvest & post', mother: 'Mothers' };
 
         // BC civic holidays (root CLAUDE.md → "BC Civic Holidays"). Reports use them only to take holidays out of
         // roster capacity; the rest of EmployeeWizard stays holiday-unaware (design decision 6).
@@ -4090,6 +4090,16 @@
             // 📋 CTLS: the lot's dated plant and weight history (version 4), kept with the summary so a lot closed out
             // mid-month still counts in that month's numbers
             c.ctls = ctlsLedger(lot, paper, qmap, answers);
+            // 🌿 A mother lot (scheduled with a vegetative recipe): no harvest; it lives in its Mother room until it's retired
+            // or its plants reach 0 (its stays and costs end there)
+            const cfg = lot?._tool_CropLabourWizard;
+            if (cfg?.kind === 'vegetative' || DB.data._CropLabourWizard?.recipes?.[cfg?.recipeId]?.kind === 'vegetative') {
+                c.mother = true;
+                c.dates.retire = sched.retire?.date || null;
+                c.dates.cloneCut = sched.clone_cut?.date || null;
+                const zero = (c.ctls?.counts || []).find(([d, n]) => n === 0 && (!c.dates.planting || d >= c.dates.planting));
+                c.dates.end = [zero?.[0], c.dates.retire].filter(isDay).sort()[0] || null;
+            }
             const flagged = new Set(), herm = new Set();
             for (const m of RPT_IPM) for (const [d, v] of Object.entries(series[m] || {})) if (v >= 1) { flagged.add(d); if (m === 'ipm.herm') herm.add(d); }
             c.ipm = { flagDays: flagged.size, hermDays: herm.size };
@@ -4373,6 +4383,17 @@
                 const roomId = rptRoomIdByName(name);
                 if (roomId && isDay(from) && isDay(to) && to >= from) out.push({ roomId, from, to, phase });
             };
+            if (c.mother) {
+                // 🌿 Mothers: cloning room, veg room until the transplant, then the Mother room (their destination) to the end
+                if (d.day0 && d.planting) add(r.cloning, d.day0, dAdd(d.planting, -1), 'clone');
+                const end = d.end || d.retire;
+                if (!end || !d.planting) return out;
+                if (d.transplant && d.transplant > d.planting) {
+                    add(r.veg, d.planting, dAdd(d.transplant, -1), 'veg');
+                    add(r.flower || r.veg, d.transplant, end, 'mother');
+                } else add(r.flower || r.veg, d.planting, end, 'mother');
+                return out;
+            }
             const harvestEnd = d.harvestEnd || d.harvestStart;
             if (d.day0 && d.planting) add(r.cloning, d.day0, dAdd(d.planting, -1), 'clone');
             if (d.planting && d.transplant) add(r.veg, d.planting, dAdd(d.transplant, -1), 'veg');
@@ -4600,10 +4621,118 @@
                 savedAt: new Date().toISOString()
             };
         }
-        // One crop's cost per part, in $ (labour = its direct labour cost, null without wages)
+        // =====================================================
+        // 🌿 Cost per clone (user decision 2026-10-23)
+        // A mother lot (scheduled with a vegetative recipe) is a crop like any other: its stay in its Mother room carries that
+        // room's electricity, room chores and property share, and its grow log its water and fertilizer. Its cost per clone =
+        // everything spent on it (labour, electricity, water, fertilizer, supplies, property — and its own clones, when it was
+        // cut from another mother) + the cutting of the lots cut from it (their Cutting Clones hours and the supplies charged
+        // at Cutting Clones) ÷ the clones cut from it (those lots' starting counts).
+        // A lot cut on site from a mother lot (its sub-lot) pays for its clones at that price, part by part, and its own
+        // cutting comes out of its costs: cutting is paid once, inside the clone price (its hours are logged once, on the
+        // Cutting Clones task, which usually belongs to the bloom lot). Bought clones keep the price-list price.
+        // =====================================================
+        const RPT_CUT_TASK = 'clone_cut_prep';
+        const RPT_PART_KEYS = ['labour', 'power', 'water', 'fert', 'supplies', 'property'];
+        const rptClonesOf = c => Number(c?.ctls?.start) > 0 ? Number(c.ctls.start) : Number(c?.plants?.started) > 0 ? Number(c.plants.started) : 0;
+        // A crop's own labour $ per hour, to price its Cutting Clones hours
+        function rptLabourRate(c) {
+            const k = rptCropCost(c);
+            return k && k.missing === 0 && c.labour?.act > 0 ? k.cost / c.labour.act : null;
+        }
+        // What cutting a lot's clones cost: its Cutting Clones hours (at its own $/h) and the supplies charged at that task
+        function rptCuttingCost(c, M) {
+            const hours = c.labour?.byTask?.[RPT_CUT_TASK]?.act || 0;
+            const rate = rptLabourRate(c);
+            const items = (rptCropInputCost(c, M).supplies.items || []).filter(x => x.at?.task === RPT_CUT_TASK);
+            const priced = items.filter(x => x.cost != null);
+            return { hours, labour: hours > 0 ? (rate != null ? hours * rate : null) : 0, supplies: rSum(priced, x => x.cost), unpriced: items.length - priced.length, items };
+        }
+        // Which mother lots the lots were cut from, and each mother lot's cost per clone (worked out once per report)
+        function rptCloneModel(M) {
+            if (M._clones) return M._clones;
+            const byId = new Map(M.crops.map(c => [c.lotId, c]));
+            const isMother = id => !!byId.get(id)?.mother;
+            const isCut = (type, parent) => !!parent && isMother(parent) && (!type || type === 'sub-lot');
+            const kids = new Map(), seen = new Set();
+            const addKid = (mom, k) => (kids.get(mom) || kids.set(mom, []).get(mom)).push(k);
+            for (const c of M.crops) {
+                if (!isCut(c.ctls?.type, c.parentLotId)) continue;
+                addKid(c.parentLotId, { lotId: c.lotId, strain: c.strain, n: rptClonesOf(c), date: c.ctls?.created || c.dates?.day0 || null, crop: c });
+                seen.add(c.lotId);
+            }
+            // Lots cut from a mother that have no schedule yet still count their clones (they carry no cutting cost yet)
+            for (const [id, lot] of Object.entries(DB.lots)) {
+                if (seen.has(id) || !lot || !isCut(lot.type, lot.parentLotId)) continue;
+                addKid(lot.parentLotId, { lotId: id, strain: lot.strain || '—', n: Number(lot.startPlantCount ?? lot.plantCount) || 0, date: lot.createdDate || null, crop: null });
+            }
+            const price = new Map();
+            const priceOf = id => {
+                if (price.has(id)) return price.get(id);
+                price.set(id, null);   // a guard against a loop of parents
+                const mom = byId.get(id);
+                if (!mom?.mother) return null;
+                const list = (kids.get(id) || []).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                const L = rptCropLabour(mom, M);
+                const own = { ...rptCropCostParts(mom, M), labour: L && L.missing === 0 ? L.cost : null };
+                const cut = { hours: 0, labour: 0, supplies: 0, unpriced: 0, labourMissing: false };
+                for (const k of list) {
+                    if (!k.crop) continue;
+                    const x = rptCuttingCost(k.crop, M);
+                    cut.hours += x.hours; cut.supplies += x.supplies; cut.unpriced += x.unpriced;
+                    if (x.labour == null) cut.labourMissing = true; else cut.labour += x.labour;
+                }
+                const total = { ...own };
+                if (total.labour != null) total.labour = cut.labourMissing ? null : total.labour + cut.labour;
+                if (cut.supplies > 0) total.supplies = (total.supplies || 0) + cut.supplies;
+                const clones = rSum(list, k => k.n);
+                const perClone = clones > 0 ? Object.fromEntries(RPT_PART_KEYS.map(p => [p, total[p] != null ? total[p] / clones : null])) : null;
+                const people = Object.keys(mom.labour?.byPerson || {});
+                const r = { mother: mom, kids: list, clones, own, cut, total, perClone, people };
+                price.set(id, r);
+                return r;
+            };
+            M._clones = { kids, priceOf, motherOf: c => c && isCut(c.ctls?.type, c.parentLotId) ? c.parentLotId : null };
+            return M._clones;
+        }
+        // A lot's clones at its mother lot's cost per clone, by part: { n, mother, parts, frozen? } — or null for a lot not cut
+        // from a mother lot. A closed-out lot uses the charge frozen with its summary (labour in Wages.json, the rest in Main.json).
+        function rptCloneCharge(c, M) {
+            if (c.closed && c.costs?.clones) {
+                const f = c.costs.clones, lab = wagesLoaded() ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId]?.cloneLabour : undefined;
+                return { n: f.n, mother: f.mother, frozen: true, parts: { ...(f.parts || {}), labour: lab ?? null } };
+            }
+            const CM = rptCloneModel(M), mom = CM.motherOf(c);
+            if (!mom) return null;
+            const pr = CM.priceOf(mom), n = rptClonesOf(c);
+            if (!pr?.perClone || !(n > 0)) return { n, mother: mom, parts: {}, unpriced: true };
+            return { n, mother: mom, people: pr.people, parts: Object.fromEntries(RPT_PART_KEYS.map(p => [p, pr.perClone[p] != null ? pr.perClone[p] * n : null])) };
+        }
+        // A crop's labour $ as the cost per gram counts it: its own, less the cutting of its clones (that's in its mother's
+        // clone price), plus its clones' share of the mother's labour. Same shape as rptCropCost.
+        function rptCropLabour(c, M) {
+            const k = rptCropCost(c);
+            if (!k) return null;
+            const ch = rptCloneCharge(c, M);
+            if (!ch) return k;
+            const cut = rptCuttingCost(c, M);
+            const clonesPriced = ch.parts.labour != null;
+            return { ...k, cost: k.cost - (cut.labour || 0) + (clonesPriced ? ch.parts.labour : 0),
+                missing: k.missing + (clonesPriced || !(ch.n > 0) ? 0 : 1),   // clones whose labour can't be priced keep the crop out of $ figures
+                people: [...new Set([...k.people, ...(ch.people || [])])] };
+        }
+        // One crop's cost per part, in $ (labour = its direct labour cost, null without wages). A lot cut from a mother lot
+        // carries its clones (at the mother's cost per clone) in each part, and its own cutting is taken out.
         function rptCropCostParts(c, M) {
-            const k = rptCropInputCost(c, M), lab = rptCropCost(c);
-            return { labour: lab && lab.missing === 0 && lab.cost > 0 ? lab.cost : null, power: k.power.cost, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost, property: k.property.cost };
+            const k = rptCropInputCost(c, M), lab = rptCropLabour(c, M);
+            const parts = { labour: lab && lab.missing === 0 && lab.cost > 0 ? lab.cost : null, power: k.power.cost, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost, property: k.property.cost };
+            const ch = rptCloneCharge(c, M);
+            if (ch) {
+                const cut = rptCuttingCost(c, M);
+                if (parts.supplies != null && cut.supplies) parts.supplies -= cut.supplies;
+                for (const p of RPT_PART_KEYS) if (p !== 'labour' && ch.parts[p] != null) parts[p] = (parts[p] ?? 0) + ch.parts[p];
+            }
+            return parts;
         }
         // $ per gram for a set of harvested crops: each part over the crops that have it; all in = their sum.
         // Labour is the fully loaded figure from rptAgg (chores and equipment hours included).
@@ -4637,7 +4766,7 @@
             const done = rptDoneTasks(M, from, to);
             let cost = null, direct = null, loaded = null;
             if (wagesLoaded() && withFlower.length) {
-                const costed = withFlower.map(c => ({ c, k: rptCropCost(c) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0);
+                const costed = withFlower.map(c => ({ c, k: rptCropLabour(c, M) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0);
                 const people = new Set(costed.flatMap(x => x.k.people));
                 const g = rSum(costed, x => x.c.weights.flower);
                 if (costed.length && people.size >= RPT_MIN_PEOPLE && g > 0) {
@@ -4903,7 +5032,8 @@
                     push(r.dry, c, 'post', d.harvestStart, d.bucking || d.trimStart);
                     if (r.trim && r.trim !== r.dry) push(r.trim, c, 'post', d.trimStart, d.trimEnd);
                 }
-                push(r.flower, c, 'flower', d.transplant, d.tankClean || d.harvestEnd);
+                if (c.mother) push(r.flower || r.veg, c, 'mother', d.transplant || d.planting, d.end || d.retire);
+                else push(r.flower, c, 'flower', d.transplant, d.tankClean || d.harvestEnd);
             }
             const proj = {};
             for (const ev of DB.data.calendarEvents) {
@@ -5807,10 +5937,38 @@
             if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building, so no crop carries it.`);
             const idleChores = rSum(M.other.filter(r => r.kind === 'chore' && r.shares && !r.shares.length && inRange(r.date, M.per.from, M.per.to)), r => r.hours);
             if (idleChores > 0) miss.push(`${rN(idleChores, 1)} h of room chores fell on days with no crop scheduled in the room, so they’re shared like whole-building chores.`);
+            // 🌿 Clones cut on site: from a mother lot with no cost per clone yet
+            const CM = rptCloneModel(M);
+            const noPrice = cur.filter(c => rptCloneCharge(c, M)?.unpriced).map(c => `${c.lotId} (from ${CM.motherOf(c)})`);
+            if (noPrice.length) miss.push(`Cut from a mother lot that has no cost per clone yet, so their clones cost nothing here: ${noPrice.join(', ')}.`);
+            const homeless = M.crops.filter(c => c.mother && !c.closed && !rptCropRoomDays(c).some(st => st.phase === 'mother')).map(c => c.lotId);
+            if (homeless.length) miss.push(`Mother lot ${homeless.join(', ')} has no Mother room (destination room) or no planting / retire date, so it carries no room costs — set its rooms in SitkaTools and its schedule in CropLabourWizard.`);
             const health = miss.length ? `<ul class="rpt-attn">${miss.map(t => `<li><span class="rpt-sev info">ℹ️ Note</span><span>${rEsc(t)}</span></li>`).join('')}</ul>` : rEmpty('Every cost is in.', '');
+
+            // 🌿 What does a clone cost? Each mother lot's cost per clone so far, and the clones cut in the period
+            const mothers = M.crops.filter(c => c.mother && (!RPT.building || c.buildingId === RPT.building) && (!RPT.strain || c.strain === RPT.strain))
+                .map(c => ({ c, pr: CM.priceOf(c.lotId) })).filter(x => x.pr)
+                .sort((x, y) => (y.c.dates?.planting || '').localeCompare(x.c.dates?.planting || ''));
+            const allInOf = pc => { const v = pc ? RPT_PART_KEYS.map(p => pc[p]).filter(x => x != null) : []; return v.length ? rSum(v) : null; };
+            const cutIn = (from, to) => mothers.flatMap(x => x.pr.kids.filter(k => inRange(k.date, from, to) && k.n > 0).map(k => ({ n: k.n, pc: allInOf(x.pr.perClone) }))).filter(k => k.pc != null);
+            const avg = list => { const n = rSum(list, k => k.n); return n > 0 ? { n, pc: rSum(list, k => k.n * k.pc) / n } : null; };
+            const curCut = avg(cutIn(M.per.from, M.per.to)), prevCut = avg(cutIn(M.per.prevFrom, M.per.prevTo));
+            const mRows = mothers.map(({ c, pr }) => {
+                const pc = pr.perClone, all = allInOf(pc);
+                return `<tr><td><b>${rEsc(c.lotId)}</b>${c.closed ? ' <span class="rpt-muted">closed out</span>' : ''}<br><span class="rpt-muted">${rEsc(c.strain)}</span></td><td>${rEsc(c.rooms?.flower || c.rooms?.veg || '—')}</td>` +
+                    `<td>${c.dates?.planting ? rEsc(dFmt(c.dates.planting)) : '—'}${c.dates?.retire ? ` → ${rEsc(dFmtY(c.dates.retire))}` : ''}</td><td class="n">${rN(pr.clones)}</td>` +
+                    RPT_PART_KEYS.map(p => `<td class="n">${pc && pc[p] != null ? rMoney(pc[p], 3) : '—'}</td>`).join('') +
+                    `<td class="n"><b>${all != null ? rMoney(all, 3) : '—'}</b></td></tr>`;
+            }).join('');
+            const cloneBody = mothers.length
+                ? `<p class="rpt-note">${curCut ? `Clones cut in this period: <b>${rN(curCut.n)}</b> at <b>${rMoney(curCut.pc, 3)}</b> each on average` + (prevCut ? ` (previous period ${rMoney(prevCut.pc, 3)}, ${rPct(curCut.pc / prevCut.pc - 1)})` : '') + '.' : 'No priced clones were cut in this period.'}${wagesLoaded() ? '' : ' Labour isn’t included — open Wages.json in SitkaTools.'}</p>` +
+                    `<div class="rpt-tbl"><table><thead><tr><th>Mother lot</th><th>Room</th><th>Planted → retire</th><th class="n">Clones cut</th>${RPT_COST_PARTS.map(([, l]) => `<th class="n">${rEsc(l)}</th>`).join('')}<th class="n">All in</th></tr></thead><tbody>${mRows}</tbody></table></div>` +
+                    `<p class="rpt-note">$ per clone, from the mother lot’s start to today (or its end).</p>`
+                : rEmpty('No mother lots yet.', 'Schedule a lot with a 🌿 vegetative recipe in CropLabourWizard; give it its Mother room as its destination room in SitkaTools.');
 
             return `<div class="rpt-grid">` +
                 rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees, shared by its rooms in use' }) +
+                rCard({ wide: true, title: '🌿 What does a clone cost?', sub: 'Each mother lot’s cost so far — its labour (room chores included), its Mother room’s electricity and property share, its water, fertilizer and supplies, and the cutting of its clones (the Cutting Clones hours and supplies of the lots cut from it) — divided by the clones cut from it. A lot cut on site from a mother lot carries its clones at this price in its cost per gram, and its own cutting isn’t counted again.', body: cloneBody, source: 'Mother lots: lots scheduled with a 🌿 vegetative recipe · clones: the starting counts of the lots cut from them (sub-lots)' }) +
                 rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours, its share of room chores included (no share of whole-building chores or equipment).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
@@ -6198,8 +6356,13 @@ ${ctlsBody(C, true)}
             for (const c of list) {
                 ew.crops[c.lotId] = rptSummaryOf(c);
                 ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer, supplies and property as they stood
+                // 🌿 Its clones at its mother lot's cost per clone, as it stood (labour $ goes with the wages, in Wages.json)
+                const ch = c.closed ? null : rptCloneCharge(c, M);
+                const r4 = v => v == null ? null : Math.round(v * 10000) / 10000;
+                if (ch && !ch.unpriced) ew.crops[c.lotId].costs.clones = { n: ch.n, mother: ch.mother, parts: Object.fromEntries(RPT_PART_KEYS.filter(p => p !== 'labour').map(p => [p, r4(ch.parts[p])])) };
                 const k = costs ? rptCropCost(c) : null;
-                if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt };
+                if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt,
+                    ...(ch && !ch.unpriced && ch.parts.labour != null ? { cloneLabour: Math.round(ch.parts.labour * 100) / 100 } : {}) };
             }
             let dropped = 0;
             for (const [id, s] of Object.entries(ew.crops)) {
@@ -6212,16 +6375,18 @@ ${ctlsBody(C, true)}
         function rptSetup(M) {
             const ew = DB.data._EmployeeWizard || {}, saved = ew.crops || {};
             const canopyRows = M.flowerRooms.map(id => `<tr><td>${rEsc(rptRoomName(id))} <span class="rpt-muted">${rEsc(id)}</span></td><td>${rEsc(rptBuildingName(DB.data.rooms[id]?.buildingId))}</td><td class="n">${rptCanopy(id) ?? '<span class="rpt-muted">not set</span>'}</td><td class="n">${rptLights(id) ?? '<span class="rpt-muted">not set</span>'}</td><td class="n">${rptLightWatts(id) ? rN(rptLightWatts(id), 0) + ' W' : '<span class="rpt-muted">not set</span>'}</td></tr>`).join('');
-            const live = M.crops.filter(c => !c.closed && c.dates?.harvestStart).sort((a, b) => b.dates.harvestStart.localeCompare(a.dates.harvestStart));
+            const sortDay = c => c.dates?.harvestStart || c.dates?.end || c.dates?.retire || '';
+            const live = M.crops.filter(c => !c.closed && (c.dates?.harvestStart || c.mother)).sort((a, b) => sortDay(b).localeCompare(sortDay(a)));
+            const doneBy = c => c.mother ? (c.dates.end || c.dates.retire) : c.dates.ship;   // shipped, or mothers retired
             const closed = M.crops.filter(c => c.closed).sort((a, b) => (b.dates?.harvestStart || '').localeCompare(a.dates?.harvestStart || ''));
             const status = c => {
                 const s = saved[c.lotId];
-                if (!s) return c.dates.ship && c.dates.ship < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
+                if (!s) return doneBy(c) && doneBy(c) < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
                 const cost = wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : '';
                 return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(rSavedDay(s.savedAt))}${cost}</span>` : `<span class="rpt-warn">Saved ${rEsc(rSavedDay(s.savedAt))}${cost} — out of date</span>`;
             };
             const fmtW = g => g != null ? rKg(g) : '—';
-            const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
+            const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${c.mother ? `🌿 mothers · retire ${rEsc(c.dates.retire || '—')}` : rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
                 + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : ''}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
             // Metric hook-up: which questions feed each metric, and how many answers they hold
             const tagged = {};
@@ -6245,7 +6410,7 @@ ${ctlsBody(C, true)}
                 const where = t.length ? t.map(x => `${rEsc(x.sheet)}: “${rEsc(rShort(x.label, 48))}”${x.unit ? ` (${rEsc(x.unit)})` : ''} · ${answerCount(x.sheetId, x.qid)} answer${answerCount(x.sheetId, x.qid) === 1 ? '' : 's'}`).join('<br>') : (RPT_HARVEST_CORE.includes(key) ? '<span class="rpt-warn">Not tagged yet</span>' : '<span class="rpt-muted">Not tagged</span>');
                 return `<tr><td><code>${rEsc(key)}</code></td><td>${rEsc(def.label)}</td><td>${where}</td></tr>`;
             }).join('');
-            const ready = live.filter(c => c.dates.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
+            const ready = live.filter(c => doneBy(c) && doneBy(c) < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
             return `<div class="rpt-grid">` +
                 rCard({ title: 'Canopy area and lights of each flower room', sub: 'Canopy is used for grams per square foot; lights for “Per light” and, with watts per light, the lighting power estimate. Rooms are the ones marked “Flowering” in SitkaTools’ Room Manager, where all three are set.', body: M.flowerRooms.length ? `<div class="rpt-tbl"><table><thead><tr><th>Room</th><th>Building</th><th class="n">Canopy (sq ft)</th><th class="n">Lights</th><th class="n">Watts per light</th></tr></thead><tbody>${canopyRows}</tbody></table></div>` : rEmpty('No flowering rooms yet.', 'Tick “Flowering room” in SitkaTools’ Room Manager.'), source: 'rooms.<id>.canopySqFt · lightCount · lightWattage (Room Manager)' }) +
                 rCard({ title: 'Shift length', sub: 'Roster capacity = work days × this many hours, less booked time off and BC holidays.', body: `<label class="rpt-inline">Hours per shift <input type="number" min="1" max="16" step="0.5" class="rpt-num" id="rptShiftInput" value="${rptShiftHours()}"></label>`, source: '_EmployeeWizard.settings.shiftHours' }) +
@@ -6440,7 +6605,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             }
             if (t.closest('#rptSaveAll')) {
                 const M = rptModel(), saved = DB.data._EmployeeWizard?.crops || {};
-                const list = M.crops.filter(c => !c.closed && c.dates?.ship && c.dates.ship < M.today && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
+                const list = M.crops.filter(c => !c.closed && (c.mother ? (c.dates.end || c.dates.retire) : c.dates?.ship) < M.today && (c.mother ? (c.dates.end || c.dates.retire) : c.dates?.ship) && !rptSameSummary(saved[c.lotId], rptSummaryOf(c)));
                 if (!list.length) return;
                 const dropped = rptSaveSummaries(list);
                 showToast(`Saved ${list.length} crop summar${list.length > 1 ? 'ies' : 'y'}${dropped ? ` · ${dropped} older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
