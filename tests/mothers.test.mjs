@@ -219,26 +219,29 @@ export async function run(b, BASE) {
     // Its Mother room's lights (2 kW × 18 h × $0.10 = $3.60 a day) for the 73 days it's been in there. Before that the room
     // was empty, and an empty Mother room is dark.
     check('its own costs: 2 h at $20, and its Mother room\'s lights over the 73 days it\'s been there, one at 50 % ($261.00; the empty room was dark)', near(R.own.labour, 40) && near(R.own.power, 261), JSON.stringify(R.own));
-    // Priced at the wages of who cut (Blair 3 h at $21, temp Tess 1 h at $18 = $81), not K1's average $/h ($121 ÷ 6 h → $80.67)
-    check('the cutting of K1 goes into it, at the wages of who cut: Blair 3 h at $21 + Tess 1 h at $18, and 100 clone cubes at $0.10', near(R.cut.labour, 81) && near(R.cut.supplies, 10) && R.cut.hours === 4, JSON.stringify(R.cut));
-    check('cost per clone: labour $121 ÷ 150, power $261.00 ÷ 150, supplies $10 ÷ 150', near(R.per.labour, 121 / 150, 1e-6) && near(R.per.power, 1.74, 1e-6) && near(R.per.supplies, 10 / 150, 1e-6) && R.per.water == null, JSON.stringify(R.per));
-    check('K1 pays for its 100 clones at that price', R.charge.n === 100 && R.charge.mother === 'M100' && near(R.charge.parts.labour, 80.6667) && near(R.charge.parts.power, 174), JSON.stringify(R.charge));
-    check('…and its own cutting isn\'t counted again: labour $121 − $81 + $80.67, supplies $10 − $10 + $6.67, power $174.00',
-        near(R.k1raw, 121) && near(R.parts.labour, 120.6667) && near(R.parts.supplies, 6.6667) && near(R.parts.power, 174), JSON.stringify(R.parts));
+    // K1's cutting is shown beside the clone price at the wages of who cut (Blair 3 h at $21, temp Tess 1 h at $18 = $81, not
+    // K1's average $/h: $121 ÷ 6 h → $80.67) — but it stays K1's own cost
+    check('K1\'s cutting, at the wages of who cut (Blair 3 h at $21 + Tess 1 h at $18) and 100 clone cubes at $0.10, shown beside the price', near(R.cut.labour, 81) && near(R.cut.supplies, 10) && R.cut.hours === 4 && R.cut.clones === 100, JSON.stringify(R.cut));
+    check('cost per clone = growing the mothers: labour $40 ÷ 150, power $261.00 ÷ 150 (no cutting in it)', near(R.per.labour, 40 / 150, 1e-6) && near(R.per.power, 1.74, 1e-6) && R.per.supplies == null && R.per.water == null, JSON.stringify(R.per));
+    check('K1 pays for its 100 clones at that price', R.charge.n === 100 && R.charge.mother === 'M100' && near(R.charge.parts.labour, 26.6667) && near(R.charge.parts.power, 174), JSON.stringify(R.charge));
+    check('…and keeps its own cutting: labour $121 (cutting included) + $26.67 for its clones, supplies its own $10, power $174.00',
+        near(R.k1raw, 121) && near(R.parts.labour, 147.6667) && near(R.parts.supplies, 10) && near(R.parts.power, 174), JSON.stringify(R.parts));
     // The Costs page
     await b.run(ew, `document.getElementById('tabReports').click(); RPT.page = 'costs'; renderReports();`, { user: true });
-    const page = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
-    check('the 💲 Costs page shows each mother lot\'s cost per clone', page.includes('What does a clone cost?') && /M100[\s\S]*150[\s\S]*\$2\.613/.test(page), page.slice(page.indexOf('What does a clone cost?'), page.indexOf('What does a clone cost?') + 500));
+    const page = await b.run(ew, `return document.getElementById('rptBody').textContent;`);
+    const cl = page.slice(page.indexOf('What does a clone cost?'), page.indexOf('Cost per gram, crop by crop'));
+    check('the 💲 Costs page breaks the cost per clone down like the gram: this period by part, the cutting beside it, mother lot by mother lot',
+        cl.includes('150 clones cut') && cl.includes('$2.007') && cl.includes('$0.910 a clone on average') && cl.includes('Cost per clone, mother lot by mother lot') && /M100[\s\S]*150/.test(cl), cl.slice(0, 600));
     // Saving K1's summary freezes the charge; closed out, it keeps it when the mother's costs change
     await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'K1')]);`);
     const fz = await b.run(m3, `return { c: DB.data._EmployeeWizard.crops.K1?.costs?.clones, l: DB.data._EmployeeWizard.cropCosts?.K1 };`);
-    check('a crop summary freezes the clone charge and its cutting (labour with the wages, the rest in Main.json)', fz.c?.n === 100 && fz.c.mother === 'M100' && near(fz.c.parts.power, 174)
-        && near(fz.l?.cloneLabour, 80.67) && near(fz.l?.cutLabour, 81) && near(fz.l?.cost, 121), JSON.stringify(fz));
+    check('a crop summary freezes the clone charge (labour with the wages, the rest in Main.json)', fz.c?.n === 100 && fz.c.mother === 'M100' && near(fz.c.parts.power, 174)
+        && near(fz.l?.cloneLabour, 26.67) && near(fz.l?.cost, 121) && fz.l.cutLabour === undefined, JSON.stringify(fz));
     await b.run(m3, `delete DB.data.lots.K1; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'K1');
         DB.data.calendarEvents.find(e => e.id === 'm3').labour_map[DB.data.calendarEvents.find(e => e.id === 'm3').date][0].hours = 20; markUnsaved(); broadcastToSubtools();`);
     await b.waitFor(ew, `return !DB.lots.K1;`);
     const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), per: rptCloneModel(M).priceOf('M100').perClone };`);
-    check('closed out, K1 keeps its frozen clone charge and cutting though the mother\'s costs changed', after.closed && near(after.parts.labour, 120.67) && near(after.parts.power, 174) && !near(after.per.labour, 121 / 150), JSON.stringify(after));
+    check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 147.67) && near(after.parts.power, 174) && !near(after.per.labour, 40 / 150), JSON.stringify(after));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, m3);
     return results;

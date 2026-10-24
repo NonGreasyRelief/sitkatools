@@ -4356,8 +4356,8 @@
         // Electricity is estimated room by room, day by day — lights × watts per light × the room's veg or bloom hours ×
         // that day's light % (grow-log metric env.lightPct, 100 % when not logged), plus every piece of equipment's
         // watts × units × hours a day — and given to the crops in the room that day, split by plants. A room with no crop
-        // that day (a hall, an empty flower room) passes its power to the building's crops that day; so does a room
-        // designated "Mother", whose lights run every day at its veg hours.
+        // that day (a hall, an empty flower or Mother room) is dark, and passes its equipment's power to the building's
+        // crops that day. A Mother room holding a mother lot charges that lot (🌿 cost per clone).
         // "Power bills" spreads each bill evenly over its days and splits each day by those estimates.
         // Water (water.total, L) and fertilizer (feed.nutrient, mL by product) come from the grow logs, priced with the
         // ⚡ Power & Rates water rate and CropLabourWizard's price list. Supplies come from the lot's recipe.
@@ -4632,24 +4632,21 @@
         // 🌿 Cost per clone (user decision 2026-10-23)
         // A mother lot (scheduled with a vegetative recipe) is a crop like any other: its stay in its Mother room carries that
         // room's electricity, room chores and property share, and its grow log its water and fertilizer. Its cost per clone =
-        // everything spent on it (labour, electricity, water, fertilizer, supplies, property — and its own clones, when it was
-        // cut from another mother) + the cutting of the lots cut from it (their Cutting Clones hours and the supplies charged
-        // at Cutting Clones) ÷ the clones cut from it (those lots' starting counts).
-        // A lot cut on site from a mother lot (its sub-lot) pays for its clones at that price, part by part, and its own
-        // cutting comes out of its costs: cutting is paid once, inside the clone price (its hours are logged once, on the
-        // Cutting Clones task, which usually belongs to the bloom lot). Bought clones keep the price-list price.
+        // everything spent growing it (labour, electricity, water, fertilizer, supplies, property — and its own clones, when it
+        // was cut from another mother) ÷ the clones cut from it (its sub-lots' starting counts), part by part.
+        // A lot cut on site from a mother lot (its sub-lot) pays for its clones at that price, part by part. Cutting the clones
+        // is that lot's own work (its Cutting Clones task, user decision 2026-10-23): its hours and the supplies charged at
+        // Cutting Clones stay in its own costs, so each bloom lot pays its own cutting. Bought clones keep the price-list price.
         // =====================================================
         const RPT_CUT_TASK = 'clone_cut_prep';
         const RPT_PART_KEYS = ['labour', 'power', 'water', 'fert', 'supplies', 'property'];
         const rptClonesOf = c => Number(c?.ctls?.start) > 0 ? Number(c.ctls.start) : Number(c?.plants?.started) > 0 ? Number(c.plants.started) : 0;
         // The $ of a lot's Cutting Clones hours, at the wages of the people who logged them (temps at their own wage); null
-        // without wages, or when someone who cut has no wage. A closed-out lot uses what was frozen with its summary; one
-        // saved before the people were kept falls back to its average $ per hour.
+        // without wages, or when someone who cut has no wage. A summary saved before the people were kept falls back to its
+        // average $ per hour. Shown beside the clone price: the cutting is the lot's own cost, already in its labour.
         function rptCuttingLabour(c, t) {
             if (!(t?.act > 0)) return 0;
             if (!wagesLoaded()) return null;
-            const frozen = c.closed ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId] : null;
-            if (frozen && Number.isFinite(Number(frozen.cutLabour))) return Number(frozen.cutLabour);
             if (!t.people) {
                 const k = rptCropCost(c);
                 return k && k.missing === 0 && c.labour?.act > 0 ? t.act * k.cost / c.labour.act : null;
@@ -4699,16 +4696,16 @@
                 const list = (kids.get(id) || []).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
                 const L = rptCropLabour(mom, M);
                 const own = { ...rptCropCostParts(mom, M), labour: L && L.missing === 0 ? L.cost : null };
-                const cut = { hours: 0, labour: 0, supplies: 0, unpriced: 0, labourMissing: false };
+                // The cutting stays with each lot cut (shown beside the clone price, not in it)
+                const cut = { hours: 0, labour: 0, supplies: 0, clones: 0, labourMissing: false };
                 for (const k of list) {
                     if (!k.crop) continue;
                     const x = rptCuttingCost(k.crop, M);
-                    cut.hours += x.hours; cut.supplies += x.supplies; cut.unpriced += x.unpriced;
+                    if (!(x.hours > 0) && !(x.supplies > 0)) continue;
+                    cut.hours += x.hours; cut.supplies += x.supplies; cut.clones += k.n;
                     if (x.labour == null) cut.labourMissing = true; else cut.labour += x.labour;
                 }
                 const total = { ...own };
-                if (total.labour != null) total.labour = cut.labourMissing ? null : total.labour + cut.labour;
-                if (cut.supplies > 0) total.supplies = (total.supplies || 0) + cut.supplies;
                 const clones = rSum(list, k => k.n);
                 const perClone = clones > 0 ? Object.fromEntries(RPT_PART_KEYS.map(p => [p, total[p] != null ? total[p] / clones : null])) : null;
                 const people = Object.keys(mom.labour?.byPerson || {});
@@ -4732,30 +4729,25 @@
             if (!pr?.perClone || !(n > 0)) return { n, mother: mom, parts: {}, unpriced: true };
             return { n, mother: mom, people: pr.people, parts: Object.fromEntries(RPT_PART_KEYS.map(p => [p, pr.perClone[p] != null ? pr.perClone[p] * n : null])) };
         }
-        // A crop's labour $ as the cost per gram counts it: its own, less the cutting of its clones (that's in its mother's
-        // clone price), plus its clones' share of the mother's labour. Same shape as rptCropCost.
+        // A crop's labour $ as the cost per gram counts it: its own (its cutting included), plus its clones' share of the
+        // mother's labour. Same shape as rptCropCost.
         function rptCropLabour(c, M) {
             const k = rptCropCost(c);
             if (!k) return null;
             const ch = rptCloneCharge(c, M);
             if (!ch) return k;
-            const cut = rptCuttingCost(c, M);
             const clonesPriced = ch.parts.labour != null;
-            return { ...k, cost: k.cost - (cut.labour || 0) + (clonesPriced ? ch.parts.labour : 0),
+            return { ...k, cost: k.cost + (clonesPriced ? ch.parts.labour : 0),
                 missing: k.missing + (clonesPriced || !(ch.n > 0) ? 0 : 1),   // clones whose labour can't be priced keep the crop out of $ figures
                 people: [...new Set([...k.people, ...(ch.people || [])])] };
         }
         // One crop's cost per part, in $ (labour = its direct labour cost, null without wages). A lot cut from a mother lot
-        // carries its clones (at the mother's cost per clone) in each part, and its own cutting is taken out.
+        // carries its clones (at the mother's cost per clone) in each part; its own cutting is already in its own costs.
         function rptCropCostParts(c, M) {
             const k = rptCropInputCost(c, M), lab = rptCropLabour(c, M);
             const parts = { labour: lab && lab.missing === 0 && lab.cost > 0 ? lab.cost : null, power: k.power.cost, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost, property: k.property.cost };
             const ch = rptCloneCharge(c, M);
-            if (ch) {
-                const cut = rptCuttingCost(c, M);
-                if (parts.supplies != null && cut.supplies) parts.supplies -= cut.supplies;
-                for (const p of RPT_PART_KEYS) if (p !== 'labour' && ch.parts[p] != null) parts[p] = (parts[p] ?? 0) + ch.parts[p];
-            }
+            if (ch) for (const p of RPT_PART_KEYS) if (p !== 'labour' && ch.parts[p] != null) parts[p] = (parts[p] ?? 0) + ch.parts[p];
             return parts;
         }
         // $ per gram for a set of harvested crops: each part over the crops that have it; all in = their sum.
@@ -5970,30 +5962,77 @@
             if (homeless.length) miss.push(`Mother lot ${homeless.join(', ')} has no Mother room (destination room) or no planting / retire date, so it carries no room costs — set its rooms in SitkaTools and its schedule in CropLabourWizard.`);
             const health = miss.length ? `<ul class="rpt-attn">${miss.map(t => `<li><span class="rpt-sev info">ℹ️ Note</span><span>${rEsc(t)}</span></li>`).join('')}</ul>` : rEmpty('Every cost is in.', '');
 
-            // 🌿 What does a clone cost? Each mother lot's cost per clone so far, and the clones cut in the period
+            // 🌿 What does a clone cost? Broken down like the gram: this period against the previous one, stacked by part (the
+            // clones cut in the period, each at its mother lot's cost per clone), then mother lot by mother lot
             const mothers = M.crops.filter(c => c.mother && (!RPT.building || c.buildingId === RPT.building) && (!RPT.strain || c.strain === RPT.strain))
                 .map(c => ({ c, pr: CM.priceOf(c.lotId) })).filter(x => x.pr)
                 .sort((x, y) => (y.c.dates?.planting || '').localeCompare(x.c.dates?.planting || ''));
             const allInOf = pc => { const v = pc ? RPT_PART_KEYS.map(p => pc[p]).filter(x => x != null) : []; return v.length ? rSum(v) : null; };
-            const cutIn = (from, to) => mothers.flatMap(x => x.pr.kids.filter(k => inRange(k.date, from, to) && k.n > 0).map(k => ({ n: k.n, pc: allInOf(x.pr.perClone) }))).filter(k => k.pc != null);
-            const avg = list => { const n = rSum(list, k => k.n); return n > 0 ? { n, pc: rSum(list, k => k.n * k.pc) / n } : null; };
-            const curCut = avg(cutIn(M.per.from, M.per.to)), prevCut = avg(cutIn(M.per.prevFrom, M.per.prevTo));
-            const mRows = mothers.map(({ c, pr }) => {
-                const pc = pr.perClone, all = allInOf(pc);
-                return `<tr><td><b>${rEsc(c.lotId)}</b>${c.closed ? ' <span class="rpt-muted">closed out</span>' : ''}<br><span class="rpt-muted">${rEsc(c.strain)}</span></td><td>${rEsc(c.rooms?.flower || c.rooms?.veg || '—')}</td>` +
-                    `<td>${c.dates?.planting ? rEsc(dFmt(c.dates.planting)) : '—'}${c.dates?.retire ? ` → ${rEsc(dFmtY(c.dates.retire))}` : ''}</td><td class="n">${rN(pr.clones)}</td>` +
-                    RPT_PART_KEYS.map(p => `<td class="n">${pc && pc[p] != null ? rMoney(pc[p], 3) : '—'}</td>`).join('') +
-                    `<td class="n"><b>${all != null ? rMoney(all, 3) : '—'}</b></td></tr>`;
-            }).join('');
-            const cloneBody = mothers.length
-                ? `<p class="rpt-note">${curCut ? `Clones cut in this period: <b>${rN(curCut.n)}</b> at <b>${rMoney(curCut.pc, 3)}</b> each on average` + (prevCut ? ` (previous period ${rMoney(prevCut.pc, 3)}, ${rPct(curCut.pc / prevCut.pc - 1)})` : '') + '.' : 'No priced clones were cut in this period.'}${wagesLoaded() ? '' : ' Labour isn’t included — open Wages.json in SitkaTools.'}</p>` +
-                    `<div class="rpt-tbl"><table><thead><tr><th>Mother lot</th><th>Room</th><th>Planted → retire</th><th class="n">Clones cut</th>${RPT_COST_PARTS.map(([, l]) => `<th class="n">${rEsc(l)}</th>`).join('')}<th class="n">All in</th></tr></thead><tbody>${mRows}</tbody></table></div>` +
-                    `<p class="rpt-note">$ per clone, from the mother lot’s start to today (or its end).</p>`
-                : rEmpty('No mother lots yet.', 'Schedule a lot with a 🌿 vegetative recipe in CropLabourWizard; give it its Mother room as its destination room in SitkaTools.');
+            // Each part over the clones it can price, as the gram does over the crops
+            const clonePer = (from, to) => {
+                const list = mothers.flatMap(({ pr }) => pr.kids.filter(k => inRange(k.date, from, to) && k.n > 0).map(k => ({ n: k.n, pc: pr.perClone || {}, kid: k })));
+                const out = { clones: rSum(list, k => k.n) };
+                for (const p of RPT_PART_KEYS) { const have = list.filter(k => k.pc[p] != null), n = rSum(have, k => k.n); out[p] = n > 0 ? rSum(have, k => k.n * k.pc[p]) / n : null; }
+                out.allIn = allInOf(out);
+                // The cutting, paid by each lot cut in its own costs: shown beside the clone price, never in it
+                const cut = list.filter(k => k.kid.crop).map(k => ({ n: k.n, x: rptCuttingCost(k.kid.crop, M) })).filter(k => k.x.hours > 0 || k.x.supplies > 0);
+                const cn = rSum(cut, k => k.n);
+                out.cutting = cn > 0 && !cut.some(k => k.x.labour == null && wagesLoaded()) ? (rSum(cut, k => (k.x.labour || 0) + k.x.supplies) / cn) : null;
+                return out;
+            };
+            const ca = clonePer(M.per.from, M.per.to), cb = clonePer(M.per.prevFrom, M.per.prevTo);
+            const cBars = [['Previous period', cb], ['This period', ca]];
+            const cMax = Math.max(...cBars.map(([, x]) => x.allIn || 0), 0.01), cxs = rLin(0, cMax, X0, X1);
+            let sc = '';
+            cBars.forEach(([name, x], i) => {
+                const y = 24 + i * 58;
+                sc += rT(X0 - 10, y + 22, name, 'rv-lbl', 'end') + rT(X0 - 10, y + 38, `${rN(x.clones)} clone${x.clones === 1 ? '' : 's'} cut`, 'rv-axs', 'end');
+                let xx = X0;
+                for (const [k] of RPT_COST_PARTS) {
+                    if (!(x[k] > 0)) continue;
+                    const w = cxs(x[k]) - X0;
+                    sc += rRect(xx, y, w, 34, `fill:${color[k]}`, rTip(`${name}: ${label[k]} ${rMoney(x[k], 3)} per clone`));
+                    xx += w;
+                }
+                sc += x.allIn != null ? rT(xx + 8, y + 22, rMoney(x.allIn, 3), 'rv-val') : rT(X0 + 8, y + 22, 'no priced clones', 'rv-axs');
+            });
+            const cloneBreakdown = mothers.length && (ca.allIn != null || cb.allIn != null) ? rSvg(W, 150, sc, 'Cost per clone, this period and the previous one')
+                : rEmpty(mothers.length ? 'No priced clones were cut in this period.' : 'No mother lots yet.', mothers.length ? 'Clones count when a lot is cut from a mother lot (a sub-lot whose parent is the mother lot).' : 'Schedule a lot with a 🌿 vegetative recipe in CropLabourWizard; give it its Mother room as its destination room in SitkaTools.');
+            const cloneTable = { cols: [{ h: 'Part' }, { h: 'Previous $/clone', n: 1 }, { h: 'This period $/clone', n: 1 }, { h: 'Change', n: 1 }],
+                rows: [...RPT_COST_PARTS.map(([k, l]) => [l, cb[k] != null ? rMoney(cb[k], 3) : '—', ca[k] != null ? rMoney(ca[k], 3) : '—', ca[k] != null && cb[k] ? rPct(ca[k] / cb[k] - 1) : '—']),
+                    ['All in', cb.allIn != null ? rMoney(cb.allIn, 3) : '—', ca.allIn != null ? rMoney(ca.allIn, 3) : '—', ca.allIn != null && cb.allIn ? rPct(ca.allIn / cb.allIn - 1) : '—'],
+                    ['Cutting (the bloom lot’s own, not in the price)', cb.cutting != null ? rMoney(cb.cutting, 3) : '—', ca.cutting != null ? rMoney(ca.cutting, 3) : '—', ca.cutting != null && cb.cutting ? rPct(ca.cutting / cb.cutting - 1) : '—']] };
+            const cloneNote = `<p class="rpt-note">${ca.cutting != null ? `Cutting the clones cut this period cost <b>${rMoney(ca.cutting, 3)}</b> a clone on average — paid by each bloom lot in its own costs (its ✂️ Cutting Clones hours and supplies), not in the clone price.` : 'No cutting logged on the lots cut this period.'}${wagesLoaded() ? '' : ' Labour isn’t included — open Wages.json in SitkaTools.'}</p>`;
+            // Mother lot by mother lot: each one's cost per clone so far, stacked by part
+            const mPriced = mothers.filter(x => x.pr.perClone && allInOf(x.pr.perClone) != null);
+            let byMother = rEmpty(mothers.length ? 'No mother lot has clones cut from it yet.' : 'No mother lots yet.', '');
+            if (mPriced.length) {
+                const H = 280, CX0 = 52, CX1 = 1080, Y0 = 232, Y1 = 22;
+                const yn = rNice(0, Math.max(...mPriced.map(x => allInOf(x.pr.perClone))) * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(mPriced.length, 6);
+                let sm = '';
+                yn.t.forEach(v => { sm += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoney(v, v < 10 ? 2 : 0), 'rv-ax', 'end'); });
+                mPriced.forEach((x, i) => {
+                    const cx = CX0 + bw * i + bw * 0.15, w = bw * 0.7, pc = x.pr.perClone;
+                    const tip = `Mother lot ${x.c.lotId} · ${x.c.strain} · ${rN(x.pr.clones)} clones cut\n` + RPT_COST_PARTS.filter(([k]) => pc[k] != null).map(([k, l]) => `${l} ${rMoney(pc[k], 3)}/clone`).join('\n');
+                    let y = Y0;
+                    for (const [k] of RPT_COST_PARTS) {
+                        if (!(pc[k] > 0)) continue;
+                        const h = Y0 - ys(pc[k]);
+                        sm += rRect(cx, y - h, w, h, `fill:${color[k]}`, rTip(tip), 0);
+                        y -= h;
+                    }
+                    sm += rT(cx + w / 2, Y0 + 14, rShort(x.c.lotId, 6), 'rv-axs', 'middle');
+                });
+                byMother = rSvg(1100, H, sm, 'Cost per clone of each mother lot, by part');
+            }
+            const byMotherTable = { cols: [{ h: 'Mother lot' }, { h: 'Strain' }, { h: 'Room' }, { h: 'Planted' }, { h: 'Retire' }, { h: 'Clones cut', n: 1 }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $/clone`, n: 1 })), { h: 'All in $/clone', n: 1 }],
+                rows: mothers.map(({ c, pr }) => [c.lotId + (c.closed ? ' (closed out)' : ''), c.strain, c.rooms?.flower || c.rooms?.veg || '—', c.dates?.planting || '—', c.dates?.retire || '—', rN(pr.clones),
+                    ...RPT_PART_KEYS.map(p => pr.perClone?.[p] != null ? rMoney(pr.perClone[p], 3) : '—'), allInOf(pr.perClone) != null ? rMoney(allInOf(pr.perClone), 3) : '—']) };
 
             return `<div class="rpt-grid">` +
                 rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops harvested in the period. Each part counts the crops it can price; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees, shared by its rooms in use' }) +
-                rCard({ wide: true, title: '🌿 What does a clone cost?', sub: 'Each mother lot’s cost so far — its labour (room chores included), its Mother room’s electricity and property share, its water, fertilizer and supplies, and the cutting of its clones (the Cutting Clones hours and supplies of the lots cut from it) — divided by the clones cut from it. A lot cut on site from a mother lot carries its clones at this price in its cost per gram, and its own cutting isn’t counted again.', body: cloneBody, source: 'Mother lots: lots scheduled with a 🌿 vegetative recipe · clones: the starting counts of the lots cut from them (sub-lots)' }) +
+                rCard({ wide: true, title: '🌿 What does a clone cost?', sub: 'Growing the mothers, per clone: each mother lot’s labour (its tasks and its share of Mother-room chores), its Mother room’s electricity and property share, and its water, fertilizer and supplies, divided by the clones cut from it — for the clones cut in the period. A lot cut from a mother lot carries its clones at this price in its cost per gram. Cutting the clones is each bloom lot’s own cost (shown below, not in the price).', body: cloneBreakdown, table: cloneTable, legend, after: cloneNote, source: 'Mother lots: lots scheduled with a 🌿 vegetative recipe · clones: the starting counts of the lots cut from them (sub-lots)' }) +
+                rCard({ wide: true, title: 'Cost per clone, mother lot by mother lot', sub: 'Each mother lot’s cost per clone so far (from its start to today, or its end), by part.', body: byMother, table: byMotherTable, legend, source: 'Mother lots and the lots cut from them' }) +
                 rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each harvested crop’s cost per gram of its own flower, by part. Labour here is the crop’s own hours, its share of room chores included (no share of whole-building chores or equipment).', body: byCrop, table: byCropTable, legend, source: 'Crops harvested in the period with a flower weight' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops harvested in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
@@ -6386,10 +6425,8 @@ ${ctlsBody(C, true)}
                 const r4 = v => v == null ? null : Math.round(v * 10000) / 10000;
                 if (ch && !ch.unpriced) ew.crops[c.lotId].costs.clones = { n: ch.n, mother: ch.mother, parts: Object.fromEntries(RPT_PART_KEYS.filter(p => p !== 'labour').map(p => [p, r4(ch.parts[p])])) };
                 const k = costs ? rptCropCost(c) : null;
-                const cutL = ch ? rptCuttingCost(c, M).labour : null;
                 if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt,
-                    ...(ch && !ch.unpriced && ch.parts.labour != null ? { cloneLabour: Math.round(ch.parts.labour * 100) / 100 } : {}),
-                    ...(cutL > 0 ? { cutLabour: Math.round(cutL * 100) / 100 } : {}) };
+                    ...(ch && !ch.unpriced && ch.parts.labour != null ? { cloneLabour: Math.round(ch.parts.labour * 100) / 100 } : {}) };
             }
             let dropped = 0;
             for (const [id, s] of Object.entries(ew.crops)) {
