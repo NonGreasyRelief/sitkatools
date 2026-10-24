@@ -4035,6 +4035,14 @@
                         if (h <= 0) continue;
                         t.act += h; c.labour.act += h;
                         t.days[d] = (t.days[d] || 0) + h;
+                        // 🌿 Cutting Clones: who did it, so the cutting is priced at their own wages (hours only; temps' $
+                        // as the crop's temp cost already is)
+                        if (tt === RPT_CUT_TASK) {
+                            const people = t.people || (t.people = {});
+                            const key = e.temp != null ? 'temp:' + e.temp : e.employee;
+                            if (key) people[key] = (people[key] || 0) + h;
+                            if (e.temp != null) { if (Number(e.wage) > 0) t.tempCost = (t.tempCost || 0) + h * Number(e.wage); else t.tempNoWage = (t.tempNoWage || 0) + h; }
+                        }
                         if (e.temp != null) {
                             t.temp += h; c.labour.temp += h;
                             const key = 'temp:' + e.temp;
@@ -4634,18 +4642,35 @@
         const RPT_CUT_TASK = 'clone_cut_prep';
         const RPT_PART_KEYS = ['labour', 'power', 'water', 'fert', 'supplies', 'property'];
         const rptClonesOf = c => Number(c?.ctls?.start) > 0 ? Number(c.ctls.start) : Number(c?.plants?.started) > 0 ? Number(c.plants.started) : 0;
-        // A crop's own labour $ per hour, to price its Cutting Clones hours
-        function rptLabourRate(c) {
-            const k = rptCropCost(c);
-            return k && k.missing === 0 && c.labour?.act > 0 ? k.cost / c.labour.act : null;
+        // The $ of a lot's Cutting Clones hours, at the wages of the people who logged them (temps at their own wage); null
+        // without wages, or when someone who cut has no wage. A closed-out lot uses what was frozen with its summary; one
+        // saved before the people were kept falls back to its average $ per hour.
+        function rptCuttingLabour(c, t) {
+            if (!(t?.act > 0)) return 0;
+            if (!wagesLoaded()) return null;
+            const frozen = c.closed ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId] : null;
+            if (frozen && Number.isFinite(Number(frozen.cutLabour))) return Number(frozen.cutLabour);
+            if (!t.people) {
+                const k = rptCropCost(c);
+                return k && k.missing === 0 && c.labour?.act > 0 ? t.act * k.cost / c.labour.act : null;
+            }
+            if (t.tempNoWage > 0) return null;
+            let cost = t.tempCost || 0;
+            for (const [who, h] of Object.entries(t.people)) {
+                if (who.startsWith('temp:')) continue;
+                const w = Number(rptEmployees()[who]?.wage);
+                if (rptEmployees()[who]?.wage == null || !Number.isFinite(w)) return null;
+                cost += h * w;
+            }
+            return cost;
         }
-        // What cutting a lot's clones cost: its Cutting Clones hours (at its own $/h) and the supplies charged at that task
+        // What cutting a lot's clones cost: its Cutting Clones hours (at the wages of those who cut) and the supplies charged
+        // at that task
         function rptCuttingCost(c, M) {
-            const hours = c.labour?.byTask?.[RPT_CUT_TASK]?.act || 0;
-            const rate = rptLabourRate(c);
+            const t = c.labour?.byTask?.[RPT_CUT_TASK];
             const items = (rptCropInputCost(c, M).supplies.items || []).filter(x => x.at?.task === RPT_CUT_TASK);
             const priced = items.filter(x => x.cost != null);
-            return { hours, labour: hours > 0 ? (rate != null ? hours * rate : null) : 0, supplies: rSum(priced, x => x.cost), unpriced: items.length - priced.length, items };
+            return { hours: t?.act || 0, labour: rptCuttingLabour(c, t), supplies: rSum(priced, x => x.cost), unpriced: items.length - priced.length, items };
         }
         // Which mother lots the lots were cut from, and each mother lot's cost per clone (worked out once per report)
         function rptCloneModel(M) {
@@ -6361,8 +6386,10 @@ ${ctlsBody(C, true)}
                 const r4 = v => v == null ? null : Math.round(v * 10000) / 10000;
                 if (ch && !ch.unpriced) ew.crops[c.lotId].costs.clones = { n: ch.n, mother: ch.mother, parts: Object.fromEntries(RPT_PART_KEYS.filter(p => p !== 'labour').map(p => [p, r4(ch.parts[p])])) };
                 const k = costs ? rptCropCost(c) : null;
+                const cutL = ch ? rptCuttingCost(c, M).labour : null;
                 if (k) costs[c.lotId] = { cost: Math.round(k.cost * 100) / 100, missingHours: Math.round(k.missing * 100) / 100, savedAt: ew.crops[c.lotId].savedAt,
-                    ...(ch && !ch.unpriced && ch.parts.labour != null ? { cloneLabour: Math.round(ch.parts.labour * 100) / 100 } : {}) };
+                    ...(ch && !ch.unpriced && ch.parts.labour != null ? { cloneLabour: Math.round(ch.parts.labour * 100) / 100 } : {}),
+                    ...(cutL > 0 ? { cutLabour: Math.round(cutL * 100) / 100 } : {}) };
             }
             let dropped = 0;
             for (const [id, s] of Object.entries(ew.crops)) {

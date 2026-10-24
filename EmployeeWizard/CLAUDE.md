@@ -99,7 +99,7 @@ EmployeeWizard owns `_EmployeeWizard`:
   "settings":  { "shiftHours": 8 },
   "costs":     { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
                  "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
-  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…", "cloneLabour": 312.5 } },   // cloneLabour: its clones' share of a mother lot's labour
+  "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…", "cloneLabour": 312.5, "cutLabour": 81 } },   // a lot cut from a mother: its clones' share of the mother's labour, and its own cutting
   "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } }
 }
 ```
@@ -114,7 +114,7 @@ EmployeeWizard owns `_EmployeeWizard`:
 - **`crops`** — saved crop summaries (Reports → Setup & data, or 📋 CTLS month → Lots ready to close out). Hours per person, never wages; the lot's dated plant and weight history (`ctls`); dropped after 36 months; created on the first save.
 - **`settings`** — `shiftHours`, the shift length for roster capacity (default 8). Canopy is set on the room (`rooms.<id>.canopySqFt`, Room Manager); `settings.canopySqFt` is read only as a fallback. Created on the first change.
 - **`costs`** — ⚡ Power & Rates (above).
-- **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. A lot cut from a mother lot also freezes its clones' labour (`cloneLabour`).
+- **`cropCosts`** — labour cost frozen when a crop summary is saved with wages open. Closed-out lots use it, so later raises don't restate them. A lot cut from a mother lot also freezes its clones' labour (`cloneLabour`) and its Cutting Clones labour at the wages of who cut (`cutLabour`).
 - **`ctls`** — months marked as filed on the 📋 CTLS month page, with their closing (and opening) numbers. Next month's opening is checked against them.
 
 ### Time off
