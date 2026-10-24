@@ -59,8 +59,8 @@ export async function run(b, BASE) {
             document.getElementById('plantingDate').value = '${day0}'; refreshPreview();`);
         await b.run(clw, `window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
         await b.sleep(200);
-        const evs = await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === '${lot}').map(e => [e.taskType, e.date]);`);
-        return { on: Object.fromEntries(evs), cfg: await b.run(main, `return DB.data.lots['${lot}']._tool_CropLabourWizard;`) };
+        const evs = await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === '${lot}').map(e => [e.taskType, e.date, e.endDate || null]);`);
+        return { on: Object.fromEntries(evs.map(e => [e[0], e[1]])), end: Object.fromEntries(evs.map(e => [e[0], e[2]])), cfg: await b.run(main, `return DB.data.lots['${lot}']._tool_CropLabourWizard;`) };
     };
     const days = (on, types) => types.map(t => `${t} ${on[t] ? weekday(on[t]) : '—'}`).join(', ');
     const want = (types, d) => types.map(t => `${t} ${d}`).join(', ');
@@ -71,6 +71,9 @@ export async function run(b, BASE) {
     for (const [types, d] of plan) check(`20-day veg, cut Saturday: ${types.join(', ')} on ${d}`, days(a.on, types) === want(types, d), days(a.on, types));
     check('…planting Day 0 + 14, transplant planting + 16, flip + 20, harvest 9 weeks after flip',
         daysBetween('2026-10-24', a.on.planting) === 14 && daysBetween(a.on.planting, a.on.transplant) === 16 && daysBetween(a.on.planting, a.on.flip) === 20 && daysBetween(a.on.flip, a.on.harvest) === 63, JSON.stringify(a.on));
+    const pick = (l, t) => [daysBetween(l.on.flip, l.on[t]), l.end[t] && daysBetween(l.on.flip, l.end[t]), weekday(l.on[t]), l.end[t] && weekday(l.end[t])].join(' ');
+    check('…leaf picks, two days each: early on bloom days 17–18 (Mon–Tue), late on days 39–40 (Tue–Wed), flip day = day 0',
+        pick(a, 'leafpick_early') === '17 18 Mon Tue' && pick(a, 'leafpick_late') === '39 40 Tue Wed', `${pick(a, 'leafpick_early')} | ${pick(a, 'leafpick_late')}`);
     check('…the off-by-default IPM sprays aren\'t generated', !a.on.ipm_spray_veg_second && !a.on.ipm_spray_flower_start, JSON.stringify(Object.keys(a.on)));
     // The next lot: Day 0 = this lot's clone cut, transplanted planting + 16 later
     const nextTransplant = daysBetween(a.on.harvest, a.on.clone_cut) + 14 + 16;
@@ -83,6 +86,7 @@ export async function run(b, BASE) {
     const plan19 = [[['clone_cut_prep', 'planting', 'clone_cut'], 'Sun'], [['layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights'], 'Sun'], [['transplant'], 'Mon'],
         [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri']];
     for (const [types, d] of plan19) check(`19-day veg, cut Sunday: ${types.join(', ')} on ${d}`, days(c.on, types) === want(types, d), days(c.on, types));
+    check('…the same leaf-pick days as the default', pick(c, 'leafpick_early') === '17 18 Mon Tue' && pick(c, 'leafpick_late') === '39 40 Tue Wed', `${pick(c, 'leafpick_early')} | ${pick(c, 'leafpick_late')}`);
     check('…the same harvest and transplant days as the default lot cut the day before', c.on.harvest === a.on.harvest && c.on.transplant === a.on.transplant, `${c.on.harvest} ${a.on.harvest}`);
     await pickLot('L300');
     check('picking the first lot again shows its recipe', await b.run(clw, `return document.getElementById('recipeSelect').value;`) === 'sitka-9week');

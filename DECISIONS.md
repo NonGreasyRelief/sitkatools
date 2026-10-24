@@ -26,6 +26,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## CropLabourWizard
 
+- 2026-10-24 · built-in leaf picks moved: Early Flower Leaf Pick on bloom days 17–18 (flip +17, was +21), Late on days 39–40 (flip +39, was +42), both 2 days, counting flip day as day 0; all three built-ins
 - 2026-10-23 · three built-in recipes replace the one 76-day built-in, so every room harvests on a Friday and the next lot transplants the Monday after and flips on the Friday, a new lot every 70 days: 20-day veg with Saturday cuts (harvest −27, the default, keeps the id `sitka-9week`), 19-day with Sunday cuts (−26), 18-day with Monday cuts (−25). Flower-room prep is the day before transplant; second veg spray, veg room clean and Deploy IPM the day after; prune on flip day
 - 2026-10-23 · rooms designated Mother project their next mother lots (5-lot chain from the newest mother lot's 🌿 recipe, each from the previous one's replacement cut), with no room-ready rule; SitkaTools' TBA-01 hook covers Mother rooms; PaperWizard needs no pre-move-in clean for a Mother room; the Lot Manager has a Mother stage
 - 2026-10-23 · 🌿 vegetative recipes for mother plants: set up like a bloom recipe but with no flip, harvest or trim; a planned Retire Mothers day; an optional Cut Clones to Replace Mothers task starts the next mother lot; no room-ready rule; the recipe kind is the only mother flag (copied to the lot's config). Any task may repeat every N days until the crop's end, each repeat its own event

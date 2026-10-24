@@ -44,7 +44,7 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
 
 - **Trim:** 1–30 days in the preview (default 7, `DEFAULT_TRIM_DAYS`).
 - **Harvest:** a "Multi-day" checkbox (default 2 days). When on, harvest-referenced tasks measure from harvest **end**.
-- **Any other task:** the recipe task's `days` (1–30, blank = 1; recipe editor **Days** column, `recipeTaskDays`). Set by the recipe, not per lot. The built-in recipe runs both leaf picks for 2 days; no task references them. Trim and Harvest ignore `days` (their Days cell is disabled).
+- **Any other task:** the recipe task's `days` (1–30, blank = 1; recipe editor **Days** column, `recipeTaskDays`). Set by the recipe, not per lot. The built-in recipes run both leaf picks for 2 days: Early Flower Leaf Pick on bloom days 17–18 (flip +17) and Late on days 39–40 (flip +39), counting flip day as day 0; no task references them. Trim and Harvest ignore `days` (their Days cell is disabled).
 - **Post-trim offsets** are stored relative to a 7-day trim. `resolveTaskAnchor()` adds `trimDays − DEFAULT_TRIM_DAYS` to the `trim` anchor, so a task at +7/+8 always lands 1–2 days after trim ends, whatever the trim length.
 
 ### Room Turnaround — the Next Lot in the Room
