@@ -1,6 +1,6 @@
 # CropLabourWizard — Tool Context
 
-Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets and durations in the preview, and **Generate** writes every cultivation task for the lot as calendar events. It also plans **projected lots** (5 placeholder crops per flowering room) so labour can be planned months ahead. Office only.
+Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets and durations in the preview, and **Generate** writes every cultivation task for the lot as calendar events. It schedules bloom crops and, with a 🌿 vegetative recipe, mother plants ("🌿 Vegetative Recipes — Mother Lots"). It also plans **projected lots** (5 placeholder crops per flowering room) so labour can be planned months ahead. Office only.
 
 ## Schedule
 
@@ -17,6 +17,28 @@ Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets an
 - **IPM sprays:** the four 🧴 preventative sprays are toggleable and off by default (`hasToggle: true`, `defaultEnabled: false`). When on they behave like any task. The two flower sprays are flip-relative, so they move with flip edits and projection bloom changes. When a stored schedule loads, a toggleable task missing from the lot's events shows unchecked.
 - **Reloading a lot** reads each task's offset back from its event (`applyStoredScheduleToOffsets`), so generated dates never move on their own.
 - **Suggested cloning day:** a real lot with no stored schedule defaults the date to its `createdDate`. A lot with a schedule loads its saved Day 0.
+
+### 🌿 Vegetative Recipes — Mother Lots
+
+User decision 2026-10-23. A recipe with `kind: 'vegetative'` is for mother plants. It's the only mother "flag": a lot scheduled with one is a **mother lot** (its config gets `kind: 'vegetative'`, so other tools needn't look the recipe up, and it stays a mother lot if the recipe is deleted). Nothing is flagged on lots or rooms.
+
+- **Set up like a bloom recipe** (anchors and day offsets), with no flip, harvest or trim. The anchors are `cloning` (Day 0), `planting` and `retire`.
+- **Retire Mothers** (`retire`, mandatory) is the planned end of the mothers' life, from planting (default 180 days; up to 1,095). Repeats stop there.
+- **Cut Clones to Replace Mothers** (`clone_cut`, optional) counts back from `retire` and is the next mother lot's Day 0. Mothers can also come from another lot's extra clones, created in the Lot Manager as a sub-lot, with no task.
+- **Rooms:** as for a bloom crop: before Transplanting in the cloning / veg room, Transplanting and after in the lot's **destination room**, which for a mother lot is its Mother room (`destRoom`). A mother lot with no destination room keeps those tasks in its veg room.
+- **No room-ready rule:** new mothers move in without a room clean, so Generate never pushes anything back for a mother lot, and the recipe editor shows a 🌿 Mothers readout instead of the room turnaround.
+- **🌿 New Mother Recipe** (recipe manager) starts from a template: Cutting Clones, Planting, Clean Clone Room, Transplanting to Mother Room, Prune Mothers (every 14 days), Top-dress Mothers (every 28), Cut Clones to Replace Mothers (retire −28), Retire Mothers (planting +180). The type is fixed at creation; Duplicate keeps it.
+- The recipe dropdown shows them as 🌿; the Projection Recipe dropdown leaves them out (flowering rooms project bloom crops).
+
+### Repeating Tasks — Every N Days
+
+User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–365, editor column **Every**, blank = once), from its own date until the crop's end: Retire Mothers in a vegetative recipe, Harvest in a bloom recipe.
+
+- Each repeat is its own event, `repeat: 1, 2, …`, titled "Prune Mothers (3/11)", so hours and sign-off are per repeat. There is always at least one.
+- Anchor tasks, the transplant and the clone cuts never repeat (`NO_REPEAT_TASKS`). A task's `days` can't exceed its `every`.
+- **Preview:** "↻ every 14 days · 11× to 2027-02-22"; the estimated labour counts every repeat. Reopening a lot reads the task's offset from its first repeat.
+- **Regenerating** matches annotations by task type **and** repeat (`annotationKey`), and asks before dropping a repeat that holds work (a shorter life, a longer interval).
+- One builder (`scheduleOccurrences`) gives every dated occurrence; Generate, the lost-work check and the preview all use it.
 
 ### Multi-Day Tasks
 
@@ -43,7 +65,7 @@ Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets an
 `sourceTool: 'CropLabourWizard'`. The event contract (`roomPhase`, `estStaff`, `estMinutes`) is in root `CLAUDE.md`.
 
 - `date`; `endDate` only on multi-day tasks (Trim, multi-day Harvest, recipe `days` > 1); `lotId` always; `taskType` (reconciliation and carry-over key on it); `id`; `roomPhase` only when the recipe task has one; `estStaff` / `estMinutes` only when the task has an estimate (see "Labour Estimates").
-- **Title:** `<emoji> <Room>-<Strain>#<LotId>, <task name>` (e.g. `🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower`). A missing room or strain is dropped (`Room#Lot`, `Strain#Lot`, `Lot`). Projected lots use `<emoji> <lotId>, <task name>` (`buildEventTitle`).
+- **Title:** `<emoji> <Room>-<Strain>#<LotId>, <task name>` (e.g. `🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower`); a repeat adds ` (3/11)` and carries `repeat`. A missing room or strain is dropped (`Room#Lot`, `Strain#Lot`, `Lot`). Projected lots use `<emoji> <lotId>, <task name>` (`buildEventTitle`).
 - **Room per task** (`getLotRoomCode`; room names on the lot are resolved to IDs by `rooms.<id>.name`). First match wins:
   1. the recipe task's `roomPhase` (cloning → `lot.cloningRoom`, veg → `lot.vegRoom`, flower → flower room);
   2. `clone_cut_prep`, `clone_room_clean` → cloning room;
@@ -75,7 +97,9 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 
 ### Recipe Format
 
-`{ id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...], inputs?: [...] }`
+`{ id, name, version, kind?, chain: { cloneCutBeforeHarvest }, tasks: [...], inputs?: [...] }`
+
+- **`kind`:** `'vegetative'` for a mother recipe (see "🌿 Vegetative Recipes"); absent for a bloom recipe.
 
 - **`id`:** built-in is `sitka-9week`. New recipes get 6 chars from `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`), collision-checked against the built-in and DB recipes.
 - **`version`:** integer, for forward compatibility.
@@ -86,11 +110,12 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 |---|---|
 | `taskType` | unique `snake_case` id; other tools key on it |
 | `name`, `emoji` | label and icon |
-| `reference` | `cloning` / `planting` / `flip` / `harvest` / `trim`; the anchor task must exist (`cloning` is always Day 0) |
+| `reference` | bloom: `cloning` / `planting` / `flip` / `harvest` / `trim`; vegetative: `cloning` / `planting` / `retire`. The anchor task must exist (`cloning` is always Day 0) |
 | `defaultOffset` | integer days from the reference; import and save clamp it to −30…+365 (the clone cut −200…+365) and say so in the toast (`clampRecipeOffsets`) |
 | `hasToggle`, `defaultEnabled` | optional: can be switched off in the preview; initial state |
 | `isLocked` | optional: not user-editable (Cutting Clones at Day 0) |
 | `days` | optional length, 1–30 (see "Multi-Day Tasks") |
+| `every` | optional: repeat every N days, 1–365 (see "Repeating Tasks") |
 | `roomPhase` | optional `cloning` / `veg` / `flower`; written onto events, overrides the order-based room split |
 | `minutes`, `staff` | optional labour estimate per day (see "Labour Estimates") |
 
@@ -102,11 +127,12 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 `validateRecipe()` runs on both import and in-editor save; a failing recipe is rejected with a list of errors.
 
 - `id` (letters, digits, `-`, `_`) and `name` are required; each task needs a `name` and `emoji`.
-- `planting`, `flip` and `harvest` tasks must exist. `trim` is optional, but required if any task references it.
+- Bloom: `planting`, `flip` and `harvest` tasks must exist; `trim` is optional, but required if any task references it; no `retire` task. Vegetative: `planting` and `retire` must exist; no `flip`, `harvest` or `trim`. `kind`, when present, is `vegetative`.
 - Every `reference` is a known anchor whose task exists (`cloning` always exists).
 - `taskType` non-empty, `snake_case`, unique.
 - `defaultOffset` an integer (clamped first, see the table above).
-- `clone_cut` must reference `harvest`.
+- `clone_cut` must reference `harvest` (bloom) or `retire` (vegetative).
+- `every`, when present, an integer 1–365, not on an anchor task, the transplant or a clone cut, and not less than the task's `days`.
 - `roomPhase`, when present, is `cloning` / `veg` / `flower`.
 - `minutes` an integer ≥ 5, `staff` an integer ≥ 1, `days` an integer 1–30 (all optional).
 - `chain.cloneCutBeforeHarvest`, when present, a positive integer.
@@ -302,7 +328,7 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 
 ### DB Keys
 
-- `lots.<id>._tool_CropLabourWizard`: the lot's schedule config `{ plantingDate (Day 0), recipeId, trimDays, harvestMultiDay, harvestDays, taskCount, generatedAt }`.
+- `lots.<id>._tool_CropLabourWizard`: the lot's schedule config `{ plantingDate (Day 0), recipeId, kind? ('vegetative': a mother lot), trimDays, harvestMultiDay, harvestDays, taskCount, generatedAt }`.
 - `_CropLabourWizard`:
   - `generations[]`: generation log, real lots only; Clear / Delete Schedule drop the lot's entries; SitkaTools' close-out copies the rest into the lot's archive.
   - `projectedLots`: see "Projected Lot Map".
@@ -317,4 +343,4 @@ Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop
 
 ## Tests
 
-`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs). The projection and push-back logic has no automated test.
+`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs). The projection and push-back logic has no automated test.

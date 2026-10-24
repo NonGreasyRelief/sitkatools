@@ -65,7 +65,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 
 CropLabourWizard (on Generate) and EquipmentWizard (on every resync) rebuild their events from scratch. `carryOverAnnotations(previous, fresh, keyOf)` copies these onto the replacement: `id`, `completed`, `completedBy` (DailyWizard's floor-manager sign-off), `labour_map` (hours), and the SitkaTools event-panel fields `startTime`, `endTime`, `notes`, `status`, `assignedTo`, `estimatedHours`.
 
-- Matching: CropLabourWizard by `taskType` within the lot; EquipmentWizard by `equipmentId + taskId + date` (falling back to `equipmentId + title + date`).
+- Matching: CropLabourWizard by `taskType` (and `repeat`) within the lot; EquipmentWizard by `equipmentId + taskId + date` (falling back to `equipmentId + title + date`).
 - Unmatched work records (`completed`, or a non-empty `labour_map`) are never dropped silently. CropLabourWizard asks before Generate, Clear or Delete Schedule would delete them (Cancel changes nothing). EquipmentWizard keeps them on the calendar as maintenance history while their equipment and room exist.
 
 ### Multi-Day Events
@@ -161,13 +161,16 @@ It is a no-op when the room has no TBA-01. No tool regenerates or reprojects aut
 
 CropLabourWizard's tasks come from recipes: the built-in `sitka-9week` in code, plus user recipes in `_CropLabourWizard.recipes`. Recipe schema, validation, inputs and labour estimates: `CropLabourWizard/CLAUDE.md` → "Task Recipes (Recipe Manager)". What other tools rely on:
 
+- **🌿 Mother lots:** a recipe with `kind: 'vegetative'` schedules mother plants (no flip, harvest or trim; retired on a planned day). A lot scheduled with one is a mother lot, and its `_tool_CropLabourWizard.kind` is `'vegetative'`. Its destination room (`destRoom`) is its Mother room. Nothing else flags mothers.
+- **Repeating tasks:** a recipe task may repeat every N days; each repeat is its own event with `repeat: 1, 2, …`.
+
 - **`taskType` ids are stable** (32 built-in). SitkaTools and DailyWizard map labels and emoji from hard-coded maps first, then `_CropLabourWizard.taskTypes` (a registry merged on every recipe save and import), then the raw id. Calendar filters work on any `taskType`.
 - **Task order against `transplant` is load-bearing:** it decides the room a task happens in (before transplant → cloning or veg room, after → flower room) in CropLabourWizard and SitkaTools (`_CLW_TASK_ORDER`). An unknown type falls back to the flower room.
 - Recipe files are `recipe-<id>.json`, imported only through a file picker; nothing is ever fetched.
 
 ### Event Contract
 
-CropLabourWizard events: `{ id, date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, roomId?, roomPhase?, estStaff?, estMinutes? }`.
+CropLabourWizard events: `{ id, date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, repeat?, roomId?, roomPhase?, estStaff?, estMinutes? }`. `repeat` numbers a repeating task's events; annotations carry over by `taskType` + `repeat`.
 
 - `roomPhase` (`cloning` | `veg` | `flower`) is present only when the recipe task sets it, and overrides the order-based room choice.
 - `estStaff` / `estMinutes` are the recipe's labour estimate **per day**: estimated person-hours = `estStaff × estMinutes × days in [date, endDate] ÷ 60`. Shown by CropLabourWizard, DailyWizard, the SitkaTools tooltip and the Labour & Cost Wizard. Not carried over on regeneration (they come from the recipe). They're separate from the event panel's typed `estimatedHours`.

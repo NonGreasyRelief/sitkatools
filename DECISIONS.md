@@ -26,6 +26,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## CropLabourWizard
 
+- 2026-10-23 · 🌿 vegetative recipes for mother plants: set up like a bloom recipe but with no flip, harvest or trim; a planned Retire Mothers day; an optional Cut Clones to Replace Mothers task starts the next mother lot; no room-ready rule; the recipe kind is the only mother flag (copied to the lot's config). Any task may repeat every N days until the crop's end, each repeat its own event
 - 2026-10-22 · a recipe supply can be charged per plant at a task (clone cubes at Cutting Clones, rockwool at Planting, coco at Transplanting): the lowest plant count the grow log recorded on that task's calendar day; a lot without the task isn't charged (bought clones: Cutting Clones off, and the clone itself is a per-plant supply); no spares percentage
 - 2026-10-17 · built-in recipe runs both leaf picks (Early/Late Flower Leaf Pick) for 2 days
 - 2026-10-16 · 🧪 Inputs tab added (shared price list + supplies per recipe) for the total cost per gram

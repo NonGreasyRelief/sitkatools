@@ -418,6 +418,8 @@
         }
 
         .preview-task-est { color: var(--text-primary); white-space: nowrap; }
+        .preview-task-repeat { color: var(--accent); white-space: nowrap; }
+        .recipe-kind { display: inline-block; font-size: 0.8rem; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--accent); color: var(--accent); }
 
         /* Estimated labour total below the preview list */
         .preview-est-total {
@@ -882,7 +884,7 @@
         .task-table input:focus, .task-table select:focus { outline: none; border-color: var(--accent); }
         .task-table .t-emoji { width: 46px; text-align: center; }
         .task-table .t-type { min-width: 130px; }
-        .task-table .t-offset, .task-table .t-days { width: 72px; }
+        .task-table .t-offset, .task-table .t-days, .task-table .t-every { width: 72px; }
         .task-table .t-ref, .task-table .t-phase { min-width: 96px; }
         .task-table .t-est { width: 70px; }
         /* Narrow windows: the table scrolls sideways rather than squash names and estimates */
@@ -1012,6 +1014,7 @@
             <div id="recipeListPane">
                 <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
                     <button type="button" class="btn btn-primary" id="recipeNewBtn">＋ New Recipe</button>
+                    <button type="button" class="btn btn-secondary" id="recipeNewVegBtn" title="A vegetative recipe for mother plants: no flip, harvest or trim; the mothers are retired on a planned day">🌿 New Mother Recipe</button>
                     <span style="flex:1;"></span>
                     <button type="button" class="btn btn-secondary recipe-btn" id="importRecipeBtn" title="Import a task recipe from a .json file">⬆️ Import</button>
                     <button type="button" class="btn btn-secondary recipe-btn" id="exportRecipeBtn" title="Download the selected recipe as a .json file">⬇️ Export</button>
@@ -1029,6 +1032,10 @@
                         <label for="recipeIdInput">ID</label>
                         <input type="text" id="recipeIdInput" readonly title="Stable machine id — do not change">
                     </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>Type</label>
+                        <div id="recipeKindLabel"></div>
+                    </div>
                 </div>
                 <div class="editor-tabs" role="tablist">
                     <button type="button" class="editor-tab active" data-tab="tasks" role="tab">🗓️ Tasks</button>
@@ -1036,9 +1043,9 @@
                 </div>
                 <div id="recipeTasksTab">
                 <div class="form-group">
-                    <label>Room turnaround</label>
+                    <label id="recipeTurnaroundLabel">Room turnaround</label>
                     <div class="turnaround-box" id="recipeTurnaround"></div>
-                    <div style="font-size:0.78rem; color:var(--text-secondary);">Worked out from the dates below: "Cut Clones to Replace Lot" starts the next lot, so it sets when that lot moves into the flower room — and how long each cycle is. Updates as you edit.</div>
+                    <div id="recipeTurnaroundNote" style="font-size:0.78rem; color:var(--text-secondary);">Worked out from the dates below: "Cut Clones to Replace Lot" starts the next lot, so it sets when that lot moves into the flower room — and how long each cycle is. Updates as you edit.</div>
                 </div>
                 <div class="form-group">
                     <label>Tasks (top → bottom = chronological order)</label>
@@ -1052,6 +1059,7 @@
                                     <th title="Reference anchor">Ref</th>
                                     <th title="Days from reference">+d</th>
                                     <th title="How many days the task runs (blank = 1). Trim and Harvest are set in the preview.">Days</th>
+                                    <th title="Repeat every N days until the crop's end — Retire Mothers, or Harvest (blank = once)">Every</th>
                                     <th title="Room phase override (optional)">Phase</th>
                                     <th title="Estimated time per day, in minutes (blank = no estimate)">Min</th>
                                     <th title="Staff needed">Staff</th>
@@ -1270,6 +1278,43 @@
             ]
         };
 
+        // ---- 🌿 Vegetative (mother) recipes (user decision 2026-10-23) ----
+        // recipe.kind = 'vegetative' marks a recipe for mother plants — the only "mother" flag: a lot scheduled with one is a
+        // mother lot. It is set up like a bloom recipe (anchors + day offsets) but has no flip, harvest or trim: its dates
+        // hang off Day 0 (cloning), planting and "Retire Mothers" (taskType 'retire', the planned end of the mothers' life).
+        // "Cut Clones to Replace Mothers" (clone_cut) counts back from the retire day and is the next mother lot's Day 0.
+        // Tasks before Transplanting happen in the veg room; Transplanting and after, in the lot's destination room (its
+        // Mother room). No room-ready rule: new mothers move in without a room clean.
+        const isVegRecipe = r => r?.kind === 'vegetative';
+        const BLOOM_ANCHORS = ['cloning', 'planting', 'flip', 'harvest', 'trim'];
+        const VEG_ANCHORS = ['cloning', 'planting', 'retire'];
+        const recipeAnchorList = r => isVegRecipe(r) ? VEG_ANCHORS : BLOOM_ANCHORS;
+        const mandatoryTasks = r => isVegRecipe(r) ? ['planting', 'retire'] : ['planting', 'flip', 'harvest'];
+        const DEFAULT_RETIRE_DAYS = 180;   // planting → Retire Mothers, when a recipe has no retire task
+        const VEG_STARTER_RECIPE = {
+            kind: 'vegetative',
+            version: 1,
+            tasks: [
+                { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
+                { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
+                { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+                { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+                { name: 'Prune Mothers', emoji: '✂️', taskType: 'mother_prune', reference: 'planting', defaultOffset: 28, every: 14 },
+                { name: 'Top-dress Mothers', emoji: '🧪', taskType: 'mother_topdress', reference: 'planting', defaultOffset: 42, every: 28 },
+                { name: 'Cut Clones to Replace Mothers', emoji: '🌿', taskType: 'clone_cut', reference: 'retire', defaultOffset: -28 },
+                { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: DEFAULT_RETIRE_DAYS }
+            ]
+        };
+
+        // ---- Repeating tasks: "every N days" (user decision 2026-10-23) ----
+        // A recipe task may repeat every N days (`every`, 1–365) from its own date until the crop's end — Retire Mothers in a
+        // vegetative recipe, Harvest in a bloom recipe — each repeat its own calendar event (`repeat`: 1, 2, 3…), so hours
+        // and sign-off are per repeat. Anchor tasks, the transplant and the clone cuts never repeat.
+        const NO_REPEAT_TASKS = ['clone_cut_prep', 'planting', 'transplant', 'flip', 'harvest', 'trim', 'retire', 'clone_cut'];
+        const taskRepeatEvery = def => Number.isInteger(def?.every) && def.every >= 1 && !NO_REPEAT_TASKS.includes(def.taskType) ? def.every : 0;
+        // The key that carries a generated event's annotations over to its replacement: the task type, and which repeat
+        const annotationKey = ev => `${ev.taskType}#${ev.repeat || 1}`;
+
         // ---- Active Recipe state ----
         // The recipe whose tasks drive the preview + generation for the currently selected lot.
         // Built-in always resolves; user/imported recipes live in _CropLabourWizard.recipes.
@@ -1290,7 +1335,8 @@
                 planting: off('planting') ?? 14,
                 flip: off('flip') ?? 20,
                 harvest: off('harvest') ?? 63,
-                trim: off('trim') ?? 11
+                trim: off('trim') ?? 11,
+                retire: off('retire') ?? DEFAULT_RETIRE_DAYS
             };
         }
 
@@ -1299,7 +1345,7 @@
         // recipes kept in chain.cloneCutBeforeHarvest (default 21).
         function cloneCutDays(recipe) {
             const t = recipe?.tasks?.find(x => x?.taskType === 'clone_cut');
-            if (t?.reference === 'harvest' && Number.isInteger(t.defaultOffset)) return -t.defaultOffset;
+            if ((t?.reference === 'harvest' || t?.reference === 'retire') && Number.isInteger(t.defaultOffset)) return -t.defaultOffset;
             const n = recipe?.chain?.cloneCutBeforeHarvest;
             return Number.isInteger(n) && n > 0 ? n : 21;
         }
@@ -1308,6 +1354,7 @@
         // and their clone_cut task showed a flip offset that was ignored. Convert one to harvest −N, so
         // every date stays where it was. Idempotent; runs on load, import and save.
         function normalizeCloneCut(recipe) {
+            if (isVegRecipe(recipe)) return recipe;   // a mother recipe's clone cut counts back from Retire Mothers
             const t = Array.isArray(recipe?.tasks) ? recipe.tasks.find(x => x?.taskType === 'clone_cut') : null;
             if (!t || t.reference === 'harvest') return recipe;
             const n = recipe.chain?.cloneCutBeforeHarvest;
@@ -1320,6 +1367,7 @@
         // The number older copies of this tool read (chain.cloneCutBeforeHarvest), kept in step with the
         // task on every save
         function syncChainFromCloneCut(recipe) {
+            if (isVegRecipe(recipe)) { if (recipe.chain) delete recipe.chain.cloneCutBeforeHarvest; return; }
             const n = cloneCutDays(recipe);
             if (n > 0) recipe.chain = Object.assign({}, recipe.chain, { cloneCutBeforeHarvest: n });
             else if (recipe.chain) delete recipe.chain.cloneCutBeforeHarvest;
@@ -1327,7 +1375,7 @@
 
         // A recipe task's day offset is kept to −30…+365 days from its reference — the clone cut, which counts back
         // from harvest, down to −200, as the preview allows it. Applied on import and on save; returns how many changed.
-        function recipeOffsetRange(t) { return { min: t?.taskType === 'clone_cut' ? -200 : -30, max: 365 }; }
+        function recipeOffsetRange(t) { return { min: t?.taskType === 'clone_cut' ? -200 : -30, max: t?.taskType === 'retire' ? 1095 : 365 }; }
         function clampRecipeOffsets(recipe) {
             let n = 0;
             for (const t of recipe?.tasks || []) {
@@ -1347,6 +1395,8 @@
             if (def.taskType === 'clone_cut') return -200;
             return def.defaultOffset < 0 ? -30 : 0;
         }
+        // Highest day offset the preview allows: Retire Mothers may sit up to 3 years after planting
+        const offsetMax = def => def.taskType === 'retire' ? 1095 : 200;
 
         // ---- Next lot in the room — where it lands after this one ----
         // From one lot's dates (YYYY-MM-DD): its Day 0, harvest end, "Cut Clones to Replace Lot" day (= the
@@ -1369,6 +1419,7 @@
 
         // The same, worked out from a recipe's default offsets (single-day harvest)
         function recipeTurnaround(recipe) {
+            if (isVegRecipe(recipe)) return null;   // mothers: no room-ready rule
             const tasks = recipe?.tasks || [];
             const find = tt => tasks.find(t => t?.taskType === tt && Number.isInteger(t.defaultOffset) && RECIPE_ANCHORS.includes(t.reference));
             const cut = find('clone_cut');
@@ -1527,7 +1578,7 @@
         }
 
         // ---- Recipe validation — must pass BEFORE any DB mutation ----
-        const RECIPE_ANCHORS = ['cloning', 'planting', 'flip', 'harvest', 'trim'];
+        const RECIPE_ANCHORS = ['cloning', 'planting', 'flip', 'harvest', 'trim', 'retire'];
         function validateRecipe(obj) {
             const errors = [];
             if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return ['Recipe must be a JSON object'];
@@ -1540,6 +1591,8 @@
             }
             const seen = new Set();
             const present = new Set();
+            if (obj.kind != null && obj.kind !== 'vegetative') errors.push('kind: must be "vegetative" (or absent, for a bloom recipe)');
+            const veg = isVegRecipe(obj), anchors = recipeAnchorList(obj);
             for (let i = 0; i < obj.tasks.length; i++) {
                 const t = obj.tasks[i];
                 const label = `tasks[${i}]`;
@@ -1554,15 +1607,25 @@
                 }
                 if (typeof t.name !== 'string' || !t.name.trim()) errors.push(`${label} ${who}: name is required`);
                 if (typeof t.emoji !== 'string' || !t.emoji) errors.push(`${label} ${who}: emoji is required`);
-                if (!RECIPE_ANCHORS.includes(t.reference)) {
-                    errors.push(`${label} ${who}: reference must be one of ${RECIPE_ANCHORS.join(' / ')}`);
+                if (!anchors.includes(t.reference)) {
+                    errors.push(`${label} ${who}: reference must be one of ${anchors.join(' / ')}${veg ? ' (a vegetative recipe has no flip, harvest or trim)' : ''}`);
+                }
+                if (veg && ['flip', 'harvest', 'trim'].includes(t.taskType)) errors.push(`${label} ${who}: a vegetative recipe has no flip, harvest or trim — mothers are retired instead`);
+                if (!veg && t.taskType === 'retire') errors.push(`${label} ${who}: Retire Mothers belongs in a vegetative recipe`);
+                if (t.every != null) {
+                    if (!Number.isInteger(t.every) || t.every < 1 || t.every > 365) errors.push(`${label} ${who}: every (repeat every N days) must be a whole number from 1 to 365`);
+                    else if (NO_REPEAT_TASKS.includes(t.taskType)) errors.push(`${label} ${who}: this task can't repeat (anchors, the transplant and the clone cuts happen once)`);
+                    else if (Number.isInteger(t.days) && t.days > t.every) errors.push(`${label} ${who}: runs ${t.days} days but repeats every ${t.every} — the repeats would overlap`);
                 }
                 if (!Number.isInteger(t.defaultOffset)) errors.push(`${label} ${who}: defaultOffset must be an integer`);
                 if (t.roomPhase != null && !['cloning', 'veg', 'flower'].includes(t.roomPhase)) {
                     errors.push(`${label} ${who}: roomPhase must be "cloning", "veg" or "flower"`);
                 }
-                if (t.taskType === 'clone_cut' && t.reference !== 'harvest') {
+                if (t.taskType === 'clone_cut' && !veg && t.reference !== 'harvest') {
                     errors.push(`${label} ${who}: the clone cut counts back from harvest — reference must be "harvest"`);
+                }
+                if (t.taskType === 'clone_cut' && veg && t.reference !== 'retire') {
+                    errors.push(`${label} ${who}: the replacement clone cut counts back from Retire Mothers — reference must be "retire"`);
                 }
                 // Optional labour estimate (per day)
                 if (t.minutes != null && (!Number.isInteger(t.minutes) || t.minutes < 5)) {
@@ -1577,7 +1640,7 @@
                 }
             }
             // Mandatory anchor tasks (they drive the other dates)
-            for (const a of ['planting', 'flip', 'harvest']) {
+            for (const a of mandatoryTasks(obj)) {
                 if (!present.has(a)) errors.push(`tasks: missing mandatory anchor task "${a}"`);
             }
             // Every referenced anchor must exist in the recipe ('cloning' is always available as Day 0)
@@ -1633,7 +1696,7 @@
                 if (!r || !Array.isArray(r.tasks)) continue;
                 const opt = document.createElement('option');
                 opt.value = r.id;
-                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : r.name;
+                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : isVegRecipe(r) ? `🌿 ${r.name}` : r.name;
                 recipeSelect.appendChild(opt);
             }
             recipeSelect.value = [...recipeSelect.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
@@ -1650,7 +1713,7 @@
             sel.innerHTML = '';
             const all = [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
             for (const r of all) {
-                if (!r || !Array.isArray(r.tasks)) continue;
+                if (!r || !Array.isArray(r.tasks) || isVegRecipe(r)) continue;   // flowering rooms project bloom crops
                 const opt = document.createElement('option');
                 opt.value = r.id;
                 opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : r.name;
@@ -1751,7 +1814,7 @@
 
         // ---- Recipe Manager (Stage 4) — create / edit / duplicate / delete recipes in-UI ----
         const RECIPE_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-        const MANDATORY_RECIPE_TASKS = ['planting', 'flip', 'harvest'];
+        const MANDATORY_RECIPE_TASKS = ['planting', 'flip', 'harvest', 'retire'];   // per recipe kind: mandatoryTasks()
         let editorRecipe = null; // working deep-copy while editing
 
         function cloneRecipeData(recipe) { return JSON.parse(JSON.stringify(recipe)); }
@@ -1814,8 +1877,12 @@
                 const meta = document.createElement('div');
                 meta.className = 'recipe-row-meta';
                 const estimated = r.tasks.filter(taskEstimate).length;
-                meta.textContent = `${r.id} · ${r.tasks.length} tasks · clones cut ${cloneCutDays(r)}d before harvest` +
-                    (estimated ? ` · ⏱ ${estimated} with labour estimates` : '');
+                const retire = r.tasks.find(t => t.taskType === 'retire');
+                meta.textContent = isVegRecipe(r)
+                    ? `${r.id} · 🌿 mothers · ${r.tasks.length} tasks · retired ${retire?.defaultOffset ?? DEFAULT_RETIRE_DAYS}d after planting` +
+                        (r.tasks.some(t => t.taskType === 'clone_cut') ? ` · replacement clones ${cloneCutDays(r)}d before` : '') + (estimated ? ` · ⏱ ${estimated} with labour estimates` : '')
+                    : `${r.id} · ${r.tasks.length} tasks · clones cut ${cloneCutDays(r)}d before harvest` +
+                        (estimated ? ` · ⏱ ${estimated} with labour estimates` : '');
                 main.appendChild(nameEl);
                 main.appendChild(meta);
                 main.addEventListener('click', () => selectRecipeFromManager(r.id));
@@ -2056,6 +2123,11 @@
             linkRecipeInputs(editorRecipe, editorInputs);
             $('recipeNameInput').value = recipe.name || '';
             $('recipeIdInput').value = recipe.id || '';
+            $('recipeTurnaroundLabel').textContent = isVegRecipe(recipe) ? 'Mothers' : 'Room turnaround';
+            $('recipeTurnaroundNote').hidden = isVegRecipe(recipe);
+            $('recipeKindLabel').innerHTML = isVegRecipe(recipe)
+                ? '<span class="recipe-kind" title="For mother plants: no flip, harvest or trim — the mothers are retired on a planned day">🌿 Vegetative (mothers)</span>'
+                : '<span class="recipe-kind" title="A crop that flowers and is harvested">🌸 Bloom</span>';
             editorTurnaroundSig = null;   // opening the editor shows the readout without a toast
             renderTaskTable();
             setRecipeEditorTab('tasks', true);
@@ -2068,6 +2140,14 @@
         function updateEditorTurnaround() {
             const box = $('recipeTurnaround');
             if (!box || !editorRecipe) return;
+            if (isVegRecipe(editorRecipe)) {
+                const tasks = readTaskTable(), cut = tasks.find(t => t.taskType === 'clone_cut'), ret = tasks.find(t => t.taskType === 'retire');
+                box.innerHTML = `<div class="turnaround-title">🌿 Mothers</div><div>Retired <strong>${ret ? ret.defaultOffset : '?'} days</strong> after planting.` +
+                    (cut && Number.isInteger(cut.defaultOffset) ? ` Replacement clones are cut <strong>${-cut.defaultOffset} days</strong> before they retire, which starts the next mother lot.` : ' No replacement cut: new mothers come from another lot\'s clones.') +
+                    ` No room-ready rule: new mothers move in without a room clean.</div>`;
+                editorTurnaroundSig = null;
+                return;
+            }
             const t = recipeTurnaround({ tasks: readTaskTable() });
             box.innerHTML = t ? turnaroundHtml(t)
                 : '<div>Needs a "Cut Clones to Replace Lot" (clone_cut) and a "Transplanting to Flower Room" (transplant) task.</div>';
@@ -2081,9 +2161,11 @@
             body.innerHTML = '';
             (editorRecipe?.tasks || []).forEach((t, i) => {
                 const tr = document.createElement('tr');
-                if (MANDATORY_RECIPE_TASKS.includes(t.taskType)) tr.className = 'mandatory';
+                const mandatory = mandatoryTasks(editorRecipe).includes(t.taskType);
+                if (mandatory) tr.className = 'mandatory';
 
-                const refOpts = RECIPE_ANCHORS.map(a => `<option value="${a}" ${t.reference === a ? 'selected' : ''}>${a}</option>`).join('');
+                const refOpts = recipeAnchorList(editorRecipe).map(a => `<option value="${a}" ${t.reference === a ? 'selected' : ''}>${a}</option>`).join('');
+                const canRepeat = !NO_REPEAT_TASKS.includes(t.taskType);
                 const curPhase = t.roomPhase || '';
                 const phaseOpts = [['', 'auto'], ['cloning', 'cloning'], ['veg', 'veg'], ['flower', 'flower']]
                     .map(([v, label]) => `<option value="${v}" ${curPhase === v ? 'selected' : ''}>${label}</option>`).join('');
@@ -2092,11 +2174,12 @@
                     <td class="t-emoji"><input type="text" class="t-emoji" maxlength="4" value="${escapeHtml(t.emoji || '')}" title="Emoji"></td>
                     <td><input type="text" class="t-name" value="${escapeHtml(t.name || '')}" placeholder="Task name" title="Name"></td>
                     <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
-                    <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? 'disabled title="Counted back from harvest — it starts the next lot"' : 'title="Reference anchor"'}>${refOpts}</select></td>
+                    <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? `disabled title="${isVegRecipe(editorRecipe) ? 'Counted back from Retire Mothers — it starts the next mother lot' : 'Counted back from harvest — it starts the next lot'}"` : 'title="Reference anchor"'}>${refOpts}</select></td>
                     <td class="t-offset"><input type="number" class="t-offset" step="1" min="${recipeOffsetRange(t).min}" max="${recipeOffsetRange(t).max}" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
                     <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
                         ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length / Multi-day harvest)">'
                         : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="How many days the task runs (blank = 1)">`}</td>
+                    <td class="t-days"><input type="number" class="t-every" min="1" max="365" step="1" value="${canRepeat && Number.isInteger(t.every) ? t.every : ''}" placeholder="—" ${canRepeat ? `title="Repeat every N days until ${isVegRecipe(editorRecipe) ? 'Retire Mothers' : 'Harvest'} (blank = once)"` : 'disabled title="Anchors, the transplant and the clone cuts happen once"'}></td>
                     <td class="t-phase"><select class="t-phase" title="Room phase (optional override)">${phaseOpts}</select></td>
                     <td class="t-est"><input type="number" class="t-min" min="5" step="5" value="${Number.isInteger(t.minutes) ? t.minutes : ''}" placeholder="—" title="Estimated minutes per day (blank = no estimate)"></td>
                     <td class="t-est"><input type="number" class="t-staff" min="1" step="1" value="${Number.isInteger(t.minutes) && Number.isInteger(t.staff) ? t.staff : ''}" placeholder="1" title="Staff needed"></td>
@@ -2107,7 +2190,7 @@
                         <button type="button" data-act="up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
                         <button type="button" data-act="down" data-i="${i}" ${i === (editorRecipe.tasks.length - 1) ? 'disabled' : ''} title="Move down">↓</button>
                     </td>
-                    <td class="t-del"><button type="button" class="danger" data-act="del" data-i="${i}" ${MANDATORY_RECIPE_TASKS.includes(t.taskType) ? 'disabled title="Mandatory anchor — cannot remove"' : 'title="Remove task"'}>✕</button></td>
+                    <td class="t-del"><button type="button" class="danger" data-act="del" data-i="${i}" ${mandatory ? 'disabled title="Mandatory anchor — cannot remove"' : 'title="Remove task"'}>✕</button></td>
                 `;
                 body.appendChild(tr);
             });
@@ -2138,6 +2221,9 @@
                 const daysInput = tr.querySelector('input.t-days');
                 const days = daysInput.disabled ? NaN : parseInt(daysInput.value, 10);
                 if (Number.isFinite(days) && days !== 1) t.days = days;
+                const everyInput = tr.querySelector('input.t-every');
+                const every = everyInput.disabled ? NaN : parseInt(everyInput.value, 10);
+                if (Number.isFinite(every)) t.every = every;
                 const phase = tr.querySelector('select.t-phase').value;
                 if (phase) t.roomPhase = phase;
                 // Labour estimate: blank minutes = none; blank staff = 1
@@ -2804,7 +2890,9 @@
             // Gather this lot's generated events keyed by taskType (sourceTool depends on lot type)
             const eventsByType = {};
             for (const ev of eventsForLot(lotId)) {
-                eventsByType[ev.taskType] = ev;
+                // A repeating task's offset is its first repeat's
+                const had = eventsByType[ev.taskType];
+                if (!had || (ev.repeat || 1) < (had.repeat || 1)) eventsByType[ev.taskType] = ev;
             }
             if (Object.keys(eventsByType).length === 0) return;
 
@@ -2830,8 +2918,9 @@
             const harvestEnd = (config.harvestMultiDay && config.harvestDays > 1)
                 ? computeTaskDate(H, config.harvestDays - 1) : H;                                      // harvest end
             const T = dateOf('trim') || computeTaskDate(harvestEnd, rd.trim);                           // trim start
+            const R = dateOf('retire') || computeTaskDate(P, rd.retire);                                // retire mothers
 
-            const anchors = { cloning: topDate, planting: P, flip: F, harvest: H, harvestEnd, trim: T };
+            const anchors = { cloning: topDate, planting: P, flip: F, harvest: H, harvestEnd, trim: T, retire: R };
 
             // Set each task's offset so its computed date equals the stored event date
             for (const entry of taskOffsets) {
@@ -2858,7 +2947,8 @@
             planting: 'Planting',
             flip: 'Flip to Flower',
             harvest: 'Harvest',
-            trim: 'Trim Start'
+            trim: 'Trim Start',
+            retire: 'Retire Mothers'
         };
 
         // ---- Compute anchor dates from config ----
@@ -2868,7 +2958,8 @@
         // flipOffset: days from planting to flip (defaults to 20)
         // harvestOffset: days from flip to harvest (defaults to 63 = 9 weeks bloom)
         // trimOffset: days from harvest to the start of trim (defaults to 11)
-        function computeAnchors(topDate, flipOffset = 20, clonesEnabled = false, plantingOffset = 14, harvestOffset = 63, trimOffset = 11, multiDayHarvest = false, hDays = 1) {
+        // retireOffset: days from planting to Retire Mothers (vegetative recipes; ignored by bloom tasks)
+        function computeAnchors(topDate, flipOffset = 20, clonesEnabled = false, plantingOffset = 14, harvestOffset = 63, trimOffset = 11, multiDayHarvest = false, hDays = 1, retireOffset = DEFAULT_RETIRE_DAYS) {
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
@@ -2884,7 +2975,7 @@
             // Trim starts after harvest ends
             const trimDate = addDays(harvestEndDate, trimOffset);
 
-            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate, harvestEnd: harvestEndDate, trim: trimDate };
+            return { cloning: cloningDate, planting: plantingDate, flip: flipDate, harvest: harvestDate, harvestEnd: harvestEndDate, trim: trimDate, retire: addDays(plantingDate, retireOffset) };
         }
 
         // ---- Compute a task's date from its reference anchor + offset ----
@@ -3253,7 +3344,13 @@
                 anchorLabel.textContent = clonesEnabled ? 'Cloning Date (Day 0)' : 'Planting Date (Day 0)';
             }
 
-            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, harvestMultiDay, harvestDays);
+            const retireEntry = taskOffsets.find(e => e.def.taskType === 'retire');
+            const anchors = computeAnchors(plantingDate, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, harvestMultiDay, harvestDays, retireEntry ? retireEntry.offset : DEFAULT_RETIRE_DAYS);
+            // Repeats per task (every N days until Retire Mothers / Harvest), from the same builder Generate uses
+            const repeats = {};
+            for (const o of scheduleOccurrences(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays })) {
+                if (o.repeat) repeats[o.def.taskType] = { total: o.total, last: o.start };
+            }
 
             previewTaskList.innerHTML = '';
             const listWrapper = document.createElement('div');
@@ -3300,12 +3397,16 @@
                 // Holiday check — notify only, never auto-reschedule
                 const holiday = isEnabled ? holidayInRange(startDate, endDate) : null;
 
-                // Labour estimate (per day) from the recipe task
+                // Labour estimate (per day) from the recipe task — times its repeats
                 const est = taskEstimate(def);
+                const rep = isEnabled ? repeats[def.taskType] : null;
                 if (isEnabled) {
-                    if (est) estTotalHours += estimateHours(est, endDate ? daysBetween(startDate, endDate) + 1 : 1);
+                    if (est) estTotalHours += estimateHours(est, endDate ? daysBetween(startDate, endDate) + 1 : 1) * (rep ? rep.total : 1);
                     else estMissing++;
                 }
+                const repeatHtml = taskRepeatEvery(def)
+                    ? ` · <span class="preview-task-repeat" title="Repeats every ${taskRepeatEvery(def)} days until ${isVegRecipe(activeRecipe) ? 'Retire Mothers' : 'Harvest'}">↻ every ${taskRepeatEvery(def)} days${rep ? ` · ${rep.total}× to ${rep.last}` : ''}</span>`
+                    : '';
                 const estHtml = est
                     ? ` · <span class="preview-task-est" title="Estimated labour (from the recipe)">${estimateLabel(est, isMultiDayTask(def))}</span>`
                     : '';
@@ -3338,7 +3439,7 @@
                         <div class="preview-offset-group">
                             <label for="${offsetInputId}">Days:</label>
                             <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Decrease by 1">−</button>
-                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="${minVal}" max="200" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
+                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="${minVal}" max="${offsetMax(def)}" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
                             <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Increase by 1">+</button>
                         </div>
                     `;
@@ -3384,7 +3485,7 @@
                     <span class="preview-task-emoji">${def.emoji}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
-                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}${estHtml}</div>
+                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}${estHtml}${repeatHtml}</div>
                     </div>
                     ${offsetGroupHtml}
                     ${durationControlsHtml}
@@ -3405,7 +3506,16 @@
             // Next lot in this room: where it lands after this lot's harvest and room cleaning (assuming it
             // follows the same recipe). An edit that changes it also shows a toast.
             let turnaround = null;
-            if (taskDates.clone_cut) {
+            if (taskDates.clone_cut && isVegRecipe(activeRecipe)) {
+                // Mothers: the replacement clones start the next mother lot; no room-ready rule
+                const box = document.createElement('div');
+                box.className = 'turnaround-box';
+                const before = daysBetween(taskDates.clone_cut, anchors.retire);
+                box.innerHTML = `<div class="turnaround-title">🌿 Next mothers</div>` +
+                    `<div>Replacement clones cut <strong>${taskDates.clone_cut}</strong>, ${before} day${before === 1 ? '' : 's'} before these mothers retire (<strong>${anchors.retire}</strong>).` +
+                    (clonesEnabled ? ` A new mother lot every <strong>${daysBetween(anchors.cloning, taskDates.clone_cut)} days</strong>.` : '') + `</div>`;
+                previewTaskList.appendChild(box);
+            } else if (taskDates.clone_cut) {
                 const irrDef = activeRecipe.tasks.find(t => t.taskType === 'tank_irrigation_clean');
                 turnaround = nextLotTurnaround({
                     day0: clonesEnabled ? anchors.cloning : null,
@@ -3527,7 +3637,7 @@
                         if (delta === 0) return;
                         // Same clamp rules as the +/- spinbox
                         const min = offsetMin(entry.def);
-                        const max = 200;
+                        const max = offsetMax(entry.def);
                         entry.offset = Math.max(min, Math.min(max, entry.offset + delta));
                         refreshPreview();
                     });
@@ -3634,21 +3744,46 @@
         // `recipe` is the recipe these offsets came from — recorded in config.recipeId so later
         // push-plan regen / irr-clean fallbacks use the right per-lot defaults. Defaults to the
         // form's activeRecipe (the Generate button path); projection paths pass their own recipe.
+        // Every dated occurrence a schedule would have: [{ def, start, end, repeat?, total? }] — `repeat` (1, 2, …) and
+        // `total` only on a task that repeats every N days. Shared by Generate (events, the lost-work check) and the preview.
+        function scheduleOccurrences(day0, offsets, durations, recipe = activeRecipe) {
+            const d = durations || { trimDays, harvestMultiDay, harvestDays };
+            const anchors = scheduleAnchors(day0, offsets, d);
+            const clonesEnabled = offsets.find(e => e.def.taskType === 'clone_cut_prep')?.enabled !== false;
+            // The crop's end, where repeats stop: Retire Mothers, or Harvest
+            const repeatEnd = isVegRecipe(recipe) ? anchors.retire : anchors.harvest;
+            const out = [];
+            for (const entry of offsets) {
+                if (entry.enabled === false) continue;
+                const def = entry.def;
+                let anchorRef = def.reference, effectiveOffset = entry.offset;
+                if (def.taskType === 'planting' && !clonesEnabled) { anchorRef = 'planting'; effectiveOffset = 0; }
+                const start = computeTaskDate(resolveTaskAnchor(anchors, anchorRef), effectiveOffset);
+                const endOf = st => {
+                    if (def.taskType === 'trim' && d.trimDays > 1) return computeTaskDate(st, d.trimDays - 1);
+                    if (def.taskType === 'harvest' && d.harvestMultiDay && d.harvestDays > 1) return computeTaskDate(st, d.harvestDays - 1);
+                    return recipeTaskDays(def) > 1 ? computeTaskDate(st, recipeTaskDays(def) - 1) : null;
+                };
+                const every = taskRepeatEvery(def);
+                if (!every) { out.push({ def, start, end: endOf(start) }); continue; }
+                const dates = [];
+                for (let dt = start; dates.length === 0 || dt <= repeatEnd; dt = computeTaskDate(dt, every)) {
+                    dates.push(dt);
+                    if (dates.length >= 400) break;   // a guard: 400 repeats is years of a daily task
+                }
+                dates.forEach((dt, k) => out.push({ def, start: dt, end: endOf(dt), repeat: k + 1, total: dates.length }));
+            }
+            return out;
+        }
+        // A schedule's anchor dates from the offsets in hand
+        function scheduleAnchors(day0, offsets, d) {
+            const off = (tt, dflt) => { const e = offsets.find(x => x.def.taskType === tt); return e ? e.offset : dflt; };
+            const clonesEnabled = offsets.find(e => e.def.taskType === 'clone_cut_prep')?.enabled !== false;
+            return computeAnchors(day0, off('flip', 20), clonesEnabled, off('planting', 14), off('harvest', 63), off('trim', 11), d.harvestMultiDay, d.harvestDays, off('retire', DEFAULT_RETIRE_DAYS));
+        }
+
         function generateLotSchedule(lotId, day0, offsets, durations, recipe = activeRecipe) {
             const d = durations || { trimDays, harvestMultiDay, harvestDays };
-
-            const clonePrepEntry = offsets.find(e => e.def.taskType === 'clone_cut_prep');
-            const clonesEnabled = clonePrepEntry?.enabled !== false;
-            const plantingEntry = offsets.find(e => e.def.taskType === 'planting');
-            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
-            const flipEntry = offsets.find(e => e.def.taskType === 'flip');
-            const flipOffset = flipEntry ? flipEntry.offset : 20;
-            const harvestEntry = offsets.find(e => e.def.taskType === 'harvest');
-            const harvestOffset = harvestEntry ? harvestEntry.offset : 63;
-            const trimEntry = offsets.find(e => e.def.taskType === 'trim');
-            const trimOffset = trimEntry ? trimEntry.offset : 11;
-
-            const anchors = computeAnchors(day0, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, d.harvestMultiDay, d.harvestDays);
 
             // Projected lots emit CropProjection events tagged with their room (SitkaTools uses
             // roomId to delete a room's projections when a real lot takes the slot)
@@ -3656,33 +3791,18 @@
             const projRoomId = isProjected ? getProjectedLots()[lotId].roomId : null;
 
             const newEvents = [];
-            for (const entry of offsets) {
-                // Skip disabled tasks
-                if (entry.enabled === false) continue;
-
-                const def = entry.def;
-
-                // Determine effective reference and offset
-                let anchorRef = def.reference;
-                let effectiveOffset = entry.offset;
-
-                // When clones disabled, planting is at Day 0 from planting anchor
-                if (def.taskType === 'planting' && !clonesEnabled) {
-                    anchorRef = 'planting';
-                    effectiveOffset = 0;
-                }
-
-                const anchorDate = resolveTaskAnchor(anchors, anchorRef);
-                const startDate = computeTaskDate(anchorDate, effectiveOffset);
-
+            for (const occ of scheduleOccurrences(day0, offsets, d, recipe)) {
+                const def = occ.def;
                 const event = {
                     id: newEventId(),
-                    date: startDate,
-                    title: buildEventTitle(def, lotId),
+                    date: occ.start,
+                    // A repeat says which it is: "Prune Mothers (3/12)"
+                    title: buildEventTitle(def, lotId) + (occ.repeat ? ` (${occ.repeat}/${occ.total})` : ''),
                     sourceTool: isProjected ? 'CropProjection' : 'CropLabourWizard',
                     lotId: lotId,
                     taskType: def.taskType
                 };
+                if (occ.repeat) event.repeat = occ.repeat;
                 if (projRoomId) event.roomId = projRoomId;
 
                 // Optional explicit room phase from the recipe task. SitkaTools/DailyWizard
@@ -3693,11 +3813,7 @@
                 applyEstimate(event, def);
 
                 // Multi-day events get endDate (Trim always; Harvest when multi-day is checked; a recipe task with `days`)
-                let endDate = null;
-                if (def.taskType === 'trim' && d.trimDays > 1) endDate = computeTaskDate(startDate, d.trimDays - 1);
-                else if (def.taskType === 'harvest' && d.harvestMultiDay && d.harvestDays > 1) endDate = computeTaskDate(startDate, d.harvestDays - 1);
-                else if (recipeTaskDays(def) > 1) endDate = computeTaskDate(startDate, recipeTaskDays(def) - 1);
-                if (endDate) event.endDate = endDate;
+                if (occ.end) event.endDate = occ.end;
 
                 newEvents.push(event);
             }
@@ -3710,6 +3826,9 @@
             const config = {
                 plantingDate: day0,
                 recipeId: recipe.id,
+                // A mother lot says so on its own config, so other tools needn't look its recipe up (and it stays a
+                // mother lot if the recipe is deleted)
+                ...(isVegRecipe(recipe) ? { kind: 'vegetative' } : {}),
                 trimDays: d.trimDays,
                 harvestMultiDay: d.harvestMultiDay,
                 harvestDays: d.harvestDays,
@@ -3743,7 +3862,7 @@
                 const { events: fresh } = generateLotSchedule(lotId, day0, defaultOffsetsSnapshot(bloomDays ?? recipeBloomDays(lotRecipe), lotRecipe), {
                     trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
                 }, lotRecipe);
-                carryOverAnnotations(events, fresh, ev => ev.taskType); // no-op for a stale lot
+                carryOverAnnotations(events, fresh, annotationKey); // no-op for a stale lot
                 return;
             }
 
@@ -4337,8 +4456,9 @@
                 return roomCodeForName(lot.vegRoom);
             }
 
-            // Transplant and everything after happens in the destination (flower) room
-            return resolveFlowerRoom(lotId, rooms);
+            // Transplant and everything after happens in the destination room: the flower room, or a mother lot's
+            // Mother room. A mother lot with no destination room keeps its tasks in its veg room.
+            return resolveFlowerRoom(lotId, rooms) || (isVegRecipe(activeRecipe) ? roomCodeForName(lot.vegRoom) : null);
         }
 
         function buildEventTitle(def, lotId) {
@@ -4387,6 +4507,7 @@
             //     surviving TBA chain, exactly like overwriting a TBA lot. Overwriting an OLDER real
             //     lot in the same room does not push the TBA chain (its cleaning doesn't gate it).
             const projEntry = isProjectedLot(lotId) ? getProjectedLots()[lotId] : null;
+            const motherLot = isVegRecipe(activeRecipe);   // mothers move in without a room clean: nothing to push
             let pushPlan = null;
             let pushRoomId = null;
             let pushFromIndex = null;
@@ -4402,7 +4523,7 @@
                     }
                 }
             }
-            if (pushRoomId && pushFromIndex) {
+            if (pushRoomId && pushFromIndex && !motherLot) {
                 const newIrr = simulatedIrrigationClean(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays });
                 pushPlan = computeForwardPushPlan(pushRoomId, pushFromIndex, newIrr);
                 const affected = pushPlan.filter(s => s.action === 'push' || s.action === 'regen');
@@ -4425,8 +4546,10 @@
             // Regenerating keeps each task's id, completion and labour hours (matched by taskType).
             // Tasks dropped from the new schedule lose theirs — confirm first if any hold work records.
             const previousEvents = eventsForLot(lotId);
-            const keptTaskTypes = new Set(taskOffsets.filter(e => e.enabled !== false).map(e => e.def.taskType));
-            const lostRecords = previousEvents.filter(ev => !keptTaskTypes.has(ev.taskType) && hasWorkRecords(ev));
+            // Matched by task type and repeat: a repeating task that now repeats fewer times drops its last repeats
+            const keptKeys = new Set(scheduleOccurrences(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays })
+                .map(o => `${o.def.taskType}#${o.repeat || 1}`));
+            const lostRecords = previousEvents.filter(ev => !keptKeys.has(annotationKey(ev)) && hasWorkRecords(ev));
             if (lostRecords.length > 0) {
                 let msg = `⚠️ ${lostRecords.length} task${lostRecords.length === 1 ? '' : 's'} with recorded work will be removed from ${lotId}'s schedule:\n\n`;
                 msg += lostRecords.map(ev => `• ${ev.title}${ev.labour_map ? ' (labour hours)' : ''}${ev.completed ? ' (completed)' : ''}`).join('\n');
@@ -4441,7 +4564,7 @@
             const { events: newEvents, config } = generateLotSchedule(lotId, plantingDate, taskOffsets, {
                 trimDays, harvestMultiDay, harvestDays
             });
-            carryOverAnnotations(previousEvents, newEvents, ev => ev.taskType);
+            carryOverAnnotations(previousEvents, newEvents, annotationKey);
 
             // Log generation for real lots (projected lots are tracked in the map instead)
             if (!isProjectedLot(lotId)) {
@@ -4689,8 +4812,10 @@
             configSummaryEl.style.display = 'flex';
             configSummaryEl.innerHTML = `
                 <span>📅 Anchor: <strong>${config.plantingDate}${config.plantingDate ? ' · ' + weekdayShort(config.plantingDate) : ''}</strong></span>
-                <span>✂️ Trim: <strong>${config.trimDays || DEFAULT_TRIM_DAYS} days</strong></span>
-                ${config.harvestMultiDay ? `<span>🌾 Harvest: <strong>${config.harvestDays || DEFAULT_HARVEST_DAYS} days</strong></span>` : ''}
+                ${config.kind === 'vegetative'
+                    ? `<span>🌿 Mothers${lotEvents.find(ev => ev.taskType === 'retire') ? ` · retire <strong>${lotEvents.find(ev => ev.taskType === 'retire').date}</strong>` : ''}</span>`
+                    : `<span>✂️ Trim: <strong>${config.trimDays || DEFAULT_TRIM_DAYS} days</strong></span>
+                ${config.harvestMultiDay ? `<span>🌾 Harvest: <strong>${config.harvestDays || DEFAULT_HARVEST_DAYS} days</strong></span>` : ''}`}
                 <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
                 ${estHours > 0 ? `<span>⏱ Est. labour: <strong>≈ ${estHours.toFixed(1)} h</strong></span>` : ''}
             `;
@@ -4834,6 +4959,12 @@
             base.id = generateRecipeId();
             base.name = 'New Recipe';
             base.version = 1;
+            showRecipeEditor(base);
+        });
+        $('recipeNewVegBtn').addEventListener('click', () => {
+            const base = cloneRecipeData(VEG_STARTER_RECIPE);
+            base.id = generateRecipeId();
+            base.name = 'New Mother Recipe';
             showRecipeEditor(base);
         });
         $('recipeAddTaskBtn').addEventListener('click', addTaskRow);
