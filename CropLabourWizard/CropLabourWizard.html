@@ -3618,7 +3618,19 @@
             const harvestMultiCheck = listWrapper.querySelector('#harvestMultiCheck');
             if (harvestMultiCheck) {
                 harvestMultiCheck.addEventListener('change', () => {
+                    const wasDays = harvestMultiDay ? harvestDays : 1;
                     harvestMultiDay = harvestMultiCheck.checked;
+                    // Unticked: the harvest becomes one day on its LAST day, so everything counted from harvest end
+                    // (clean-up, clone cut, trim, the next lot) stays put (user decision 2026-10-24). Ticking still
+                    // runs the harvest forward from its day.
+                    const h = taskOffsets.find(e => e.def.taskType === 'harvest');
+                    if (!harvestMultiDay && wasDays > 1 && h) {
+                        h.offset = Math.min(offsetMax(h.def), h.offset + wasDays - 1);
+                        refreshPreview();
+                        const day = plantingDateInput.value ? scheduleAnchors(plantingDateInput.value, taskOffsets, { trimDays, harvestMultiDay, harvestDays }).harvest : null;
+                        if (day) showToast(`🌾 Harvest is one day now, on its last day: ${day} · ${weekdayShort(day)}`);
+                        return;
+                    }
                     refreshPreview();
                 });
             }

@@ -26,6 +26,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## CropLabourWizard
 
+- 2026-10-24 · harvest is one day on day 63 (flip + 63) by default, as it already was for new lots and projections; unticking Multi-day now keeps the harvest on its last day (was its first), so a 2-day Thursday–Friday harvest becomes a one-day Friday harvest with its clean-up, clone cut, trim and next lot unchanged
 - 2026-10-24 · ⚠️ when a room's newest real lot cuts clones on a different day from TBA-01, both clone-cut tasks say "Does not match projection schedule. Adjust in real lot to match distance from harvest to projections." with both days, in CropLabourWizard (preview, live as you edit, and saved schedule) and on SitkaTools' calendar bars, tooltip and event panel; notify only, nothing moves
 - 2026-10-24 · projections count from the previous lot's last harvest day (harvest end − the next lot's recipe's clone-cut days), not from its own "Cut Clones to Replace Lot" event, so a room reloads the Monday after a Friday harvest end and flips that Friday; lots scheduled with older recipes had kept that clone cut 21 days before harvest (some from the harvest's first day), which moved every projected lot in on a Saturday or Sunday
 - 2026-10-24 · built-in leaf picks moved: Early Flower Leaf Pick on bloom days 17–18 (flip +17, was +21), Late on days 39–40 (flip +39, was +42), both 2 days, counting flip day as day 0; all three built-ins

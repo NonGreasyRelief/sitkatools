@@ -152,5 +152,23 @@ export async function run(b, BASE) {
         re.length === 5 && chainOf(L700.h[1], re).join(' | ') === tight(5), chainOf(L700.h[1], re).join(' | '));
     check('…it asked first, listing TBA-01 pushed back a week', asked.length === 1 && /TBA-01: \+7d \(Mar 15 → Mar 22\)/.test(asked[0] || ''), asked[0] || '(not asked)');
 
+    // ---- Unticking Multi-day: L600's Thursday–Friday harvest becomes one day on the Friday, nothing else moves ----
+    await pickLot('L600');
+    const multi = await b.run(clw, `
+        const rowDate = n => [...document.querySelectorAll('#previewTaskList .preview-task-item')].find(r => r.querySelector('.preview-task-name').textContent === n).querySelector('.preview-computed-date').textContent;
+        const snap = () => ['Harvest', 'Grow-Room Clean', 'Tank and Irrigation Line Clean', 'Cut Clones to Replace Lot', 'Trim'].map(rowDate);
+        const cb = document.getElementById('harvestMultiCheck'), wasChecked = cb.checked, before = snap();
+        cb.checked = false; cb.dispatchEvent(new Event('change'));
+        return { wasChecked, before, after: snap(), toast: document.getElementById('toast')?.textContent || '' };`);
+    check('unticking Multi-day makes the harvest one day on its last day (Fri Jan 22), with a toast',
+        multi.wasChecked && multi.before[0] === '2027-01-21 (Thu) → 2027-01-22 (Fri)' && multi.after[0] === '2027-01-22 · Fri' && multi.toast.includes('2027-01-22'), JSON.stringify(multi));
+    check('…clean-up, tank clean, clone cut and trim stay on their days', JSON.stringify(multi.after.slice(1)) === JSON.stringify(multi.before.slice(1)), JSON.stringify(multi));
+    asked = await b.run(clw, `window.__asked = []; window.confirm = m => { window.__asked.push(m); return true; }; document.getElementById('generateBtn').click(); return window.__asked;`, { user: true });
+    await b.sleep(400);
+    const h600 = await b.run(main, `const e = DB.data.calendarEvents.find(e => e.lotId === 'L600' && e.taskType === 'harvest'); return { date: e.date, endDate: e.endDate || null, multi: DB.data.lots.L600._tool_CropLabourWizard.harvestMultiDay };`);
+    const ga2 = await projected('R2G1');
+    check('…Generate saves it as a one-day Friday event, and Grow A\'s projections stay put with nothing asked',
+        h600.date === '2027-01-22' && !h600.endDate && h600.multi === false && ga2[0]?.transplant === '2027-01-25' && asked.length === 0, JSON.stringify({ h600, tba1: ga2[0], asked }));
+
     return results;
 }
