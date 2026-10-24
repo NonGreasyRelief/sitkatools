@@ -4443,7 +4443,6 @@
                 const n = Number(r?.lightCount), w = Number(r?.lightWattage);
                 info[id] = {
                     b: r?.buildingId || null, lightKw: n > 0 && w > 0 ? n * w / 1000 : 0, hasLights: n > 0,
-                    mother: r?.designation === 'Mother',   // mother plants: lights on every day, shared by the building's crops
                     veg: Number(r?.vegLightHours) > 0 ? Number(r.vegLightHours) : 18, bloom: Number(r?.bloomLightHours) > 0 ? Number(r.bloomLightHours) : 12,
                     equip: (DB.data._EquipmentWizard?.rooms?.[id]?.equipment || []).filter(e => Number(e?.power?.watts) > 0)
                         .map(e => ({ from: isDay(e.installedDate) ? e.installedDate : '0000-00-00', kWh: e.power.watts * (Number(e.power.units) || 1) * (e.power.hoursPerDay ?? 12) / 1000 })),
@@ -4480,10 +4479,10 @@
                             give(st.c.lotId, equipKwh * share, 'equip');
                             dayKwh.set(st.c.lotId, (dayKwh.get(st.c.lotId) || 0) + (lightKwh + equipKwh) * share);
                         }
-                    } else {
-                        // An empty room (or a mother room): the building's crops carry it
-                        const motherKwh = r.mother && r.lightKw > 0 ? r.lightKw * r.veg : 0;
-                        if (equipKwh + motherKwh > 0) pool[r.b] = (pool[r.b] || 0) + equipKwh + motherKwh;
+                    } else if (equipKwh > 0) {
+                        // An empty room is dark (a Mother room too: its mothers are a lot of their own, user decision
+                        // 2026-10-23); its equipment's power goes to the building's crops that day
+                        pool[r.b] = (pool[r.b] || 0) + equipKwh;
                     }
                 }
                 // Empty rooms' power goes to the building's crops that day, by plants

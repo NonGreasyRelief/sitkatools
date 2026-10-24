@@ -33,7 +33,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
     name, description, createdDate, assignedLots: [], buildingId,
     isFlowering, designation,                           // designation: Grow 1…4, Clone, Mother, Vegetation
     lightCount, lightWattage, canopySqFt,               // Reports: per light, per sq ft, power estimate
-    vegLightHours /*18*/, bloomLightHours /*12*/ } },   // a Mother room's lights run every day
+    vegLightHours /*18*/, bloomLightHours /*12*/ } },   // a Mother room uses its veg hours
   buildings: { <BuildingID>: { name, description, createdDate, assignedRooms: [], monthlyPropertyCost } },
   calendarEvents: [ { id, lotId, date, endDate?, title, sourceTool, … } ],
   _<Tool>: { … },
@@ -187,7 +187,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 | Supplies | the recipe's supplies: per crop, per plant at the start, or per plant at a task (the plants on that task's day: coco blocks at Transplanting, rockwool at Planting, clone cubes at Cutting Clones) | price list, $ per unit |
 | Property | days each crop spends in a building's rooms | the building's monthly rent + fees, shared by the rooms holding a crop (by lights or plants) |
 
-- Electricity is worked out room by room, day by day. An empty room, or a Mother room with no mother lot in it, passes its kWh to the building's crops that day.
+- Electricity is worked out room by room, day by day, using each day's light % from the grow logs of the lots in the room (100 % when not logged). An empty room is dark (a Mother room too); its equipment's kWh goes to the building's crops that day.
 - **🌿 Clones:** a mother lot (a lot scheduled with a vegetative recipe) is costed like a crop in its Mother room. Its **cost per clone** = everything spent on it + the cutting of the lots cut from it, ÷ the clones cut from it. A lot cut on site from a mother lot carries its clones at that price in every part, and its own cutting (Cutting Clones hours, supplies charged at Cutting Clones) is taken out, so cutting is paid once. Bought clones keep the price-list price. Definitions: `EmployeeWizard/REPORTS.md` §6.
 - **Room chores:** a DailyWizard chore can be tied to one of its building's rooms (`task.roomId`). Its hours go into the labour of the lots scheduled in that room that day (the same room stays electricity uses), split by plants when lots share the room; they count as that lot's own labour cost. Chores without a room, and room-chore hours on a day the room held no crop, are shared over the crops harvested in the period, by grams (the "fully loaded" labour). Nothing is written to the lots: Reports work the split out when they draw, and a crop summary keeps its share.
 - Each part's $/g uses only the crops that part can price; Costs → "What's missing from the cost?" lists the gaps.

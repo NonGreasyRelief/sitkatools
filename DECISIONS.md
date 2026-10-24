@@ -63,6 +63,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Labour & Cost Wizard
 
+- 2026-10-23 · an empty Mother room counts as dark (it used to be assumed lit and shared by the building's crops); with a mother lot in it, its lights run at its veg hours × the light % from that lot's grow log
 - 2026-10-23 · 🌿 cost per clone: a mother lot is costed like a crop in its Mother room (its room's power, chores, property, its water, fertilizer and supplies) plus the cutting of the lots cut from it, ÷ the clones cut from it; a lot cut on site from a mother pays clones × that price automatically and its own cutting comes out (paid once, on the bloom lot's Cutting Clones task); bought clones keep the price-list price; summaries freeze the charge
 - 2026-10-22 · hours added or changed in the Tasks tab (rather than on the floor in DailyWizard) need a floor manager's name, PIN and drawn initials; the entry keeps who signed it (enteredBy, editedSignoff) and when
 - 2026-10-22 · 📋 CTLS month in Reports: the whole facility's plants (opening, every dated change with reason and who they went to, closing, by lot), wet cannabis hanging until its dry weight, and dry flower sent out on its dry-weight date; additions only from the Lot Manager (new lots received, sub-lots clones cut), removals only from the grow-log reasons, split lots and moves between lots not counted; closed-out lots from the history in their crop summary (version 4); 📌 Mark as filed keeps the closing numbers and the next month's opening is checked against them
