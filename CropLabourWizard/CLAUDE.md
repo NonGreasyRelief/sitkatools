@@ -6,13 +6,13 @@ Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets an
 
 ### Day 0, Offsets and Cascade
 
-- The task list is the active recipe's `tasks[]` (`activeRecipe.tasks`). The preview shows one row per task in array order (top → bottom = chronological). The built-in recipe `sitka-9week` (32 tasks) lives in code, is never written to the DB, and is the fallback for any lot whose `recipeId` is missing or no longer resolves.
+- The task list is the active recipe's `tasks[]` (`activeRecipe.tasks`). The preview shows one row per task in array order (top → bottom = chronological). The three built-in recipes (32 tasks each, see "Room Turnaround") live in code and are never written to the DB. The default, `sitka-9week`, is the fallback for any lot whose `recipeId` is missing or no longer resolves.
 - **Day 0:** with Cutting Clones (`clone_cut_prep`) on, the top date is the cloning date and Planting is Day 0 + 14 (editable). With it off, Cutting Clones is hidden and the planting date is Day 0.
 - A task's date = its `reference` anchor (`cloning` / `planting` / `flip` / `harvest` / `trim`) + its offset. Changing an anchor's offset moves every task that references it by the same delta:
   - **Flip** → flip-relative tasks (trellis, leaf picks, flower IPM sprays, Harvest), and through Harvest everything after it.
   - **Harvest** → post-harvest tasks (Grow-Room Clean, Tank & Irrigation Clean, Tote Prep, Bucking, Lab Sample, Prepare Trim Room, Trim) and Clone Cut.
   - **Trim** → Machine Trim Smalls, Clean Dry Room, Weigh & Ship.
-- **Clone Cut** ("Cut Clones to Replace Lot", `clone_cut`) counts back from harvest **end** (built-in −21), so it follows the bloom and harvest length. See "Room Turnaround".
+- **Clone Cut** ("Cut Clones to Replace Lot", `clone_cut`) counts back from harvest **end** (default built-in −27), so it follows the bloom and harvest length. See "Room Turnaround".
 - **Offset range** (spinbox and date picker alike, `offsetMin`): 0–200; −30–200 for a task with a negative default; −200–200 for the clone cut.
 - **IPM sprays:** the four 🧴 preventative sprays are toggleable and off by default (`hasToggle: true`, `defaultEnabled: false`). When on they behave like any task. The two flower sprays are flip-relative, so they move with flip edits and projection bloom changes. When a stored schedule loads, a toggleable task missing from the lot's events shows unchecked.
 - **Reloading a lot** reads each task's offset back from its event (`applyStoredScheduleToOffsets`), so generated dates never move on their own.
@@ -57,7 +57,16 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
   - Shows clones cut / planted / transplanted in days from harvest, and where the transplant lands: ✅ the day after Tank & Irrigation Clean (as tight as the room allows), 🕒 room empty N days, or ⚠️ room not ready, N days short. Plus "A new lot every N days" (Day 0 to clone cut; hidden when clones are off).
   - The room is ready the day after Tank & Irrigation Clean (fallback: harvest end + 2) — the same rule as every push-back.
   - An edit that changes the readout shows a one-line toast (`turnaroundToast`). Opening the editor or switching lot / recipe doesn't.
-- **Built-in:** at −21 the next lot is cut 21 days before harvest, planted 7 before, and transplanted 3 after — on Grow-Room Clean + 2 days. A new lot every 76 days.
+- **Built-ins** (Sitka Standard, 9-week bloom, user decision 2026-10-23): one recipe per clone-cut day, so every room harvests on a Friday, the next lot transplants the Monday after (✅ the day after Tank & Irrigation Clean) and flips that Friday. A new lot every 70 days (10 weeks), so the weekdays never drift.
+
+  | Recipe (id) | Veg (planting → flip) | Clone cut | Next lot planted | Transplant |
+  |---|---|---|---|---|
+  | 20-day veg, Saturday cuts (`sitka-9week`, **default**) | 20 | harvest −27 | harvest −13 | planting +16 |
+  | 19-day veg, Sunday cuts (`sitka-9week-19veg`) | 19 | −26 | −12 | +15 |
+  | 18-day veg, Monday cuts (`sitka-9week-18veg`) | 18 | −25 | −11 | +14 |
+
+  - Only the days set by the veg length differ (`sitkaStandardRecipe(id, name, veg)` builds all three). Flower-room prep (coco layout, hydrate, undercanopy lights) is the day before transplant (the Sunday). The second veg IPM spray, veg room clean and Deploy IPM are the day after (the Tuesday). Prune is on flip day.
+  - The default keeps the old built-in's id. Lots generated with the old 76-day built-in keep their dates (Generate rebuilds from their own events); their projections take the new cadence when Project Crop or Reproject runs again.
 - **Saving** a recipe whose next lot would move in before the room is ready is allowed after a confirm, which explains that Project Crop, overwrites and Reproject will push the next lots back.
 
 ### Calendar Events Generated
@@ -83,7 +92,7 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
 
 ### Labour Estimates
 
-Recipe tasks may carry `minutes` (per day) and `staff`, like DailyWizard tasks. The built-in recipe has none; duplicate it to add them.
+Recipe tasks may carry `minutes` (per day) and `staff`, like DailyWizard tasks. The built-in recipes have none; duplicate one to add them.
 
 - **Recipe editor:** **Min** (minutes per day, step 5; blank = no estimate) and **Staff** (blank = 1) columns.
 - **Preview:** `👥 2 · ⏱ 1h 30m` after the offset line (`/day` on multi-day tasks). Below the list, `⏱ Estimated labour: ≈ N h` totals the enabled tasks (multi-day tasks over all their days) and says how many have no estimate.
@@ -93,7 +102,7 @@ Recipe tasks may carry `minutes` (per day) and `staff`, like DailyWizard tasks. 
 
 ## Task Recipes (Recipe Manager)
 
-The task list comes from **recipes**. The built-in `sitka-9week` stays in code. User recipes are created, edited, duplicated, imported, exported and deleted here and stored in `_CropLabourWizard.recipes`. Other tools' rules for task types (stable ids, order vs `transplant`, unknown-type fallback) are in root `CLAUDE.md`.
+The task list comes from **recipes**. The three built-ins stay in code. User recipes are created, edited, duplicated, imported, exported and deleted here and stored in `_CropLabourWizard.recipes`. Other tools' rules for task types (stable ids, order vs `transplant`, unknown-type fallback) are in root `CLAUDE.md`.
 
 ### Recipe Format
 
@@ -101,7 +110,7 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 
 - **`kind`:** `'vegetative'` for a mother recipe (see "🌿 Vegetative Recipes"); absent for a bloom recipe.
 
-- **`id`:** built-in is `sitka-9week`. New recipes get 6 chars from `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`), collision-checked against the built-in and DB recipes.
+- **`id`:** the built-ins are `sitka-9week` (default), `sitka-9week-19veg` and `sitka-9week-18veg`. New recipes get 6 chars from `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`), collision-checked against the built-ins and DB recipes. An imported file carrying a built-in's id (an exported built-in) is saved under a new id, so the built-in doesn't hide it.
 - **`version`:** integer, for forward compatibility.
 - **`chain.cloneCutBeforeHarvest`:** kept only for older copies of the tool. The `clone_cut` task is the source of truth; `syncChainFromCloneCut` writes this number from it on every save. A recipe with no `clone_cut` task uses this number (default 21, `cloneCutDays`).
 - **`tasks[]`** — array order is load-bearing (display order and the pre/post-transplant room split). Each task:
@@ -140,7 +149,7 @@ The task list comes from **recipes**. The built-in `sitka-9week` stays in code. 
 
 ### Recipe Selection — Per-Lot `recipeId`
 
-- The **Task Recipe** dropdown (`#recipeSelect`, form row) lists the built-in ("(built-in)") plus every user recipe. Selecting a lot syncs it to the lot's stored `recipeId` (`syncActiveRecipeToLot`); an unknown id falls back to the built-in (`getRecipeById`).
+- The **Task Recipe** dropdown (`#recipeSelect`, form row) lists the three built-ins ("(built-in)", the default first) plus every user recipe. Selecting a lot syncs it to the lot's stored `recipeId` (`syncActiveRecipeToLot`); an unknown id falls back to the default built-in (`getRecipeById`).
 - **Generate** stores the selected recipe's id as `recipeId` in the lot's config.
 - The header's **Projection Recipe** dropdown (`#projectionRecipeSelect`) is separate — see "Projection Chain".
 
@@ -157,13 +166,13 @@ Both buttons are in the recipe manager's list view, next to `＋ New Recipe`.
 
 **✏️ Manage** (`#manageRecipesBtn`) opens `#recipeManagerOverlay`:
 
-- **List view:** `＋ New Recipe` (a copy of the built-in with a fresh id), ⬆️ Import, ⬇️ Export, then one row per recipe. Built-in rows: **Duplicate / Export**. User rows: **Edit / Duplicate / Export / Delete**. Clicking a row selects that recipe and closes the overlay.
+- **List view:** `＋ New Recipe` (a copy of the default built-in with a fresh id), ⬆️ Import, ⬇️ Export, then one row per recipe. Built-in rows: **Duplicate / Export**. User rows: **Edit / Duplicate / Export / Delete**. Clicking a row selects that recipe and closes the overlay.
 - **Editor view:** name, read-only id, two tabs:
   - **🗓️ Tasks:** the Room turnaround readout and the task table (emoji, name, type, reference, offset, days, room phase, minutes, staff, toggleable, on by default, locked; move up/down, delete, `＋ Add Task`).
   - **🧪 Inputs:** see below.
   - **DOM-sync rule:** before any re-render that changes rows, the tables are read back into the working copy (`readTaskTable()` for tasks) so typed values aren't lost. A change updates the hints in place, so tabbing through a row keeps focus.
 - **Save Recipe** re-runs validation, writes the recipe (and the price list) to the DB, merges the task-type registry and notifies SitkaTools. **Cancel** drops both.
-- **Delete:** a recipe in use warns with the lot count (`1 lot(s) currently use it — they'll fall back to the built-in recipe.`). Lots with a dangling `recipeId` resolve to the built-in. If it was the projection recipe, `projectionRecipeId` resets to the built-in.
+- **Delete:** a recipe in use warns with the lot count (`1 lot(s) currently use it — they'll fall back to the built-in recipe.`). Lots with a dangling `recipeId` resolve to the default built-in. If it was the projection recipe, `projectionRecipeId` resets to the default built-in.
 
 ### 🧪 Inputs — Price List and Recipe Supplies
 
@@ -215,13 +224,13 @@ Every code path that would read `DB.lots[lotId]` goes through these helpers. Use
 - **Owned by this tool.** SitkaTools never reads or changes it, except deleting `{roomId}-TBA-01` in its deletion hook (see "Deletion Hook — SitkaTools (for reference)").
 - `generations[]` is written for real lots only.
 
-### Projection Chain — 5 Lots, 76-Day Cadence
+### Projection Chain — 5 Lots, 70-Day Cadence
 
 - Each flowering room gets exactly **5** projected lots (`PROJECTION_LOT_COUNT`). A lot's **Day 0** is its clone-cut date (the form's anchor date when cloning is on).
-- **Default cadence** (built-in recipe, 63-day bloom; 63 is also the default and fallback bloom everywhere): planting Day 0 + 14 → transplant +24 (planting +10) → flip +34 (planting +20) → harvest +97 (flip +63) → trim +108 (harvest +11, 7 days, ends +114) → weigh/ship +116. Flower-room prep: coco layout planting +9, hydrate and undercanopy lights +10.
-- **Chain rule:** Lot(k+1) Day 0 = Lot(k)'s `clone_cut` event date (`nextLotDay0`; fallback: its harvest end − its recipe's clone-cut days). With a 63-day bloom consecutive Day 0s are **76 days** apart (~14 months for 5 lots); with a 56-day recipe, 69 days. A multi-day harvest adds its extra days.
+- **Default cadence** (default built-in, 63-day bloom; 63 is also the default and fallback bloom everywhere): planting Day 0 + 14 → transplant +30 (planting +16) → flip +34 (planting +20) → harvest +97 (flip +63) → trim +108 (harvest +11, 7 days, ends +114) → weigh/ship +116. Flower-room prep (coco layout, hydrate, undercanopy lights): planting +15, the day before transplant.
+- **Chain rule:** Lot(k+1) Day 0 = Lot(k)'s `clone_cut` event date (`nextLotDay0`; fallback: its harvest end − its recipe's clone-cut days). With the built-ins (63-day bloom) consecutive Day 0s are **70 days** apart (~13 months for 5 lots); a 56-day bloom with the same clone cut, 63 days. A multi-day harvest adds its extra days.
 - **Lot 1 anchor and the Project Crop gate** (`resolveProjectionAnchor`): the room's **newest real lot** by `createdDate` (`newestRealLotId`). Lot 1's Day 0 = that lot's `clone_cut` date, else its own Day 0 (`config.plantingDate`). That specific lot must have a generated schedule; an older scheduled lot doesn't count, and there is no "today" fallback.
-- **Projection recipe** (`projectionRecipeId`, header dropdown, built-in by default; kept in memory only, not in the DB): used for fresh projected lots and chain cadence; the bloom comes from its harvest offset (`recipeBloomDays`). It doesn't affect real-lot schedules or preview editing.
+- **Projection recipe** (`projectionRecipeId`, header dropdown, the default built-in to start with; kept in memory only, not in the DB): used for fresh projected lots and chain cadence; the bloom comes from its harvest offset (`recipeBloomDays`). It doesn't affect real-lot schedules or preview editing.
 - **Room-ready rule** (shared by Project Crop, Reprojection and Overwrite push-backs):
   - A room is ready the day after the previous lot's Tank & Irrigation Clean (`effectiveIrrigationClean`; fallback harvest end + 2). Each lot's transplant must land on or after that day.
   - A lot that is too early moves later by exactly the shortfall; its whole schedule shifts, per-task offsets kept (pushed `day0` = its own Day 0 + delta, so hand-edited spacing and clones-off lots move by exactly that).
@@ -255,7 +264,7 @@ User decision 2026-10-23 ("these still have the ability to do repeating crops").
 
 A new real crop may run later than the chain planned. Reprojection applies the room-ready rule (see "Projection Chain") with the real lot's `tank_irrigation_clean` as the starting point.
 
-- `computeReprojectionPushes(roomId, newRealLotId)` is pure. It walks slots 1..4 in post-rename order (slot i holds current TBA-(i+1)); the real lot is "previous" for slot 1. Slot 5 is `fresh`, with Day 0 = slot 4's required transplant − the projection recipe's transplant span (24 days built-in).
+- `computeReprojectionPushes(roomId, newRealLotId)` is pure. It walks slots 1..4 in post-rename order (slot i holds current TBA-(i+1)); the real lot is "previous" for slot 1. Slot 5 is `fresh`, with Day 0 = slot 4's required transplant − the projection recipe's transplant span (30 days with the default built-in).
 - Returns `[{ index, action: 'push' | 'keep' | 'regen' | 'fresh', delta, day0, … }]`, or `null` when the real lot has no usable irrigation-clean (reprojection then does a plain shift-down).
 - Only TBA lots move; the real lot's schedule is untouched.
 
@@ -341,7 +350,7 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 - `_CropLabourWizard`:
   - `generations[]`: generation log, real lots only; Clear / Delete Schedule drop the lot's entries; SitkaTools' close-out copies the rest into the lot's archive.
   - `projectedLots`: see "Projected Lot Map".
-  - `recipes`: user recipes only (never the built-in).
+  - `recipes`: user recipes only (never the built-ins).
   - `inputs`: the price list (see "🧪 Inputs").
   - `taskTypes`: the registry (see "Task-Type Registry").
 - `calendarEvents`: `CropLabourWizard` and `CropProjection` events.
@@ -352,4 +361,4 @@ Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop
 
 ## Tests
 
-`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs). The projection and push-back logic has no automated test.
+`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `builtin-recipes` (the three built-ins: dropdowns and manager, each one's turnaround, generating on real weekdays, Project Crop's 70-day chain, re-importing an exported built-in), `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs). The push-back logic has no automated test.

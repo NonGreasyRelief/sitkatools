@@ -1219,16 +1219,23 @@
 
         const $ = id => document.getElementById(id);
 
-        // ---- Built-in Recipe (the original hard-coded task list, now data-driven) ----
+        // ---- Built-in Recipes: Sitka Standard, 9-week bloom (user decision 2026-10-23) ----
+        // Three built-ins, one per clone-cut day, so every room harvests on a Friday and its next lot moves in the Monday
+        // after (the day after Tank & Irrigation Clean, as tight as the room allows), then flips on the Friday. Clones are cut
+        // on the Saturday (20-day veg, the default), Sunday (19) or Monday (18), 27 / 26 / 25 days before harvest. A new lot
+        // every 70 days (10 weeks), so the weekdays never drift. They differ only in the days set by the veg length: the
+        // flower-room prep, the transplant and the days after it, prune and flip, and the clone cut.
         // Recipe schema: { id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...] }
         // Task fields — reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
         // defaultOffset: days from the reference point. Array order = chronological display order
         // (load-bearing: room resolution compares a task's position vs "transplant" in this list).
-        const BUILTIN_RECIPE = {
-            id: 'sitka-9week',
-            name: 'Sitka Standard (9-week bloom)',
+        function sitkaStandardRecipe(id, name, veg) {
+            const transplant = veg - 4;   // veg = planting → flip; the Monday transplant is 4 days before the Friday flip
+            return {
+            id,
+            name,
             version: 1,
-            chain: { cloneCutBeforeHarvest: 21 },
+            chain: { cloneCutBeforeHarvest: veg + 7 },
             tasks: [
             { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
             { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
@@ -1237,17 +1244,18 @@
             { name: 'Preventative IPM Spray (Early veg)', emoji: '🧴', taskType: 'ipm_spray_veg_early', reference: 'planting', defaultOffset: 2, hasToggle: true, defaultEnabled: false },
             { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
-            // Pre-transplant prep work done in the flower room (layout the day before; hydration & lights on transplant day)
-            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: 9 },
-            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 10 },
-            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 10 },
-            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 10 },
-            // Day after transplant — plants are now in the flower room (listed after transplant so it resolves there)
-            { name: 'Preventative IPM Spray (Second veg IPM)', emoji: '🧴', taskType: 'ipm_spray_veg_second', reference: 'planting', defaultOffset: 11, hasToggle: true, defaultEnabled: false },
-            { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 15 },
-            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 15 },
-            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20 },
-            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 20 },
+            // Flower-room prep the day before transplant (the Sunday, after the previous lot's Tank and Irrigation Line Clean)
+            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: transplant - 1 },
+            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: transplant - 1 },
+            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: transplant - 1 },
+            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: transplant },
+            // Day after transplant — plants are now in the flower room (listed after transplant so these resolve there;
+            // the veg-room clean always goes to the veg room)
+            { name: 'Preventative IPM Spray (Second veg IPM)', emoji: '🧴', taskType: 'ipm_spray_veg_second', reference: 'planting', defaultOffset: transplant + 1, hasToggle: true, defaultEnabled: false },
+            { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: transplant + 1 },
+            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: transplant + 1 },
+            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: veg },
+            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: veg },
             // Bloom-relative tasks (offset from flip)
             // First day of bloom = flip day; toggleable, off by default
             { name: 'Preventative IPM Spray (Start of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_start', reference: 'flip', defaultOffset: 0, hasToggle: true, defaultEnabled: false },
@@ -1255,9 +1263,9 @@
             // Second week of bloom; toggleable, off by default
             { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
             { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 21, days: 2 },
-            // The next lot's Day 0, counted back from harvest end: at −21 the next lot transplants the day
-            // after this lot's Tank and Irrigation Line Clean — as tight as the room allows
-            { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -21 },
+            // The next lot's Day 0, counted back from harvest end: cut 14 days before planting, the next lot transplants
+            // 3 days after this harvest (the Monday) — the day after this lot's Tank and Irrigation Line Clean
+            { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -(veg + 7) },
             { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 42, days: 2 },
             // Harvest — user-editable offset from flip (default 63 days = 9 weeks bloom)
             { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63 },
@@ -1276,7 +1284,17 @@
             { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
             { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8 }
             ]
-        };
+            };
+        }
+        // The default keeps the old built-in's id, so lots scheduled with it still resolve (their dates stay as generated)
+        const BUILTIN_RECIPES = [
+            sitkaStandardRecipe('sitka-9week', 'Sitka Standard: 20-day veg, Saturday cuts', 20),
+            sitkaStandardRecipe('sitka-9week-19veg', 'Sitka Standard: 19-day veg, Sunday cuts', 19),
+            sitkaStandardRecipe('sitka-9week-18veg', 'Sitka Standard: 18-day veg, Monday cuts', 18)
+        ];
+        // The default: new lots, projections, ＋ New Recipe, and any lot whose recipe is missing
+        const BUILTIN_RECIPE = BUILTIN_RECIPES[0];
+        const isBuiltinRecipe = idOrRecipe => { const id = typeof idOrRecipe === 'string' ? idOrRecipe : idOrRecipe?.id; return BUILTIN_RECIPES.some(b => b.id === id); };
 
         // ---- 🌿 Vegetative (mother) recipes (user decision 2026-10-23) ----
         // recipe.kind = 'vegetative' marks a recipe for mother plants — the only "mother" flag: a lot scheduled with one is a
@@ -1320,9 +1338,11 @@
         // Built-in always resolves; user/imported recipes live in _CropLabourWizard.recipes.
         let activeRecipe = BUILTIN_RECIPE;
 
-        // Resolve a recipe by id: built-in first, then DB recipes; falls back to built-in.
+        // Resolve a recipe by id: built-ins first, then DB recipes; falls back to the default built-in.
         function getRecipeById(id) {
-            if (!id || id === BUILTIN_RECIPE.id) return BUILTIN_RECIPE;
+            if (!id) return BUILTIN_RECIPE;
+            const builtin = BUILTIN_RECIPES.find(r => r.id === id);
+            if (builtin) return builtin;
             const r = DB.data?._CropLabourWizard?.recipes?.[id];
             return (r && Array.isArray(r.tasks)) ? r : BUILTIN_RECIPE;
         }
@@ -1341,7 +1361,7 @@
         }
 
         // Days from "Cut Clones to Replace Lot" (clone_cut — the next lot's Day 0) to harvest end, read from
-        // the recipe's task (harvest −21 → 21). Recipes without the task fall back to the number older
+        // the recipe's task (harvest −27 → 27). Recipes without the task fall back to the number older
         // recipes kept in chain.cloneCutBeforeHarvest (default 21).
         function cloneCutDays(recipe) {
             const t = recipe?.tasks?.find(x => x?.taskType === 'clone_cut');
@@ -1508,10 +1528,10 @@
             );
         }
 
-        // Day-0 spans of a fresh lot, read from its recipe (fallbacks = built-in behavior):
+        // Day-0 spans of a fresh lot, read from its recipe (fallbacks for a recipe missing a task):
         // flip/transplant are measured from Day 0; irrClean is the tank_irrigation_clean task's
         // offset from harvest END. The regen cadence span is flip + bloom + irrClean (harvest
-        // follows FLIP, not transplant — for the built-in: 34 + 63 + 2 = 99 days).
+        // follows FLIP, not transplant — for the default built-in: 34 + 63 + 2 = 99 days).
         function freshLotDay0Offsets(recipe) {
             const off = tt => { const t = recipe?.tasks?.find(x => x.taskType === tt); return Number.isInteger(t?.defaultOffset) ? t.defaultOffset : null; };
             const planting = off('planting') ?? 14;
@@ -1530,7 +1550,7 @@
         }
 
         // Days from Day 0 to a fresh lot's simulated irrigation-clean under the given recipe:
-        // flip offset + bloom length + irr-clean offset (built-in: 34 + 63 + 2 = 99).
+        // flip offset + bloom length + irr-clean offset (default built-in: 34 + 63 + 2 = 99).
         function freshIrrSpanDays(recipe) {
             const f = freshLotDay0Offsets(recipe);
             return f.flip + recipeBloomDays(recipe) + f.irrClean;
@@ -1687,22 +1707,21 @@
         }
 
         // ---- Recipe selector UI ----
-        // Rebuild the recipe dropdown: built-in first, then DB recipes in insertion order.
+        // Rebuild the recipe dropdown: the built-ins first (the default on top), then DB recipes in insertion order.
         function populateRecipeSelector(preserveValue = true) {
             const prev = preserveValue ? (recipeSelect.value || activeRecipe?.id) : BUILTIN_RECIPE.id;
             recipeSelect.innerHTML = '';
-            const all = [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
-            for (const r of all) {
+            for (const r of allRecipes()) {
                 if (!r || !Array.isArray(r.tasks)) continue;
                 const opt = document.createElement('option');
                 opt.value = r.id;
-                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : isVegRecipe(r) ? `🌿 ${r.name}` : r.name;
+                opt.textContent = isBuiltinRecipe(r) ? `${r.name} (built-in)` : isVegRecipe(r) ? `🌿 ${r.name}` : r.name;
                 recipeSelect.appendChild(opt);
             }
             recipeSelect.value = [...recipeSelect.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
         }
 
-        // Rebuild the PROJECTION recipe dropdown (header): built-in first, then DB recipes.
+        // Rebuild the PROJECTION recipe dropdown (header): the built-ins first, then DB recipes.
         // Drives fresh projection lots + chain cadence (projectionRecipeId). Independent of the
         // per-lot form recipe selector — a lot can be generated with one recipe while the room's
         // projected chain uses another.
@@ -1711,12 +1730,11 @@
             if (!sel) return;
             const prev = preserveValue ? (sel.value || projectionRecipeId) : BUILTIN_RECIPE.id;
             sel.innerHTML = '';
-            const all = [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
-            for (const r of all) {
+            for (const r of allRecipes()) {
                 if (!r || !Array.isArray(r.tasks) || isVegRecipe(r)) continue;   // flowering rooms project bloom crops
                 const opt = document.createElement('option');
                 opt.value = r.id;
-                opt.textContent = r.id === BUILTIN_RECIPE.id ? `${r.name} (built-in)` : r.name;
+                opt.textContent = isBuiltinRecipe(r) ? `${r.name} (built-in)` : r.name;
                 sel.appendChild(opt);
             }
             sel.value = [...sel.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
@@ -1756,6 +1774,9 @@
                 }
                 DB.ensureStructure();
                 if (!DB.data._CropLabourWizard.recipes) DB.data._CropLabourWizard.recipes = {};
+                // An exported built-in comes back as a user recipe of its own: the built-in would hide one under its id
+                const fromBuiltin = isBuiltinRecipe(parsed.id);
+                if (fromBuiltin) parsed.id = generateRecipeId();
                 const existing = DB.data._CropLabourWizard.recipes[parsed.id];
                 if (existing && !confirm(`A recipe with id "${parsed.id}" (${existing.name}) already exists.\n\nReplace it?`)) {
                     e.target.value = '';
@@ -1774,7 +1795,7 @@
                 refreshPreview();
                 renderRecipeList(); // keep the manager list in sync if it's open
                 notifySitkaTools();
-                showToast(`Recipe imported: ${parsed.name}` + clampNote(clamped));
+                showToast(`Recipe imported: ${parsed.name}` + (fromBuiltin ? ` (as a copy of the built-in, id ${parsed.id})` : '') + clampNote(clamped));
             };
             reader.readAsText(file);
             e.target.value = '';
@@ -1819,10 +1840,10 @@
 
         function cloneRecipeData(recipe) { return JSON.parse(JSON.stringify(recipe)); }
 
-        // Random 6-char id, collision-checked against the built-in + all DB recipes.
+        // Random 6-char id, collision-checked against the built-ins + all DB recipes.
         function generateRecipeId() {
             const used = new Set(Object.keys(DB.data?._CropLabourWizard?.recipes || {}));
-            used.add(BUILTIN_RECIPE.id);
+            for (const b of BUILTIN_RECIPES) used.add(b.id);
             let id;
             do {
                 id = '';
@@ -1832,7 +1853,7 @@
         }
 
         function allRecipes() {
-            return [BUILTIN_RECIPE, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
+            return [...BUILTIN_RECIPES, ...Object.values(DB.data?._CropLabourWizard?.recipes || {})];
         }
 
         // ---- Manager overlay: open/close + list/editor view switching ----
@@ -1862,7 +1883,7 @@
             list.innerHTML = '';
             for (const r of allRecipes()) {
                 if (!r || !Array.isArray(r.tasks)) continue;
-                const isBuiltin = r.id === BUILTIN_RECIPE.id;
+                const isBuiltin = isBuiltinRecipe(r);
 
                 const row = document.createElement('div');
                 row.className = 'recipe-row';
