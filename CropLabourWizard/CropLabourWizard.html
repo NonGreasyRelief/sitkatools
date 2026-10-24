@@ -3924,14 +3924,14 @@
             });
         }
 
-        // Re-project lots fromIndex..5 forward in the chain: each lot starts (Day 0) on the previous lot's
-        // "Cut Clones to Replace Lot" day, read from its current events (nextLotDay0). Then the room-ready
-        // check (pushIfRoomNotReady). Returns the lots that check pushed back.
+        // Re-project lots fromIndex..5 forward in the chain: each lot starts (Day 0) from the previous lot's
+        // last harvest day, read from its current events (nextLotDay0). Then the room-ready check
+        // (pushIfRoomNotReady). Returns the lots that check pushed back.
         function cascadeProjections(roomId, fromIndex, bloomDays, recipe) {
             const pushes = [], mothers = isMotherRoom(DB.data.rooms?.[roomId]);
             for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) {
                 const prevId = projectedLotId(roomId, i - 1);
-                const day0 = nextLotDay0(prevId);
+                const day0 = nextLotDay0(prevId, projectedSlotRecipe(roomId, i, recipe));
                 if (!day0) continue; // previous lot has no schedule — nothing to chain from
                 reAnchorProjectedLot(roomId, i, day0, bloomDays, recipe);
                 if (mothers) continue;   // new mothers move in without a room clean: no room-ready rule
@@ -3955,15 +3955,30 @@
             return isVegRecipe(r) ? r : null;
         }
 
-        // Day 0 of the lot that follows `lotId` in its room: its "Cut Clones to Replace Lot" day (which may
-        // have been moved for that lot), else its harvest end − its recipe's clone-cut days. Null when the
-        // lot has no schedule.
-        function nextLotDay0(lotId) {
+        // Day 0 of the lot that follows `lotId` in its room. A bloom crop: counted back from its LAST harvest day
+        // (endDate on a multi-day harvest) by the clone-cut days of the recipe the next lot follows (`nextRecipe`,
+        // default: this lot's), so the next lot moves in when that recipe plans it after this harvest (the
+        // built-ins: harvest ends Friday → transplant Monday → flip Friday). It doesn't use this lot's own "Cut
+        // Clones to Replace Lot" day: lots scheduled with an older recipe keep that day where the older recipe
+        // put it (user decision 2026-10-24). Mothers: the "Cut Clones to Replace Mothers" day, else Retire
+        // Mothers − its clone-cut days. A bloom lot with no harvest event falls back to its clone cut. Null when
+        // the lot has no schedule.
+        function nextLotDay0(lotId, nextRecipe) {
             const events = eventsForLot(lotId);
+            const h = events.find(ev => ev.taskType === 'harvest');
+            if (h) return computeTaskDate(h.endDate || h.date, -cloneCutDays(nextRecipe || lotRecipeFor(lotId)));
             const cut = events.find(ev => ev.taskType === 'clone_cut');
             if (cut) return cut.date;
-            const h = events.find(ev => ev.taskType === 'harvest') || events.find(ev => ev.taskType === 'retire');   // mothers: from Retire Mothers
-            return h ? computeTaskDate(h.endDate || h.date, -cloneCutDays(lotRecipeFor(lotId))) : null;
+            const r = events.find(ev => ev.taskType === 'retire');   // mothers: from Retire Mothers
+            return r ? computeTaskDate(r.endDate || r.date, -cloneCutDays(lotRecipeFor(lotId))) : null;
+        }
+
+        // The recipe projected lot `index` follows: its own (an earlier generation's, possibly a per-lot
+        // override), else the chain's (`chainRecipe`), else the header projection recipe. Its clone-cut
+        // days set how long before the previous harvest ends this lot's clones are cut.
+        function projectedSlotRecipe(roomId, index, chainRecipe) {
+            const id = getProjectedLots()[projectedLotId(roomId, index)]?.config?.recipeId;
+            return id ? getRecipeById(id) : (chainRecipe || getProjectionRecipe());
         }
 
         // Room-ready rule (as in the push-back plans): projected lot `index` must be transplanted at least
@@ -4015,19 +4030,22 @@
         }
 
         // Resolve the Lot-1 anchor + gate for a room's projection chain. Projections anchor off the
-        // NEWEST real lot in the room (latest createdDate) — specifically its "Cut Clones to Replace
-        // Lot" (clone_cut) day, or its start day (Day 0 / plantingDate) if it has no clone_cut event.
-        // The gate: that newest lot MUST have a generated schedule; if it doesn't (or the room has no
-        // real lots), returns null and Project Crop stays disabled. Returns { lotId, anchorDate } or null.
+        // NEWEST real lot in the room (latest createdDate) — the day the next lot follows it (nextLotDay0:
+        // counted back from its last harvest day by TBA-01's recipe's clone-cut days), or its start day
+        // (Day 0 / plantingDate) if it has neither a harvest nor a clone_cut event. A Mother room: its
+        // replacement clone cut only. The gate: that newest lot MUST have a generated schedule; if it
+        // doesn't (or the room has no real lots), returns null and Project Crop stays disabled.
+        // Returns { lotId, anchorDate } or null.
         function resolveProjectionAnchor(roomId) {
             const lotId = newestRealLotId(roomId);
             if (!lotId) return null;
             const events = eventsForLot(lotId);
             if (events.length === 0) return null; // newest lot not scheduled yet — gate fails
+            const mothers = isMotherRoom(DB.data.rooms?.[roomId]);
             const cut = events.find(ev => ev.taskType === 'clone_cut');
-            let anchorDate = cut ? cut.date : null;
+            let anchorDate = mothers ? (cut ? cut.date : null) : nextLotDay0(lotId, projectedSlotRecipe(roomId, 1, chainRecipeFor(roomId)));
             // Mothers: the next mother lot starts on the replacement clone cut — without one there's no next generation to plan
-            if (!anchorDate && isMotherRoom(DB.data.rooms?.[roomId])) return null;
+            if (!anchorDate && mothers) return null;
             if (!anchorDate) {
                 const cfg = getScheduleConfig(lotId);
                 anchorDate = cfg ? cfg.plantingDate : null; // start day / Day 0 fallback
@@ -4037,8 +4055,8 @@
         }
 
         // Generate/refresh the full 5-lot projection chain for a flowering room.
-        // Lot 1 anchors to the NEWEST real lot's "Cut Clones to Replace Lot" (clone_cut) day —
-        // or that lot's start day if it has no clone_cut event. Gated: that specific newest lot
+        // Lot 1 anchors to the NEWEST real lot's last harvest day (resolveProjectionAnchor) — or that
+        // lot's start day if it has no harvest or clone_cut event. Gated: that specific newest lot
         // must have a generated schedule, else there is nothing to anchor off.
         // Never auto-runs — only via the Project Crop button.
         function generateProjectionsForRoom(roomId) {
@@ -4077,7 +4095,7 @@
                 }
             }
 
-            // Lot 1 anchor: the newest real lot's clone_cut day (or its start day if no clone_cut)
+            // Lot 1 anchor: from the newest real lot's last harvest day (or its start day with no harvest or clone cut)
             const bloom = mothers ? undefined : recipeBloomDays(projRecipe);
             reAnchorProjectedLot(roomId, 1, anchor.anchorDate, bloom, projRecipe);
             const pushes = [mothers ? null : pushIfRoomNotReady(roomId, 1, anchor.lotId), ...cascadeProjections(roomId, 2, bloom, projRecipe)].filter(Boolean);
@@ -4363,10 +4381,10 @@
                 if (fresh && fresh.day0) day0 = fresh.day0;
             }
             if (!day0) {
-                // Fallback: the highest-indexed surviving lot's clone-cut day (today as last resort)
+                // Fallback: the day the highest-indexed surviving lot's next lot starts (today as last resort)
                 day0 = localDateStr(new Date());
                 for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
-                    const d = nextLotDay0(projectedLotId(roomId, i));
+                    const d = nextLotDay0(projectedLotId(roomId, i), chainRecipeFor(roomId) || getProjectionRecipe());
                     if (d) { day0 = d; break; }
                 }
             }
