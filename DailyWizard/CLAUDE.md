@@ -33,7 +33,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 
 ### 🚪 Room Chores
 
-- **What it means:** the Labour & Cost Wizard's Reports give a room chore's hours to the lots scheduled in that room on the day the hours were logged, split by plants when lots share the room (the way a room's electricity is split). That share is the lot's own labour: its labour cost, cost per gram, crop Gantt and summary carry it. Whole-building chores, and room-chore hours on a day the room held no crop, stay shared over every crop harvested in the period. Root `CLAUDE.md` → "Total Cost per Gram"; `EmployeeWizard/REPORTS.md` §6.
+- **What it means:** the Labour & Cost Wizard's Reports give a room chore's hours to the lots in that room on the day the hours were logged (where their grow log puts them; their schedule before it starts), split by their plants that day when lots share the room (the way a room's electricity is split). That share is the lot's own labour: its labour cost, cost per gram, crop Gantt and summary carry it. Whole-building chores, and room-chore hours on a day the room held no crop, stay shared over every crop harvested in the period. Root `CLAUDE.md` → "Total Cost per Gram"; `EmployeeWizard/REPORTS.md` §6.
 - **DailyWizard writes only `task.roomId`.** It never works out the split or writes to lots; the hours entries are unchanged.
 - **Editor:** **Room** — "— Whole building (no room) —", then the building's rooms (`id — name`). Saving with the first option removes `roomId`.
 - **Shown as** a `🚪 {room}` chip on the task row, a line in the detail view's summary, and a note in the hours view.

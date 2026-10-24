@@ -4206,9 +4206,9 @@
         // each with its share by plants. (roomId, day) → [{ c, frac, phase }]; [] when the room held no crop.
         function rptRoomOccupancy(crops) {
             const byRoom = {};
-            for (const c of crops) for (const st of rptCropRoomDays(c)) (byRoom[st.roomId] || (byRoom[st.roomId] = [])).push({ c, plants: rptCropPlants(c), ...st });
+            for (const c of crops) for (const st of rptCropRoomDays(c)) (byRoom[st.roomId] || (byRoom[st.roomId] = [])).push({ c, ...st });
             return (roomId, day) => {
-                const occ = (byRoom[roomId] || []).filter(st => st.from <= day && day <= st.to);
+                const occ = (byRoom[roomId] || []).filter(st => st.from <= day && day <= st.to).map(st => ({ ...st, plants: rptPlantsOn(st.c, day) }));   // plants that day
                 const plants = rSum(occ, st => st.plants);
                 return occ.map(st => ({ c: st.c, frac: st.plants / plants, phase: st.phase }));
             };
@@ -4385,7 +4385,51 @@
 
         // Where a crop was, day by day: cloning room (Day 0 → planting), veg room (→ transplant), flower room (→ end of
         // harvest), dry room (→ bucking), trim room (→ ship). Rooms are the lot's room names.
+        // ---- Where a crop is, day by day: the grow log first (user decision 2026-10-23) ----
+        // While the grow log covers a lot (its first logged day until its plants reach 0, or today for a lot still growing),
+        // the room it recorded each day is where the lot is, in the phase it recorded. Before the first logged day the
+        // schedule says (rptPlannedRoomDays); after the plants reach 0 only its planned dry and trim rooms count. A lot with no
+        // grow log follows its schedule.
+        const RPT_LOG_PHASE = { cloning: 'clone', mother: 'mother', vegetation: 'veg', bloom: 'flower', harvesting: 'flower', drying: 'dry', curing: 'dry' };
         function rptCropRoomDays(c) {
+            const planned = rptPlannedRoomDays(c), L = c.ctls;
+            if (!L?.logged || !Array.isArray(L.counts) || !L.counts.length) return planned;
+            const first = L.counts[0][0], last = L.counts[L.counts.length - 1][0];
+            const zero = L.counts.find(([, n]) => n === 0)?.[0] || null;
+            const today = rToday();
+            const logEnd = zero || (c.closed || last >= today ? last : today);
+            const out = [];
+            const clip = (st, from, to) => { const f = st.from > from ? st.from : from, t = st.to < to ? st.to : to; if (f <= t) out.push({ ...st, from: f, to: t }); };
+            for (const st of planned) {
+                if (st.from < first) clip(st, st.from, dAdd(first, -1));                                    // before the grow log
+                if (st.to > logEnd && (zero ? ['dry', 'trim'].includes(st.phase) : true)) clip(st, dAdd(logEnd, 1), st.to);   // after it
+            }
+            // The grow log's own stays: each recorded room and phase, until the next change
+            for (let i = 0; i < L.counts.length; i++) {
+                const [from, , room, phaseWord] = L.counts[i];
+                if (from > logEnd) break;
+                const next = L.counts[i + 1]?.[0];
+                const to = next && dAdd(next, -1) < logEnd ? dAdd(next, -1) : logEnd;
+                const roomId = rptRoomIdByName(room);
+                if (!roomId || to < from) continue;
+                const phase = RPT_LOG_PHASE[String(phaseWord || '').trim().toLowerCase()] || (DB.data.rooms?.[roomId]?.isFlowering ? 'flower' : c.mother ? 'mother' : 'veg');
+                const prev = out[out.length - 1];
+                if (prev?.fromLog && prev.roomId === roomId && prev.phase === phase && dAdd(prev.to, 1) === from) prev.to = to;
+                else out.push({ roomId, from, to, phase, fromLog: true });
+            }
+            return out.sort((a, b) => a.from.localeCompare(b.from));
+        }
+        // How many plants a lot had on a day, for sharing a room, its chores and its building's property: the grow log's count
+        // that day; before the lot's first count, the count it started with; after its plants reach 0 (in the dry and trim
+        // rooms), the last count it had (the plants harvested). A lot with no grow log uses the count it started with.
+        function rptPlantsOn(c, day) {
+            const L = c.ctls;
+            if (!L?.logged || !Array.isArray(L.counts) || !L.counts.length) return rptCropPlants(c);
+            let n = Number(L.start) || 0, lastPositive = n;
+            for (const [d, k] of L.counts) { if (d > day) break; n = k; if (k > 0) lastPositive = k; }
+            return n > 0 ? n : (lastPositive > 0 ? lastPositive : rptCropPlants(c));
+        }
+        function rptPlannedRoomDays(c) {
             const d = c.dates || {}, r = c.rooms || {}, out = [];
             const add = (name, from, to, phase) => {
                 const roomId = rptRoomIdByName(name);
@@ -4443,7 +4487,7 @@
             const byCrop = new Map(crops.map(c => [c.lotId, { kWh: 0, lights: 0, equip: 0, cost: 0, pctMissing: 0, billDays: 0 }]));
             const unallocated = { kWh: 0, cost: 0 }, missingLights = new Set();
             const stays = [];
-            for (const c of crops) for (const st of rptCropRoomDays(c)) stays.push({ c, plants: rptCropPlants(c), ...st });
+            for (const c of crops) for (const st of rptCropRoomDays(c)) stays.push({ c, ...st });
             if (!stays.length) return { byCrop, unallocated, missingLights, source: cfg.source, rate: cfg.rate };
             const start = stays.reduce((m, st) => st.from < m ? st.from : m, stays[0].from);
             const info = {};
@@ -4469,13 +4513,15 @@
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const dayKwh = new Map(), inBuilding = {}, pool = {};
                 for (const [roomId, r] of Object.entries(info)) {
-                    const occ = r.stays.filter(st => st.from <= d && d <= st.to);
+                    // Each lot in the room that day, with its plants that day
+                    const occ = r.stays.filter(st => st.from <= d && d <= st.to).map(st => ({ ...st, plants: rptPlantsOn(st.c, d) }));
                     const equipKwh = r.equip.reduce((t, e) => t + (e.from <= d ? e.kWh : 0), 0);
                     let lightKwh = 0;
                     if (occ.length) {
                         for (const st of occ) (inBuilding[r.b] || (inBuilding[r.b] = new Map())).set(st.c.lotId, (inBuilding[r.b]?.get(st.c.lotId) || 0) + st.plants);
                         if (r.lightKw > 0) {
-                            const bloom = occ.some(st => st.phase === 'flower' && st.c.dates?.flip && d >= st.c.dates.flip);
+                            // Bloom hours: the grow log says Bloom, or (planned stays) the crop has flipped
+                            const bloom = occ.some(st => st.phase === 'flower' && (st.fromLog || (st.c.dates?.flip && d >= st.c.dates.flip)));
                             const pcts = occ.map(st => st.c.series?.['env.lightPct']?.[d]).filter(v => v != null && Number.isFinite(v));
                             if (!pcts.length) occ.forEach(st => byCrop.get(st.c.lotId) && byCrop.get(st.c.lotId).pctMissing++);
                             lightKwh = r.lightKw * (bloom ? r.bloom : r.veg) * (pcts.length ? Math.min(100, Math.max(0, rMean(pcts))) / 100 : 1);
@@ -4540,7 +4586,7 @@
             const stays = [];
             for (const c of crops) for (const st of rptCropRoomDays(c)) {
                 const b = rooms[st.roomId]?.buildingId;
-                if (b && monthly[b]) stays.push({ lotId: c.lotId, plants: rptCropPlants(c), b, roomId: st.roomId, from: st.from, to: st.to });
+                if (b && monthly[b]) stays.push({ c, lotId: c.lotId, b, roomId: st.roomId, from: st.from, to: st.to });
             }
             if (!stays.length) return { byCrop, unallocated, monthly, share, noLights };
             const start = stays.reduce((m, st) => st.from < m ? st.from : m, stays[0].from);
@@ -4552,7 +4598,7 @@
                     const amount = perMonth / days, inRoom = new Map();   // roomId → Map(lotId → plants)
                     for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) {
                         const m = inRoom.get(st.roomId) || inRoom.set(st.roomId, new Map()).get(st.roomId);
-                        m.set(st.lotId, (m.get(st.lotId) || 0) + st.plants);
+                        m.set(st.lotId, (m.get(st.lotId) || 0) + rptPlantsOn(st.c, d));   // its plants that day
                     }
                     if (!inRoom.size) { unallocated[d] = (unallocated[d] || 0) + amount; continue; }
                     let weights = [...inRoom].map(([roomId, m]) => [roomId, m, share === 'lights' ? Number(rooms[roomId]?.lightCount) || 0 : plantsIn(m)]);
