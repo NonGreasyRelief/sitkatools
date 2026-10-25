@@ -5,7 +5,7 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 - **Planning (floor manager):** pick a building, unlock ✏️ edit mode with their PIN, then add, edit and reorder its daily tasks and write their steps ("🔒 Edit Mode and Floor Manager PINs").
 - **Floor (staff, tablet):** open it from SitkaTools (a tab), pick the building or All Buildings, and work down the list.
 - For any date (default today) it shows the building's tasks for that day, then that building's calendar events for the day (CropLabourWizard, CropProjection, EquipmentWizard, GeneralEvent).
-- Ticks save per day ("Check-offs — Saved Per Day"); four **⏲ timers** on every row time the work ("⏲ Timers"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
+- Ticks save per day ("Check-offs — Saved Per Day"); four **⏲ timers** on every row time the work ("⏲ Timers"); **🧰 Miscellaneous labour**, at the end of every building's list, takes hours on anything that isn't on it ("🧰 Miscellaneous labour"); **⏱ Log** records hours ("⏱ Hours"); past crop and equipment tasks stay under **⏰ Still open** until the floor manager signs them off ("⏰ Still open and ✅ Mark done"); **🌐 Language** switches the screen and the chore text ("🌐 Language").
 
 ## What It Reads and Writes
 
@@ -45,6 +45,16 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 - **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
 - **Changing the room** re-attributes the chore's past hours too (Reports read the room from the task). A closed-out lot keeps the share saved in its summary.
 
+### 🧰 Miscellaneous labour
+
+A built-in row in every building's list (user decision 2026-10-25), for hours on anything that isn't on the list.
+
+- **Where:** after the building's chores (and their 🚪 empty-room button), every day, in the building view and in each building's section of All Buildings, for every building in `DB.buildings` (one with no daily tasks too). Edit mode doesn't move, edit or delete it.
+- **The row:** 🧰 and the name (translated: `UI_TEXT['Miscellaneous labour']`), a "📝 say what you did" chip, **⏱ Log** and the four ⏲ timers, like a chore. No tick box (a spacer keeps it in line), no estimate, no detail view; it isn't in the ✅ count.
+- **Not a task:** it isn't in `tasks`, so opening the DB changes nothing. Its hours and timers save like a chore's under the code **`misc`** (`MISC_CODE`; task codes never hold an `i`, so it can't clash): `labour[<day>].misc`, `timers.misc`. A building with no entry yet gets a bare `{ tasks: [] }` when it first logs Misc hours.
+- **A note is needed:** ⏱ Log asks "What were you doing? (needed)" and won't add the hours without it ("Say what you were doing"). Every other row has the same box, optional ("⏱ Hours").
+- **Elsewhere:** the Labour & Cost Wizard names it "🧰 Miscellaneous labour" (Reports, Labour Log) and counts its hours like a whole-building chore's: shared over the crops harvested in the period.
+
 ### Recurrence Rules
 
 A task appears on a date when its weekday is in `days` **or** its day of month is in `monthDays`, and, for a room chore, a lot is in its room ("🚪 Room Chores"). Saving needs at least one weekday or one month-day.
@@ -79,6 +89,7 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
   - `id` — `le_` + 10 characters (`newLabourId()`). Office and building hours on an event merge entry by entry by it (root `CLAUDE.md` → "Split Database"). Entries without one get a content-derived id when SitkaTools opens the file.
   - `employee` (roster name), or `temp` (typed name) with optional `wage`.
   - `hours` (decimal); `initials` (`{ name, strokes }`, PaperWizard's stroke format); `at` (ISO time logged); `by` (device: building id or `office`).
+  - `note` (optional, up to 200 characters, spaces tidied): what they were doing, in their words. Always there on 🧰 Miscellaneous labour (`labour[<day>].misc`).
   - EmployeeWizard's own `labour_map` entries have no `initials` / `at` / `by`.
 - **`adjustments`** is the record of removals and corrections: removed hours (`entry`, with the floor manager who approved it in `approvedBy`), deleted tasks (`deletedTask`) and office reopens of sign-offs after their day (`reopened`). Records without `entry` are skipped by the hours view and the Labour Log. Nothing reads it for totals.
   - It goes in the file the change is saved in: a building device's own building; for the office, the chore's building, or for a crop or equipment task the top-level `_DailyWizard.adjustments` in Main.json (those hours merge through Main, and a building tablet saving later would overwrite a record kept in its file).
@@ -160,8 +171,8 @@ Each entry is the person's name, the hours and minutes they type (or fill from a
 - **The hours view** (full-screen overlay):
   - the row's entries for that day: name, hours, initials thumbnail, time logged. Labour & Cost Wizard entries say they were entered there, and by which floor manager, with that floor manager's initials (`enteredBy`). An entry later changed in its Tasks tab keeps `signedHours` / `editedAt` / `editedBy` / `editedSignoff`, and the view shows what it was signed for and who approved the change;
   - the day's total against the estimate (chore: staff × minutes; crop task: `estStaff` × `estMinutes`); a room chore adds "🚪 {room}: hours count toward the lots in this room";
-  - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Time from a timer** (today), **Hours**, **Minutes**, **initials pad**.
-- **Add hours** needs a name, more than 0 and at most 16 hours, and at least one stroke.
+  - the form: **Who** (roster names, plus "Someone else (not on the roster)…" with a name box and optional **hourly wage** for temps), **Time from a timer** (today), **Hours**, **Minutes**, **Note** ("Note (optional) — what you were doing"; on 🧰 Miscellaneous labour "What were you doing? (needed)"), **initials pad**. Entries show their note (📝) under the name.
+- **Add hours** needs a name, more than 0 and at most 16 hours, at least one stroke, and on 🧰 Miscellaneous labour a note.
 - **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
 - **Removing** needs a floor manager's PIN on every device ("🔒 Edit Mode and Floor Manager PINs"): ✕ on any entry in a building the device may change, anyone's and any day's, including Labour & Cost Wizard ones. The entry leaves the hours and goes in `adjustments` with `approvedBy`; the hours view shows it struck through ("removed …, approved by …").
 - **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`, leaving the form and the initials being drawn alone.

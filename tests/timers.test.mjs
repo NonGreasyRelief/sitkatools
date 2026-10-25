@@ -32,7 +32,7 @@ export async function run(b, BASE) {
     const shape = await b.run(dw, `const rows = [...document.querySelectorAll('#listContainer .task-row')];
         return rows.map(r => ({ name: r.querySelector('.task-name').textContent, hours: !!r.querySelector(':scope > .hours-btn'), timers: r.querySelectorAll('.timer-slot').length }));`);
     const withHours = shape.filter(r => r.hours);
-    check('every row with ⏱ Log has four timers (chores, crop and equipment tasks, Still open)', withHours.length === 5 && withHours.every(r => r.timers === 4), JSON.stringify(shape));
+    check('every row with ⏱ Log has four timers (chores, 🧰 Miscellaneous labour, crop and equipment tasks, Still open)', withHours.length === 6 && withHours.some(r => r.name === 'Miscellaneous labour') && withHours.every(r => r.timers === 4), JSON.stringify(shape));
     check('rows without ⏱ Log (Upcoming, projections) have none', shape.filter(r => !r.hours).every(r => r.timers === 0), JSON.stringify(shape.filter(r => !r.hours)));
     let s = await slots('Water plants');
     check('a fresh timer reads 00:00 with ▶ and no ✕', s.every(x => x.time === '00:00' && x.go === '▶' && !x.clear && !x.label), JSON.stringify(s));
@@ -178,14 +178,14 @@ export async function run(b, BASE) {
     const files = await splitFiles(b, main, BASE, fixtureDb());
     await openSplit(b, main, BASE, 'B1', files);
     dw = await openTool(b, main, 'DailyWizard');
-    check('building device: its own rows have timers', await b.run(dw, `return document.querySelectorAll('.timer-strip').length === 5;`));
+    check('building device: its own rows have timers (Miscellaneous labour too)', await b.run(dw, `return document.querySelectorAll('.timer-strip').length === 6;`));
     await tap('Water plants', 1, 'go');
     await b.keys(dw, 'EF' + ENTER);
     await dwBuilding(b, dw, 'B2');
     check('…another building\'s rows have none', await b.run(dw, `return document.querySelectorAll('.task-row').length > 0 && document.querySelectorAll('.timer-strip').length === 0;`));
     await dwBuilding(b, dw, 'ALL');
     const allView = await b.run(dw, `return [...document.querySelectorAll('.building-section')].map(s => s.querySelectorAll('.timer-strip').length);`);
-    check('…and in All Buildings only its own section has them', allView[0] === 5 && allView.slice(1).every(n => n === 0), JSON.stringify(allView));
+    check('…and in All Buildings only its own section has them', allView[0] === 6 && allView.slice(1).every(n => n === 0), JSON.stringify(allView));
     await b.sleep(400);
     const out = await saveSplit(b, main);
     const bf = JSON.parse(out['Building-B1.json'] || '{}');

@@ -48,6 +48,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-25 · 🧰 Miscellaneous labour: a built-in row in every building's list (not a stored task; code `misc`) with ⏱ Log and the four timers; its hours need a note saying what was done, and every other row takes an optional note; Reports count it like a whole-building chore. CTLS plant numbers keep coming from the grow logs (destruction goes through them)
 - 2026-10-23 · a chore tied to a room shows only while a lot's current room is that room (ticked, hour-logged or timed chores stay); "Show N chores for empty rooms" reveals the rest; edit mode lists every chore
 - 2026-10-22 · step picture packs load from the main screen for every building at once (a folder per building, or many files); the steps view keeps its buttons
 - 2026-10-22 · 🔒 each floor manager has their own PIN (set by the office, kept as a salted hash in Main.json); DailyWizard asks for it to go into ✏️ edit mode and for every deletion (hours entries, whole tasks), on every device including the office; with it a floor manager may remove any entry in their building, and every removal is recorded with who approved it

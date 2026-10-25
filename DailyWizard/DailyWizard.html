@@ -158,6 +158,9 @@
 
         /* ---- Task rows (core tablet UI) ---- */
         .task-row.empty-room { opacity: 0.55; }
+        /* 🧰 Miscellaneous labour: no tick box (a spacer keeps it in line), a dashed edge */
+        .task-row.misc-row { border-style: dashed; cursor: default; }
+        .task-check-spacer { width: 48px; height: 48px; flex-shrink: 0; }
         .empty-room-toggle { display: block; width: 100%; margin: 10px 0 4px; }
         .task-row {
             display: flex;
@@ -601,6 +604,8 @@
         .hours-entry .who { flex: 1; min-width: 120px; font-weight: 600; }
         .hours-entry .hrs { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
         .hours-entry .when { flex-basis: 100%; font-size: 0.78rem; color: var(--text-secondary); }
+        .hours-entry .entry-note { flex-basis: 100%; font-size: 0.9rem; font-style: italic; overflow-wrap: anywhere; }
+        #hoursComment { width: 100%; min-height: 56px; resize: vertical; font: inherit; }
         .hours-entry svg { width: 96px; height: 30px; background: #fff; border-radius: 4px; flex-shrink: 0; }
         .hours-del { min-width: 44px; min-height: 44px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--danger); font-size: 1rem; cursor: pointer; }
         .hours-total { font-size: 0.9rem; color: var(--text-secondary); text-align: right; }
@@ -923,6 +928,11 @@
                             <label for="hoursM" data-t>Minutes</label>
                             <input type="number" id="hoursM" min="0" max="59" step="5" inputmode="numeric" placeholder="0">
                         </div>
+                    </div>
+                    <!-- 📝 What the hours were for: required on 🧰 Miscellaneous labour, optional on every other row -->
+                    <div class="form-group">
+                        <label for="hoursComment" id="hoursCommentLbl">Note (optional) — what you were doing</label>
+                        <textarea id="hoursComment" maxlength="200" rows="2" autocomplete="off" placeholder="e.g. unloaded the soil delivery" data-t-ph></textarea>
                     </div>
                     <div class="form-group">
                         <label for="hoursPad" data-t>Your initials — draw them with your finger</label>
@@ -1910,6 +1920,30 @@
                 row.appendChild(makeTimerStrip(buildingId, task.code, `${task.emoji || '📋'} ${taskName(task)}`));
             }
 
+            return row;
+        }
+
+        // 🧰 The Miscellaneous labour row: no tick box, no estimate, no detail view; ⏱ Log and the timers like a chore
+        function makeMiscRow(buildingId) {
+            const row = document.createElement('div');
+            row.className = 'task-row misc-row';
+            row.title = T('Hours on anything that isn’t on the list — say what you were doing');
+            const spacer = document.createElement('span');
+            spacer.className = 'task-check-spacer';
+            const emoji = document.createElement('span');
+            emoji.className = 'task-emoji';
+            emoji.textContent = MISC_TASK.emoji;
+            const name = document.createElement('span');
+            name.className = 'task-name';
+            name.textContent = taskName(MISC_TASK);
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.textContent = T('📝 say what you did');
+            row.append(spacer, emoji, name, chip, makeHoursButton({ kind: 'chore', buildingId, code: MISC_CODE, date: selectedDateStr() }));
+            if (timersShown(buildingId)) {
+                row.classList.add('with-timers');
+                row.appendChild(makeTimerStrip(buildingId, MISC_CODE, `${MISC_TASK.emoji} ${taskName(MISC_TASK)}`));
+            }
             return row;
         }
 
@@ -3250,11 +3284,20 @@
         // (_DailyWizard.buildings[<id>].adjustments), so the hours themselves stay clean for every tool that reads them.
         // Check-offs stay session-only, as before.
         const HOURS_TOOLS = ['CropLabourWizard', 'EquipmentWizard'];
+        // 🧰 Miscellaneous labour (user decision 2026-10-25): a built-in row in every building's list, every day, with
+        // ⏱ Log and the four timers, for hours on anything that isn't on the list. It isn't one of the building's tasks
+        // (nothing is stored until someone logs hours or starts a timer): its hours save like a chore's, under the code
+        // 'misc' (task codes never hold an 'i', so it can't clash), and they need a note saying what was done.
+        const MISC_CODE = 'misc';
+        const MISC_TASK = { code: MISC_CODE, emoji: '🧰', name: 'Miscellaneous labour',
+            get translations() { return UI_TEXT['Miscellaneous labour']; } };
+        const NOTE_MAX = 200;
+        const isMisc = ctx => ctx?.kind === 'chore' && ctx.code === MISC_CODE;
         let hoursCtx = null;   // { kind: 'chore' | 'event', buildingId, date, code | eventId } while the hours view is open
         let padStrokes = [];   // the initials being drawn: [[x, y, x, y, …], …], normalized 0–1
 
         const ctxEvent = ctx => ctx?.kind === 'event' ? DB.calendarEvents.find(e => e.id === ctx.eventId) || null : null;
-        const ctxTask = ctx => ctx?.kind === 'chore' ? (DB.dailyBuildings[ctx.buildingId]?.tasks || []).find(t => t.code === ctx.code) || null : null;
+        const ctxTask = ctx => ctx?.kind === 'chore' ? (ctx.code === MISC_CODE ? MISC_TASK : (DB.dailyBuildings[ctx.buildingId]?.tasks || []).find(t => t.code === ctx.code) || null) : null;
         // The live entry list for a row and day; create = make the path when it's missing
         function ctxEntries(ctx, create = false) {
             if (ctx.kind === 'event') {
@@ -3325,6 +3368,7 @@
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursComment').value = '';
             $('hoursTimerPicks').innerHTML = '';
             padStrokes = [];
             renderHours();
@@ -3346,7 +3390,7 @@
                 const task = ctxTask(ctx);
                 if (!task) { closeHours(); return; }
                 title = `${task.emoji || '📋'} ${taskName(task)}`;
-                est = { staff: task.staff ?? 1, minutes: task.minutes ?? 0 };
+                est = isMisc(ctx) ? null : { staff: task.staff ?? 1, minutes: task.minutes ?? 0 };
                 room = choreRoom(ctx.buildingId, task);
             } else {
                 const ev = ctxEvent(ctx);
@@ -3359,7 +3403,9 @@
             $('hoursSub').textContent = `${DB.buildings[ctx.buildingId]?.name || ctx.buildingId} · ${shortDate(ctx.date)}${ctx.date === todayStr() ? T(' (today)') : ''} · ` +
                 (est ? T('estimate 👥 {staff} × {time}', { staff: est.staff, time: fmtMinutes(est.minutes) }) : T('no estimate')) +
                 (ctx.kind === 'event' ? T(' · these hours also show in the Labour & Cost Wizard’s Tasks tab') : '') +
-                (room && !room.missing ? T(' · 🚪 {room}: hours count toward the lots in this room', { room: room.name }) : '');
+                (room && !room.missing ? T(' · 🚪 {room}: hours count toward the lots in this room', { room: room.name }) : '') +
+                (isMisc(ctx) ? T(' · anything that isn’t on the list: say what you were doing') : '');
+            $('hoursCommentLbl').textContent = isMisc(ctx) ? T('What were you doing? (needed)') : T('Note (optional) — what you were doing');
             const list = $('hoursList');
             list.innerHTML = '';
             const entries = ctxEntries(ctx), removed = ctxRemoved(ctx);
@@ -3383,6 +3429,12 @@
             hrs.className = 'hrs';
             hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
             row.append(who, hrs);
+            if (e.note) {
+                const note = document.createElement('span');
+                note.className = 'entry-note';
+                note.textContent = `📝 ${e.note}`;
+                row.appendChild(note);
+            }
             // The worker's own initials, or the floor manager who entered the hours in the Labour & Cost Wizard
             const ini = e.initials?.strokes?.length ? e.initials : e.enteredBy?.strokes?.length ? e.enteredBy : null;
             if (ini) row.appendChild(initialsSvg(ini));
@@ -3497,13 +3549,23 @@
             const hours = h + m / 60;
             if (hours <= 0) { showToast(T('Enter the hours and minutes worked')); return; }
             if (hours > 16) { showToast(T('That’s more than 16 hours — check the entry')); return; }
+            const note = $('hoursComment').value.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
+            if (!note && isMisc(ctx)) { showToast(T('Say what you were doing')); $('hoursComment').focus(); return; }
             if (!padStrokes.length) { showToast(T('Draw your initials to sign the entry')); return; }
             const wage = isTemp ? parseFloat($('hoursWage').value) : NaN;
-            if (ctx.kind === 'chore' && !DB.ensureStructure()._DailyWizard.buildings[ctx.buildingId]) return;
+            if (ctx.kind === 'chore') {
+                const buildings = DB.ensureStructure()._DailyWizard.buildings;
+                // A building with no daily tasks yet gets its bare entry the first time it logs Miscellaneous labour
+                if (!buildings[ctx.buildingId]) {
+                    if (!isMisc(ctx) || !DB.buildings[ctx.buildingId]) return;
+                    buildings[ctx.buildingId] = { tasks: [] };
+                }
+            }
             ctxEntries(ctx, true).push({
                 id: newLabourId(),
                 ...(isTemp ? { temp: name, ...(wage > 0 ? { wage: Math.round(wage * 100) / 100 } : {}) } : { employee: name }),
                 hours: Math.round(hours * 1000) / 1000,
+                ...(note ? { note } : {}),
                 initials: { name, strokes: padStrokes.map(st => st.slice()) },
                 at: new Date().toISOString(),
                 by: DeviceView.building || 'office'
@@ -3513,6 +3575,7 @@
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursComment').value = '';
             $('hoursTimerPicks').innerHTML = '';   // back to "None"; the timer itself is left running for the others
             padStrokes = [];
             drawPad();
@@ -3644,7 +3707,7 @@
         function tidyTimers(bid) {
             const b = DB.dailyBuildings[bid];
             if (!b?.timers) return;
-            const codes = new Set((b.tasks || []).map(t => t.code)), today = todayStr();
+            const codes = new Set([...(b.tasks || []).map(t => t.code), MISC_CODE]), today = todayStr();
             for (const [item, slots] of Object.entries(b.timers)) {
                 for (const n of Object.keys(slots || {})) if (!slots[n]) delete slots[n];
                 let keep = !!slots && Object.keys(slots).length > 0;
@@ -3979,6 +4042,7 @@
                 });
             }
             if (vis.hidden.length && !EditMode.on()) container.appendChild(emptyRoomToggle(vis.hidden.length));
+            if (DB.buildings[buildingId]) container.appendChild(makeMiscRow(buildingId));
 
             appendStillOpenSection(container, dateStr, buildingId);
             appendEventsSection(container, events);
@@ -4039,6 +4103,7 @@
                     });
                 }
                 if (vis.hidden.length) section.appendChild(emptyRoomToggle(vis.hidden.length));
+                section.appendChild(makeMiscRow(bid));
 
                 appendStillOpenSection(section, dateStr, bid);
                 appendEventsSection(section, events);
@@ -4095,6 +4160,14 @@
         // Written for this tool, not by a native speaker: have each language checked before relying on it. A string
         // missing here shows in English. Names (SitkaTools, Labour & Cost Wizard, Floor manager in that tool) stay as they are.
         const UI_TEXT = {
+            "Miscellaneous labour": { fr: "Travaux divers", es: "Trabajos varios", vi: "Công việc khác", zh: "其他杂项工作" },
+            "Hours on anything that isn’t on the list — say what you were doing": { fr: "Heures sur tout ce qui n’est pas dans la liste — dites ce que vous faisiez", es: "Horas en cualquier cosa que no esté en la lista: diga qué estaba haciendo", vi: "Giờ làm cho việc không có trong danh sách — ghi rõ bạn đã làm gì", zh: "清单以外工作的工时——请写明您做了什么" },
+            "📝 say what you did": { fr: "📝 dites ce que vous avez fait", es: "📝 diga qué hizo", vi: "📝 ghi rõ bạn đã làm gì", zh: "📝 写明做了什么" },
+            " · anything that isn’t on the list: say what you were doing": { fr: " · tout ce qui n’est pas dans la liste : dites ce que vous faisiez", es: " · cualquier cosa fuera de la lista: diga qué estaba haciendo", vi: " · việc ngoài danh sách: ghi rõ bạn đã làm gì", zh: " · 清单以外的工作：请写明您做了什么" },
+            "What were you doing? (needed)": { fr: "Que faisiez-vous ? (obligatoire)", es: "¿Qué estaba haciendo? (obligatorio)", vi: "Bạn đã làm gì? (bắt buộc)", zh: "您做了什么？（必填）" },
+            "Note (optional) — what you were doing": { fr: "Note (facultatif) — ce que vous faisiez", es: "Nota (opcional): qué estaba haciendo", vi: "Ghi chú (không bắt buộc) — bạn đã làm gì", zh: "备注（可选）——您做了什么" },
+            "e.g. unloaded the soil delivery": { fr: "ex. déchargé la livraison de terreau", es: "p. ej., descargué la entrega de tierra", vi: "vd: dỡ hàng đất giao tới", zh: "例如：卸下送来的土" },
+            "Say what you were doing": { fr: "Dites ce que vous faisiez", es: "Diga qué estaba haciendo", vi: "Ghi rõ bạn đã làm gì", zh: "请写明您做了什么" },
             "🌐 Language": { fr: "🌐 Langue", es: "🌐 Idioma", vi: "🌐 Ngôn ngữ", zh: "🌐 语言" },
             "Building": { fr: "Bâtiment", es: "Edificio", vi: "Tòa nhà", zh: "楼栋" },
             "📅 Date": { fr: "📅 Date", es: "📅 Fecha", vi: "📅 Ngày", zh: "📅 日期" },

@@ -240,7 +240,7 @@ export async function dwButton(b, dw, rowMatch) {
 }
 
 // In DailyWizard: open a row's hours view, fill it in, draw initials with the pointer, press Add hours
-export async function logHours(b, dw, rowMatch, who, h, m, { temp = null } = {}) {
+export async function logHours(b, dw, rowMatch, who, h, m, { temp = null, note = null } = {}) {
     const opened = await b.run(dw, `
         const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .hours-btn'));
         const row = rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)}));
@@ -256,7 +256,8 @@ export async function logHours(b, dw, rowMatch, who, h, m, { temp = null } = {})
         who.dispatchEvent(new Event('change', { bubbles: true }));
         ${temp ? `document.getElementById('hoursOther').value = ${JSON.stringify(temp)};` : ''}
         document.getElementById('hoursH').value = '${h}';
-        document.getElementById('hoursM').value = '${m}';`);
+        document.getElementById('hoursM').value = '${m}';
+        ${note != null ? `document.getElementById('hoursComment').value = ${JSON.stringify(note)};` : ''}`);
     await b.drag(dw, '#hoursPad', [[0.2, 0.7], [0.25, 0.3], [0.3, 0.7], [0.35, 0.3]]);
     await b.drag(dw, '#hoursPad', [[0.5, 0.3], [0.5, 0.7]]);
     const strokes = await b.run(dw, 'return padStrokes.length;');

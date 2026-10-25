@@ -256,6 +256,7 @@
         .log-table td.log-notes { min-width: 150px; }
         .log-flag.warn { color: var(--warning); border-color: rgba(243, 156, 18, 0.5); }
         .log-flag.bad { color: var(--danger); border-color: rgba(231, 76, 60, 0.5); }
+        .log-flag.note { color: var(--text-primary); font-style: italic; font-size: 0.8rem; white-space: normal; }
         .log-sig { width: 96px; height: 30px; background: #fff; border-radius: 4px; border: 1px solid var(--border); cursor: zoom-in; display: block; padding: 0; }
         .log-sig svg { width: 100%; height: 100%; display: block; }
         .log-nosig { font-size: 0.75rem; color: var(--warning); }
@@ -2949,6 +2950,7 @@
                     const who = (en.temp != null
                         ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · ${Number(en.wage) > 0 ? `$${Number(en.wage)}/hr` : 'no wage'}</span>`
                         : escapeHtml(en.employee)) +
+                        (en.note ? `<span class="entry-temp-tag" title="${escapeHtml(en.note)}">📝 ${escapeHtml(en.note.length > 40 ? en.note.slice(0, 40) + '…' : en.note)}</span>` : '') +
                         // Logged on the floor in DailyWizard, signed with drawn initials — or entered here, signed off by a floor manager
                         (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}${en.editedSignoff?.name ? ` · change approved by ${escapeHtml(en.editedSignoff.name)}` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>`
                         : en.enteredBy ? `<span class="entry-temp-tag" title="Entered here and signed off by ${escapeHtml(en.enteredBy.name || '?')} (floor manager)${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.editedAt ? ` · changed${en.signedHours !== undefined ? ` from ${fmtHours(en.signedHours)}` : ''}${en.editedSignoff?.name ? `, approved by ${escapeHtml(en.editedSignoff.name)}` : ''}` : ''}">✍️ ${escapeHtml(en.enteredBy.name || '?')}${en.editedAt ? ' · changed' : ''}</span>`
@@ -4174,10 +4176,14 @@
         // record there but don't count. Temps logged in DailyWizard carry no wage, so their hours count in hours, not $.
         // A chore with a room (task.roomId, one of its building's rooms) is a room chore: rptApplyChores gives its hours
         // to the crops in that room that day. `logged` is the entry's hours; `hours` is what's left for the shared pool.
+        // 🧰 DailyWizard's built-in Miscellaneous labour row: in every building, not one of its tasks; its hours are under
+        // the code 'misc' and count like a whole-building chore's (each entry says what was done in its `note`)
+        const DW_MISC = { code: 'misc', emoji: '🧰', name: 'Miscellaneous labour' };
+        const dwChore = (bid, code) => code === DW_MISC.code ? DW_MISC : (DB.data._DailyWizard?.buildings?.[bid]?.tasks || []).find(x => x?.code === code) || null;
         function rptChoreLabour() {
             const rows = [];
             for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
-                const tasks = new Map((b?.tasks || []).map(t => [t?.code, t]));
+                const tasks = new Map([...(b?.tasks || []).map(t => [t?.code, t]), [DW_MISC.code, DW_MISC]]);
                 for (const [d, byCode] of Object.entries(b?.labour || {})) {
                     if (!isDay(d) || !byCode || typeof byCode !== 'object') continue;
                     for (const [code, entries] of Object.entries(byCode)) {
@@ -4257,7 +4263,7 @@
         // A chore's name for the charts (key `<building>:<code>`): the chore as it is now, else as the crop saved it
         function rptChoreLabel(key, saved) {
             const [bid, code] = String(key).split(':');
-            const t = (DB.data._DailyWizard?.buildings?.[bid]?.tasks || []).find(x => x?.code === code);
+            const t = dwChore(bid, code);
             return t ? `${t.emoji || '📋'} ${t.name}` : saved || `📋 Daily task ${code}`;
         }
 
@@ -6915,7 +6921,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 return `🚪 → ${shares.map(x => `Lot ${x.c.lotId}${shares.length > 1 ? ' ' + pct(x.frac) : ''}`).join(' · ')}${shares.length > 1 ? ' (by plants)' : ''}`;
             };
             for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
-                const tasks = new Map((b?.tasks || []).map(t => [t.code, t]));
+                const tasks = new Map([...(b?.tasks || []).map(t => [t.code, t]), [DW_MISC.code, DW_MISC]]);
                 const choreInfo = (code) => {
                     const t = tasks.get(code);
                     return {
@@ -6984,6 +6990,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const flags = (r) => {
                 const out = [], en = r.en;
                 if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}${r.removed.approvedBy ? ` · approved by ${r.removed.approvedBy}` : ''}`]);
+                if (en.note) out.push(['note', `📝 ${en.note}`]);   // what they were doing, in their words (DailyWizard)
                 if (!en.initials?.strokes?.length) out.push(en.enteredBy?.strokes?.length ? ['', `🏢 entered in the Tasks tab by ${en.enteredBy.name || '?'} (floor manager)`]
                     : ['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
                 if (en.at) {
