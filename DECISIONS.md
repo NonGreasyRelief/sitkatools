@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-25 · 🖨️ Print year (Annual view only) prints the year's filtered tasks on one landscape page for a black-and-white printer: a letter code per task type with a legend instead of emoji
 - 2026-10-22 · new lots may say who the plants came from (Received from, optional) and keep the count they started with; close-out warns when the lot's plant history isn't saved for the CTLS numbers
 - 2026-10-22 · SitkaTools and PaperWizard left open overnight roll over to the new day by themselves (each minute, tab shown, focus): what showed today follows it, anything picked by hand stays put; DailyWizard already did
 - 2026-10-22 · 🔒 a lot with a grow log is locked to it: plant count, phase and room change only through PaperWizard (Lot Manager read-only, no delete, its room can't be deleted or re-homed; Accept still sets the room); close-out needs 0 plants and finished daily pages with no grow-log gaps (no harvest log required); a split from a locked parent takes only plants its grow log recorded as moved; planned rooms stay editable

@@ -2921,6 +2921,7 @@
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewWeekBtn" title="7-day stacked view">📅 7-Day</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewYearBtn" title="Annual (12-month) overview">🗓️ Annual</button>
                 </div>
+                <button type="button" class="btn btn-secondary hidden" id="printYearBtn" title="Print this year's task calendar in black and white, with the filters that are on">🖨️ Print year</button>
             </div>
 
             <!-- Calendar grid -->
@@ -7884,6 +7885,7 @@
                 $('viewMonthBtn').addEventListener('click', () => setView('month'));
                 $('viewWeekBtn').addEventListener('click', () => setView('week'));
                 $('viewYearBtn').addEventListener('click', () => setView('year'));
+                $('printYearBtn').addEventListener('click', () => this.printAnnual());
 
                 // Holiday display toggle (on by default)
                 $('showHolidaysToggle').addEventListener('change', (e) => {
@@ -8400,6 +8402,189 @@
                         });
                     });
                 });
+            },
+
+            // =====================================================
+            // 🖨️ Print year — the annual view on one landscape page for a black-and-white printer
+            // (user decision 2026-10-25). Emoji print as grey blobs and several task types share one,
+            // so each task type gets a letter code, listed in the legend. Prints the filtered events
+            // (the filters on, and a building device's own building), like the screen.
+            // =====================================================
+
+            // A fixed code per built-in task type, so a code means the same on every printout
+            PRINT_CODES: {
+                clone_cut_prep: 'CL', planting: 'PL', clone_room_clean: 'CR', ipm_spray_veg_early: 'S1',
+                topping: 'TP', order_ipm: 'OI', layout_coco_blocks: 'LB', hydrate_coco_blocks: 'HB',
+                undercanopy_lights: 'UL', transplant: 'TR', ipm_spray_veg_second: 'S2', veg_room_clean: 'VR',
+                deploy_ipm: 'DI', prune: 'PR', flip: 'FL', ipm_spray_flower_start: 'S3', trellis_layout: 'TL',
+                ipm_spray_flower_week2: 'S4', leafpick_early: 'LE', clone_cut: 'CC', leafpick_late: 'LL',
+                harvest: 'HV', room_clean: 'GR', tank_irrigation_clean: 'TI', tote_prep: 'TO', bucking: 'BK',
+                lab_sample: 'LS', trim_room_prep: 'PT', trim: 'TM', machine_trim: 'MT', dry_room_clean: 'DR',
+                weigh_ship: 'WS', equipment_maintenance: 'EQ'
+            },
+
+            // The task type an event prints under: an EquipmentWizard event with no taskType counts as
+            // equipment maintenance (as the filters do); anything else without one is "Other"
+            _printType(ev) {
+                return ev.taskType || (ev.sourceTool === 'EquipmentWizard' ? 'equipment_maintenance' : null);
+            },
+
+            // Codes for the task types present: the fixed ones, then custom types from their name's
+            // initials (made unique with a digit), and OT for events with no task type
+            _printCodes(types) {
+                const codes = new Map();
+                const used = new Set(Object.values(this.PRINT_CODES));
+                used.add('OT');
+                for (const tt of types) {
+                    if (!tt) codes.set(tt, 'OT');
+                    else if (this.PRINT_CODES[tt]) codes.set(tt, this.PRINT_CODES[tt]);
+                }
+                for (const tt of [...types].filter(t => t && !this.PRINT_CODES[t]).sort()) {
+                    const words = String(this._taskTypeName(tt) || tt).toUpperCase().match(/[A-Z0-9]+/g) || ['X'];
+                    let code = (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).padEnd(2, 'X');
+                    for (let n = 2; used.has(code); n++) code = code[0] + n;
+                    used.add(code);
+                    codes.set(tt, code);
+                }
+                return codes;
+            },
+
+            printAnnual() {
+                const year = this.currentYear;
+                const events = this._visibleEvents || this.filteredEvents();
+                const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+
+                // Day → task type → { n, projected, completed } for the year (multi-day events count on every
+                // day, stepping by calendar day as _annualClusters does)
+                const byDay = new Map();
+                const totals = new Map(); // task type → events in the year
+                for (const ev of events) {
+                    const endStr = ev.endDate || ev.date;
+                    if (!ev.date || endStr < yStart || ev.date > yEnd) continue;
+                    const tt = this._printType(ev);
+                    totals.set(tt, (totals.get(tt) || 0) + 1);
+                    const end = parseLocalDate(endStr < yEnd ? endStr : yEnd);
+                    for (const d = parseLocalDate(ev.date > yStart ? ev.date : yStart); d <= end; d.setDate(d.getDate() + 1)) {
+                        const ds = localDate(d);
+                        const day = byDay.get(ds) || byDay.set(ds, new Map()).get(ds);
+                        const t = day.get(tt) || { n: 0, projected: 0, completed: 0 };
+                        t.n++;
+                        if (ev.sourceTool === 'CropProjection') t.projected++;
+                        if (ev.completed) t.completed++;
+                        day.set(tt, t);
+                    }
+                }
+                const codes = this._printCodes([...totals.keys()]);
+                const nameOf = tt => tt ? (this._taskTypeName(tt) || tt) : 'Other';
+
+                const MAX_CODES = 4;
+                const cell = (ds, dayNum) => {
+                    const day = byDay.get(ds);
+                    const holiday = this.showHolidays ? Holidays.forDate(ds) : null;
+                    const items = day ? [...day.entries()].sort((a, b) => b[1].n - a[1].n || codes.get(a[0]).localeCompare(codes.get(b[0]))) : [];
+                    const shown = items.length > MAX_CODES ? items.slice(0, MAX_CODES - 1) : items;
+                    const clustered = items.some(([, t]) => t.n >= 2);
+                    let codesHtml = shown.map(([tt, t]) => {
+                        let c = escapeHtml(codes.get(tt)) + (t.n >= 2 ? `×${t.n}` : '');
+                        if (t.projected === t.n) c = `(${c})`;
+                        if (t.completed === t.n) c = `<s>${c}</s>`;
+                        return `<span class="c">${c}</span>`;
+                    }).join('');
+                    if (items.length > shown.length) codesHtml += `<span class="c more">+${items.length - shown.length}</span>`;
+                    const cls = ['d', clustered ? 'cl' : '', holiday ? 'hol' : ''].filter(Boolean).join(' ');
+                    return `<div class="${cls}" data-date="${ds}"${holiday ? ` title="${escapeHtml(holiday.name)}"` : ''}><span class="n">${dayNum}</span>${codesHtml}</div>`;
+                };
+
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+                let monthsHtml = '';
+                for (let m = 0; m < 12; m++) {
+                    const firstDow = new Date(year, m, 1).getDay();
+                    const daysInMonth = new Date(year, m + 1, 0).getDate();
+                    let g = 'SMTWTFS'.split('').map(l => `<div class="dow">${l}</div>`).join('');
+                    for (let i = 0; i < firstDow; i++) g += '<div class="d out"></div>';
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        g += cell(`${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`, day);
+                    }
+                    // Always six week rows, so every month is the same height
+                    for (let i = firstDow + daysInMonth; i < 42; i++) g += '<div class="d out"></div>';
+                    monthsHtml += `<div class="m"><div class="mt">${monthNames[m]}</div><div class="mg">${g}</div></div>`;
+                }
+
+                // Legend: every task type in the year, by code
+                const legend = [...totals.entries()].sort((a, b) => codes.get(a[0]).localeCompare(codes.get(b[0])))
+                    .map(([tt, n]) => `<div class="li" data-code="${escapeHtml(codes.get(tt))}"><b>${escapeHtml(codes.get(tt))}</b> ${escapeHtml(nameOf(tt))} (${n})</div>`).join('');
+                const holidays = this.showHolidays ? Holidays.getForYear(year) : [];
+                const holidayHtml = holidays.length
+                    ? `<div class="hl"><b>Holidays (underlined):</b> ${holidays.map(h => `${escapeHtml(h.date.slice(5).replace('-', '/'))} ${escapeHtml(h.name)}`).join(' · ')}</div>` : '';
+
+                // What's printed: the filters on (values of one key with "or", keys with " · ")
+                const parts = [];
+                for (const def of this.FILTER_KEYS) {
+                    const vals = this.filters.filter(f => f.key === def.key).map(f => this._filterLabel(f.key, f.value));
+                    if (vals.length) parts.push(`${def.label}: ${vals.join(' or ')}`);
+                }
+                const filterText = parts.length ? `Filters: ${parts.join(' · ')}` : 'All tasks (no filters)';
+                const buildingText = DeviceView.building ? `Building: ${DB.data?.buildings?.[DeviceView.building]?.name || DeviceView.building} · ` : '';
+
+                const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${year} Annual Task Calendar</title>
+<style>
+    @page { size: letter landscape; margin: 0.4in; }
+    * { box-sizing: border-box; }
+    html, body { background: #fff; color: #000; }
+    body { margin: 0; padding: 12px; font-family: Arial, Helvetica, sans-serif; font-size: 8pt; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1.5pt solid #000; padding-bottom: 3pt; margin-bottom: 5pt; }
+    .head h1 { font-size: 14pt; margin: 0; }
+    .head .sub { font-size: 8pt; text-align: right; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5pt 8pt; }
+    .m { break-inside: avoid; }
+    .mt { font-weight: bold; font-size: 8.5pt; text-align: center; border-bottom: 0.75pt solid #000; margin-bottom: 1pt; }
+    .mg { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .dow { font-size: 6pt; font-weight: bold; text-align: center; color: #000; }
+    .d { height: 0.29in; border: 0.4pt solid #999; margin: -0.2pt; padding: 0.5pt 1pt; overflow: hidden; line-height: 1; }
+    .d.out { border-color: #ddd; }
+    .d.cl { border: 1.4pt solid #000; position: relative; z-index: 1; }
+    .n { display: block; font-size: 5.5pt; color: #000; }
+    .hol .n { text-decoration: underline; font-weight: bold; }
+    .c { display: inline-block; font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 5.5pt; margin-right: 1pt; white-space: nowrap; }
+    .c.more { font-weight: normal; }
+    .legend { margin-top: 6pt; border-top: 1pt solid #000; padding-top: 3pt; columns: 5; column-gap: 10pt; font-size: 6.5pt; }
+    .li { break-inside: avoid; }
+    .li b { font-family: 'Courier New', Courier, monospace; display: inline-block; min-width: 2.2em; }
+    .key, .hl { margin-top: 3pt; font-size: 6.5pt; }
+    .toolbar { margin-top: 10px; text-align: center; }
+    .toolbar button { padding: 6px 20px; font-size: 0.9rem; cursor: pointer; margin: 0 4px; }
+    @media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+    <div class="head">
+        <h1>${year} — Annual Task Calendar</h1>
+        <div class="sub"><div class="filters">${escapeHtml(filterText)}</div><div>${escapeHtml(buildingText)}Printed ${escapeHtml(localDate())}</div></div>
+    </div>
+    <div class="grid">${monthsHtml}</div>
+    <div class="legend">${legend || '<div class="li">No tasks in this year with these filters.</div>'}</div>
+    <div class="key"><b>Key:</b> (HV) projected · <s>HV</s> done · HV×2 two or more that day (thick border) · +N more task types that day</div>
+    ${holidayHtml}
+    <div class="toolbar">
+        <button onclick="window.print()">🖨️ Print</button>
+        <button onclick="window.close()">Close</button>
+    </div>
+    <script>window.onload = function() { window.focus(); }<\/script>
+</body>
+</html>`;
+
+                const win = window.open('', '_blank', 'width=1100,height=800,scrollbars=yes');
+                if (!win) {
+                    alert('Pop-up blocked. Please allow pop-ups to print the annual calendar.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
             },
 
             // =====================================================
@@ -9038,6 +9223,8 @@
                 for (const [mode, btn] of Object.entries(viewBtns)) {
                     if (btn) btn.classList.toggle('active', mode === this.viewMode);
                 }
+                // 🖨️ Print year is offered only in the Annual view (user decision 2026-10-25)
+                $('printYearBtn')?.classList.toggle('hidden', this.viewMode !== 'year');
             },
 
             renderGrid() {
