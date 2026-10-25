@@ -4192,6 +4192,9 @@
             sheetHome: {},        // 'lot|sheet' → building whose file holds that sheet's lot-level data (constants)
             diskPaper: {},        // building id → _PaperWizard.entries as that file holds it (opened / last saved)
             diskTransfers: {},    // building id → _LotTransfers as that file holds it (opened / last saved)
+            facilityQueues: {},   // building id → its facility queue (_PaperWizard.facilityQueue) as that file holds it / this device last saved
+            mainFacility: {},     // Main's _PaperWizard.facilityEntries as opened / last saved — what a building's queue is released against
+            facilityPickups: [],  // office: [{ id, n }] facility pages taken in from building queues on open (not in Main yet)
             pending: null,        // manual (link) save in progress
 
             roleLabel(role = this.role, db = DB.data) {
@@ -4209,9 +4212,12 @@
                 this.metas = {};
                 this.hashes = {};
                 this.baseline = null;
-                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {} };
+                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {}, facility: {} };
                 this.overlays = {};
                 this.mainLabour = {};
+                this.facilityQueues = {};
+                this.mainFacility = {};
+                this.facilityPickups = [];
                 this.paperHome = {};
                 this.sheetHome = {};
                 this.diskPaper = {};
@@ -4260,7 +4266,11 @@
                 const db = JSON.parse(JSON.stringify(main));
                 const stamps = db._fieldStamps || {};
                 delete db._fieldStamps;
-                this.stamps = { lots: stamps.lots || {}, events: stamps.events || {}, labour: stamps.labour || {}, labourRemoved: stamps.labourRemoved || {} };
+                this.stamps = { lots: stamps.lots || {}, events: stamps.events || {}, labour: stamps.labour || {}, labourRemoved: stamps.labourRemoved || {}, facility: stamps.facility || {} };
+                // Facility paperwork as Main holds it — a building releases its queued pages once Main has them
+                this.mainFacility = JSON.parse(JSON.stringify(db._PaperWizard?.facilityEntries || {}));
+                this.facilityQueues = {};
+                this.facilityPickups = [];
                 // Labour hours as Main holds them (ids filled in) — a building device tidies its updates against it
                 ensureLabourIds(db.calendarEvents || []);
                 this.mainLabour = {};
@@ -4298,6 +4308,17 @@
                         Object.assign(db._DailyWizard.buildings, daily);
                     }
                     this.overlays[id] = { lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} };
+                    // The building's own forms (its sanitation form…) live in its file
+                    const own = bf._PaperWizard?.buildingEntries?.[id];
+                    if (own && typeof own === 'object' && Object.keys(own).length) {
+                        if (!db._PaperWizard) db._PaperWizard = {};
+                        if (!db._PaperWizard.buildingEntries) db._PaperWizard.buildingEntries = {};
+                        db._PaperWizard.buildingEntries[id] = JSON.parse(JSON.stringify(own));
+                    }
+                    // Facility pages it started, queued until the office takes them into Main
+                    this.facilityQueues[id] = JSON.parse(JSON.stringify(bf._PaperWizard?.facilityQueue || {}));
+                    const n = this.applyFacilityQueue(db, id, this.facilityQueues[id]);
+                    if (n) this.facilityPickups.push({ id, n });
                     for (const [tid, rec] of Object.entries(bf._LotTransfers || {})) {
                         if (!db._LotTransfers) db._LotTransfers = {};
                         const existing = db._LotTransfers[tid];
@@ -4453,6 +4474,91 @@
                 return { value, at: prev && sameValue(prev.value, value) && prev.at ? prev.at : now, entries, removed };
             },
 
+            // ---- Facility paperwork queue (user decision 2026-10-25) ----
+            // Company-wide forms (destruction, inventory logs) live in Main.json, under the origin that started each
+            // page (_PaperWizard.facilityEntries[origin], origin = 'office' or a building id). A building device can't
+            // save Main, so the pages it starts or changes go in its own file's queue
+            // (_PaperWizard.facilityQueue: 'sheetId|key' → { inst, at }, 'sheetId|#' → { rest, at } for the sheet's
+            // other values). Opening the files applies a queued page over Main's copy unless the office changed that
+            // page later (Main._fieldStamps.facility); the office then saves it into Main. The building drops a queued
+            // page from its queue (releases it) once Main holds it, or the office has changed it since. Whole page,
+            // newest wins; a building only ever queues its own origin, so two buildings never compete.
+            facilityPart(store, sheetId, key) {
+                const entry = store?.[sheetId];
+                if (!entry || typeof entry !== 'object') return null;
+                if (key === '#') {
+                    const rest = {};
+                    for (const [k, v] of Object.entries(entry)) if (k !== 'instances') rest[k] = v;
+                    return Object.keys(rest).length ? rest : null;
+                }
+                return entry.instances?.[key] ?? null;
+            },
+            setFacilityPart(db, origin, sheetId, key, value) {
+                if (!db._PaperWizard) db._PaperWizard = {};
+                const fe = db._PaperWizard.facilityEntries || (db._PaperWizard.facilityEntries = {});
+                const store = fe[origin] || (fe[origin] = {});
+                const entry = store[sheetId] || (store[sheetId] = {});
+                if (key === '#') {
+                    for (const k of Object.keys(entry)) if (k !== 'instances') delete entry[k];
+                    if (value) Object.assign(entry, JSON.parse(JSON.stringify(value)));
+                } else {
+                    const insts = entry.instances || (entry.instances = {});
+                    if (value) insts[key] = JSON.parse(JSON.stringify(value)); else delete insts[key];
+                }
+                if (entry.instances && !Object.keys(entry.instances).length) delete entry.instances;
+                if (!Object.keys(entry).length) delete store[sheetId];
+                if (!Object.keys(store).length) delete fe[origin];
+                if (!Object.keys(fe).length) delete db._PaperWizard.facilityEntries;
+            },
+            splitQueueKey(pk) {
+                const i = String(pk).lastIndexOf('|');
+                return [pk.slice(0, i), pk.slice(i + 1)];
+            },
+            // Merge: a building's queued pages over Main's copy; returns how many differ from Main (pages to take in)
+            applyFacilityQueue(db, id, queue) {
+                let n = 0;
+                for (const [pk, item] of Object.entries(queue || {})) {
+                    if (!item || typeof item !== 'object') continue;
+                    if ((item.at || 0) <= (this.stamps.facility[`${id}|${pk}`] || 0)) continue;   // the office changed it since
+                    const [sheetId, key] = this.splitQueueKey(pk);
+                    const value = key === '#' ? (item.rest || null) : (item.inst || null);
+                    if (!sameValue(value, this.facilityPart(this.mainFacility[id], sheetId, key))) n++;
+                    this.setFacilityPart(db, id, sheetId, key, value);
+                }
+                return n;
+            },
+            // Building device: its queue — what it had queued, plus its own facility pages changed since the files were
+            // opened (an unchanged page keeps its time), minus what Main holds now or the office has changed since
+            buildingFacilityQueue(db, id, now) {
+                const base = JSON.parse(this.baseline)._PaperWizard?.facilityEntries?.[id] || {};
+                const cur = db._PaperWizard?.facilityEntries?.[id] || {};
+                const q = JSON.parse(JSON.stringify(this.facilityQueues[id] || {}));
+                for (const sheetId of new Set([...Object.keys(base), ...Object.keys(cur)])) {
+                    const keys = new Set(['#', ...Object.keys(base[sheetId]?.instances || {}), ...Object.keys(cur[sheetId]?.instances || {})]);
+                    for (const key of keys) {
+                        const value = this.facilityPart(cur, sheetId, key);
+                        if (sameValue(this.facilityPart(base, sheetId, key), value)) continue;
+                        const pk = `${sheetId}|${key}`, prev = q[pk];
+                        const same = prev && sameValue(key === '#' ? prev.rest : prev.inst, value);
+                        q[pk] = { ...(key === '#' ? { rest: value } : { inst: value }), at: same && prev.at ? prev.at : now };
+                    }
+                }
+                for (const [pk, item] of Object.entries(q)) {
+                    const [sheetId, key] = this.splitQueueKey(pk);
+                    const value = key === '#' ? item?.rest : item?.inst;
+                    if (sameValue(value, this.facilityPart(this.mainFacility[id], sheetId, key)) ||
+                        (this.stamps.facility[`${id}|${pk}`] || 0) >= (item?.at || 0)) delete q[pk];
+                }
+                return q;
+            },
+            // Office: facility pages taken in from building queues on open still need saving into Main
+            promptFacility() {
+                const names = this.facilityPickups.map(p => `${p.n} from ${this.roleLabel(p.id)}`).join(', ');
+                const total = this.facilityPickups.reduce((a, p) => a + p.n, 0);
+                markUnsaved();
+                setTimeout(() => showSyncToast(`📥 ${total} facility page${total === 1 ? '' : 's'} (${names}) — 💾 Save DB to bring ${total === 1 ? 'it' : 'them'} into Main`), 0);
+            },
+
             // Which building's file a paperwork instance / sheet belongs in. Sticky once saved somewhere;
             // new paperwork filled on a building device goes in that device's file; otherwise by room.
             homeFor(sticky, db, roomName, lotId) {
@@ -4569,6 +4675,17 @@
                 }
                 const entries = main._PaperWizard?.entries || {};
                 if (main._PaperWizard) delete main._PaperWizard.entries;
+                // Building forms go to their building's file (a removed building's stay in Main, like DailyWizard's);
+                // facility forms stay in Main. Empty containers are left out, so a building never sees an office change.
+                if (main._PaperWizard?.buildingEntries) {
+                    for (const id of buildingIds) delete main._PaperWizard.buildingEntries[id];
+                    if (!Object.keys(main._PaperWizard.buildingEntries).length) delete main._PaperWizard.buildingEntries;
+                }
+                if (main._PaperWizard?.facilityEntries) {
+                    const fe = main._PaperWizard.facilityEntries;
+                    for (const [o, st] of Object.entries(fe)) if (!st || typeof st !== 'object' || !Object.keys(st).length) delete fe[o];
+                    if (!Object.keys(fe).length) delete main._PaperWizard.facilityEntries;
+                }
                 delete main._LotTransfers;
                 main._fieldStamps = JSON.parse(JSON.stringify(this.stamps));
                 parts[SPLIT_MAIN] = main;
@@ -4589,6 +4706,13 @@
                 });
                 for (const id of buildingIds) partFor(id);
                 for (const [id, v] of Object.entries(dailyAll)) if (buildingIds.includes(id)) partFor(id)._DailyWizard.buildings[id] = v;
+                for (const id of buildingIds) {
+                    const own = db._PaperWizard?.buildingEntries?.[id];
+                    if (own && typeof own === 'object' && Object.keys(own).length) partFor(id)._PaperWizard.buildingEntries = { [id]: JSON.parse(JSON.stringify(own)) };
+                    // The queue as that file holds it — only its own building changes it (buildingFacilityQueue)
+                    const q = this.facilityQueues[id];
+                    if (q && Object.keys(q).length) partFor(id)._PaperWizard.facilityQueue = JSON.parse(JSON.stringify(q));
+                }
                 const homes = { paper: {}, sheet: {} };
                 const hand = this.handoffs(db);
                 for (const [lotId, sheets] of Object.entries(entries)) {
@@ -4697,6 +4821,21 @@
                         if (this.stamps.labour[ev.id]) delete this.stamps.labour[ev.id][id];
                     }
                 }
+                // Facility pages the office changed (pages taken in from building queues on open are in the baseline)
+                const bfe = base._PaperWizard?.facilityEntries || {}, cfe = db._PaperWizard?.facilityEntries || {};
+                for (const origin of new Set([...Object.keys(bfe), ...Object.keys(cfe)])) {
+                    const b = bfe[origin] || {}, c = cfe[origin] || {};
+                    for (const sheetId of new Set([...Object.keys(b), ...Object.keys(c)])) {
+                        for (const key of new Set(['#', ...Object.keys(b[sheetId]?.instances || {}), ...Object.keys(c[sheetId]?.instances || {})])) {
+                            if (!sameValue(this.facilityPart(b, sheetId, key), this.facilityPart(c, sheetId, key))) this.stamps.facility[`${origin}|${sheetId}|${key}`] = now;
+                        }
+                    }
+                }
+                // A stamp is needed only while the page exists or a building still queues it
+                for (const sk of Object.keys(this.stamps.facility)) {
+                    const i = sk.indexOf('|'), origin = sk.slice(0, i), [sheetId, key] = this.splitQueueKey(sk.slice(i + 1));
+                    if (this.facilityPart(cfe[origin], sheetId, key) === null && !this.facilityQueues[origin]?.[`${sheetId}|${key}`]) delete this.stamps.facility[sk];
+                }
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const id of Object.keys(this.stamps.lots)) if (!db.lots?.[id]) delete this.stamps.lots[id];
                 for (const id of Object.keys(this.stamps.events)) if (!liveEvents.has(id)) delete this.stamps.events[id];
@@ -4766,11 +4905,25 @@
                 for (const ev of probe.calendarEvents || []) {
                     for (const f of EVENT_FLOOR_FIELDS) setOrDelete(ev, f, baseEvents.get(ev.id)?.[f]);
                 }
+                // This building's own facility pages go in its queue, not in Main
+                const ownFacility = base._PaperWizard?.facilityEntries?.[this.role];
+                if (probe._PaperWizard) {
+                    const fe = probe._PaperWizard.facilityEntries || (probe._PaperWizard.facilityEntries = {});
+                    if (ownFacility) fe[this.role] = JSON.parse(JSON.stringify(ownFacility)); else delete fe[this.role];
+                    if (!Object.keys(fe).length) delete probe._PaperWizard.facilityEntries;
+                }
                 const a = this.split(probe)[SPLIT_MAIN];
                 const b = this.split(base)[SPLIT_MAIN];
                 const changed = [];
                 for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
                     if (key === '_fieldStamps') continue;
+                    if (key === '_PaperWizard') {
+                        // Facility pages started elsewhere are named apart from the paperwork templates
+                        const { facilityEntries: fa, ...ra } = a[key] || {}, { facilityEntries: fb, ...rb } = b[key] || {};
+                        if (!sameValue(ra, rb)) changed.push(MAIN_KEY_LABELS[key]);
+                        if (!sameValue(fa, fb)) changed.push('facility paperwork started elsewhere');
+                        continue;
+                    }
                     if (!sameValue(a[key], b[key])) changed.push(MAIN_KEY_LABELS[key] || key);
                 }
                 return changed;
@@ -4799,6 +4952,8 @@
                     DB.data._meta = meta;
                     this.mainLabour = {};
                     for (const ev of part.calendarEvents || []) if (ev?.id && ev.labour_map) this.mainLabour[ev.id] = JSON.parse(JSON.stringify(ev.labour_map));
+                    this.mainFacility = JSON.parse(JSON.stringify(part._PaperWizard?.facilityEntries || {}));
+                    this.facilityPickups = [];   // now in Main
                 }
                 if (name === SPLIT_WAGES) this.haveWages = true;
                 const m = SPLIT_BUILDING_RE.exec(name);
@@ -4807,6 +4962,7 @@
                     this.overlays[id] = JSON.parse(JSON.stringify(part._overlays || { lots: {}, events: {} }));
                     this.diskPaper[id] = JSON.parse(JSON.stringify(part._PaperWizard?.entries || {}));
                     this.diskTransfers[id] = JSON.parse(JSON.stringify(part._LotTransfers || {}));
+                    this.facilityQueues[id] = JSON.parse(JSON.stringify(part._PaperWizard?.facilityQueue || {}));
                     if (homes) {
                         for (const [k, home] of Object.entries(homes.paper)) if (home === id) this.paperHome[k] = id;
                         for (const [k, home] of Object.entries(homes.sheet)) if (home === id) this.sheetHome[k] = id;
@@ -4878,11 +5034,15 @@
                 // Files holding hand-off leftovers this device may drop are saved even with no other change
                 const tidy = this.tidyFiles(DB.data);
                 for (const name of tidy) this.baseParts[name] = '';
+                // Facility pages taken in from building queues: Main is saved even with no other change
+                const pickups = this.role === 'office' && this.facilityPickups.length > 0;
+                if (pickups) this.baseParts[SPLIT_MAIN] = '';
 
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
                 if (this.role === 'office' && tidy.length) this.promptTidy(tidy);
+                if (pickups) this.promptFacility();
                 if (skipped.length) {
                     alert(`Heads up: these files were not opened:\n\n• ${skipped.join('\n• ')}\n\n` +
                         `They are copies of building files that were opened (for example a OneDrive conflict copy). ` +
@@ -4977,7 +5137,10 @@
                 const now = Date.now();
                 const db = DB.data;
                 if (this.role === 'office') this.stampOfficeChanges(db, now);
-                else this.overlays[this.role] = this.buildingOverlays(db, this.role, now);
+                else {
+                    this.overlays[this.role] = this.buildingOverlays(db, this.role, now);
+                    this.facilityQueues[this.role] = this.buildingFacilityQueue(db, this.role, now);
+                }
                 const parts = this.split(db);
                 const changed = Object.keys(parts).filter(n => this.partJson(parts[n]) !== this.baseParts[n]);
 
@@ -5140,15 +5303,20 @@
                     role: this.role, loaded: [...this.loaded], haveWages: this.haveWages, baseParts: this.baseParts,
                     metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
                     overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome,
-                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, mainLabour: this.mainLabour
+                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, mainLabour: this.mainLabour,
+                    facilityQueues: this.facilityQueues, mainFacility: this.mainFacility, facilityPickups: this.facilityPickups
                 };
             },
             importState(state) {
                 this.reset();
                 Object.assign(this, state, { loaded: new Set(state.loaded || []) });
                 // A copy saved by an older build has no labour stamps / Main labour yet
-                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {}, ...(state.stamps || {}) };
+                this.stamps = { lots: {}, events: {}, labour: {}, labourRemoved: {}, facility: {}, ...(state.stamps || {}) };
                 this.mainLabour = state.mainLabour || {};
+                // …and no facility queue bookkeeping
+                this.facilityQueues = state.facilityQueues || {};
+                this.mainFacility = state.mainFacility || {};
+                this.facilityPickups = state.facilityPickups || [];
                 this.active = true;
             },
 

@@ -1,0 +1,171 @@
+// PaperWizard facility and building paperwork (no lot): a facility form (a destruction log) and a building form (a
+// sanitation form), picked from the Active Lot dropdown, filled and printed. With split files a building form is saved
+// in its building's file; a facility page started on a building device waits in that building's queue until the office
+// takes it into Main.json, and the building drops it from its queue once Main has it.
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSplit, openTool, leave, today } from './lib/helpers.mjs';
+
+export const title = 'PaperWizard facility & building paperwork, and the facility queue';
+
+const sheet = (name, document, fields) => ({ name, orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1,
+    cadence: 'event', document, fields, signature: null });
+const box = (id, label, y, more = {}) => ({ id, label, x: 0.1, y, w: 0.4, h: 0.03, page: 1, fontSize: 10, align: 'left',
+    source: null, questionId: null, day: 1, dayGroup: null, checkbox: false, checkValue: '', ...more });
+const q = (id, label, type = 'text') => ({ id, label, type, options: [], rowScoped: false, sameAsLast: false, mandatory: false, prefillFrom: null });
+
+function paperDb() {
+    const db = fixtureDb();
+    db._PaperWizard = {
+        sheets: {
+            destr: sheet('Destruction Log', 'facility', [box('dw1', 'What', 0.1, { questionId: 'what' }), box('dl1', 'Lot', 0.2, { source: 'lot.name' }),
+                box('db1', 'Where', 0.3, { source: 'building.name' })]),
+            sanit: sheet('Sanitation Form', 'building', [box('so1', 'OK', 0.1, { questionId: 'okq' }), box('sb1', 'Building', 0.2, { source: 'building.name' })]),
+            glog: { ...sheet('Grow Log', null, []), cadence: 'daily-weekly' }
+        },
+        wizards: {
+            wd01: { id: 'wd01', sheetId: 'destr', name: 'Destruction', questions: [q('what', 'What was destroyed')] },
+            ws01: { id: 'ws01', sheetId: 'sanit', name: 'Sanitation', questions: [q('okq', 'All surfaces clean?')] },
+            wg01: { id: 'wg01', sheetId: 'glog', name: 'Grow', questions: [{ ...q('cnt', 'Plant count', 'plant-count'), rowScoped: true }] }
+        },
+        entries: {}
+    };
+    return db;
+}
+
+export async function run(b, BASE) {
+    const { results, check } = makeChecker();
+    const T = today();
+    let main = await fresh(b);
+    await openSitka(b, main, BASE);
+    await loadSingle(b, main, paperDb());
+    let pw = await openTool(b, main, 'PaperWizard');
+
+    const options = (ctx) => b.run(ctx, `return [...document.getElementById('lotSelect').options].map(o => o.value || o.textContent);`);
+    let opts = await options(pw);
+    check('the dropdown lists 🏭 Facility and 🏢 each building above the lots', opts.slice(0, 4).join() === '↓ Facility & buildings,@facility,@building:B1,@building:B2' && opts.includes('L100'), opts.join(' | '));
+    check('a facility or building form is not in a lot\'s cabinet', await b.run(pw, `document.getElementById('lotSelect').value = 'L100'; document.getElementById('lotSelect').dispatchEvent(new Event('change'));
+        const t = document.getElementById('cabinetPanel').textContent; return !t.includes('Destruction Log') && !t.includes('Sanitation Form');`));
+
+    // ---- Configure Sheets: the two Document values; a form with a plant-count question can't become one ----
+    const docOpts = await b.run(pw, `switchTab('configure'); openSavedSheet('glog'); renderConfigure();
+        return [...document.getElementById('sheetDocSelect').options].map(o => o.value);`);
+    check('Document offers 🏭 Facility form and 🏢 Building form', docOpts.includes('facility') && docOpts.includes('building'), docOpts.join());
+    const refused = await b.run(pw, `const s = document.getElementById('sheetDocSelect'); s.value = 'facility'; s.dispatchEvent(new Event('change'));
+        return { doc: DB.paperWizard.sheets.glog.document, toast: document.getElementById('toast').textContent };`);
+    check('a form asking the plant count can\'t be made a facility form', !refused.doc && refused.toast.includes('Plant count'), JSON.stringify(refused));
+    check('a facility form\'s wizard builder offers no plant count / phase / room', await b.run(pw, `openSavedSheet('destr'); renderConfigure();
+        const types = [...document.querySelectorAll('.q-type option')].map(o => o.value); return types.length > 0 && !types.some(t => ['plant-count', 'phase', 'room'].includes(t));`));
+    await b.run(pw, `switchTab('cabinet');`);
+
+    // ---- Single file: fill a facility entry and a Building 1 entry ----
+    const pick = (ctx, v) => b.run(ctx, `const s = document.getElementById('lotSelect'); s.value = '${v}'; s.dispatchEvent(new Event('change'));`);
+    const fill = async (ctx, cab, sheetId, qid, value) => {
+        await b.run(ctx, `await openRunner('${cab}', '${sheetId}', '${T}'); if (runnerCtx) { runnerCtx.draft.${qid} = ${JSON.stringify(value)}; runnerCtx.idx = runnerSteps('${sheetId}').length - 1; renderRunner(); }`);
+        if (!(await b.run(ctx, `return !!runnerCtx;`))) return false;
+        await b.run(ctx, `document.getElementById('wizSaveBtn').click();`, { user: true });
+        await b.sleep(250);
+        return true;
+    };
+    await pick(pw, '@facility');
+    check('the facility cabinet offers a New entry for the destruction log', await b.run(pw, `return [...document.querySelectorAll('#cabinetPanel .cab-leaf')].some(l => l.textContent.includes('📅 New entry · Destruction Log') && l.querySelector('.cab-fill'));`));
+    await fill(pw, '@facility:office', 'destr', 'what', 'Stems');
+    await pick(pw, '@building:B1');
+    await fill(pw, '@building:B1', 'sanit', 'okq', 'Yes');
+    await b.sleep(400);
+    let st = await b.run(main, `const p = DB.data._PaperWizard; return { f: p.facilityEntries?.office?.destr?.instances?.['${T}']?.header?.what, bl: p.buildingEntries?.B1?.sanit?.instances?.['${T}']?.header?.okq, lots: Object.keys(p.entries || {}).length, unsaved: hasUnsavedChanges };`);
+    check('single file: the facility page is under facilityEntries.office, the building page under buildingEntries.B1', st.f === 'Stems' && st.bl === 'Yes' && st.lots === 0 && st.unsaved, JSON.stringify(st));
+    check('the status bar names the cabinet', (await b.run(pw, `return document.getElementById('statusText').textContent;`)).includes('🏢 Building 1 paperwork'));
+
+    // Print: building.name prints the building, a lot binding prints N/A
+    const loadDoc = (id) => b.run(pw, `const c = document.createElement('canvas'); c.width = 85; c.height = 110; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 85, 110);
+        const blob = await new Promise(r => c.toBlob(r, 'image/webp')); await loadPrintDocument([new File([blob], '${id}-p1.webp', { type: 'image/webp' })]);`);
+    const popup = async (cab, sheetId) => {
+        const before = new Set((await b.contexts()).map(c => c.context));
+        await b.run(pw, `openPrintPopup('${cab}', '${sheetId}', '${T}');`, { user: true });
+        let pop = null;
+        for (let i = 0; i < 40 && !pop; i++) { await b.sleep(100); pop = (await b.contexts()).find(c => !before.has(c.context))?.context || null; }
+        return pop;
+    };
+    const ov = (pop, fid) => b.run(pop, `return document.querySelector('.ov[data-fid="${fid}"]')?.textContent ?? null;`);
+    await loadDoc('sanit');
+    let pop = await popup('@building:B1', 'sanit');
+    check('a building form prints, with building.name = its building', pop && (await ov(pop, 'so1')) === 'Yes' && (await ov(pop, 'sb1')) === 'Building 1');
+    if (pop) await b.send('browsingContext.close', { context: pop });
+    await loadDoc('destr');
+    pop = await popup('@facility:office', 'destr');
+    check('a facility form prints; a lot binding prints N/A, building.name "Office"', pop && (await ov(pop, 'dw1')) === 'Stems' && (await ov(pop, 'dl1')) === 'N/A' && (await ov(pop, 'db1')) === 'Office');
+    if (pop) await b.send('browsingContext.close', { context: pop });
+
+    // A correction cancelled at the pad leaves everything as it was
+    const before = await b.run(pw, `return JSON.stringify(DB.paperWizard);`);
+    await b.run(pw, `await openRunner('@facility:office', 'destr', '${T}'); runnerCtx.draft.what = 'Roots'; renderRunner();`);
+    await b.run(pw, `document.getElementById('wizSaveBtn').click();`, { user: true });
+    await b.waitFor(pw, `return !!document.getElementById('corrOverlay');`);
+    await b.run(pw, `document.getElementById('corrCancelBtn').click();`, { user: true });
+    await b.sleep(200);
+    check('a cancelled correction on a facility page changes nothing', (await b.run(pw, `return JSON.stringify(DB.paperWizard);`)) === before);
+    await b.run(pw, `closeRunner();`);
+
+    // ---- Split files ----
+    const db1 = await b.run(main, `return DB.data;`);
+    await b.send('browsingContext.close', { context: pw });
+    const files = await splitFiles(b, main, BASE, db1);
+    const m0 = JSON.parse(files['Main.json']), b0 = JSON.parse(files['Building-B1.json']);
+    check('split: the facility page stays in Main.json, the building page goes to Building-B1.json',
+        m0._PaperWizard.facilityEntries?.office?.destr && !m0._PaperWizard.buildingEntries && b0._PaperWizard.buildingEntries?.B1?.sanit && !JSON.parse(files['Building-B2.json'])._PaperWizard.buildingEntries);
+
+    // Building 1's device: Facility + its own building only; the office's page is read only
+    check('B1 device opened the files', await openSplit(b, main, BASE, 'B1', files));
+    pw = await openTool(b, main, 'PaperWizard');
+    opts = await options(pw);
+    check('B1 device: the dropdown lists Facility and Building 1 only', opts.includes('@facility') && opts.includes('@building:B1') && !opts.includes('@building:B2'), opts.join(' | '));
+    await pick(pw, '@facility');
+    const leaves = await b.run(pw, `return [...document.querySelectorAll('#cabinetPanel .cab-leaf')].map(l => ({ t: l.textContent.replace(/\\s+/g, ' ').trim(), fill: !!l.querySelector('.cab-fill'), print: !!l.querySelector('[data-print]') }));`);
+    const officeLeaf = leaves.find(l => !l.t.includes('New entry') && l.t.includes(String(Number(T.slice(8)))));
+    check('B1 device: the office\'s facility page is view / print only, and a New entry is offered', officeLeaf && !officeLeaf.fill && officeLeaf.print && leaves.some(l => l.t.includes('📅 New entry') && l.fill), JSON.stringify(leaves));
+    check('B1 device: opening the office\'s page refuses', !(await fill(pw, '@facility:office', 'destr', 'what', 'X')) &&
+        (await b.run(pw, `return document.getElementById('toast').textContent;`)).includes('started at the office'));
+    check('B1 device: fills its own facility page', await fill(pw, '@facility:B1', 'destr', 'what', 'Leaves'));
+    await b.sleep(400);
+    const s1 = await saveSplit(b, main);
+    check('B1 saves only Building-B1.json', Object.keys(s1).join() === 'Building-B1.json', Object.keys(s1).join(', '));
+    check('no "can\'t be saved from this device" warning', !b.logs.some(l => l.includes("can't be saved")));
+    const q1 = JSON.parse(s1['Building-B1.json'])._PaperWizard.facilityQueue || {};
+    check('Building-B1.json queues the facility page', q1[`destr|${T}`]?.inst?.header?.what === 'Leaves' && q1[`destr|${T}`].at > 0, JSON.stringify(q1));
+    check('B1: nothing left unsaved', (await b.run(main, 'return hasUnsavedChanges;')) === false);
+    await b.send('browsingContext.close', { context: pw });
+
+    // ---- The office opens: takes the page in, saves it into Main, leaves B1's queue as it is ----
+    const files2 = { ...files, ...s1 };
+    check('office opened all files', await openSplit(b, main, BASE, 'office', files2));
+    st = await b.run(main, `return { what: DB.data._PaperWizard.facilityEntries?.B1?.destr?.instances?.['${T}']?.header?.what, unsaved: hasUnsavedChanges, toast: syncToastText.textContent };`);
+    check('office: the queued page is taken in, marked unsaved, with a 📥 toast', st.what === 'Leaves' && st.unsaved && st.toast.includes('📥 1 facility page') && st.toast.includes('Building 1'), JSON.stringify(st));
+    const s2 = await saveSplit(b, main);
+    check('office saves Main.json only (B1\'s queue untouched)', Object.keys(s2).join() === 'Main.json', Object.keys(s2).join(', '));
+    check('Main.json now holds the page', JSON.parse(s2['Main.json'])._PaperWizard.facilityEntries?.B1?.destr?.instances?.[T]?.header?.what === 'Leaves');
+    check('office: saved, nothing unsaved', (await b.run(main, 'return hasUnsavedChanges;')) === false);
+    // The office is warned before changing a page a building started
+    pw = await openTool(b, main, 'PaperWizard');
+    const asked = await b.run(pw, `let msg = ''; window.confirm = (m) => { msg = m; return false; }; await openRunner('@facility:B1', 'destr', '${T}'); return { msg, open: !!runnerCtx };`);
+    check('office: opening a page Building 1 started asks first', asked.msg.includes('Started at Building 1') && !asked.open, JSON.stringify(asked));
+    await b.send('browsingContext.close', { context: pw });
+
+    // ---- B1 reopens with the new Main: the page shows once; its next save releases it from the queue ----
+    const files3 = { ...files2, ...s2 };
+    check('B1 reopened', await openSplit(b, main, BASE, 'B1', files3));
+    check('B1: opening changes nothing', (await b.run(main, 'return hasUnsavedChanges;')) === false);
+    const plan = await b.run(main, `const p = DbSplit.plan(); return { save: p.toSave, q: p.parts['Building-B1.json']._PaperWizard.facilityQueue || null };`);
+    check('B1: Main has the page, so the queue lets it go (Building-B1.json saved with an empty queue)', plan.save.includes('Building-B1.json') && !plan.q, JSON.stringify(plan));
+
+    // ---- The office changes Building 1's page; B1's older queued copy doesn't win on the next open ----
+    check('office reopened', await openSplit(b, main, BASE, 'office', files3));
+    await b.run(main, `DB.data._PaperWizard.facilityEntries.B1.destr.instances['${T}'].header.what = 'Leaves (checked)'; markUnsaved();`);
+    const s3 = await saveSplit(b, main);
+    const m3 = JSON.parse(s3['Main.json']);
+    check('office: its change is stamped in Main', m3._PaperWizard.facilityEntries.B1.destr.instances[T].header.what === 'Leaves (checked)' && m3._fieldStamps?.facility?.[`B1|destr|${T}`] > 0, JSON.stringify(m3._fieldStamps?.facility));
+    check('office reopens with B1\'s old queue still in its file', await openSplit(b, main, BASE, 'office', { ...files3, ...s3 }));
+    st = await b.run(main, `return { what: DB.data._PaperWizard.facilityEntries.B1.destr.instances['${T}'].header.what, unsaved: hasUnsavedChanges };`);
+    check('the office\'s later change wins over the older queued copy, nothing to take in', st.what === 'Leaves (checked)' && !st.unsaved, JSON.stringify(st));
+
+    await leave(b, main);
+    return results;
+}

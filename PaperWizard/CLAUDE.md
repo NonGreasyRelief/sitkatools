@@ -31,7 +31,7 @@ Two tabs:
 | `pageWidthIn` / `pageHeightIn` | Always US Letter (8.5 × 11, rotated for landscape), set automatically. Used for print size and pt font scaling. |
 | `pageCount` | Pages loaded at configure time. |
 | `cadence` | `'one-shot' \| 'daily-weekly' \| 'event'` (see "Entry & Instance"). |
-| `document` | Cabinet assignment from the **Document** dropdown: `grow-log`, `propagation`, `harvest`, `ipm`, `drying-log`, `trim-log`, `room-clean-clone` / `-veg` / `-grow` / `-dry` / `-trim`, or null. The five clean values file under Room Cleans (`sheetSection()` maps them to `room-clean`). Saved on change, not on 💾 Save. Null = filed by the heuristics in `sheetSection()` (cadence, then name keywords). A legacy `'room-clean'` value still files under Room Cleans, with its room role inferred from name keywords. |
+| `document` | Cabinet assignment from the **Document** dropdown: `grow-log`, `propagation`, `harvest`, `ipm`, `drying-log`, `trim-log`, `room-clean-clone` / `-veg` / `-grow` / `-dry` / `-trim`, or null; or, under "Not tied to a lot", `facility` / `building` (see "Facility & Building Paperwork"). The five clean values file under Room Cleans (`sheetSection()` maps them to `room-clean`). Saved on change, not on 💾 Save. Null = filed by the heuristics in `sheetSection()` (cadence, then name keywords). A legacy `'room-clean'` value still files under Room Cleans, with its room role inferred from name keywords. |
 | `fields[]` | Boxes (below). |
 | `signature` | Signature box or null (see "Signature Box & Capture"). |
 
@@ -225,6 +225,19 @@ It is matched at view time — no link is stored on either side. Reference nodes
 
 Tapping a leaf opens its wizard, or its print popup once complete. **Leaf status:** `✓ complete`, progress (`4/7 days`, `3/5 · phase change Sep 24`), `⏳ due`, `⚠️ missing`, or `— not started`; section headers total them. **🖨️ Print** works once an entry exists and the page set is loaded, complete or not; its tooltip lists what's missing (days, signature, strike initials, unset constants, entries).
 
+### Facility & Building Paperwork
+
+Paperwork that belongs to no lot (user decision 2026-10-25): **facility forms** for the whole company (destruction logs, inventory logs) and **building forms** for one building (its sanitation form).
+
+- **Configure Sheets → Document**, under "Not tied to a lot": **🏭 Facility form (whole company)** (`document: 'facility'`) or **🏢 Building form (one building)** (`'building'`). Such a sheet is never in a lot's cabinet. It can't ask plant count, phase or room (`LOT_ONLY_TYPES`): the wizard builder doesn't offer them, and the Document change is refused while the wizard has one.
+- **Active Lot dropdown:** "↓ Facility & buildings" first, with **🏭 Facility paperwork** (`@facility`) and **🏢 <Building> paperwork** (`@building:<BID>`) for each building (a building device: only its own), then the lots as before.
+- **Cabinet ids:** inside PaperWizard a cabinet is a lot id, `@building:<BID>` or `@facility:<origin>`. `pageStore(id, create)` returns its `{ sheetId: entry }` store in `entries`, `buildingEntries` or `facilityEntries`, and every read and write goes through it. The new keys are made only on the first save into them; a cancelled save leaves no empty store (`pruneStore`).
+- **Facility origins:** a facility page is stored under the origin that started it, `office` or the building id of the device (`deviceOrigin()`). Keys stay dates / `single`, and two buildings starting the same day's page never collide. The facility cabinet shows every origin's pages together, labelled "· <Building>" when a building started them.
+- **The cabinet** (`renderScopedCabinet`): one section per form, open by default. Event forms list their pages plus **📅 New entry** when this device hasn't started today's; one-shot forms their one page; daily-weekly forms rolling 7-day pages plus **📅 Start new week** (no planting-date coverage, rollover or "Start on a chosen day"). Toolbar: Load document, 📝 Change log, the print-document chip; no 📋 Initialize (constant fields aren't used on these forms yet).
+- **Who fills:** a building device fills its own building's forms and the facility pages it started; others are view and print only (`lotElsewhere` covers the `@` ids, so every `readOnlyHere` guard applies). The office fills anything; with split files it first confirms before changing a page a building started ("Started at <Building>… the later change wins").
+- **Bindings:** `lot.*`, `instance.phase` and `day.plantsRemoved` print N/A on these forms. `building.name` prints the cabinet's building on a building form, where the page was started (or "Office") on a facility form, and the lot's current building on a lot form.
+- **Saving with split files:** building forms go in their building's file; facility forms live in Main.json, and a building device's facility pages wait in its file's queue until the office takes them in (root `CLAUDE.md` → "Facility queue").
+
 ### Phase & Room Change (grow-log rollover)
 
 A phase change (Clone → Veg → Bloom) or a room move (e.g. into the dry room) rolls the open daily-weekly log over. Both use one core, `dailyRollover`.
@@ -378,7 +391,9 @@ _PaperWizard: {
                                            cadence, document, fields: [Field], signature } },
   wizards: { <wizardId>: { sheetId, name, questions: [Question] } },
   entries: { <lotId>: { <sheetId>: { instances: { <YYYY-MM-DD>: Instance },
-                                     constants?, constantChanges?, paperBefore? } } }
+                                     constants?, constantChanges?, paperBefore? } } },
+  buildingEntries?: { <BuildingID>: { <sheetId>: entry } },     // building forms (same entry shape)
+  facilityEntries?: { <origin>: { <sheetId>: entry } }          // facility forms; origin = 'office' | BuildingID
 }
 ```
 
@@ -407,7 +422,7 @@ Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessag
 
 **On a building device** (root `CLAUDE.md` → "Building Device View"):
 
-- The lot selector lists only the building's lots (current room or flower room in it).
+- The lot selector lists only the building's lots (current room or flower room in it), plus 🏭 Facility and its own 🏢 building. Facility pages the office or another building started are view and print only.
 - **Configure Sheets** is hidden — sheets and wizards live in Main.json.
 - The 🏠 Room question and Start on a chosen day offer only the building's rooms (`pickableRoomNames`), plus any value already in use. Moves between buildings go through SitkaTools' Send / Accept. With split files open (`DeviceView.split`) the office gets the same: the rooms of the lot's current building. A single-file DB has no Send / Accept, so the office sees every room there.
 - **Read-only lots:** `lotElsewhere` returns `{ banner, toast }` for a lot this device may only view and print:
@@ -438,4 +453,4 @@ Root UI Standards apply. Specifics:
 
 ## Tests
 
-`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tests/runner-close.test.mjs` covers closing the runner only by its ✕; `tests/grow-log-changes.test.mjs` covers phase / room changes recorded on edited days (newest day, earlier days, a page's only day, moved earlier, taken back, re-paged up to a later change, Cancel at the correction pad); `tools-smoke`, `link-lost`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").
+`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tests/runner-close.test.mjs` covers closing the runner only by its ✕; `tests/grow-log-changes.test.mjs` covers phase / room changes recorded on edited days (newest day, earlier days, a page's only day, moved earlier, taken back, re-paged up to a later change, Cancel at the correction pad); `tests/scoped-paperwork.test.mjs` covers facility and building paperwork (dropdowns, filling, printing, a building device's queue and the office taking it into Main); `tools-smoke`, `link-lost`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").

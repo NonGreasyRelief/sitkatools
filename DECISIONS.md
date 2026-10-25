@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-25 · facility forms (destruction, inventory logs) live in Main.json; a building device queues the facility pages it starts in its own file, the office takes them into Main when it opens the files, and the building releases them once Main has them (whole page, newest wins; the office changes a building's page only outside tablet hours). Building forms are saved in their building's file
 - 2026-10-25 · 🖨️ Print year (Annual view only) prints the year's filtered tasks on one landscape page for a black-and-white printer: a letter code per task type with a legend instead of emoji
 - 2026-10-22 · new lots may say who the plants came from (Received from, optional) and keep the count they started with; close-out warns when the lot's plant history isn't saved for the CTLS numbers
 - 2026-10-22 · SitkaTools and PaperWizard left open overnight roll over to the new day by themselves (each minute, tab shown, focus): what showed today follows it, anything picked by hand stays put; DailyWizard already did
@@ -108,6 +109,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## PaperWizard
 
+- 2026-10-25 · paperwork tied to no lot: Configure Sheets → Document marks a sheet 🏭 Facility form or 🏢 Building form; the Active Lot dropdown opens a 🏭 Facility cabinet and a 🏢 cabinet per building; no plant count, phase or room questions on them; facility pages are kept per origin (office or the building that started them)
 - 2026-10-22 · plants sold / transferred need the company they went to (required), samples may name the testing lab (optional); kept as days[day]._removedTo and printed in the comments note
 - 2026-10-22 · the wizard closes only by its ✕ (a tap beside the card or Escape no longer closes it and loses the entry); the ✕, and switching days, ask first when something entered would be lost
 - 2026-10-22 · fixed: pressing Enter twice on the last answer stacked two plant-count reason dialogs, leaving a dark screen and a dead OK button; only one save runs at a time and the dialog keeps the keyboard
