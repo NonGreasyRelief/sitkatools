@@ -39,7 +39,7 @@ export async function run(b, BASE) {
     await b.run(clw, `openRecipeManager();`, { user: true });
     const rows = await b.run(clw, `return [...document.querySelectorAll('#recipeList .recipe-row')].map(r => ({ name: r.querySelector('.recipe-row-name').textContent, btns: [...r.querySelectorAll('.recipe-actions button')].map(x => x.textContent) }));`);
     const builtinRows = rows.filter(r => r.name.includes('built-in'));
-    check('the Recipe Manager shows three built-ins, each with only Duplicate and Export', builtinRows.length === 3 && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export'), JSON.stringify(rows));
+    check('the Recipe Manager shows three built-ins, each with only Duplicate, Export and Print', builtinRows.length === 3 && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export,🖨️ Print'), JSON.stringify(rows));
     await b.run(clw, `closeRecipeManager();`);
 
     // ---- The room turnaround each one gives ----

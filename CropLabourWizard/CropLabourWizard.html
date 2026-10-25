@@ -422,6 +422,7 @@
         .cut-mismatch-note { font-size: 0.75rem; color: var(--warning); font-weight: 600; margin-top: 4px; line-height: 1.35; }
         .cut-mismatch-detail { display: block; font-weight: 400; color: var(--text-secondary); }
         .preview-task-repeat { color: var(--accent); white-space: nowrap; }
+        .preview-task-life { color: var(--text-primary); white-space: nowrap; }
         .recipe-kind { display: inline-block; font-size: 0.8rem; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--accent); color: var(--accent); }
 
         /* Estimated labour total below the preview list */
@@ -890,6 +891,9 @@
         .task-table .t-offset, .task-table .t-days, .task-table .t-every { width: 72px; }
         .task-table .t-ref, .task-table .t-phase { min-width: 96px; }
         .task-table .t-est { width: 70px; }
+        .task-table td.t-life { min-width: 92px; line-height: 1.2; }
+        .task-table .t-life-num { display: block; font-weight: 600; white-space: nowrap; }
+        .task-table .t-life-of { display: block; font-size: 0.72rem; color: var(--text-secondary); }
         /* Narrow windows: the table scrolls sideways rather than squash names and estimates */
         .task-table input.t-name { min-width: 160px; }
         .task-table input.t-min, .task-table input.t-staff { min-width: 64px; }
@@ -965,7 +969,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label id="anchorDateLabel" for="plantingDate">Planting Date (Day 0)</label>
+                    <label id="anchorDateLabel" for="plantingDate">Planting Date (day 1)</label>
                     <input type="date" id="plantingDate" required>
                 </div>
             </form>
@@ -1061,6 +1065,7 @@
                                     <th title="Event tag (snake_case)">Type</th>
                                     <th title="Reference anchor">Ref</th>
                                     <th title="Days from reference">+d</th>
+                                    <th title="The day of the plants' life it lands on (day 1 = clones cut), or the day after harvest — for a fresh lot with a one-day harvest and a 7-day trim">Day</th>
                                     <th title="How many days the task runs (blank = 1). Trim and Harvest are set in the preview.">Days</th>
                                     <th title="Repeat every N days until the crop's end — Retire Mothers, or Harvest (blank = once)">Every</th>
                                     <th title="Room phase override (optional)">Phase</th>
@@ -1501,6 +1506,44 @@
                 (s.cls === 'warn' ? ' — room not ready' : '') + (t.cycle != null ? ` · new lot every ${t.cycle} days` : '');
         }
 
+        // ---- Day of the plant's life (user request 2026-10-24) ----
+        // The clone-cut day (Day 0; the planting day when clones are off) is day 1 of the plants' life, which ends with
+        // the harvest's last day (Retire Mothers for a mother recipe). Work after that counts on from it: "day 1 after
+        // harvest" is the day after the harvest ends. Shown in the recipe editor, the preview and the printed recipe.
+        function lifeDayLabel(day0, start, end, lifeEnd, veg) {
+            const s = daysBetween(day0, start), e = end ? daysBetween(day0, end) : s, L = daysBetween(day0, lifeEnd);
+            const span = (a, b) => a === b ? `day ${a}` : `days ${a}–${b}`;
+            const after = veg ? 'after the mothers retire' : 'after harvest';
+            if (s < 0) return { kind: 'before', num: `${-s} day${s === -1 ? '' : 's'}`, of: 'before day 1' };
+            if (e <= L) return { kind: 'life', num: span(s + 1, e + 1), of: "of the plant's life" };
+            if (s > L) return { kind: 'after', num: span(s - L, e - L), of: after };
+            return { kind: 'life', num: `day ${s + 1}`, of: `of the plant's life → day ${e - L} ${after}` };
+        }
+        const lifeDayText = d => d ? `${d.num} ${d.of}` : '';
+
+        // Each recipe task's day of the plants' life, worked out from its default offsets as a fresh lot would have
+        // them: clones on, a one-day harvest, a 7-day trim. Also the length of the life and of the work after it.
+        function recipeLifeDays(tasks, kind) {
+            const veg = kind === 'vegetative';
+            const offsets = (tasks || []).map(t => ({ def: t, offset: Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0, enabled: true }));
+            const day0 = '2026-01-05';
+            const a = scheduleAnchors(day0, offsets, { trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: 1 });
+            const lifeEnd = veg ? a.retire : a.harvestEnd;
+            const life = daysBetween(day0, lifeEnd) + 1;
+            let afterDays = 0;
+            const rows = offsets.map(o => {
+                const t = o.def;
+                const anchor = t.reference === 'harvest' ? a.harvestEnd : RECIPE_ANCHORS.includes(t.reference) ? a[t.reference] : null;
+                if (!anchor) return null;
+                const start = computeTaskDate(anchor, o.offset);
+                const len = t.taskType === 'trim' ? DEFAULT_TRIM_DAYS : recipeTaskDays(t);
+                const end = len > 1 ? computeTaskDate(start, len - 1) : null;
+                afterDays = Math.max(afterDays, daysBetween(lifeEnd, end || start));
+                return lifeDayLabel(day0, start, end, lifeEnd, veg);
+            });
+            return { rows, life, afterDays };
+        }
+
         function turnaroundSignature(t) {
             return t ? [t.cutBefore, t.plantAfter, t.transplantAfter, t.vsRoomClean, t.spare, t.cycle].join('|') : '';
         }
@@ -1813,6 +1856,75 @@
             exportRecipeJson(recipe);
         }
 
+        // ---- 🖨️ Print a recipe (user request 2026-10-24) ----
+        // A light, print-ready window like the Labour & Cost Wizard's prints: the recipe's lengths and room turnaround,
+        // every task with its day of the plants' life (or after harvest), and its supplies. A recipe has no dates until
+        // it's given to a lot, so none are shown.
+        function printRecipe(recipe) {
+            if (!recipe || !Array.isArray(recipe.tasks)) return;
+            const veg = isVegRecipe(recipe), esc = escapeHtml;
+            const { rows: days, life, afterDays } = recipeLifeDays(recipe.tasks, recipe.kind);
+            const a = recipeAnchorDefaults(recipe);
+            const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+            const facts = [];
+            if (veg) {
+                facts.push(`Mothers retired ${plural(a.retire, 'day')} after planting: the plants live ${plural(life, 'day')}, from cutting the clones (day 1) to Retire Mothers (day ${life}).`);
+                const cut = recipe.tasks.find(t => t.taskType === 'clone_cut');
+                facts.push(cut ? `Replacement clones are cut ${plural(cloneCutDays(recipe), 'day')} before the mothers retire, which starts the next mother lot.` : 'No replacement cut: new mothers come from another lot\'s clones.');
+            } else {
+                facts.push(`Veg ${plural(a.flip, 'day')} (planting → flip) · bloom ${plural(a.harvest, 'day')} (flip → harvest).`);
+                facts.push(`The plants live ${plural(life, 'day')}, from cutting the clones (day 1) to harvest (day ${life}), with a one-day harvest.` +
+                    (afterDays > 0 ? ` The work after harvest runs to day ${afterDays} after harvest, with a 7-day trim.` : ''));
+                const t = recipeTurnaround(recipe);
+                if (t) facts.push(`Next lot in the room: clones cut ${relHarvest(-t.cutBefore)}, transplanted ${relHarvest(t.transplantAfter)}. ${turnaroundStatus(t).text}` +
+                    (t.cycle != null ? ` A new lot every ${plural(t.cycle, 'day')}.` : ''));
+            }
+            const runs = t => t.taskType === 'trim' ? '7 days (set per lot)' : t.taskType === 'harvest' ? '1 day (multi-day per lot)' : plural(recipeTaskDays(t), 'day');
+            const when = t => {
+                const ref = REF_LABELS[t.reference] || t.reference, n = Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0;
+                return n === 0 ? `On ${ref}` : `${n > 0 ? '+' : '−'}${plural(Math.abs(n), 'day')} ${n > 0 ? 'after' : 'before'} ${ref}`;
+            };
+            // Repeats and Labour only when some task has them
+            const hasRepeat = recipe.tasks.some(t => taskRepeatEvery(t)), hasEst = recipe.tasks.some(t => taskEstimate(t));
+            const taskRows = recipe.tasks.map((t, i) => {
+                const est = taskEstimate(t), every = taskRepeatEvery(t), d = days[i];
+                const optional = t.hasToggle ? (t.defaultEnabled === false ? 'yes · off by default' : 'yes') : '';
+                return `<tr><td class="n">${i + 1}</td><td>${esc(t.emoji || '')} ${esc(t.name || '')}</td><td>${esc(when(t))}</td>` +
+                    `<td class="day"><strong>${d ? esc(d.num) : '—'}</strong>${d ? `<br><span class="sub">${esc(d.of)}</span>` : ''}</td><td>${esc(runs(t))}</td>` +
+                    (hasRepeat ? `<td>${every ? `every ${plural(every, 'day')}` : ''}</td>` : '') +
+                    (hasEst ? `<td>${est ? esc(estimateLabel(est, recipeTaskDays(t) > 1 || t.taskType === 'trim')) : ''}</td>` : '') + `<td>${esc(optional)}</td></tr>`;
+            }).join('');
+            const atName = tt => { const t = recipe.tasks.find(x => x.taskType === tt); return t ? `${t.emoji || ''} ${t.name}` : tt; };
+            const supplies = (recipe.inputs || []).map(x => `<tr><td>${esc(x.name || '')}</td><td>${esc(String(x.qty ?? ''))} ${esc(x.unit || '')}</td>` +
+                `<td>${esc(x.per === 'plant' ? (x.at ? `per plant at ${atName(x.at)}` : 'per plant at the start') : 'per crop')}</td></tr>`).join('');
+            const win = window.open('', '_blank', 'width=1100,height=900');
+            if (!win) { alert('The recipe opens in a new window to print — allow pop-ups for this page and try again.'); return; }
+            win.document.open();
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recipe — ${esc(recipe.name || recipe.id)}</title><style>
+                body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #111; background: #fff; margin: 0; padding: 0 28px 28px; font-size: 13px; }
+                .bar { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; background: #fff; border-bottom: 1px solid #ccc; margin-bottom: 14px; }
+                .bar button { font-size: 14px; padding: 8px 16px; border-radius: 6px; border: 1px solid #1a7f5a; background: #1a7f5a; color: #fff; cursor: pointer; }
+                h1 { font-size: 20px; margin: 6px 0 2px; } .meta { color: #555; margin: 2px 0; }
+                ul.facts { margin: 10px 0 14px; padding-left: 18px; } ul.facts li { margin: 3px 0; }
+                h2 { font-size: 15px; margin: 18px 0 6px; }
+                table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #bbb; padding: 5px 7px; text-align: left; vertical-align: top; }
+                th { background: #eee; font-size: 12px; } td.n { text-align: right; color: #555; width: 24px; } .sub { color: #555; font-size: 11px; } td.day { white-space: nowrap; }
+                tr { break-inside: avoid; }
+                @media print { .bar { display: none; } body { padding: 0; } @page { margin: 12mm; } }
+            </style></head><body>
+<div class="bar"><span>Task recipe</span><button type="button" id="printBtn">🖨️ Print / Save as PDF</button></div>
+<header><h1>${esc(recipe.tasks[0]?.emoji || '📋')} ${esc(recipe.name || recipe.id)}</h1>
+<p class="meta">${veg ? '🌿 Mother (vegetative) recipe' : 'Bloom recipe'}${isBuiltinRecipe(recipe) ? ' · built-in' : ''} · id ${esc(recipe.id)} · ${plural(recipe.tasks.length, 'task')}</p>
+<p class="meta">Printed ${esc(new Date().toLocaleString())} from SitkaTools — Crop Labour Wizard</p></header>
+<ul class="facts">${facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+<h2>Tasks</h2>
+<table><thead><tr><th>#</th><th>Task</th><th>When</th><th>Day</th><th>Runs</th>${hasRepeat ? '<th>Repeats</th>' : ''}${hasEst ? '<th>Labour</th>' : ''}<th>Optional</th></tr></thead><tbody>${taskRows}</tbody></table>
+<p class="meta">Day 1 is the day the clones are cut. The plants' life ends with the harvest${veg ? ' (Retire Mothers for mothers)' : ''}; "day 1 after harvest" is the day after it.</p>
+${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th><th>Per</th></tr></thead><tbody>${supplies}</tbody></table>` : ''}
+<script>document.getElementById('printBtn').addEventListener('click', () => window.print());<\/script></body></html>`);
+            win.document.close();
+        }
+
         // ---- Recipe export helper (share-API-first) — used by the form button + manager ----
         function exportRecipeJson(recipe) {
             const json = JSON.stringify(recipe, null, 2);
@@ -1927,6 +2039,7 @@
                 if (!isBuiltin) actions.appendChild(mkBtn('✏️ Edit', 'Edit this recipe', () => showRecipeEditor(cloneRecipeData(r))));
                 actions.appendChild(mkBtn('⧉ Duplicate', 'Make an editable copy', () => duplicateRecipe(r)));
                 actions.appendChild(mkBtn('⬇️ Export', 'Download as .json', () => exportRecipeJson(r)));
+                actions.appendChild(mkBtn('🖨️ Print', 'Print this recipe', () => printRecipe(r)));
                 if (!isBuiltin) actions.appendChild(mkBtn('🗑 Delete', 'Delete this recipe', () => deleteRecipe(r), true));
 
                 row.appendChild(main);
@@ -2166,6 +2279,7 @@
         function updateEditorTurnaround() {
             const box = $('recipeTurnaround');
             if (!box || !editorRecipe) return;
+            updateEditorLifeDays();
             if (isVegRecipe(editorRecipe)) {
                 const tasks = readTaskTable(), cut = tasks.find(t => t.taskType === 'clone_cut'), ret = tasks.find(t => t.taskType === 'retire');
                 box.innerHTML = `<div class="turnaround-title">🌿 Mothers</div><div>Retired <strong>${ret ? ret.defaultOffset : '?'} days</strong> after planting.` +
@@ -2180,6 +2294,20 @@
             const sig = turnaroundSignature(t);
             if (t && editorTurnaroundSig !== null && sig !== editorTurnaroundSig) showToast(turnaroundToast(t));
             editorTurnaroundSig = sig;
+        }
+
+        // The Day column: each row's day of the plants' life (or after harvest), from the table as it stands
+        function updateEditorLifeDays() {
+            const rows = [...$('recipeTaskBody').querySelectorAll('tr')];
+            const { rows: days } = recipeLifeDays(readTaskTable(), editorRecipe?.kind);
+            rows.forEach((tr, i) => {
+                const cell = tr.querySelector('td.t-life'), d = days[i];
+                if (!cell) return;
+                const key = d ? `${d.num}|${d.of}` : '—';
+                if (cell.dataset.v === key) return;
+                cell.dataset.v = key;
+                cell.innerHTML = d ? `<span class="t-life-num">${d.num}</span><span class="t-life-of">${escapeHtml(d.of)}</span>` : '<span class="t-life-of">—</span>';
+            });
         }
 
         function renderTaskTable() {
@@ -2202,6 +2330,7 @@
                     <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
                     <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? `disabled title="${isVegRecipe(editorRecipe) ? 'Counted back from Retire Mothers — it starts the next mother lot' : 'Counted back from harvest — it starts the next lot'}"` : 'title="Reference anchor"'}>${refOpts}</select></td>
                     <td class="t-offset"><input type="number" class="t-offset" step="1" min="${recipeOffsetRange(t).min}" max="${recipeOffsetRange(t).max}" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
+                    <td class="t-life"></td>
                     <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
                         ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length / Multi-day harvest)">'
                         : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="How many days the task runs (blank = 1)">`}</td>
@@ -3367,7 +3496,7 @@
             // Update date picker label based on clone state
             const anchorLabel = $('anchorDateLabel');
             if (anchorLabel) {
-                anchorLabel.textContent = clonesEnabled ? 'Cloning Date (Day 0)' : 'Planting Date (Day 0)';
+                anchorLabel.textContent = clonesEnabled ? 'Cloning Date (day 1)' : 'Planting Date (day 1)';
             }
 
             const retireEntry = taskOffsets.find(e => e.def.taskType === 'retire');
@@ -3417,6 +3546,8 @@
                 const startDate = computeTaskDate(anchorDate, effectiveOffset);
                 const endDate = taskEndDate(def, startDate, isEnabled);
                 if (isEnabled) taskDates[def.taskType] = startDate;
+                // Which day of the plants' life it lands on (or how long after harvest) — shown for switched-off tasks too
+                const lifeDay = lifeDayLabel(plantingDate, startDate, taskEndDate(def, startDate, true), isVegRecipe(activeRecipe) ? anchors.retire : anchors.harvestEnd, isVegRecipe(activeRecipe));
 
                 // Build display date string with weekday (e.g. "2026-09-15 · Tue")
                 const displayDate = endDate
@@ -3487,7 +3618,7 @@
                 const dateBadgeCls = `preview-computed-date${isMultiDayTask(def) ? ' multi' : ''}`;
                 const dateBadgeHtml = canPickDate
                     ? `<button type="button" class="${dateBadgeCls} clickable" data-idx="${idx}" data-date="${startDate}" title="Click to pick a date">${displayDate}</button>`
-                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? 'title="Locked to Day 0"' : ''}>${displayDate}</span>`;
+                    : `<span class="${dateBadgeCls}" ${!isEnabled ? 'style="opacity:0.4"' : ''} ${isLockedDisplay ? 'title="Locked to day 1"' : ''}>${displayDate}</span>`;
 
                 // Duration controls — Trim length (always) and Harvest multi-day toggle + length
                 let durationControlsHtml = '';
@@ -3519,7 +3650,7 @@
                     <span class="preview-task-emoji">${def.emoji}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
-                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel}${estHtml}${repeatHtml}</div>
+                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel} · <span class="preview-task-life" title="Day 1 is the day the clones are cut (the planting day with clones off); the plants' life ends with the harvest's last day">${lifeDayText(lifeDay)}</span>${estHtml}${repeatHtml}</div>
                         ${cutWarnHtml}
                     </div>
                     ${offsetGroupHtml}
