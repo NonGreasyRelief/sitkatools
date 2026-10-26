@@ -160,7 +160,7 @@ export async function run(b, BASE) {
     await b.run(ew, `document.getElementById('pwBillFrom').value = '2026-08-01'; document.getElementById('pwBillTo').value = '2026-08-31'; document.getElementById('pwBillAmount').value = '3300'; document.getElementById('pwBillAddBtn').click();`, { user: true });
     await b.sleep(300);
     let costs = await b.run(main, `return DB.data._EmployeeWizard.costs;`);
-    check('property is shared by plants by default (user decision 2026-10-26)', (await b.run(ew, `return document.querySelector('input[name="propertyShare"]:checked')?.value;`)) === 'plants');
+    check('property is shared by lights by default (user decision 2026-10-26, evening)', (await b.run(ew, `return document.querySelector('input[name="propertyShare"]:checked')?.value;`)) === 'lights');
     await b.run(ew, `document.querySelector('input[name="propertyShare"][value="area"]').click();`, { user: true });
     await b.sleep(200);
     check('…and picking floor area is saved', (await b.run(main, `return DB.data._EmployeeWizard.costs.propertyShare;`)) === 'area');

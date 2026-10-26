@@ -1,6 +1,8 @@
 // Cost per gram audit, 2026-10-26 — the sharing rules (group B), worked by hand on cost-per-gram.test.mjs's example
 // (L100 in Building 1: Grow 1 D20–D40, 10,000 g, 30 h at $20–22 = $630, Weigh & Ship on D50; today = D120):
-// - a building's rent is shared by floor area (the default), by lights when a room in use has none, or by plants;
+// - a building's rent is shared by lights (the default, user decision 2026-10-26 evening): a lot drying or trimming pays
+//   none (the dry room is there for the flower rooms), and a day with only lots drying or trimming is an idle day;
+// - or by floor area (by lights when a room in use has none), or by plants;
 // - costs count on the ship day (Weigh & Ship signed off done), with all the crop's grams;
 // - shared labour is spread over the grams shipped, each building's over its own; a building that shipped nothing in the
 //   period (the nursery) passes its share to every gram, so the buildings add up to the org;
@@ -8,7 +10,7 @@
 import { today, makeChecker, fresh, openSitka, loadSingle, openTool, leave } from './lib/helpers.mjs';
 import { costDb } from './cost-per-gram.test.mjs';
 
-export const title = 'cost per gram audit: rent by floor area, ship day, shared costs by building and org';
+export const title = 'cost per gram audit: rent by lights or floor area, ship day, shared costs by building and org';
 const D = n => today(-120 + n);
 const near = (a, b, eps = 1e-6) => a != null && Math.abs(a - b) < eps;
 
@@ -29,6 +31,36 @@ export async function run(b, BASE) {
     // The days of D[from..to] at $monthly a month
     const span = (from, to, monthly, f = v => v) => { let t = 0; for (let n = from; n <= to; n++) { const [y, m] = D(n).split('-').map(Number); t += f(monthly / new Date(y, m, 0).getDate()); } return t; };
 
+    // ---- Rent by lights (the default): L100 dries in Dry 1 (no lights) on D41–D50 while L200 grows in Grow 1 ----
+    const lights = ({ next = true, share } = {}) => {
+        const db = costDb();
+        db.buildings.B1.monthlyPropertyCost = 3000;
+        db.rooms.R1DR = { name: 'Dry 1', createdDate: '2026-01-01', assignedLots: [], buildingId: 'B1' };
+        db.buildings.B1.assignedRooms.push('R1DR');
+        Object.assign(db.lots.L100, { dryRoom: 'Dry 1', trimRoom: 'Dry 1' });
+        // The next lot in Grow 1 (no schedule: its current room from the day it was made)
+        if (next) db.lots.L200 = { name: 'L200', strain: 'Test Kush', stage: 'flower', createdDate: D(41), currentRoom: 'Grow 1', destRoom: 'Grow 1', plantCount: 80, startPlantCount: 80 };
+        if (share) db._EmployeeWizard.costs.propertyShare = share;
+        return db;
+    };
+    const lightsRent = `const pm = rptPropertyModel(M.crops), idle = pm.idleBy.B1 || {};
+        return { share: pm.share, L100: pm.byCrop.get('L100').cost, L100days: pm.byCrop.get('L100').days, L200: pm.byCrop.get('L200')?.cost ?? null,
+            noLights: [...pm.noLights], idleDry: Object.entries(idle).filter(([d]) => d >= '${D(41)}' && d <= '${D(50)}').reduce((t, [, v]) => t + v, 0),
+            stays: rptCropRoomDays(of('L100')).map(st => st.roomId + ':' + st.phase).join(), miss: rptCosts(M) };`;
+    let r = await measure(lights(), lightsRent);
+    check('rent is shared by lights by default', r.share === 'lights', r.share);
+    check('…L100 pays its building\'s rent while it grows (D0–D40, the only lot growing) and none while drying and trimming in Dry 1',
+        near(r.L100, span(0, 40, 3000)) && r.L100days === 41 && /R1DR:dry/.test(r.stays), JSON.stringify({ L100: r.L100, days: r.L100days, stays: r.stays }));
+    check('…the next lot in Grow 1 carries the building from D41 (Dry 1 included), with no idle days while L100 dries',
+        near(r.L200, span(41, 120, 3000)) && near(r.idleDry, 0), JSON.stringify({ L200: r.L200, idleDry: r.idleDry }));
+    check('…and Dry 1 (no lights) isn\'t listed as a room missing its light count', !r.noLights.includes('R1DR') && !/Dry 1 has no light count/.test(r.miss), JSON.stringify(r.noLights));
+    r = await measure(lights({ next: false }), lightsRent);
+    check('only L100 drying in the building (Grow 1 empty): those days are idle days, spread over the grams, not L100\'s',
+        near(r.L100, span(0, 40, 3000)) && near(r.idleDry, span(41, 50, 3000)) && /only lots drying or trimming/.test(r.miss), JSON.stringify({ L100: r.L100, idleDry: r.idleDry }));
+    r = await measure(lights({ share: 'plants' }), lightsRent);
+    check('by plants (a choice in Power & Rates), the drying lot pays its turn in the dry room: L100 100 of 180 plants on D41–D50',
+        r.share === 'plants' && near(r.L100, span(0, 40, 3000) + span(41, 50, 3000, v => v * 100 / 180)), JSON.stringify({ L100: r.L100, L200: r.L200 }));
+
     // ---- Rent by floor area: L300 in Veg 1 on D20–D40 while L100 is in Grow 1 ----
     const area = () => {
         const db = costDb();
@@ -41,7 +73,7 @@ export async function run(b, BASE) {
         return db;
     };
     const rent = `const pm = rptPropertyModel(M.crops); return { L100: pm.byCrop.get('L100').cost, L300: pm.byCrop.get('L300').cost, noArea: [...pm.noArea], share: pm.share, miss: rptCosts(M) };`;
-    let r = await measure(area(), rent);
+    r = await measure(area(), rent);
     check('floor area, when picked in Power & Rates', r.share === 'area', r.share);
     check('Grow 1 (2,000 sq ft) carries 4/5 of the days it shares with Veg 1 (500 sq ft)',
         near(r.L100, span(0, 19, 3000) + span(20, 40, 3000, v => v * 0.8)) && near(r.L300, span(20, 40, 3000, v => v * 0.2)), JSON.stringify({ L100: r.L100, L300: r.L300 }));

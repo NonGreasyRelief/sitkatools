@@ -1456,9 +1456,9 @@
             </div>
             <div class="report-section power-card">
                 <h3>🏠 Property cost (rent and fees) is shared by</h3>
-                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="plants"> <span><b>Plants</b> (default) — each day, a building's cost is split between every lot in it by its plants that day, the lot drying or trimming included (by the plants it harvested), so each lot pays for its turn in the dry room.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="lights"> <span><b>Lights in use</b> (default) — each day, a building's cost is split between its rooms holding a growing crop by their light count, then by plants within a room, so four equal grow rooms carry a quarter each and a clone room only its few lights. A lot drying or trimming pays no rent: the dry room is there for the flower rooms, so they carry it. A day with only lots drying or trimming in the building is an idle day, spread over the grams shipped.</span></label>
                 <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="area"> <span><b>Floor area</b> — each day, split between its rooms holding a crop by their floor area (SitkaTools' Room Manager), then by plants within a room. A day when a room in use has no floor area set is split by lights.</span></label>
-                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="lights"> <span><b>Lights in use</b> — each day, split between its rooms holding a crop by their light count, so four equal grow rooms carry a quarter each and a clone room only its few lights.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="plants"> <span><b>Plants</b> — each day, split between every lot in the building by its plants that day, the lot drying or trimming included (by the plants it harvested), so each lot pays for its turn in the dry room.</span></label>
                 <div class="power-note" id="pwPropNote"></div>
             </div>
             <div class="report-section power-card">
@@ -4806,8 +4806,9 @@
         // ⚡ Power & Rates water rate and CropLabourWizard's price list. Supplies come from the lot's recipe.
         // Property (rent and property fees) is each building's monthly cost, set in SitkaTools' Building Manager
         // (buildings.<id>.monthlyPropertyCost): each month is spread evenly over its days, and each day is shared by the
-        // building's rooms holding a crop that day — by their light count, or by plants (⚡ Power & Rates,
-        // costs.propertyShare) — so four equal grow rooms carry a quarter each (user decision 2026-10-17).
+        // building's rooms holding a growing crop that day — by their light count (the default), or by floor area or plants
+        // (⚡ Power & Rates, costs.propertyShare) — so four equal grow rooms carry a quarter each (user decisions 2026-10-17,
+        // 2026-10-26). By lights, a lot drying or trimming pays no rent: the dry room is there for the flower rooms.
         // =====================================================
         const RPT_COST_PARTS = [['labour', 'Labour', 'var(--rv-blue)'], ['power', 'Electricity', 'var(--rv-yellow)'], ['water', 'Water', 'var(--rv-aqua)'],
             ['fert', 'Fertilizer', 'var(--rv-green)'], ['supplies', 'Supplies', 'var(--rv-violet)'], ['property', 'Property', 'var(--rv-magenta)']];
@@ -4819,7 +4820,7 @@
             return {
                 source: c.electricity === 'bills' ? 'bills' : 'estimate',
                 rate: price(c.kWhRate), waterRate: price(c.waterPer1000L),
-                propertyShare: c.propertyShare === 'area' ? 'area' : c.propertyShare === 'lights' ? 'lights' : 'plants',   // plants by default (user decision 2026-10-26)
+                propertyShare: c.propertyShare === 'area' ? 'area' : c.propertyShare === 'plants' ? 'plants' : 'lights',   // lights by default (user decision 2026-10-26, evening)
                 bills: (c.bills || []).filter(b => isDay(b?.from) && isDay(b?.to) && b.to >= b.from && Number(b.amount) > 0),
                 catalog, byName, price,
                 // 📅 Price by date (user decision 2026-10-26): each figure as it stood on a day (no day: today's)
@@ -5129,12 +5130,17 @@
             return rptPowerModel([...M.crops, c]).byCrop.get(c.lotId);
         }
 
-        // The property model for a set of crops: { byCrop: Map(lotId → { cost, days }), unallocated: { day: $ }, monthly,
-        // share, noLights: Set(roomId) }. A building's monthly rent and fees, spread over the days of each month. Each
-        // day it is shared by the building's rooms holding a crop, by their light count ("lights", the default) or by
-        // their plants ("plants"), then between the crops in a room by plants. A room in use with no light count gets
-        // no share (noLights); when no room in use has one, that day is shared by plants. A day with no crop in the
-        // building is unallocated: no crop carries it.
+        // The property model for a set of crops: { byCrop: Map(lotId → { cost, days }), unallocated: { day: $ }, idleBy,
+        // monthly, share, noLights: Set(roomId), noArea }. A building's monthly rent and fees, spread over the days of each
+        // month. Each day it is shared out by costs.propertyShare:
+        // - "lights" (the default, user decision 2026-10-26): between the building's rooms holding a growing lot, by their
+        //   light count, then between the growing lots in a room by plants. A lot drying or trimming pays no rent: the dry
+        //   room is timed to be free for the flower rooms it serves, so the lit rooms carry it. A room with a growing lot
+        //   and no light count gets no share (noLights); when no such room has one, the day is shared by plants. A day
+        //   with only lots drying or trimming in the building is an idle day.
+        // - "area": between the rooms holding a crop by floor area (a day when one has none: by lights, as above).
+        // - "plants": between every lot in the building by its plants that day, the lot drying or trimming included.
+        // A day with no crop in the building is an idle day (unallocated, idleBy): spread over the period's grams.
         function rptPropertyModel(crops) {
             const today = rToday(), rooms = DB.data.rooms || {}, cfg = rptCostConfig(), share = cfg.propertyShare;
             const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0, noRent: 0 }])), unallocated = {}, idleBy = {}, monthly = {}, noLights = new Set(), noArea = new Set();
@@ -5146,7 +5152,7 @@
             const stays = [];
             for (const c of crops) for (const st of rptCropRoomDays(c)) {
                 const b = rooms[st.roomId]?.buildingId;
-                if (b && b in monthly) stays.push({ c, lotId: c.lotId, b, roomId: st.roomId, from: st.from, to: st.to });
+                if (b && b in monthly) stays.push({ c, lotId: c.lotId, b, roomId: st.roomId, from: st.from, to: st.to, growing: st.phase !== 'dry' && st.phase !== 'trim' });
                 else if (st.from <= today) {
                     // Partial = missing (user decision 2026-10-26): days in a building with no property cost set (or a room in
                     // no building) leave the lot's property out of the cost per gram
@@ -5161,39 +5167,47 @@
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const days = monthDays(d);
                 for (const b of Object.keys(monthly)) {
-                    const perMonth = cfg.rentOn(b, d), inRoom = new Map();   // roomId → Map(lotId → plants)
+                    const perMonth = cfg.rentOn(b, d), inRoom = new Map(), growingIn = new Map();   // roomId → Map(lotId → plants)
                     for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) {
+                        const n = rptPlantsOn(st.c, d);   // its plants that day
                         const m = inRoom.get(st.roomId) || inRoom.set(st.roomId, new Map()).get(st.roomId);
-                        m.set(st.lotId, (m.get(st.lotId) || 0) + rptPlantsOn(st.c, d));   // its plants that day
+                        m.set(st.lotId, (m.get(st.lotId) || 0) + n);
+                        if (st.growing) { const g = growingIn.get(st.roomId) || growingIn.set(st.roomId, new Map()).get(st.roomId); g.set(st.lotId, (g.get(st.lotId) || 0) + n); }
                     }
                     // 📅 The building's figure that day (price by date); a day it had none leaves its lots' property out
                     if (perMonth == null) { for (const m of inRoom.values()) for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.noRent++; } continue; }
                     const amount = perMonth / days;
-                    if (!inRoom.size) {
-                        // No crop in the building: an idle day. Its cost goes into the period's grams (user decision 2026-10-26)
+                    const idleDay = () => {
+                        // An idle day: its cost goes into the period's grams (user decision 2026-10-26)
                         unallocated[d] = (unallocated[d] || 0) + amount;
                         (idleBy[b] || (idleBy[b] = {}))[d] = (idleBy[b]?.[d] || 0) + amount;
-                        continue;
-                    }
-                    // Floor area (the default): a day when a room in use has no floor area set is split by lights instead
+                    };
+                    if (!inRoom.size) { idleDay(); continue; }   // no crop in the building
+                    // Floor area: a day when a room in use has no floor area set is split by lights instead
                     let mode = share;
                     if (mode === 'area') {
                         const without = [...inRoom.keys()].filter(id => !(Number(rooms[id]?.floorSqFt) > 0));
                         without.forEach(id => noArea.add(id));
                         if (without.length) mode = 'lights';
                     }
-                    let weights = [...inRoom].map(([roomId, m]) => [roomId, m, mode === 'area' ? Number(rooms[roomId].floorSqFt) : mode === 'lights' ? Number(rooms[roomId]?.lightCount) || 0 : plantsIn(m)]);
+                    // By lights only the rooms with a growing lot share the day, and only their growing lots; a day with only
+                    // lots drying or trimming in the building is an idle day (user decision 2026-10-26)
+                    const sharing = mode === 'lights' ? growingIn : inRoom;
+                    if (!sharing.size) { idleDay(); continue; }
+                    let weights = [...sharing].map(([roomId, m]) => [roomId, m, mode === 'area' ? Number(rooms[roomId].floorSqFt) : mode === 'lights' ? Number(rooms[roomId]?.lightCount) || 0 : plantsIn(m)]);
                     let total = weights.reduce((t, [, , w]) => t + w, 0);
                     if (mode === 'lights') {
                         weights.forEach(([roomId, , w]) => { if (!(w > 0)) noLights.add(roomId); });
                         if (!(total > 0)) { weights = weights.map(([roomId, m]) => [roomId, m, plantsIn(m)]); total = weights.reduce((t, [, , w]) => t + w, 0); }
                     }
+                    if (!(total > 0)) { idleDay(); continue; }   // nothing to share it by (no plants on record): no lot carries it
                     for (const [, m, w] of weights) {
                         if (!(w > 0)) continue;
                         const roomAmount = amount * w / total, pt = plantsIn(m);
                         for (const [lotId, n] of m) {
                             const o = byCrop.get(lotId); if (!o) continue;
-                            const v = roomAmount * n / pt, k = b + '|' + d.slice(0, 7);
+                            // Between the room's lots by plants (evenly when none of them has a plant count)
+                            const v = roomAmount * (pt > 0 ? n / pt : 1 / m.size), k = b + '|' + d.slice(0, 7);
                             o.cost += v; o.days++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
                             (o.cBD || (o.cBD = {}))[b + '|' + d] = (o.cBD[b + '|' + d] || 0) + v;   // by day, for a period's own days
@@ -6955,7 +6969,7 @@
             // Idle building days (no crop in it): their rent and power are spread over the grams shipped in the period
             const idleIn = (by, f) => rSum(Object.values(by || {}).flatMap(days => Object.entries(days).filter(([d]) => inRange(d, M.per.from, M.per.to)).map(([, v]) => f(v))), x => x);
             const propIdle = idleIn(prop.idleBy, v => v), powerIdle = idleIn(pm.idleBy, v => v.cost || 0);
-            if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with no crop in the building; it’s spread over the grams shipped in the period.`);
+            if (propIdle > 0.005) miss.push(`${rMoney(propIdle)} of property cost fell on days with ${prop.share === 'plants' ? 'no crop in the building' : 'no crop growing in the building (empty, or only lots drying or trimming)'}; it’s spread over the grams shipped in the period.`);
             if (powerIdle > 0.005) miss.push(`${rMoney(powerIdle)} of electricity fell on days a building held no crop (its equipment, or a bill with no crop to carry it); it’s spread over the grams shipped in the period.`);
             if (prop.share === 'area') for (const id of prop.noArea) if (cur.some(c => rptCropRoomDays(c).some(st => st.roomId === id)))
                 miss.push(`${rptRoomName(id)} has no floor area, so on days it’s in use its building’s rent is split by lights — set it in SitkaTools’ Room Manager.`);
@@ -8290,7 +8304,7 @@ ${logHtml(M)}
 
         // =====================================================
         // ⚡ Power & Rates — where electricity cost comes from, the rates, and the power bills (office only)
-        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L, propertyShare: 'plants' (default) | 'area' | 'lights',
+        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L, propertyShare: 'lights' (default) | 'area' | 'plants',
         //                           bills: [{ id, buildingId | null (whole site), from, to, kWh, amount }] }
         // Saved in Main.json (user decision 2026-10-16). The Reports turn it into each crop's electricity and water $:
         // estimated kWh × the rate, or the bills split across crops by their estimated use.

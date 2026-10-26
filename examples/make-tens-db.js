@@ -165,7 +165,7 @@ for (const [id, l] of Object.entries(lots)) rooms[roomIdByName(l.destRoom)].assi
 const db = {
     lots, rooms, buildings, calendarEvents: [],
     _CropLabourWizard: { generations: [], recipes: { [bloomRecipe.id]: bloomRecipe, [motherRecipe.id]: motherRecipe }, inputs },
-    _EmployeeWizard: { employees, settings: { shiftHours: 10 }, costs: { electricity: 'estimate', kWhRate: IN.kWhRate, waterPer1000L: IN.waterPer1000L, propertyShare: 'plants', bills: [] } },
+    _EmployeeWizard: { employees, settings: { shiftHours: 10 }, costs: { electricity: 'estimate', kWhRate: IN.kWhRate, waterPer1000L: IN.waterPer1000L, propertyShare: 'lights', bills: [] } },
     _EquipmentWizard: { rooms: Object.fromEntries(['B1DRY', 'B2DRY'].map(id => [id, { equipment: [{ id: `eq${id}`, type: 'Dehumidifier', name: `Dehumidifier — ${rooms[id].name}`,
         installedDate: rel(-120), power: { watts: IN.dehuWatts, units: 1, hoursPerDay: IN.dehuHours }, tasks: [], additionalMaintenance: [] }] }])) },
     _DailyWizard: { buildings: { B1: { tasks: [] }, B2: { tasks: [] } } },
@@ -312,7 +312,8 @@ for (const b of bloom) {
 }
 const LOTS = ['M100', ...bloom.map(b => b.id)];
 const K = Object.fromEntries(LOTS.map(id => [id, { lightKwh: 0, equipKwh: 0, rent: 0, rentDays: 0, waterL: 0, fertMl: 0, hours: 0, taskDays: 0, supplies: 0, supplyLines: [], nights: {} }]));
-const idle = { B1: { rent: 0, kWh: 0, days: [] }, B2: { rent: 0, kWh: 0, days: [] } };
+// days: no crop in the building (its rent and dehumidifier are idle); rentDays: no lot growing in it (its rent is idle)
+const idle = { B1: { rent: 0, kWh: 0, days: [], rentDays: [] }, B2: { rent: 0, kWh: 0, days: [], rentDays: [] } };
 const START = M0;
 // Where the money was spent: building → 'YYYY-MM' → part → $ (every $ in the building, whoever carries it)
 const SPEND = { B1: {}, B2: {} }, SPEND_DAYS = { B1: {}, B2: {} };
@@ -346,12 +347,18 @@ eachDay(START, TODAY, d => {
         const dryId = bid === 'B1' ? 'B1DRY' : 'B2DRY', inDry = inB.filter(s => s.roomId === dryId);
         if (inDry.length) inDry.forEach(s => { K[s.lot].equipKwh += dehuKwh * s.plants / inDry.reduce((t, x) => t + x.plants, 0); });
         else if (plants) inB.forEach(s => { K[s.lot].equipKwh += dehuKwh * s.plants / plants; });
-        else idle[bid].kWh += dehuKwh;
+        else { idle[bid].kWh += dehuKwh; idle[bid].days.push(d); }
         spend(bid, d, 'power', dehuKwh * IN.kWhRate);
         spend(bid, d, 'property', rentToday);
-        // Rent: the day's share of the month, between the lots in the building by plants; none → idle
-        if (plants) inB.forEach(s => { K[s.lot].rent += rentToday * s.plants / plants; K[s.lot].rentDays++; });
-        else { idle[bid].rent += rentToday; idle[bid].days.push(d); }
+        // Rent (by lights, the default): the day's share of the month, between the rooms holding a growing lot by their
+        // lights, then between a room's lots by plants. A lot drying pays none; no lot growing in the building → idle
+        const growing = inB.filter(s => s.phase !== 'dry');
+        const lightsIn = [...new Set(growing.map(s => s.roomId))].reduce((t, id) => t + (rooms[id].lightCount || 0), 0);
+        if (lightsIn) growing.forEach(s => {
+            const roomPlants = growing.filter(x => x.roomId === s.roomId).reduce((t, x) => t + x.plants, 0);
+            K[s.lot].rent += rentToday * (rooms[s.roomId].lightCount || 0) / lightsIn * s.plants / roomPlants; K[s.lot].rentDays++;
+        });
+        else { idle[bid].rent += rentToday; idle[bid].rentDays.push(d); }
     }
     // Water and fertilizer: every grow-log day with plants (not the harvest day: plants go to 0 that day)
     for (const s of here) {
@@ -393,8 +400,9 @@ function period(months) {
     const shipped = bloom.filter(b => b.ship >= from && b.ship <= TODAY);
     const grams = shipped.length * IN.flower;
     const sum = p => shipped.reduce((t, b) => t + lotCost[b.id].total[p], 0);
-    const idleIn = bid => ({ rent: idle[bid].days.filter(d => d >= from).reduce((t, d) => t + IN.rent / daysIn(d), 0),
-        kWh: dehuKwh * idle[bid].days.filter(d => d >= from).length, days: idle[bid].days.filter(d => d >= from).length });
+    const idleIn = bid => ({ rent: idle[bid].rentDays.filter(d => d >= from).reduce((t, d) => t + IN.rent / daysIn(d), 0),
+        kWh: dehuKwh * idle[bid].days.filter(d => d >= from).length, days: idle[bid].days.filter(d => d >= from).length,
+        rentDays: idle[bid].rentDays.filter(d => d >= from).length });
     const idleB = { B1: idleIn('B1'), B2: idleIn('B2') };
     const perB = bid => {
         const list = shipped.filter(b => b.building === bid), g = list.length * IN.flower;
@@ -420,7 +428,7 @@ L.push('These numbers are worked out from the inputs by this script on its own, 
 L.push('## Inputs', '');
 L.push('| What | Value |', '|---|---|');
 for (const [k, v] of [['Buildings', 'Building 1 (Nursery): Mother Room, Clone Room, Veg Room, Grow 1, Grow 2, Dry Room 1 · Building 2 (Flower): Grow 3, Grow 4, Dry Room 2'],
-    ['Rent', `$${n0(IN.rent)} a month per building, spread over each month's days, shared by plants`],
+    ['Rent', `$${n0(IN.rent)} a month per building, spread over each month's days, shared by the lights of the rooms with a lot growing (a lot drying pays none)`],
     ['Lights', `${IN.lights} lights × ${n0(IN.watts)} W in every room except the dry rooms = ${lightKw} kW → ${lightKw * IN.vegHours} kWh a veg day (${IN.vegHours} h), ${lightKw * IN.bloomHours} kWh a bloom day (${IN.bloomHours} h)`],
     ['Dehumidifier', `1 in each dry room, ${n0(IN.dehuWatts)} W × ${IN.dehuHours} h = ${dehuKwh} kWh a day`],
     ['Electricity', `$${IN.kWhRate} per kWh (estimated usage)`], ['Water', `$${IN.waterPer1000L} per 1,000 L`], ['Fertilizer', `Grow A, $${IN.fertPerL} per L`],
@@ -446,7 +454,7 @@ L.push(`- **Water:** ${dDiff(b0.day0, b0.harvest)} grow-log days with plants × 
 L.push(`- **Fertilizer:** ${dDiff(b0.day0, b0.harvest)} days × ${n0(IN.fertMl * IN.plants / 1000)} L = ${n0(K[b0.id].fertMl / 1000)} L × $${IN.fertPerL} = **${$(own(b0.id).fert)}**.`);
 L.push(`- **Labour:** ${K[b0.id].taskDays} task days × ${IN.hoursPerTaskDay} h = ${K[b0.id].hours} h × $${IN.wage} = **${$(own(b0.id).labour)}**.`);
 L.push(`- **Supplies:** ${K[b0.id].supplyLines.map(([t, v]) => `${t} = ${$(v)}`).join(' · ')} → **${$(K[b0.id].supplies)}**.`);
-L.push(`- **Property:** each day, its building's rent for that day (monthly ÷ days in the month) × its plants ÷ all plants in the building that day. It changes lot by lot with who else is in the building.`);
+L.push(`- **Property:** each day it grows, its building's rent for that day (monthly ÷ days in the month) × its room's lights ÷ the lights of every room with a lot growing in the building that day (by plants when two lots share a room). Drying days pay none. It changes lot by lot with how many rooms are growing that day.`);
 L.push(`- **Double entries:** PaperWizard saves a phase or room change day on two pages. Transplanting (room change) and Flip (phase change) are on two pages in this DB, as PaperWizard stores them: the old page's row has the day's water and fertilizer, the new page's row leaves them blank (the receiving side doesn't enter them). So each day's water counts once.`);
 L.push('', '## The mothers and the cost per clone', '');
 L.push(`M100 has ${IN.mothers} plants from ${M0} to today (${dDiff(M0, TODAY) + 1} days). Ten lots × ${n0(IN.plants)} clones = **${n0(clonesCut)} clones** cut from it. Cost per clone = everything spent on the mothers so far ÷ ${n0(clonesCut)}.`, '');
@@ -456,7 +464,7 @@ const momHow = {
     labour: `${kM.taskDays} task days × ${IN.hoursPerTaskDay} h × $${IN.wage}`,
     power: `lights ${n0(kM.lightKwh)} kWh (${dDiff(M0, TODAY) + 1} days × ${lightKw * IN.vegHours} kWh) + dehumidifier share ${kM.equipKwh.toFixed(1)} kWh, × $${IN.kWhRate}`,
     water: `${n0(kM.waterL)} L`, fert: `${n0(kM.fertMl / 1000)} L Grow A`, supplies: kM.supplyLines.map(([t]) => t).join(', '),
-    property: `share of Building 1's rent by plants over ${kM.rentDays} days`
+    property: `share of Building 1's rent by lights over ${kM.rentDays} days`
 };
 for (const p of PARTS) L.push(`| ${PART_NAMES[p]} | ${$(momOwn[p])} | ${momHow[p]} | ${$g(perClone[p])} | ${$(perClone[p] * IN.plants)} |`);
 L.push(`| **All in** | **${$(PARTS.reduce((t, p) => t + momOwn[p], 0))}** | | **${$g(PARTS.reduce((t, p) => t + perClone[p], 0))}** | **${$(PARTS.reduce((t, p) => t + perClone[p] * IN.plants, 0))}** |`);
@@ -471,7 +479,9 @@ for (const b of bloom) {
 for (const P of [P6, P12]) {
     L.push('', `## 💲 Cost per gram — Period: Last ${P.months} months (${P.from} → ${TODAY})`, '');
     L.push(`Lots shipped (✅ Weigh & Ship signed off) in the period: ${P.shipped.length} → ${n0(P.grams)} g of flower.`);
-    const idleText = bid => P.idleB[bid].days ? `${buildings[bid].name} held no crop on ${P.idleB[bid].days} days of the period: rent ${$(P.idleB[bid].rent)} + its dehumidifier ${n0(P.idleB[bid].kWh)} kWh = ${$(P.idleB[bid].kWh * IN.kWhRate)}, spread over the grams it shipped.` : `${buildings[bid].name} held a crop every day of the period: no idle days.`;
+    const idleText = bid => { const x = P.idleB[bid], dryOnly = x.rentDays - x.days;
+        return x.rentDays ? `${buildings[bid].name} had no lot growing on ${x.rentDays} days of the period${dryOnly ? ` (${x.days} with no crop at all, ${dryOnly} with only a lot drying)` : ''}: rent ${$(x.rent)}${x.days ? ` + its dehumidifier on the ${x.days} days with no crop, ${n0(x.kWh)} kWh = ${$(x.kWh * IN.kWhRate)}` : ''}, spread over the grams it shipped.`
+            : `${buildings[bid].name} had a lot growing every day of the period: no idle days.`; };
     L.push(`- ${idleText('B1')}`, `- ${idleText('B2')}`, '- No daily chores or equipment hours: shared labour is $0, so labour direct = fully loaded.', '');
     L.push('| Part | $ (the lots + their clones) | + idle building days | ÷ grams | **$ per gram** |', '|---|---|---|---|---|');
     for (const p of PARTS) {
@@ -503,9 +513,11 @@ for (const ym of [...new Set([...Object.keys(SPEND.B1), ...Object.keys(SPEND.B2)
     L.push(`| ${ym} | ${buildings[bid].name} | ${PARTS.map(p => $(m[p])).join(' | ')} | **${$(PARTS.reduce((t, p) => t + m[p], 0))}** |`);
 }
 L.push('', '## Days to watch', '');
-L.push(`- **Building 2 before its first crop:** the mothers start ${M0} (the first day anything is costed), and Building 2 gets its first lot on ${bloom[1].transplant} (L102 transplanted to Grow 3). Those ${idle.B2.days.length} days are idle: in the 12-month view they add Building 2's rent and dehumidifier to its grams; the 6-month view starts after them.`);
+L.push(`- **Building 2 before its first crop:** the mothers start ${M0} (the first day anything is costed), and Building 2 gets its first lot on ${bloom[1].transplant} (L102 transplanted to Grow 3). Those ${idle.B2.days.filter(d => d < bloom[1].transplant).length} days are idle: in the 12-month view they add Building 2's rent and dehumidifier to its grams; the 6-month view starts after them.`);
 L.push(`- **Empty dry rooms:** on days no lot is drying, the dehumidifier's ${dehuKwh} kWh goes to the building's other lots by plants (the mothers included, in Building 1).`);
-L.push(`- **Rent split by plants:** in Building 1 the mothers (${IN.mothers} plants) take ${IN.mothers} / (${IN.mothers} + ${n0(IN.plants)} × lots there that day) of the day's rent; each bloom lot ${n0(IN.plants)} / that. Switch ⚡ Power & Rates → Property to **Floor area** (every room 1,000 sq ft) to split it room by room instead.`);
+L.push(`- **Rent split by lights:** every room with lights has ${IN.lights}, so each day a building's rent is shared equally by its rooms with a lot growing: in Building 1 the Mother Room always, plus the Clone, Veg and grow rooms in use that day. A lot drying pays none.`);
+L.push(`- **Only a lot drying:** ${idle.B2.rentDays.filter(d => d >= bloom[1].transplant).length ? `Building 2 had only a lot drying (nothing growing) on ${idle.B2.rentDays.filter(d => d >= bloom[1].transplant).length} days after its first crop; those days' rent is idle, spread over its grams.` : 'Building 2 always had a lot growing after its first crop.'} Building 1 always has the mothers growing.`);
+L.push(`- Switch ⚡ Power & Rates → Property to **Plants** (each lot by its plants, drying lots included) or **Floor area** (every room 1,000 sq ft) to see the other splits.`);
 L.push(`- **Double entries:** Transplanting and Flip days are on two grow-log pages (as PaperWizard does); water and fertilizer are only on the old page's row.`);
 fs.writeFileSync(KEY_OUT, L.join('\n') + '\n');
 // The same numbers as data, for checking the page's figures by script

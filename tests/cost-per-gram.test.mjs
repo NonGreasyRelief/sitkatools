@@ -133,7 +133,7 @@ export async function run(b, BASE) {
     await b.run(ew, `document.querySelector('#rptPages button[data-page="costs"]').click();`, { user: true });
     const page2 = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
     check('💲 Costs page lists property, no NaN/undefined', page2.includes('Property (rent & fees)') && page2.includes('41 crop-days') && !page2.includes('Building 1 has no monthly property cost') && !/NaN|undefined|Infinity/.test(page2));
-    check('…and notes the property cost of idle days, spread over the grams', page2.includes('of property cost fell on days with no crop in the building; it’s spread over the grams shipped in the period'));
+    check('…and notes the property cost of idle days, spread over the grams', page2.includes('of property cost fell on days with no crop growing in the building (empty, or only lots drying or trimming); it’s spread over the grams shipped in the period'));
 
     // ---- Closed out: the summary keeps its costs even when the rates change ----
     await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'L100')]);`);
