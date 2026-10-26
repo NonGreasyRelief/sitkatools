@@ -1,5 +1,6 @@
-// SitkaTools' 🌱 Lots — move or close out card (Data & Files) follows the DB without a reload: a new lot shows in its
-// list, building names follow, and a redraw keeps the picked lot, the picked destination and typed Accept initials.
+// SitkaTools' 🌱 Lots — moves and close-out card (Data & Files) follows the DB without a reload: a new lot shows in its
+// list, a redraw keeps the picked lot, and the moves on their way are listed (read only: no Send, no Accept), with
+// building names that follow a rename.
 import { fixtureDb, makeChecker, fresh, splitFiles, openSplit, leave } from './lib/helpers.mjs';
 
 export const title = 'SitkaTools lot move lists follow new lots without a reload';
@@ -23,27 +24,29 @@ export async function run(b, BASE) {
     const made = await b.run(main, `return !!DB.lots.L300;`);
     check('a new lot shows in the move list without a reload', made && (await lotOpts()).includes('L300'), JSON.stringify(await lotOpts()));
 
-    // ---- A redraw keeps the picks ----
-    await b.run(main, `const s = document.getElementById('lotActionSelect'); s.value = 'L100'; s.dispatchEvent(new Event('change'));
-        document.getElementById('sendLotTo').value = 'B3';`);
+    // ---- A redraw keeps the pick ----
+    await b.run(main, `const s = document.getElementById('lotActionSelect'); s.value = 'L100'; s.dispatchEvent(new Event('change'));`);
     await b.run(main, `const st = document.querySelector('.lot-stage-select[data-lot-id="L300"]'); st.value = 'veg'; st.dispatchEvent(new Event('change'));`);
-    const picks = await b.run(main, `return { lot: document.getElementById('lotActionSelect').value, to: document.getElementById('sendLotTo').value,
-        where: document.getElementById('lotActionWhere').textContent, tos: [...document.getElementById('sendLotTo').options].map(o => o.value) };`);
-    check('another change redraws the card but keeps the picked lot and destination', picks.lot === 'L100' && picks.to === 'B3' && picks.tos.join() === 'B2,B3'
-        && picks.where.includes('Grow 1'), JSON.stringify(picks));
-    await b.run(main, `DB.data.buildings.B3.name = 'Building Three'; BuildingManager.renderBuildingList();`);
-    check('a renamed building shows its new name in "send to"', await b.run(main, `return [...document.getElementById('sendLotTo').options].some(o => o.textContent === 'to Building Three') && document.getElementById('sendLotTo').value === 'B3';`));
+    const picks = await b.run(main, `return { lot: document.getElementById('lotActionSelect').value, where: document.getElementById('lotActionWhere').textContent,
+        send: !!document.getElementById('sendLotBtn') || !!document.getElementById('sendLotTo') };`);
+    check('another change redraws the card but keeps the picked lot; there\'s no Send', picks.lot === 'L100' && picks.where.includes('Grow 1') && !picks.send, JSON.stringify(picks));
 
-    // ---- Typed Accept initials survive a redraw ----
-    await b.run(main, `DB.data._LotTransfers = { 'L200@x': { lotId: 'L200', from: 'B2', to: 'B1', sentAt: new Date().toISOString(), sentBy: 'Office' } }; LotActions.render();
-        const row = document.querySelector('.split-transfer[data-transfer="L200@x"]'); row.querySelector('input').value = 'AB';
-        row.querySelector('select').value = 'Clone 1'; window.__row = row;`);
+    // ---- A move on its way is listed, read only, and follows a building rename ----
+    // L200 (no grow log) is set to Building 3's Dry 3 in the Lot Manager: that's the move
+    await b.run(main, `DB.data.lots.L200.dryRoom = 'Dry 3'; renderLotList();
+        const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L200"]'); sel.value = 'Dry 3'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+        window.__tid = Object.keys(DB.data._LotTransfers || {}).find(k => DB.data._LotTransfers[k].lotId === 'L200');
+        window.__row = document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]');`, { user: true });
+    let row = await b.run(main, `const r = window.__row; return r ? { text: r.textContent, buttons: r.querySelectorAll('button, input, select').length } : null;`);
+    check('the move on its way is listed: lot, from → to (room), waiting for the receiver to pick it up — nothing to click',
+        row?.text.includes('Lot L200: Building 2 → Building 3 (Dry 3)') && row.text.includes('waiting for Building 3 to pick it up') && row.buttons === 0, JSON.stringify(row));
     await b.run(main, `const st = document.querySelector('.lot-stage-select[data-lot-id="L300"]'); st.value = 'flower'; st.dispatchEvent(new Event('change'));`);
-    const acc = await b.run(main, `const row = document.querySelector('.split-transfer[data-transfer="L200@x"]');
-        return { same: row === window.__row, ini: row.querySelector('input').value, room: row.querySelector('select').value };`);
-    check('typed initials and the picked room survive a redraw (the row isn\'t rebuilt)', acc.same && acc.ini === 'AB' && acc.room === 'Clone 1', JSON.stringify(acc));
-    await b.run(main, `delete DB.data._LotTransfers['L200@x']; LotActions.render();`);
-    check('the Accept row goes when its transfer does', await b.run(main, `return !document.querySelector('.split-transfer');`));
+    check('another change doesn\'t rebuild the row', await b.run(main, `return document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]') === window.__row;`));
+    await b.run(main, `DB.data.buildings.B3.name = 'Building Three'; BuildingManager.renderBuildingList();`);
+    row = await b.run(main, `return document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]')?.textContent || '';`);
+    check('a renamed building shows its new name', row.includes('Building 2 → Building Three'), row);
+    await b.run(main, `DB.data._LotTransfers[window.__tid].acceptedAt = new Date().toISOString(); LotActions.render();`);
+    check('the row goes once the lot is picked up', await b.run(main, `return !document.querySelector('.split-transfer');`));
 
     await leave(b, main);
     return results;

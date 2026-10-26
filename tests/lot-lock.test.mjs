@@ -198,9 +198,13 @@ export async function run(b, BASE) {
     const files = await splitFiles(b, main, BASE, db);
     await openSplit(b, main, BASE, 'office', files);
     const pw2 = await openTool(b, main, 'PaperWizard');
-    const rooms = await b.run(pw2, `return { split: DeviceView.split, b1: pickableRoomNames(currentLotRoom('L100')).sort(), b2: pickableRoomNames(currentLotRoom('L200')).sort() };`);
-    check('with split files the office\'s Room question lists only the lot\'s building\'s rooms (moves between buildings: Send / Accept)',
+    const rooms = await b.run(pw2, `const sheet = Object.keys(DB.paperWizard.sheets).find(id => DB.paperWizard.sheets[id].cadence === 'daily-weekly');
+        return { split: DeviceView.split, b1: pickableRoomNames(currentLotRoom('L100')).sort(), b2: pickableRoomNames(currentLotRoom('L200')).sort(),
+            groups: roomChoiceGroups(sheet, currentLotRoom('L100')).map(g => [g.label, g.names]) };`);
+    check('with split files the office\'s Start on a chosen day lists only the lot\'s building\'s rooms',
         rooms.split && rooms.b1.join() === 'Clone 1,Dry 1,Grow 1' && rooms.b2.join() === 'Grow A', JSON.stringify(rooms));
+    check('…and the grow log\'s Room question lists them first, then the other building\'s under "🚚 Move to Building 2" (a move)',
+        JSON.stringify(rooms.groups) === JSON.stringify([[null, ['Clone 1', 'Dry 1', 'Grow 1']], ['🚚 Move to Building 2', ['Grow A']]]), JSON.stringify(rooms.groups));
     await leave(b, pw2); await b.send('browsingContext.close', { context: pw2 });
     await leave(b, main);
     return results;

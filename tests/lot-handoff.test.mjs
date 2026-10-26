@@ -1,94 +1,149 @@
-// A lot moving between buildings with split files, file by file: every device opens every building's file, but each
-// saves only its own. Building 1 sends a lot (its file), Building 2 accepts it (its file: the record, the lot's
-// unsigned grow-log pages copied over, the new room) and is offered the new building's grow log; the office opens
-// everything and rewrites no building's file; Building 1 tidies its own file on its next save. The office can also
-// move a lot for a building, which saves in that building's file.
+// A lot moving between buildings with split files, file by file (user decision 2026-10-25: no Send or Accept). Building
+// 1's tablet records the move in the lot's grow log (the Room question lists Building 2's rooms): the page is struck,
+// the next page starts blank on the move day, and Building 1's file keeps the move and the lot's pages until Building 2
+// picks it up. Building 2's tablet picks it up by itself when it opens the files (its file: the move, a copy of the
+// lot's unsigned pages), and fills the new page. The office opens everything and rewrites no building's file; Building
+// 1 drops its copy with its own next save. A lot with no grow log moves when the office sets its room in the Lot Manager.
 import { fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, openTool, leave, today } from './lib/helpers.mjs';
 
-export const title = 'lot moves between buildings: who reads and who writes which file';
+export const title = 'lot moves between buildings: recorded by the grow log, picked up by the receiving building';
 
 function moveDb() {
     const db = fixtureDb();
-    const Y = today(-1);
-    const page = room => ({ phase: 'Bloom', room, header: {}, days: { [Y]: { note: 'watered', rm: room } }, phaseChangeDate: null, strikeInitials: null,
-        snapshots: {}, signature: null, completedAt: null, printedAt: null });
+    const Y2 = today(-2), Y = today(-1), T = today();
+    const page = (room, days) => ({ phase: 'Bloom', room, header: {}, days: Object.fromEntries(days.map(d => [d, { note: 'watered', rm: room }])), phaseChangeDate: null,
+        strikeInitials: null, snapshots: {}, signature: null, completedAt: null, printedAt: null });
     db._PaperWizard = {
         sheets: { glog: { name: 'Grow Log', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'daily-weekly', document: 'grow-log', fields: [], signature: null } },
         wizards: { wg01: { id: 'wg01', sheetId: 'glog', name: 'Grow', questions: [
             { id: 'note', label: 'Notes', type: 'text', options: [], rowScoped: true, sameAsLast: false, mandatory: false, prefillFrom: null },
             { id: 'rm', label: 'Room', type: 'room', options: [], rowScoped: true, sameAsLast: false, mandatory: false, prefillFrom: null }] } },
-        entries: { L100: { glog: { instances: { [Y]: page('Grow 1') } } }, L200: { glog: { instances: { [Y]: page('Grow A') } } } }
+        entries: { L100: { glog: { instances: { [Y2]: page('Grow 1', [Y2, Y]) } } }, L200: { glog: { instances: { [Y]: page('Grow A', [Y]) } } } }
     };
-    return { db, Y };
+    // A lot with no grow log yet, in Building 2, planned to go back to Building 1's Clone 1 (the Lot Manager offers a lot's planned rooms)
+    db.lots.L300 = { name: 'L300', strain: 'Blue Test', stage: 'veg', createdDate: Y2, closedDate: null, destRoom: 'Grow A', cloningRoom: 'Clone 1', vegRoom: null, currentRoom: 'Grow A', plantCount: 40 };
+    db.rooms.R2G1.assignedLots.push('L300');
+    return { db, Y2, Y, T };
 }
 
 export async function run(b, BASE) {
     const { results, check } = makeChecker();
-    const { db, Y } = moveDb();
+    const { db, Y2, Y, T } = moveDb();
     const main = await fresh(b);
     const files = await splitFiles(b, main, BASE, db);
     check('split: each lot\'s grow log is in its own building\'s file', !!JSON.parse(files['Building-B1.json'])._PaperWizard.entries.L100 && !!JSON.parse(files['Building-B2.json'])._PaperWizard.entries.L200);
 
-    const send = (lotId, to) => b.run(main, `window.confirm = () => true; LotActions.render(); document.getElementById('lotActionSelect').value = '${lotId}'; LotActions.render();
-        document.getElementById('sendLotTo').value = '${to}'; LotActions.send(); return Object.values(DB.data._LotTransfers || {}).filter(t => t.lotId === '${lotId}' && !t.acceptedAt).length;`);
-    const accept = (lotId, room) => b.run(main, `const t = Object.entries(DB.data._LotTransfers || {}).find(([, t]) => t.lotId === '${lotId}' && !t.acceptedAt);
-        if (!t) return false; LotActions.accept(t[0], '${room}', 'XY'); return DB.data.lots['${lotId}'].currentRoom;`);
     const plan = () => b.run(main, `const p = DbSplit.plan(); return { save: p.toSave, cannot: p.cannot, parts: Object.fromEntries(Object.entries(p.parts).map(([n, x]) => [n, x])) };`);
-    // The grow log asks "Lot is now in …" when it's opened in the new room (answered No here: we only check it's offered)
-    const offered = async (lotId) => {
-        const pw = await openTool(b, main, 'PaperWizard');
-        const msg = await b.run(pw, `let m = ''; window.confirm = (x) => { m = x; return false; }; await openRunner('${lotId}', 'glog', '${Y}'); closeRunner(); return m;`);
-        await b.send('browsingContext.close', { context: pw });
-        return msg;
+    const moves = () => b.run(main, `return Object.values(DB.data._LotTransfers || {}).map(t => ({ lotId: t.lotId, from: t.from, to: t.to, room: t.room, picked: !!t.acceptedAt }));`);
+    const card = () => b.run(main, `LotActions.render(); return { rows: [...document.querySelectorAll('#incomingTransfers .split-transfer')].map(r => r.textContent),
+        send: !!document.getElementById('sendLotBtn'), accept: !!document.querySelector('#incomingTransfers button') };`);
+    // Fill a day of L100's grow log in PaperWizard: the page holding it, the answers, Save, and the strike pad when it opens
+    const fill = async (pw, day, vals) => {
+        await b.run(pw, `window.__asked = []; window.confirm = m => { window.__asked.push(m); return false; };
+            const holder = dailyChain('L100', 'glog').filter(c => c.key <= '${day}' && '${day}' <= addDaysStr(c.key, 6) && !(c.inst.phaseChangeDate && '${day}' > c.inst.phaseChangeDate)).pop();
+            await openRunner('L100', 'glog', holder ? holder.key : '${day}', '${day}');
+            Object.assign(runnerCtx.draft, ${JSON.stringify(vals)});
+            runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();
+            document.getElementById('wizSaveBtn').click();`, { user: true });
+        await b.sleep(300);
+        let struck = false;
+        if (await b.run(pw, `return !!document.getElementById('strikePad');`)) {
+            struck = true;
+            await b.drag(pw, '#strikePad', [[0.2, 0.5], [0.8, 0.5]]);
+            await b.run(pw, `document.getElementById('strikeName').value = 'AB'; document.getElementById('strikeOkBtn').click();`, { user: true });
+            await b.sleep(400);
+        }
+        const toast = await b.run(pw, `return document.getElementById('toast')?.textContent || '';`);
+        await b.run(pw, `if (runnerCtx) closeRunner(); document.querySelectorAll('.wiz-overlay, .strike-overlay').forEach(o => o.remove());`);
+        return { struck, toast, asked: await b.run(pw, `return window.__asked;`) };
     };
 
-    // ---- Building 1 sends L100 ----
+    // ---- Building 1 records the move in L100's grow log ----
     check('B1 opened', await openSplit(b, main, BASE, 'B1', files));
-    check('B1 sends L100 to Building 2', (await send('L100', 'B2')) === 1);
+    const pw1 = await openTool(b, main, 'PaperWizard');
+    const groups = await b.run(pw1, `await openRunner('L100', 'glog', '${Y2}', '${T}'); runnerCtx.idx = runnerSteps('glog').findIndex(s => s.q?.id === 'rm' || s.qs?.some?.(q => q.id === 'rm'));
+        if (runnerCtx.idx < 0) runnerCtx.idx = runnerSteps('glog').length - 1; renderRunner();
+        const sel = document.getElementById('wizCtl');
+        const out = { own: [...sel.querySelectorAll(':scope > option')].map(o => o.value).filter(Boolean), groups: [...sel.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]) };
+        closeRunner(); return out;`);
+    check('the Room question lists Building 1\'s rooms, then Building 2\'s under "🚚 Move to Building 2"',
+        groups.own.join() === 'Clone 1,Grow 1' && JSON.stringify(groups.groups) === JSON.stringify([['🚚 Move to Building 2', ['Grow A']]]), JSON.stringify(groups));
+    let r = await fill(pw1, Y2, { note: 'watered', rm: 'Grow A' });
+    check('a move to another building on an earlier day (later entries on file) is refused: nothing saved, no strike pad',
+        !r.struck && r.toast.includes('goes on the newest day of the log') && (await moves()).length === 0 && await b.run(pw1, `return DB.lots.L100.currentRoom;`) === 'Grow 1', JSON.stringify(r));
+    r = await fill(pw1, T, { note: 'moved out', rm: 'Grow A' });
+    await b.sleep(400);
+    const pages1 = await b.run(pw1, `return dailyChain('L100', 'glog').map(c => ({ key: c.key, room: c.inst.room, end: c.inst.phaseChangeDate, days: Object.keys(c.inst.days || {}) }));`);
+    check('the newest day records it: the page is struck that day, and the next page starts blank on the move day in Grow A',
+        r.struck && JSON.stringify(pages1) === JSON.stringify([{ key: Y2, room: 'Grow 1', end: T, days: [Y2, Y, T] }, { key: T, room: 'Grow A', end: null, days: [] }]), JSON.stringify(pages1));
+    check('…without offering to fill the new page here, and the toast says Building 2 picks it up',
+        !r.asked.some(m => m.includes('Start filling')) && r.toast.includes('moved to Grow A (Building 2)') && r.toast.includes('picks it up'), JSON.stringify(r));
+    check('SitkaTools records the move by itself: L100 on its way from Building 1 to Building 2 (Grow A)',
+        JSON.stringify(await moves()) === JSON.stringify([{ lotId: 'L100', from: 'B1', to: 'B2', room: 'Grow A', picked: false }]), JSON.stringify(await moves()));
+    const banner = await b.run(pw1, `return lotElsewhere('L100')?.banner || '';`);
+    check('…and PaperWizard shows L100 read-only here: moved, kept until Building 2 picks it up', banner.includes('moved to Grow A (Building 2)') && banner.includes('picks it up'), banner);
+    const c1 = await card();
+    check('Data & Files lists the move on its way; there\'s no Send button and no Accept', c1.rows.length === 1 && c1.rows[0].includes('Lot L100: Building 1 → Building 2 (Grow A)') && c1.rows[0].includes('waiting for Building 2 to pick it up') && !c1.send && !c1.accept, JSON.stringify(c1));
+    await leave(b, pw1); await b.send('browsingContext.close', { context: pw1 });
     const s1 = await saveSplit(b, main);
-    check('B1 saves only its own file, with the pending move', Object.keys(s1).join() === 'Building-B1.json' &&
-        Object.values(JSON.parse(s1['Building-B1.json'])._LotTransfers).some(t => t.lotId === 'L100' && !t.acceptedAt), Object.keys(s1).join());
+    const f1 = JSON.parse(s1['Building-B1.json'] || '{}');
+    check('B1 saves only its own file: the move on its way, both pages, the lot\'s new room', Object.keys(s1).join() === 'Building-B1.json'
+        && Object.values(f1._LotTransfers || {}).some(t => t.lotId === 'L100' && t.to === 'B2' && !t.acceptedAt) && Object.keys(f1._PaperWizard?.entries?.L100?.glog?.instances || {}).sort().join() === [Y2, T].sort().join()
+        && f1._overlays?.lots?.L100?.currentRoom?.value === 'Grow A', Object.keys(s1).join());
 
-    // ---- Building 2 sees it (it opens Building 1's file), accepts, and starts its own grow log ----
+    // ---- Building 2 opens the files: it picks L100 up by itself, saves, and fills the new page ----
     const f2 = { ...files, ...s1 };
     check('B2 opened', await openSplit(b, main, BASE, 'B2', f2));
-    check('B2 sees the lot coming (read from Building 1\'s file)', await b.run(main, `return !!document.querySelector('.split-transfer [class*="btn"]') || Object.values(DB.data._LotTransfers).some(t => t.lotId === 'L100' && t.to === 'B2');`));
-    check('B2 accepts it into Grow A', (await accept('L100', 'Grow A')) === 'Grow A');
+    const got = await b.run(main, `return { toast: syncToastText.textContent, unsaved: hasUnsavedChanges };`);
+    check('B2 picks it up when it opens the files ("🚚 Lot L100 arrived from Building 1 (Grow A) — 💾 Save DB to pick it up")',
+        got.toast.includes('Lot L100 arrived from Building 1 (Grow A)') && got.toast.includes('Save DB to pick it up') && got.unsaved && (await moves()).every(m => m.picked), JSON.stringify(got));
     const s2 = await saveSplit(b, main);
-    const b2 = JSON.parse(s2['Building-B2.json'] || '{}');
-    check('B2 saves only its own file', Object.keys(s2).join() === 'Building-B2.json', Object.keys(s2).join());
-    check('…holding the accepted move, the new room, and a copy of L100\'s unsigned grow-log page',
-        Object.values(b2._LotTransfers || {}).some(t => t.lotId === 'L100' && t.acceptedAt) && b2._overlays?.lots?.L100?.currentRoom?.value === 'Grow A' && !!b2._PaperWizard?.entries?.L100?.glog?.instances?.[Y],
-        JSON.stringify({ t: b2._LotTransfers, o: b2._overlays?.lots }));
-    const m2 = await offered('L100');
-    check('B2: opening L100\'s grow log offers to close the old page and start one in Grow A', m2.startsWith('Lot is now in Grow A') && m2.includes('starts a fresh log for Grow A'), m2);
+    const f2b = JSON.parse(s2['Building-B2.json'] || '{}');
+    check('B2 saves only its own file: the picked-up move and a copy of L100\'s unsigned pages', Object.keys(s2).join() === 'Building-B2.json'
+        && Object.values(f2b._LotTransfers || {}).some(t => t.lotId === 'L100' && t.acceptedAt && t.acceptedBy === 'Building 2')
+        && Object.keys(f2b._PaperWizard?.entries?.L100?.glog?.instances || {}).sort().join() === [Y2, T].sort().join(), Object.keys(s2).join());
+    const pw2 = await openTool(b, main, 'PaperWizard');
+    check('B2 can fill L100\'s paperwork', await b.run(pw2, `return lotElsewhere('L100') === null;`));
+    r = await fill(pw2, T, { note: 'arrived', rm: 'Grow A' });
+    check('…and fills the move day on the new page, with no "Lot is now in …" prompt and no strike-out', !r.struck && !r.asked.some(m => m.startsWith('Lot is now in'))
+        && await b.run(pw2, `return Object.keys(pageStore('L100').glog.instances['${T}'].days || {}).join();`) === T, JSON.stringify(r));
+    await leave(b, pw2); await b.send('browsingContext.close', { context: pw2 });
+    const s2b = await saveSplit(b, main);
+    check('…saved in Building 2\'s file', Object.keys(s2b).join() === 'Building-B2.json' && !!JSON.parse(s2b['Building-B2.json'])._PaperWizard.entries.L100.glog.instances[T].days[T], Object.keys(s2b).join());
 
-    // ---- The office opens everything: it sees the move and rewrites no building's file ----
-    const f3 = { ...f2, ...s2 };
+    // ---- The office opens everything: it sees the move done and rewrites no building's file ----
+    const f3 = { ...f2, ...s2, ...s2b };
     check('office opened', await openSplit(b, main, BASE, 'office', f3));
     const off = await b.run(main, `return { room: DB.data.lots.L100.currentRoom, unsaved: hasUnsavedChanges, toast: syncToastText.textContent };`);
-    check('office: L100 is in Grow A (read from Building 2\'s file)', off.room === 'Grow A', JSON.stringify(off));
-    check('office: nothing to save — it doesn\'t tidy Building 1\'s file', !off.unsaved && !off.toast.includes('tidy') && (await plan()).save.length === 0, JSON.stringify(off));
+    check('office: L100 is in Grow A, and its moves are all picked up', off.room === 'Grow A' && (await card()).rows.length === 0, JSON.stringify(off));
+    check('office: nothing to save — it doesn\'t pick up or tidy for a building', !off.unsaved && (await plan()).save.length === 0, JSON.stringify(off));
 
-    // ---- Building 1 tidies its own file on its next save ----
+    // ---- Building 1 drops its copy on its next save ----
     check('B1 reopened', await openSplit(b, main, BASE, 'B1', f3));
     let p = await plan();
     const own = p.parts['Building-B1.json'];
-    check('B1: its next save drops its leftover copy of L100\'s pages and the pending move', p.save.includes('Building-B1.json') &&
+    check('B1: its next save drops its copy of L100\'s pages and the move', p.save.includes('Building-B1.json') &&
         !own._PaperWizard.entries.L100 && !Object.values(own._LotTransfers || {}).some(t => t.lotId === 'L100'), JSON.stringify({ save: p.save, e: Object.keys(own._PaperWizard.entries), t: own._LotTransfers }));
     check('B1: and it writes nothing else', p.save.join() === 'Building-B1.json' && !p.cannot.length, JSON.stringify(p.save));
+    const s4 = await saveSplit(b, main);
 
-    // ---- The office moves L200 for the buildings: saved in the receiver's file, the sender's left alone ----
-    check('office reopened', await openSplit(b, main, BASE, 'office', f3));
-    check('office sends L200 from Building 2 to Building 1', (await send('L200', 'B1')) === 1);
-    check('office accepts it into Grow 1', (await accept('L200', 'Grow 1')) === 'Grow 1');
+    // ---- The office moves L300 (no grow log) in the Lot Manager: on its way in Building 2's file; Building 1 picks it up ----
+    const f4 = { ...f3, ...s4 };
+    check('office reopened', await openSplit(b, main, BASE, 'office', f4));
+    await b.run(main, `const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L300"]'); sel.value = 'Clone 1'; sel.dispatchEvent(new Event('change', { bubbles: true }));`, { user: true });
+    check('setting L300\'s current room to Clone 1 (Building 1) puts it on its way there', JSON.stringify((await moves()).filter(m => m.lotId === 'L300')) === JSON.stringify([{ lotId: 'L300', from: 'B2', to: 'B1', room: 'Clone 1', picked: false }]), JSON.stringify(await moves()));
+    await b.run(main, `const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L300"]'); sel.value = 'Grow A'; sel.dispatchEvent(new Event('change', { bubbles: true }));`, { user: true });
+    check('…and setting it back drops the move', !(await moves()).some(m => m.lotId === 'L300'), JSON.stringify(await moves()));
+    await b.run(main, `const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L300"]'); sel.value = 'Clone 1'; sel.dispatchEvent(new Event('change', { bubbles: true }));`, { user: true });
     p = await plan();
-    const r1 = p.parts['Building-B1.json'];
-    check('office: saves Main (the lot) and Building-B1.json (the accepted move and L200\'s page) — not Building-B2.json',
-        p.save.slice().sort().join() === 'Building-B1.json,Main.json' && Object.values(r1._LotTransfers).some(t => t.lotId === 'L200' && t.acceptedAt) && !!r1._PaperWizard.entries.L200?.glog,
-        JSON.stringify(p.save));
-    const m4 = await offered('L200');
-    check('office: opening L200\'s grow log offers the first day in Grow 1 too', m4.startsWith('Lot is now in Grow 1'), m4);
+    check('office: saves Main and Building-B2.json (the sender\'s file, with the move) — not Building-B1.json',
+        p.save.slice().sort().join() === 'Building-B2.json,Main.json' && Object.values(p.parts['Building-B2.json']._LotTransfers).some(t => t.lotId === 'L300' && !t.acceptedAt), JSON.stringify(p.save));
+    const s5 = await saveSplit(b, main);
+    check('B1 opened again', await openSplit(b, main, BASE, 'B1', { ...f4, ...s5 }));
+    const got2 = await b.run(main, `return { toast: syncToastText.textContent, room: DB.data.lots.L300.currentRoom };`);
+    const s6 = await saveSplit(b, main);
+    check('B1 picks L300 up and saves it in its own file', got2.toast.includes('Lot L300 arrived from Building 2 (Clone 1)') && got2.room === 'Clone 1'
+        && Object.keys(s6).join() === 'Building-B1.json' && Object.values(JSON.parse(s6['Building-B1.json'])._LotTransfers).some(t => t.lotId === 'L300' && t.acceptedAt), JSON.stringify({ got2, files: Object.keys(s6) }));
 
     await leave(b, main);
     return results;

@@ -4163,6 +4163,37 @@
             return [...names];
         }
 
+        // 🚚 A lot moves between buildings by its own paperwork (user decision 2026-10-25): with split files, the 🏠 Room
+        // question of a sheet whose room answer moves the lot (daily logs, the harvest log) lists the lot's building's
+        // rooms, then every other building's rooms. Picking one of those moves the lot there: SitkaTools records the move
+        // (the lot's building keeps its pages until then) and that building's device picks it up when it next opens the
+        // files. Groups: [{ label (null = the lot's building), names }].
+        const roomMovesLot = sheetId => DB.paperWizard?.sheets?.[sheetId]?.cadence === 'daily-weekly' || sheetSection(sheetId) === 'harvest';
+        function roomChoiceGroups(sheetId, ...keep) {
+            const bid = DeviceView.building || (DeviceView.split ? DeviceView.buildingOfRoomName(keep[0]) : null);
+            const byName = (a, b) => a.localeCompare(b);
+            if (!bid || !roomMovesLot(sheetId)) return [{ label: null, names: pickableRoomNames(...keep).sort(byName) }];
+            const own = new Set();
+            Object.values(DB.rooms || {}).forEach(r => { if (r?.name && r.buildingId === bid) own.add(String(r.name)); });
+            keep.forEach(n => { if (n && !DeviceView.buildingOfRoomName(n)) own.add(String(n)); });   // a value in no building
+            const groups = [{ label: null, names: [...own].sort(byName) }];
+            const others = Object.keys(DB.buildings || {}).filter(id => id !== bid).sort((a, b) => byName(buildingName(a), buildingName(b)));
+            for (const id of others) {
+                const names = Object.values(DB.rooms || {}).filter(r => r?.name && r.buildingId === id).map(r => String(r.name)).sort(byName);
+                if (names.length) groups.push({ label: `🚚 Move to ${buildingName(id)}`, names });
+            }
+            return groups;
+        }
+        // The runner's answer moves the lot to another building: { room, to, from } (null when it doesn't). Daily logs read
+        // their (first) Room question; the harvest log its last Room answer, as its save does.
+        function buildingMoveOf(ctx) {
+            if (!DeviceView.split || !roomMovesLot(ctx.sheetId)) return null;
+            const answers = (wizardForSheet(ctx.sheetId)?.questions || []).filter(q => q.type === 'room').map(q => String(ctx.draft[q.id] ?? '').trim());
+            const room = sheetSection(ctx.sheetId) === 'harvest' ? answers.filter(Boolean).pop() : answers[0];
+            const to = DeviceView.buildingOfRoomName(room), from = DeviceView.buildingOfRoomName(currentLotRoom(ctx.lotId));
+            return to && from && to !== from ? { room, to, from } : null;
+        }
+
         // Building device: lots it lists but can't fill — view and print only. Returns { banner, toast }, or null
         // when this device may fill the lot's paperwork.
         // - Sent and not yet accepted: its paperwork is frozen; its unsigned pages go to the receiving building's
@@ -4183,12 +4214,12 @@
             const name = id => DB.buildings?.[id]?.name || id;
             const sent = Object.values(DB.data?._LotTransfers || {}).find(t => t && t.lotId === lotId && !t.acceptedAt);
             if (sent && sent.to === DeviceView.building) return {
-                banner: `🚚 ${lotId} is on its way here from ${name(sent.from)} — accept it in SitkaTools (Data & Files → Lots) to fill its paperwork. You can view and print it here.`,
-                toast: `${lotId} isn't accepted yet — accept it in SitkaTools first`
+                banner: `🚚 ${lotId} is on its way here from ${name(sent.from)} — reopen the files in SitkaTools to pick it up, then fill its paperwork here. You can view and print it now.`,
+                toast: `${lotId} isn't picked up yet — reopen the files in SitkaTools`
             };
             if (sent) return {
-                banner: `🚚 Read only on this device — ${lotId} was sent to ${name(sent.to)}; its unsigned paperwork goes with it when ${name(sent.to)} accepts it. You can view and print it here.`,
-                toast: `Read only here — ${lotId} was sent to ${name(sent.to)}`
+                banner: `🚚 Read only on this device — ${lotId} moved to ${sent.room ? `${sent.room} (${name(sent.to)})` : name(sent.to)}. ${name(sent.from)} keeps its paperwork until ${name(sent.to)} picks it up (its device does when it next opens the files); its unsigned pages go with it. You can view and print it here.`,
+                toast: `Read only here — ${lotId} moved to ${name(sent.to)}`
             };
             const room = DB.lots[lotId]?.currentRoom;
             const b = DeviceView.buildingOfRoomName(room);
@@ -5631,9 +5662,10 @@
                     // Known room names from the DB. Picking a room DIFFERENT from the lot's
                     // current one writes it back and strikes out this log on save (after the
                     // day's entry is complete); picking the current room just records it.
-                    const rooms = pickableRoomNames(currentLotRoom(ctx.lotId), ctx.draft[q.id]).sort((a, b) => a.localeCompare(b));
-                    const opts = ['<option value="">— select —</option>']
-                        .concat(rooms.map(o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`));
+                    // With split files, other buildings' rooms follow under "🚚 Move to <building>" (roomChoiceGroups).
+                    const opt = o => `<option value="${escapeHtml(o)}"${o === ctx.draft[q.id] ? ' selected' : ''}>${escapeHtml(o)}</option>`;
+                    const opts = ['<option value="">— select —</option>'].concat(roomChoiceGroups(ctx.sheetId, currentLotRoom(ctx.lotId), ctx.draft[q.id])
+                        .map(g => g.label ? `<optgroup label="${escapeHtml(g.label)}">${g.names.map(opt).join('')}</optgroup>` : g.names.map(opt).join('')));
                     ctl = `<select id="wizCtl">${opts.join('')}</select>`;
                 } else if (q.type === 'number' || q.type === 'plant-count') {
                     ctl = `<input ${numberCtlAttrs(q.type === 'plant-count')} id="wizCtl" value="${val}">`;
@@ -5818,6 +5850,13 @@
             for (const q of (wiz.questions || []).filter(x => !cids.has(x.id) && !isRep(x))) {
                 const why = runnerStepBlock(ctx, q);
                 if (why) { showToast(why.replace('before continuing', 'before saving')); return; }
+            }
+            // 🚚 A move to another building goes on the newest day of the log: on an earlier day, the days after it are
+            // already kept here
+            const moveTo = buildingMoveOf(ctx);
+            if (moveTo && sheet.cadence === 'daily-weekly' && ctx.day && isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day)) {
+                showToast(`A move to ${buildingName(moveTo.to)} goes on the newest day of the log — ${fmtShort(ctx.day)} has later entries. Nothing was saved.`);
+                return;
             }
             // 🌱 A changed plant count needs its reason before anything is saved
             if (!(await askCountReasons(ctx))) { showToast('Nothing was saved — the change in plant count needs a reason'); return; }
@@ -6054,8 +6093,14 @@
             notifySitkaTools();
             closeRunner();
             renderAll();
+            // 🚚 Moved to another building: its device fills the new page (picked up with the lot), so no offer to fill it here
+            const movedNote = moveTo ? ` · 🚚 moved to ${moveTo.room} (${buildingName(moveTo.to)}) — save in SitkaTools; ${buildingName(moveTo.to)} picks it up when it next opens the files` : '';
             if (rolled?.merged) {
                 showToast(`Entry saved · the change on ${fmtShort(moveDay)} is taken back — the log from ${fmtShort(rolled.newKey)} continues` + corrNote(nCorr));
+            } else if (rolled && moveTo) {
+                showToast((phaseChanged ? `Entry saved · phase change to ${rolled.value}` : 'Entry saved') + movedNote + corrNote(nCorr));
+            } else if (moveTo) {
+                showToast('Entry saved' + movedNote + corrNote(nCorr));
             } else if (rolled && phaseChanged && roomChanged) {
                 showToast(`Entry saved · phase change to ${rolled.value} + room change to ${nvRoom} recorded` + corrNote(nCorr));
                 if (!rolled.reused && confirm('Start filling the new grow-log now?')) openRunner(ctx.lotId, ctx.sheetId, rolled.newKey);

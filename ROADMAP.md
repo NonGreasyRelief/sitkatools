@@ -87,7 +87,7 @@ Still to do:
   - The goal: staff log their own hours on every task type, only the floor manager marks tasks done, and check-offs are saved but each day starts blank.
   - Built: chore hours, hours on crop and equipment rows, the Labour Log, entry-by-entry labour merge, the lost-link warning, floor-manager ✅ Mark done and saved check-offs.
   - [x] Every removal of hours is recorded with the floor manager who approved it (PIN), in DailyWizard and in EmployeeWizard's Tasks tab.
-- [ ] **Drawn initials for lot Accept** (still typed), reusing PaperWizard's draw pad. Labour entries already use drawn initials.
+- [x] ~~**Drawn initials for lot Accept**~~ — no longer needed: since 2026-10-25 a lot moves through its grow log (the strike-out and the receiving building's first day carry drawn initials), and the receiving building picks it up by itself.
 
 ### Phase 2: Features
 
