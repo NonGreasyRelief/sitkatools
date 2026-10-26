@@ -37,11 +37,12 @@ export async function run(b, BASE) {
         db.calendarEvents.push({ id: 'ev_l3p', date: D(20), title: 'T planting', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'planting' },
             { id: 'ev_l3t', date: D(41), title: 'T transplant', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'transplant' });
         db.rooms.R1G1.floorSqFt = 2000; db.rooms.R1VG.floorSqFt = 500; db.rooms.R1CL.floorSqFt = 300;
+        db._EmployeeWizard.costs.propertyShare = 'area';
         return db;
     };
     const rent = `const pm = rptPropertyModel(M.crops); return { L100: pm.byCrop.get('L100').cost, L300: pm.byCrop.get('L300').cost, noArea: [...pm.noArea], share: pm.share, miss: rptCosts(M) };`;
     let r = await measure(area(), rent);
-    check('floor area is the default rent split', r.share === 'area', r.share);
+    check('floor area, when picked in Power & Rates', r.share === 'area', r.share);
     check('Grow 1 (2,000 sq ft) carries 4/5 of the days it shares with Veg 1 (500 sq ft)',
         near(r.L100, span(0, 19, 3000) + span(20, 40, 3000, v => v * 0.8)) && near(r.L300, span(20, 40, 3000, v => v * 0.2)), JSON.stringify({ L100: r.L100, L300: r.L300 }));
     const noVegArea = area(); delete noVegArea.rooms.R1VG.floorSqFt;

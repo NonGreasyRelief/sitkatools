@@ -1446,9 +1446,9 @@
             </div>
             <div class="report-section power-card">
                 <h3>🏠 Property cost (rent and fees) is shared by</h3>
-                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="area"> <span><b>Floor area</b> (default) — each day, a building's cost is split between its rooms holding a crop by their floor area (SitkaTools' Room Manager), so a drying room pays for the space it takes. A day when a room in use has no floor area set is split by lights.</span></label>
-                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="lights"> <span><b>Lights in use</b> — each day, a building's cost is split between its rooms holding a crop by their light count, so four equal grow rooms carry a quarter each and a clone room only its few lights.</span></label>
-                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="plants"> <span><b>Plants</b> — each day, split between the rooms holding a crop by their plant count.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="plants"> <span><b>Plants</b> (default) — each day, a building's cost is split between every lot in it by its plants that day, the lot drying or trimming included (by the plants it harvested), so each lot pays for its turn in the dry room.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="area"> <span><b>Floor area</b> — each day, split between its rooms holding a crop by their floor area (SitkaTools' Room Manager), then by plants within a room. A day when a room in use has no floor area set is split by lights.</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="propertyShare" value="lights"> <span><b>Lights in use</b> — each day, split between its rooms holding a crop by their light count, so four equal grow rooms carry a quarter each and a clone room only its few lights.</span></label>
                 <div class="power-note" id="pwPropNote"></div>
             </div>
             <div class="report-section power-card">
@@ -4689,7 +4689,7 @@
             return {
                 source: c.electricity === 'bills' ? 'bills' : 'estimate',
                 rate: price(c.kWhRate), waterRate: price(c.waterPer1000L),
-                propertyShare: c.propertyShare === 'plants' ? 'plants' : c.propertyShare === 'lights' ? 'lights' : 'area',   // floor area by default (user decision 2026-10-26)
+                propertyShare: c.propertyShare === 'area' ? 'area' : c.propertyShare === 'lights' ? 'lights' : 'plants',   // plants by default (user decision 2026-10-26)
                 bills: (c.bills || []).filter(b => isDay(b?.from) && isDay(b?.to) && b.to >= b.from && Number(b.amount) > 0),
                 catalog, byName, price,
                 fertPrice: name => { const x = byName[String(name || '').trim().toLowerCase()]; return x && x.kind === 'fertilizer' ? price(x.price) : null; }
@@ -7718,7 +7718,7 @@ ${logHtml(M)}
 
         // =====================================================
         // ⚡ Power & Rates — where electricity cost comes from, the rates, and the power bills (office only)
-        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L, propertyShare: 'area' (default) | 'lights' | 'plants',
+        // _EmployeeWizard.costs = { electricity: 'bills' | 'estimate', kWhRate, waterPer1000L, propertyShare: 'plants' (default) | 'area' | 'lights',
         //                           bills: [{ id, buildingId | null (whole site), from, to, kWh, amount }] }
         // Saved in Main.json (user decision 2026-10-16). The Reports turn it into each crop's electricity and water $:
         // estimated kWh × the rate, or the bills split across crops by their estimated use.

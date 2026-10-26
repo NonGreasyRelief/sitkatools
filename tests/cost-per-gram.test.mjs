@@ -152,9 +152,10 @@ export async function run(b, BASE) {
     r = await costs();
     check('an older summary (no frozen property) gets its property from the buildings', near(r.k.property.cost, propFor(5000)) && r.k.property.days === 41, JSON.stringify(r.k.property));
 
-    // ---- Two crops in Building 1: shared by floor area (the default; no room has one here, so by lights), or by plants ----
+    // ---- Two crops in Building 1: shared by lights, or by plants (the default) ----
     // L300 is in Veg 1 (10 lights) on D20–D40 while L100 is in Grow 1 (20 lights), so L100 carries 2/3 of those days
-    await b.run(main, `DB.data.lots.L300 = { name: 'L300', strain: 'Test Kush', createdDate: '${today(-100)}', vegRoom: 'Veg 1', destRoom: 'Grow 1', currentRoom: 'Veg 1', plantCount: 50 };
+    await b.run(main, `DB.data._EmployeeWizard.costs.propertyShare = 'lights';
+        DB.data.lots.L300 = { name: 'L300', strain: 'Test Kush', createdDate: '${today(-100)}', vegRoom: 'Veg 1', destRoom: 'Grow 1', currentRoom: 'Veg 1', plantCount: 50 };
         DB.data.calendarEvents.push({ id: 'ev_l3p', date: '${today(-100)}', title: 'T planting', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'planting' },
             { id: 'ev_l3t', date: '${today(-79)}', title: 'T transplant', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'transplant' });
         markUnsaved(); await WorkCopy.flush();`);
