@@ -1454,7 +1454,7 @@
         <div class="tab-pane" id="panePower">
             <div class="report-section power-card">
                 <h3>⚡ Electricity cost comes from</h3>
-                <label class="report-chk power-radio"><input type="radio" name="powerSource" value="bills"> <span><b>Power bills</b> — the bills entered below. Each crop's share of a bill comes from its estimated use (lights, AC, dehumidifiers).</span></label>
+                <label class="report-chk power-radio"><input type="radio" name="powerSource" value="bills"> <span><b>Power bills</b> — the bills entered below. Each bill is shared by estimated kWh over all its days (lights, AC, dehumidifiers): the bill ÷ the kWh estimated on its meter over its days gives its $ per kWh, and each lot pays its own kWh × that, so a quiet day (a lot drying, the grow rooms dark) carries only what it used.</span></label>
                 <label class="report-chk power-radio"><input type="radio" name="powerSource" value="estimate"> <span><b>Estimated usage</b> — lights × watts × hours × the day's light %, plus AC / dehumidifier watts × run time, at the rate below.</span></label>
                 <div class="report-controls">
                     <div class="form-group"><label for="pwRate">Electricity rate ($ per kWh)</label><input type="number" id="pwRate" min="0" step="0.001" inputmode="decimal" placeholder="e.g., 0.12"></div>
@@ -5030,12 +5030,13 @@
                     stays: stays.filter(st => st.roomId === id)
                 };
             }
-            // Bills: $ per day per meter (a building id, or '*' for the whole site)
-            const billDay = {};
+            // Bills: the days each meter (a building id, or '*' for the whole site) has a bill for. Their $ are shared out after
+            // the day loop, by kWh over each whole bill (dayRec: each day's kWh by building and lot)
+            const billDay = {}, dayRec = {}, traceDays = [], traceBills = {};
             if (cfg.source === 'bills') {
                 for (const bl of cfg.bills) {
-                    const perDay = Number(bl.amount) / (dDiff(bl.from, bl.to) + 1), key = bl.buildingId || '*';
-                    for (let d = bl.from; d <= bl.to && d <= today; d = dAdd(d, 1)) (billDay[d] || (billDay[d] = {}))[key] = (billDay[d]?.[key] || 0) + perDay;
+                    const key = bl.buildingId || '*';
+                    for (let d = bl.from; d <= bl.to && d <= today; d = dAdd(d, 1)) (billDay[d] || (billDay[d] = {}))[key] = true;
                 }
             }
             // kBM / cBM: the lot's kWh (and, with bills, its $) by building and month: 'building|YYYY-MM' (where it was spent);
@@ -5060,8 +5061,9 @@
             // 🔍 The traced lot's day, as the ledger shows it: what it was given, and how
             const equipText = (r, d) => r.equip.filter(e => e.from <= d).map(e => `${e.name} ${lgK(e.watts)} W × ${lgK(e.units)} × ${lgK(e.hours)} h`).join(' + ');
             for (let d = start; d <= today; d = dAdd(d, 1)) {
-                const dayKwh = new Map(), inBuilding = {}, pool = {};
-                const T = trace ? { parts: [], kWh: 0, b: new Set(), rooms: new Set(), bills: [], unbilled: [] } : null, poolRooms = {};
+                const dayKwh = new Map(), inBuilding = {}, pool = {}, kwhB = {}, idleKwhB = {};
+                const addB = (b, lotId, v) => { const m = kwhB[b] || (kwhB[b] = new Map()); m.set(lotId, (m.get(lotId) || 0) + v); };
+                const T = trace ? { parts: [], kWh: 0, b: new Set(), rooms: new Set(), unbilled: [] } : null, poolRooms = {};
                 for (const [roomId, r] of Object.entries(info)) {
                     // Each lot in the room that day, with its plants that day
                     const occ = r.stays.filter(st => st.from <= d && d <= st.to).map(st => ({ ...st, plants: rptPlantsOn(st.c, d) }));
@@ -5090,6 +5092,7 @@
                             give(st.c.lotId, lightKwh * lightShare, 'lights', r.b, d);
                             give(st.c.lotId, equipKwh * share, 'equip', r.b, d);
                             dayKwh.set(st.c.lotId, (dayKwh.get(st.c.lotId) || 0) + lightKwh * lightShare + equipKwh * share);
+                            addB(r.b, st.c.lotId, lightKwh * lightShare + equipKwh * share);
                             if (T && st.c.lotId === trace.lotId) {
                                 const rn = rptRoomName(roomId);
                                 T.b.add(r.b); T.rooms.add(roomId); T.kWh += lightKwh * lightShare + equipKwh * share;
@@ -5112,10 +5115,10 @@
                 // Empty rooms' power goes to the building's crops that day, by plants
                 for (const [b, kWh] of Object.entries(pool)) {
                     const occ = inBuilding[b === 'null' ? null : b];
-                    if (!occ || !occ.size) { unallocated.kWh += kWh; idle(b === 'null' ? '' : b, d).kWh += kWh; continue; }
+                    if (!occ || !occ.size) { unallocated.kWh += kWh; idle(b === 'null' ? '' : b, d).kWh += kWh; idleKwhB[b] = (idleKwhB[b] || 0) + kWh; continue; }
                     const plants = [...occ.values()].reduce((t, n) => t + n, 0);
                     for (const [lotId, n] of occ) {
-                        give(lotId, kWh * n / plants, 'equip', b, d); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants);
+                        give(lotId, kWh * n / plants, 'equip', b, d); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants); addB(b, lotId, kWh * n / plants);
                         if (T && lotId === trace.lotId) {
                             T.kWh += kWh * n / plants;
                             T.parts.push(`empty rooms' equipment in ${rptBuildingName(b === 'null' ? null : b)}: ${(poolRooms[b] || []).join(' + ')} = ${lgK(kWh)} kWh, × its ${lgK(n)} of the ${lgK(plants)} plants in the building = ${lgK(kWh * n / plants)} kWh`);
@@ -5129,44 +5132,79 @@
                         if (billDay[d]?.['*'] != null || (b !== 'null' && billDay[d]?.[b] != null)) continue;
                         for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.unbilledDays++; if (T && lotId === trace.lotId) T.unbilled.push(b); }
                     }
-                    // Each meter's $ for the day, split by the crops' estimated use that day (by plants when there's no estimate)
-                    for (const [meter, amount] of Object.entries(billDay[d] || {})) {
-                        const lots = meter === '*' ? [...dayKwh.keys(), ...Object.values(inBuilding).flatMap(m => [...m.keys()])]
-                            : [...(inBuilding[meter]?.keys() || [])];
-                        const uniq = [...new Set(lots)];
-                        if (!uniq.length) { unallocated.cost += amount; idle(meter, d).cost += amount; continue; }
-                        const w = uniq.map(id => dayKwh.get(id) || 0), wt = w.reduce((t, x) => t + x, 0);
-                        const plantsOf = id => { for (const m of Object.values(inBuilding)) if (m.has(id)) return m.get(id); return 1; };
-                        const pt = uniq.reduce((t, id) => t + plantsOf(id), 0);
-                        uniq.forEach((id, i) => {
+                    dayRec[d] = { kwh: kwhB, idle: idleKwhB, plants: inBuilding };
+                }
+                if (T) traceDays.push([d, T]);
+            }
+            // 🧾 Power bills (user decision 2026-10-26): each bill is shared by kWh over all its days, not day by day. Its $ per kWh
+            // = the bill ÷ the kWh estimated on its meter over its days (its lots' and its empty rooms'); each lot pays its kWh
+            // that day × that, so a quiet day (a lot drying, the grow rooms dark) carries only what it used. Empty rooms' kWh in
+            // a building with no lot go to its idle days. A bill that runs past today charges the days so far their share of
+            // its days. With no kWh estimated on its meter over the whole bill (no watts set), each day's share is split by
+            // plants (none: an idle day).
+            if (cfg.source === 'bills') {
+                const on = (b, key) => key === '*' || b === key;
+                for (const bl of cfg.bills) {
+                    const key = bl.buildingId || '*', all = dDiff(bl.from, bl.to) + 1, to = bl.to < today ? bl.to : today;
+                    if (!(all > 0) || to < bl.from) continue;
+                    const past = dDiff(bl.from, to) + 1, amount = Number(bl.amount) * past / all;
+                    if (!Number.isFinite(amount)) continue;
+                    let E = 0;
+                    for (let d = bl.from; d <= to; d = dAdd(d, 1)) {
+                        const rec = dayRec[d]; if (!rec) continue;
+                        for (const [b, m] of Object.entries(rec.kwh)) if (on(b, key)) for (const v of m.values()) E += v;
+                        for (const [b, v] of Object.entries(rec.idle)) if (on(b, key)) E += v;
+                    }
+                    const bi = { bl, key, all, past, amount, E, rate: E > 0 ? amount / E : null, perDay: amount / past };
+                    for (let d = bl.from; d <= to; d = dAdd(d, 1)) {
+                        const rec = dayRec[d] || { kwh: {}, idle: {}, plants: {} };
+                        const pay = (id, v, bk, x) => {
                             const o = byCrop.get(id); if (!o) return;
-                            const v = amount * (wt > 0 ? w[i] / wt : plantsOf(id) / pt), bk = meter === '*' ? '' : meter, k = bk + '|' + d.slice(0, 7);
+                            const k = bk + '|' + d.slice(0, 7);
                             o.cost += v; o.billDays++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
                             (o.cBD || (o.cBD = {}))[bk + '|' + d] = (o.cBD[bk + '|' + d] || 0) + v;
-                            if (T && id === trace.lotId) T.bills.push({ meter, amount, v, w: w[i], wt, plants: plantsOf(id), pt });
-                        });
-                    }
-                }
-                if (T && (T.parts.length || T.bills.length || T.unbilled.length)) {
-                    let cost = null, how = T.parts.join(' · ');
-                    if (cfg.source === 'estimate') {
-                        const r = rateAt(d);
-                        if (!(T.kWh > 0)) cost = 0;
-                        else if (r == null) how += ` · no $ per kWh set for this day, so it isn't priced`;
-                        else { cost = T.kWh * r; how += ` · ${lgK(T.kWh)} kWh × ${lgRate(r)} per kWh = ${lgM(cost)}`; }
-                    } else {
-                        cost = rSum(T.bills, x => x.v);
-                        for (const x of T.bills) {
-                            const bl = cfg.bills.filter(bl => (bl.buildingId || '*') === x.meter && bl.from <= d && d <= bl.to)
-                                .map(bl => `${rMoney(Number(bl.amount))} for ${bl.from} → ${bl.to} ÷ ${dDiff(bl.from, bl.to) + 1} days`).join(' + ');
-                            how += ` · ${x.meter === '*' ? 'whole-site' : rptBuildingName(x.meter)} power bill ${bl} = ${lgM(x.amount)} today, × ` +
-                                (x.wt > 0 ? `its ${lgK(x.w)} kWh of the ${lgK(x.wt)} kWh ${x.meter === '*' ? 'all the lots on site' : `all of ${rptBuildingName(x.meter)}’s lots`} used today` : `its ${lgK(x.plants)} of the ${lgK(x.pt)} plants (no kWh estimated today)`) + ` = ${lgM(x.v)}`;
+                            if (trace && id === trace.lotId) (traceBills[d] || (traceBills[d] = [])).push({ ...bi, ...x, v });
+                        };
+                        if (bi.rate != null) {
+                            // Each lot's kWh on the meter today, where it used them (a whole-site bill: building by building)
+                            for (const [b, m] of Object.entries(rec.kwh)) if (on(b, key)) for (const [id, v] of m) if (v > 0) pay(id, v * bi.rate, b === 'null' ? '' : b, { kWh: v });
+                            for (const [b, v] of Object.entries(rec.idle)) if (on(b, key) && v > 0) { unallocated.cost += v * bi.rate; idle(b === 'null' ? '' : b, d).cost += v * bi.rate; }
+                        } else {
+                            const lots = new Map();
+                            for (const [b, m] of Object.entries(rec.plants)) if (on(b, key)) for (const [id, n] of m) lots.set(id, (lots.get(id) || 0) + n);
+                            if (!lots.size) { unallocated.cost += bi.perDay; idle(key, d).cost += bi.perDay; continue; }
+                            const pt = [...lots.values()].reduce((t, n) => t + n, 0);
+                            for (const [id, n] of lots) pay(id, bi.perDay * (pt > 0 ? n / pt : 1 / lots.size), key === '*' ? '' : key, { plants: n, pt });
                         }
-                        if (T.unbilled.length) how += ` · no power bill covers today in ${T.unbilled.map(b => rptBuildingName(b === 'null' ? null : b)).join(', ')}, so this lot's electricity is missing until that bill is added`;
                     }
-                    trace.lines.push({ d, part: 'power', b: [...T.b].filter(Boolean).join(', '), rooms: [...T.rooms], kWh: T.kWh, cost, how });
                 }
+            }
+            // 🔍 The traced lot's lines, one per day (with bills, once the bills are shared out)
+            if (trace) for (const [d, T] of traceDays) {
+                const bills = traceBills[d] || [];
+                if (!T.parts.length && !bills.length && !T.unbilled.length) continue;
+                const parts = [...T.parts];
+                let cost = null;
+                if (cfg.source === 'estimate') {
+                    const r = rateAt(d);
+                    if (!(T.kWh > 0)) cost = 0;
+                    else if (r == null) parts.push(`no $ per kWh set for this day, so it isn't priced`);
+                    else { cost = T.kWh * r; parts.push(`${lgK(T.kWh)} kWh × ${lgRate(r)} per kWh = ${lgM(cost)}`); }
+                } else {
+                    cost = rSum(bills, x => x.v);
+                    for (const x of bills) {
+                        const meter = x.key === '*' ? 'the whole site' : rptBuildingName(x.key);
+                        const bill = `${x.key === '*' ? 'whole-site' : rptBuildingName(x.key)} power bill ${rMoney(Number(x.bl.amount))} for ${x.bl.from} → ${x.bl.to}` +
+                            (x.past < x.all ? ` (${x.past} of its ${x.all} days so far: ${lgM(x.amount)})` : '');
+                        parts.push(x.rate != null
+                            ? `${bill} ÷ the ${lgK(x.E)} kWh estimated for ${meter} over those days = ${lgRate(x.rate)} per kWh; its ${lgK(x.kWh)} kWh today × ${lgRate(x.rate)} = ${lgM(x.v)}`
+                            : `${bill} ÷ ${x.past} days = ${lgM(x.perDay)} today (no kWh estimated for ${meter} over the bill), × its ${lgK(x.plants)} of the ${lgK(x.pt)} plants = ${lgM(x.v)}`);
+                    }
+                    if (!bills.length && !T.unbilled.length) parts.push('no estimated kWh today, so none of the power bill');
+                    if (T.unbilled.length) parts.push(`no power bill covers today in ${T.unbilled.map(b => rptBuildingName(b === 'null' ? null : b)).join(', ')}, so this lot's electricity is missing until that bill is added`);
+                }
+                trace.lines.push({ d, part: 'power', b: [...T.b].filter(Boolean).join(', '), rooms: [...T.rooms], kWh: T.kWh, cost, how: parts.join(' · ') });
             }
             if (cfg.source === 'estimate') {
                 for (const o of byCrop.values()) o.cost = o.noRate ? null : (o.est || 0);
@@ -6899,7 +6937,7 @@
             const color = Object.fromEntries(RPT_COST_PARTS.map(([k, , col]) => [k, col]));
             const label = Object.fromEntries(RPT_COST_PARTS.map(([k, l]) => [k, l]));
             const legend = RPT_COST_PARTS.map(([, l, col]) => rSw(col, l)).join('');
-            const srcNote = cfg.source === 'bills' ? 'electricity from the power bills, split by estimated use' : `electricity estimated at ${cfg.rate != null ? rMoney(cfg.rate, 3) + ' per kWh' : 'a rate not set yet'}`;
+            const srcNote = cfg.source === 'bills' ? 'electricity from the power bills, shared by estimated kWh over each bill' : `electricity estimated at ${cfg.rate != null ? rMoney(cfg.rate, 3) + ' per kWh' : 'a rate not set yet'}`;
 
             // 1. What does a gram cost? This period against the previous one
             const bars = [['Previous period', b.costPG, b.n], ['This period', a.costPG, a.n]];
@@ -7325,7 +7363,7 @@
             const partSel = `<select id="rptLedgerPart" class="rpt-inline-sel" aria-label="Part">${opt('', 'Every part', part)}${LEDGER_PARTS.map(([k, n]) => opt(k, n, part)).join('')}</select>`;
             const monthSel = `<select id="rptLedgerMonth" class="rpt-inline-sel" aria-label="Month">${opt('', 'Every month', month)}${months.map(ym => opt(ym, ctlsMonthName(ym), month)).join('')}</select>`;
             const cfg = rptCostConfig();
-            const how = `Electricity: ${cfg.source === 'bills' ? 'each power bill spread over its days, each day split between the meter’s lots by their estimated kWh (lights × watts × hours × light %, plus equipment)' : `estimated kWh (lights × watts × hours × light %, plus equipment) × the $ per kWh of the day`}. ` +
+            const how = `Electricity: ${cfg.source === 'bills' ? 'each power bill ÷ the kWh estimated on its meter over all its days = its $ per kWh, and each lot pays its own estimated kWh × that (lights × watts × hours × light %, plus equipment)' : `estimated kWh (lights × watts × hours × light %, plus equipment) × the $ per kWh of the day`}. ` +
                 `Property: each building’s monthly cost ÷ the days in the month, shared ${cfg.propertyShare === 'plants' ? 'by every lot’s plants that day' : cfg.propertyShare === 'area' ? 'by the floor area of the rooms in use, then by plants' : 'by the lights of the rooms with a lot growing, then by plants (a lot drying or trimming pays none)'}.`;
 
             if (c.closed) {
