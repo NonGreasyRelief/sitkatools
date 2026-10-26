@@ -244,8 +244,10 @@ export async function run(b, BASE) {
     check('K1\'s cutting, at the wages of who cut (Blair 3 h at $21 + Tess 1 h at $18) and 100 clone cubes at $0.10, shown beside the price', near(R.cut.labour, 81) && near(R.cut.supplies, 10) && R.cut.hours === 4 && R.cut.clones === 100, JSON.stringify(R.cut));
     check('cost per clone = growing the mothers: labour $40 ÷ 150, power $261.00 ÷ 150 (no cutting in it)', near(R.per.labour, 40 / 150, 1e-6) && near(R.per.power, 1.74, 1e-6) && R.per.supplies == null && R.per.water == null, JSON.stringify(R.per));
     check('K1 pays for its 100 clones at that price', R.charge.n === 100 && R.charge.mother === 'M100' && near(R.charge.parts.labour, 26.6667) && near(R.charge.parts.power, 174), JSON.stringify(R.charge));
-    check('…and keeps its own cutting: labour $121 (cutting included) + $26.67 for its clones, supplies its own $10, power $174.00',
-        near(R.k1raw, 121) && near(R.parts.labour, 147.6667) && near(R.parts.supplies, 10) && near(R.parts.power, 174), JSON.stringify(R.parts));
+    // Partial = missing (cost audit 2026-10-26): K1's supplies ($10 of its own) are left out because its mother has no supplies
+    // figure, and its power ($174 of clones) because K1's own rooms give no electricity figure — never just one half
+    check('…and keeps its own cutting: labour $121 (cutting included) + $26.67 for its clones; supplies and power left out (one half has no figure)',
+        near(R.k1raw, 121) && near(R.parts.labour, 147.6667) && R.parts.supplies == null && R.parts.power == null, JSON.stringify(R.parts));
     // The Costs page
     await b.run(ew, `document.getElementById('tabReports').click(); RPT.page = 'costs'; renderReports();`, { user: true });
     const page = await b.run(ew, `return document.getElementById('rptBody').textContent;`);
@@ -260,8 +262,8 @@ export async function run(b, BASE) {
     await b.run(m3, `delete DB.data.lots.K1; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'K1');
         DB.data.calendarEvents.find(e => e.id === 'm3').labour_map[DB.data.calendarEvents.find(e => e.id === 'm3').date][0].hours = 20; markUnsaved(); broadcastToSubtools();`);
     await b.waitFor(ew, `return !DB.lots.K1;`);
-    const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), per: rptCloneModel(M).priceOf('M100').perClone };`);
-    check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 147.67) && near(after.parts.power, 174) && !near(after.per.labour, 40 / 150), JSON.stringify(after));
+    const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), charge: rptCloneCharge(k1, M).parts, per: rptCloneModel(M).priceOf('M100').perClone };`);
+    check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 147.67) && near(after.charge.power, 174) && !near(after.per.labour, 40 / 150), JSON.stringify(after));
     // The lots still open carry what's left of the mother's cost, so the charges add up to it (review C8): K2's 50 clones
     const left = await b.run(ew, `const M = rptModel(), pr = rptCloneModel(M).priceOf('M100');
         const k2 = rptCloneCharge({ lotId: 'K2', parentLotId: 'M100', ctls: { type: 'sub-lot', start: 50 } }, M);

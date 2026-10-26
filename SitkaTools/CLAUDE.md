@@ -20,7 +20,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 - **Room form:** name, Building dropdown (registers the room in that building's `assignedRooms` on day 1), **Flowering room** checkbox, light count, watts per light, canopy sq ft, veg / bloom light cycles (selects for 24/0 … 12/12, stored as hours on; 18/6 and 12/12 by default) and designation. The flowering box, lights, watts, canopy, light cycles and designation are also editable in the room's detail panel; the name, description and building are set when the room is made (there is no rename).
 - Assigning a room to a building first takes it out of any other building. Deleting a room removes it from its building. A room with projected lots can't be deleted until CropLabourWizard clears them (🧹 Clear Projections; review E8).
 - **A room holding a locked lot** (its `currentRoom`) can't be deleted, moved to another building or taken out of its building, and its building can't be deleted (`refuseRoomChange`, with an alert naming the lots): the grow log records where a lot is, and moving a lot between buildings is a room change in its grow log.
-- **Buildings** have their own editor below the rooms, styled the same, with an optional **property cost per month** (rent + property fees) on the form and in the detail panel.
+- **Buildings** have their own editor below the rooms, styled the same, with an optional **property cost per month** (rent + property fees) on the form and in the detail panel. $0 is kept (a building with no rent); blank means not set, and the cost per gram then leaves its lots' property out.
 
 ## Calendar
 

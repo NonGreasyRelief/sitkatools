@@ -3169,7 +3169,7 @@
                     </div>
                     <div class="form-group">
                         <label for="buildingPropertyCost">Property cost per month ($)</label>
-                        <input type="number" id="buildingPropertyCost" min="0" step="0.01" inputmode="decimal" placeholder="rent + property fees" title="Rent and property fees for the building, per month — the Labour & Cost Wizard's cost per gram shares it between the crops in the building">
+                        <input type="number" id="buildingPropertyCost" min="0" step="0.01" inputmode="decimal" placeholder="rent + property fees" title="Rent and property fees for the building, per month ($0 for a building with no rent) — the Labour & Cost Wizard's cost per gram shares it between the crops in the building">
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="clearBuildingFormBtn">Clear</button>
@@ -7573,6 +7573,8 @@
         const DEFAULT_VEG_LIGHT_HOURS = 18, DEFAULT_BLOOM_LIGHT_HOURS = 12;
         const lightCycleOptions = (selected) => LIGHT_CYCLE_HOURS.map(h => `<option value="${h}"${h === selected ? ' selected' : ''}>${h}/${24 - h}</option>`).join('');
         const positiveOrNull = (v) => { const n = parseFloat(v); return n > 0 ? n : null; };
+        // A building's property cost: $0 is a figure (a building with no rent); blank is "not set" (cost audit 2026-10-26)
+        const zeroOrMoreOrNull = (v) => { if (String(v ?? '').trim() === '') return null; const n = parseFloat(v); return Number.isFinite(n) && n >= 0 ? n : null; };
         // A building's property cost, e.g. "$12,500.00 / month"
         const fmtMonthly = (v) => `$${Number(v).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month`;
 
@@ -10888,7 +10890,7 @@
                 const buildingId = $('buildingId').value.trim();
                 const buildingName = $('buildingName').value.trim();
                 const description = $('buildingDescription').value.trim();
-                const monthlyPropertyCost = $('buildingPropertyCost') ? positiveOrNull($('buildingPropertyCost').value) : null;
+                const monthlyPropertyCost = $('buildingPropertyCost') ? zeroOrMoreOrNull($('buildingPropertyCost').value) : null;
 
                 if (!buildingId || !buildingName) {
                     alert('Please fill in Building ID and Building Name.');
@@ -10911,7 +10913,7 @@
                 };
 
                 markUnsaved();
-                alert(`Building "${buildingName}" created successfully!\n\nID: ${buildingId}${monthlyPropertyCost ? `\n🏠 Property cost: ${fmtMonthly(monthlyPropertyCost)}` : ''}\nAssign rooms to it below, or pick it in the room form when creating a room.\nRemember to export the database to save.`);
+                alert(`Building "${buildingName}" created successfully!\n\nID: ${buildingId}${monthlyPropertyCost != null ? `\n🏠 Property cost: ${fmtMonthly(monthlyPropertyCost)}` : ''}\nAssign rooms to it below, or pick it in the room form when creating a room.\nRemember to export the database to save.`);
 
                 $('buildingForm').reset();
                 this.renderBuildingList();
@@ -10952,7 +10954,7 @@
                         <div class="room-header">
                             <div class="lot-info">
                                 <span class="lot-name">🏢 ${escapeHtml(building.name)}</span>
-                                <span class="lot-meta">${escapeHtml(key)}${building.description ? ' · ' + escapeHtml(building.description) : ''} · ${roomCount} room${roomCount !== 1 ? 's' : ''} assigned${building.monthlyPropertyCost > 0 ? ' · 🏠 ' + fmtMonthly(building.monthlyPropertyCost) : ''}</span>
+                                <span class="lot-meta">${escapeHtml(key)}${building.description ? ' · ' + escapeHtml(building.description) : ''} · ${roomCount} room${roomCount !== 1 ? 's' : ''} assigned${building.monthlyPropertyCost != null ? ' · 🏠 ' + fmtMonthly(building.monthlyPropertyCost) : ''}</span>
                             </div>
                             <div class="room-header-actions">
                                 <span class="building-badge">Building</span>
@@ -10995,7 +10997,7 @@
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Property cost / month:</span>
-                            <input type="number" class="building-property-cost" data-building-id="${escapeHtml(buildingId)}" min="0" step="0.01" inputmode="decimal" value="${building.monthlyPropertyCost > 0 ? building.monthlyPropertyCost : ''}" placeholder="not set" title="Rent and property fees for the building, $ per month — the Labour & Cost Wizard's cost per gram shares it between the crops in the building" style="width:120px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="building-property-cost" data-building-id="${escapeHtml(buildingId)}" min="0" step="0.01" inputmode="decimal" value="${building.monthlyPropertyCost != null ? building.monthlyPropertyCost : ''}" placeholder="not set" title="Rent and property fees for the building, $ per month ($0 for a building with no rent) — the Labour & Cost Wizard's cost per gram shares it between the crops in the building" style="width:120px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
                         </div>
                     </div>
                 `;
@@ -11115,7 +11117,7 @@
                     inp.addEventListener('change', () => {
                         const building = this.buildings[inp.dataset.buildingId];
                         if (!building) return;
-                        building.monthlyPropertyCost = positiveOrNull(inp.value);
+                        building.monthlyPropertyCost = zeroOrMoreOrNull(inp.value);
                         markUnsaved();
                         this.renderBuildingList();
                     });
