@@ -132,6 +132,8 @@ export async function run(b, BASE) {
     made = await split('L101', 3);
     al = await alerts();
     check('a split of 3 is made', made && !al.some(a => a.includes('recorded as moved')), al.join());
+    const rooms101 = await b.run(main, `const l = DB.data.lots.L101, p = DB.data.lots.L100; return { clone: l.cloningRoom, veg: l.vegRoom, pclone: p.cloningRoom, pveg: p.vegRoom };`);
+    check('…with its parent\'s cloning and veg rooms (review E15)', rooms101.clone === rooms101.pclone && rooms101.veg === rooms101.pveg && !!rooms101.pclone, JSON.stringify(rooms101));
     made = await split('L102', 1);
     al = await alerts();
     check('…and then no more: those 3 are in the split', !made && al[0]?.includes('has 0 plants recorded as moved out'), al.join());

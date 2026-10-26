@@ -1932,6 +1932,75 @@
         window.addEventListener('focus', () => LinkLost.check());
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
 
+        // ---- The same tool open twice ----
+        // Two tabs of the same tool on the shared working copy (a tablet) each hold their own copy of the database, and
+        // the one that saves last undoes the other's changes (review A12). The newer one covers itself: close it and use
+        // the one already open (user decision 2026-10-26). Only windows on the shared copy take part: a popup saves to the
+        // SitkaTools that opened it, which doesn't open a second window of a tool (review A9), and popups of another
+        // SitkaTools (the office PC opening SitkaTools as a building too) don't share a copy. They find each other on a
+        // BroadcastChannel; the cover lifts by itself if the other one closes. Identical in every tool (WorkCopy.TOOL).
+        var OpenTwice = {
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-tools') : null,
+            id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+            since: Date.now(),
+            covered: false,
+            answered: false,
+            timer: null,
+            name() { return ({ EmployeeWizard: 'Labour & Cost Wizard' })[WorkCopy.TOOL] || WorkCopy.TOOL; },
+            // Is window `m` older than this one? (opened earlier; the id breaks a tie)
+            isOlder(m) { return m.since < this.since || (m.since === this.since && m.id < this.id); },
+            start() {
+                if (!this.channel) return;
+                this.channel.addEventListener('message', (e) => {
+                    const m = e.data || {};
+                    if (m.tool !== WorkCopy.TOOL || m.id === this.id) return;
+                    // A newer window of this tool asks who's here: an older one that is in use answers
+                    if (m.type === 'here?' && WorkCopy.inUse && !this.covered && !this.isOlder(m)) this.channel.postMessage({ type: 'here', tool: WorkCopy.TOOL, id: this.id, since: this.since, to: m.id });
+                    if (m.type === 'here' && m.to === this.id && WorkCopy.inUse && this.isOlder(m)) { this.answered = true; this.cover(); }
+                    if (m.type === 'gone' && this.covered) this.ask();   // the other one closed: check again
+                });
+                window.addEventListener('pagehide', () => { try { this.channel.postMessage({ type: 'gone', tool: WorkCopy.TOOL, id: this.id }); } catch (_) { /* closing */ } });
+                window.addEventListener('focus', () => { if (this.covered) this.ask(); });
+                // Ask once this window is on the shared copy (a tablet tab at once; a popup only if its DB never came)
+                let tries = 0;
+                const wait = setInterval(() => { if (WorkCopy.inUse) { clearInterval(wait); this.ask(); } else if (++tries > 40) clearInterval(wait); }, 250);
+            },
+            ask() {
+                this.answered = false;
+                this.channel.postMessage({ type: 'here?', tool: WorkCopy.TOOL, id: this.id, since: this.since });
+                if (!this.covered) return;
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => { if (!this.answered) this.uncover(); }, 600);   // nobody older answered: this one is free
+            },
+            cover() {
+                this.covered = true;
+                let wrap = document.getElementById('openTwice');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'openTwice';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10003; background: rgba(10, 10, 25, 0.94); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = `${this.name()} is already open in another window`;
+                wrap.querySelector('[data-text]').textContent = 'Two windows of the same tool would undo each other’s changes. Close this one (or this tab) and use the window that’s already open.';
+                wrap.style.display = 'flex';
+            },
+            uncover() {
+                this.covered = false;
+                const wrap = document.getElementById('openTwice');
+                if (wrap) wrap.style.display = 'none';
+            }
+        };
+        OpenTwice.start();
+
         // Notify SitkaTools of changes via postMessage
         function notifySitkaTools() {
             if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
@@ -3562,6 +3631,30 @@
                 return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
             },
             // A new PIN's record (4–8 digits; the caller checks the format)
+            // Drawn initials, smaller (review H2): when the pen lifts, the points that don't change the line's shape are
+            // dropped (Ramer–Douglas–Peucker, within 0.003 of the pad: under a pixel at the pad's size). The stroke is
+            // [x0, y0, x1, y1, …] with 3 decimals; it looks the same and takes a fraction of the space.
+            slimStroke(pts, eps = 0.003) {
+                const n = Math.floor((pts || []).length / 2);
+                if (n <= 2) return (pts || []).slice();
+                const keep = new Uint8Array(n);
+                keep[0] = keep[n - 1] = 1;
+                const stack = [[0, n - 1]];
+                while (stack.length) {
+                    const [a, z] = stack.pop();
+                    const ax = pts[2 * a], ay = pts[2 * a + 1], dx = pts[2 * z] - ax, dy = pts[2 * z + 1] - ay, len = Math.hypot(dx, dy);
+                    let far = -1, dmax = eps;
+                    for (let i = a + 1; i < z; i++) {
+                        const px = pts[2 * i] - ax, py = pts[2 * i + 1] - ay;
+                        const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(dy * px - dx * py) / len;
+                        if (d > dmax) { dmax = d; far = i; }
+                    }
+                    if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, z]); }
+                }
+                const out = [];
+                for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[2 * i], pts[2 * i + 1]);
+                return out;
+            },
             async make(pin) {
                 const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
                 return { salt, hash: await this.hash(salt, pin) };
@@ -3712,7 +3805,7 @@
                     stroke.push(+x.toFixed(3), +y.toFixed(3));
                     this._drawPad();
                 });
-                const end = () => { stroke = null; };
+                const end = () => { if (stroke) { stroke.splice(0, stroke.length, ...this.slimStroke(stroke)); this._drawPad(); } stroke = null; };
                 pad.addEventListener('pointerup', end);
                 pad.addEventListener('pointercancel', end);
                 el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
@@ -4166,12 +4259,10 @@
                 harvested: once['harvest.plantsHarvested'] ?? (upToHarvest.length ? upToHarvest[upToHarvest.length - 1][1] : lotCount)
             };
 
-            const held = c.dates.transplant && c.dates.tankClean ? dDiff(c.dates.transplant, c.dates.tankClean) + 1 : null;
             const gsf = flower != null && c.canopySqFt ? flower / c.canopySqFt : null;
             c.derived = {
                 gpp: flower != null && c.plants.harvested > 0 ? flower / c.plants.harvested : null,
-                gsf, heldDays: held,
-                gsfy: gsf != null && held > 0 ? gsf * 365 / held : null,
+                gsf, heldDays: null, gsfy: null,   // set below, once the lot's grow-log history is in
                 dryDown: c.weights.wet > 0 && c.weights.dry != null ? c.weights.dry / c.weights.wet : null,
                 trimOut: c.weights.dry > 0 && flower != null ? flower / c.weights.dry : null
             };
@@ -4199,6 +4290,11 @@
                 const zero = (c.ctls?.counts || []).find(([d, n]) => n === 0 && (!c.dates.planting || d >= c.dates.planting));
                 c.dates.end = [zero?.[0], c.dates.retire].filter(isDay).sort()[0] || null;
             }
+            // Days the crop held a flower room, from the stays the costs use (the grow log's rooms first, rptCropRoomDays): its
+            // days in flower, plus the cleaning after them up to Tank & Irrigation Clean (review C12)
+            const held = rptFlowerHeldDays(c);
+            c.derived.heldDays = held;
+            c.derived.gsfy = gsf != null && held > 0 ? gsf * 365 / held : null;
             const flagged = new Set(), herm = new Set();
             for (const m of RPT_IPM) for (const [d, v] of Object.entries(series[m] || {})) if (v >= 1) { flagged.add(d); if (m === 'ipm.herm') herm.add(d); }
             c.ipm = { flagDays: flagged.size, hermDays: herm.size };
@@ -4601,6 +4697,33 @@
                 else out.push({ roomId, from, to, phase, fromLog: true });
             }
             return out.sort((a, b) => a.from.localeCompare(b.from));
+        }
+        // Days a crop held a flower room: its flower stays, plus the days after the last one until its room is clean again
+        // (Tank & Irrigation Clean). Null for a mother lot or a crop with no flower stay.
+        function rptFlowerHeldDays(c) {
+            const fl = c.mother ? [] : rptCropRoomDays(c).filter(st => st.phase === 'flower');
+            if (!fl.length) return null;
+            const last = fl[fl.length - 1].to, clean = c.dates?.tankClean;
+            return rSum(fl, st => dDiff(st.from, st.to) + 1) + (isDay(clean) && clean > last ? dDiff(last, clean) : 0);
+        }
+        // Projected lots' stays in their room, the same shape as rptCropRoomDays': transplant (a projected mother lot: planting,
+        // when it has no transplant) to the harvest's last day (Retire Mothers), with `clean` = its Tank & Irrigation Clean
+        function rptProjectedStays() {
+            const proj = {};
+            for (const ev of DB.data.calendarEvents || []) {
+                if (ev.sourceTool !== 'CropProjection' || !ev.lotId) continue;
+                const p = proj[ev.lotId] || (proj[ev.lotId] = { roomId: ev.roomId, t: {} });
+                if (ev.taskType && !p.t[ev.taskType]) p.t[ev.taskType] = ev;
+            }
+            const out = [];
+            for (const [lotId, p] of Object.entries(proj)) {
+                const mother = !!p.t.retire;
+                const from = p.t.transplant?.date || (mother ? p.t.planting?.date : null);
+                const to = mother ? p.t.retire.date : (p.t.harvest?.endDate || p.t.harvest?.date);
+                if (p.roomId && DB.data.rooms?.[p.roomId] && isDay(from) && isDay(to) && to >= from)
+                    out.push({ roomId: p.roomId, lotId, from, to, phase: mother ? 'mother' : 'flower', clean: p.t.tank_irrigation_clean?.date || null });
+            }
+            return out;
         }
         // How many plants a lot had on a day, for sharing a room, its chores and its building's property: the grow log's count
         // that day; before the lot's first count, the count it started with; after its plants reach 0 (in the dry and trim
@@ -5303,43 +5426,33 @@
         }
 
         // ---- Crop Timeline: every room's lots (real, closed and projected) ----
+        // The room schedule Gantt's bars: every crop's stays as the costs count them (rptCropRoomDays: the grow log's rooms first,
+        // then the schedule; review C12) and the projected lots'. `clean`: the day a flower room is clean again after the crop.
+        // A closed-out crop shows only its flower (or mother) stay.
+        const RPT_GANTT_PHASE = { clone: 'clone', veg: 'veg', flower: 'flower', mother: 'mother', dry: 'post', trim: 'post' };
         function rptStays(M) {
             const stays = [];
-            const push = (roomRef, c, ph, from, to) => {
-                const room = rptRoomIdByName(roomRef);
-                if (room && isDay(from) && isDay(to) && to >= from) stays.push({ room, lotId: c.lotId, label: c.lotId, strain: c.strain, ph, from, to, proj: false, closed: !!c.closed });
-            };
             for (const c of M.crops) {
-                const d = c.dates || {}, r = c.rooms || {};
-                if (!c.closed) {
-                    push(r.cloning, c, 'clone', d.day0, d.planting && dAdd(d.planting, -1));
-                    push(r.veg, c, 'veg', d.planting, d.transplant && dAdd(d.transplant, -1));
-                    push(r.dry, c, 'post', d.harvestStart, d.bucking || d.trimStart);
-                    if (r.trim && r.trim !== r.dry) push(r.trim, c, 'post', d.trimStart, d.trimEnd);
+                const own = rptCropRoomDays(c), lastFlower = own.filter(st => st.phase === 'flower').pop();   // the room it's cleaned out of
+                for (const st of own) {
+                    if (c.closed && st.phase !== 'flower' && st.phase !== 'mother') continue;
+                    stays.push({ room: st.roomId, lotId: c.lotId, label: c.lotId, strain: c.strain, ph: RPT_GANTT_PHASE[st.phase] || 'post', from: st.from, to: st.to,
+                        proj: false, closed: !!c.closed, clean: st === lastFlower ? c.dates?.tankClean || null : null });
                 }
-                if (c.mother) push(r.flower || r.veg, c, 'mother', d.transplant || d.planting, d.end || d.retire);
-                else push(r.flower, c, 'flower', d.transplant, d.tankClean || d.harvestEnd);
             }
-            const proj = {};
-            for (const ev of DB.data.calendarEvents) {
-                if (ev.sourceTool !== 'CropProjection' || !ev.lotId) continue;
-                const p = proj[ev.lotId] || (proj[ev.lotId] = { roomId: ev.roomId, t: {} });
-                if (ev.taskType && !p.t[ev.taskType]) p.t[ev.taskType] = ev;
-            }
-            for (const [id, p] of Object.entries(proj)) {
-                // 🌿 A projected mother lot stays from its transplant to Retire Mothers
-                const tp = p.t.transplant?.date || (p.t.retire ? p.t.planting?.date : null), end = p.t.tank_irrigation_clean?.date || p.t.harvest?.endDate || p.t.harvest?.date || p.t.retire?.date;
-                if (p.roomId && DB.data.rooms?.[p.roomId] && isDay(tp) && isDay(end) && end >= tp) stays.push({ room: p.roomId, lotId: id, label: id.replace(/^.*-TBA-/, 'TBA-'), strain: null, ph: p.t.retire ? 'mother' : 'flower', from: tp, to: end, proj: true });
-            }
+            for (const st of rptProjectedStays())
+                stays.push({ room: st.roomId, lotId: st.lotId, label: st.lotId.replace(/^.*-TBA-/, 'TBA-'), strain: null, ph: st.phase, from: st.from, to: st.to, proj: true, clean: st.clean });
             return stays;
         }
+        // A flower stay holds its room until the room is clean again
+        const rptHeldTo = st => isDay(st.clean) && st.clean > st.to ? st.clean : st.to;
         function rptFlowerGaps(stays) {
             const gaps = [], rooms = [...new Set(stays.filter(s => s.ph === 'flower').map(s => s.room))];
             for (const room of rooms) {
                 const list = stays.filter(s => s.room === room && s.ph === 'flower').sort((a, b) => a.from.localeCompare(b.from));
                 for (let i = 1; i < list.length; i++) {
-                    const g = dDiff(list[i - 1].to, list[i].from) - 1;
-                    if (g >= 1) gaps.push({ room, from: dAdd(list[i - 1].to, 1), to: dAdd(list[i].from, -1), days: g, prev: list[i - 1], next: list[i] });
+                    const held = rptHeldTo(list[i - 1]), g = dDiff(held, list[i].from) - 1;
+                    if (g >= 1) gaps.push({ room, from: dAdd(held, 1), to: dAdd(list[i].from, -1), days: g, prev: list[i - 1], next: list[i] });
                 }
             }
             return gaps;
@@ -5379,7 +5492,7 @@
                             if (g.days >= 5) body += rT(gx + gw / 2, y + rh + 10, `${g.days} d idle`, 'rv-warn', 'middle', 'font-size:10px');
                         }
                         let occ = 0;
-                        for (let d = WIN0; d <= WIN1; d = dAdd(d, 1)) if (list.some(st => st.ph === 'flower' && st.from <= d && st.to >= d)) occ++;
+                        for (let d = WIN0; d <= WIN1; d = dAdd(d, 1)) if (list.some(st => st.ph === 'flower' && st.from <= d && rptHeldTo(st) >= d)) occ++;
                         util.push([rptRoomName(room), occ / span]);
                         body += rT(W - 8, y + rh / 2 + 4, rPct(occ / span), 'rv-val', 'end');
                     }
@@ -5974,14 +6087,8 @@
             if (!RPT.strain && !RPT.room) {
                 // A room chore is on DailyWizard's list only while a lot is in its room: count it on the days its room is
                 // planned to hold a crop (the crops' stays, and projected lots' spans in their room; review C12)
-                const occ = rptRoomOccupancy(M.crops), proj = {};
-                for (const ev of DB.data.calendarEvents) {
-                    if (ev.sourceTool !== 'CropProjection' || !ev.roomId || !isDay(ev.date)) continue;
-                    const k = `${ev.roomId}|${ev.lotId}`, e = taskEnd(ev), p = proj[k] || (proj[k] = [ev.date, e]);
-                    if (ev.date < p[0]) p[0] = ev.date; if (e > p[1]) p[1] = e;
-                }
-                const projIn = Object.entries(proj).map(([k, span]) => [k.split('|')[0], span]);
-                const occupied = (roomId, d) => occ(roomId, d).length > 0 || projIn.some(([r, [a, z]]) => r === roomId && a <= d && d <= z);
+                const occ = rptRoomOccupancy(M.crops), projIn = rptProjectedStays();
+                const occupied = (roomId, d) => occ(roomId, d).length > 0 || projIn.some(st => st.roomId === roomId && st.from <= d && d <= st.to);
                 for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
                     if (RPT.building && bid !== RPT.building) continue;
                     for (const t of b?.tasks || []) {

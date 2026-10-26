@@ -3697,15 +3697,15 @@
                 // The lot's live phase/room follows the change only when nothing later overrides it
                 // …and while the lot is still where that day said: once something later moved it on (the harvest log), a
                 // late fix to an old day doesn't set it back (review D4)
-                if (!repage.stop && DB.lots[lotId]) {
+                if (!repage.stop && DB.lots[lotId] && isCurrentLog(lotId, sheetId)) {
                     for (const ch of changes) {
                         if (ch.field === 'phase') { if (sameTracked('phase', currentLotPhase(lotId), ch.oldValue)) DB.lots[lotId].stage = stageFromForm(ch.newValue); }
                         else if (sameTracked('room', currentLotRoom(lotId), ch.oldValue)) DB.lots[lotId].currentRoom = ch.newValue;
                     }
                 }
             }
-            // The lot's live plant count always follows the newest recorded day
-            if (pcQ && DB.lots[lotId]) {
+            // The lot's live plant count always follows the newest recorded day (of its current log, review D9)
+            if (pcQ && DB.lots[lotId] && isCurrentLog(lotId, sheetId)) {
                 const latest = latestChainPlantCount(lotId, sheetId, pcQ);
                 if (latest !== null) DB.lots[lotId].plantCount = latest;
             }
@@ -4046,9 +4046,32 @@
         // Is the lot's live stage (changed in SitkaTools) different from this open log's phase?
         // Asked when the runner opens (checkStageMismatch) and when a live update arrives while it
         // is open (refreshRunnerPrefills). `key` is the runner's page.
+        // ---- The lot's current record (review F4, D9) ----
+        // A lot keeps one daily log at a time (user decision 2026-10-26): grow log, then drying log, then trim log. The
+        // log in use is the daily sheet whose newest page started last; the others are its past record. Only the current
+        // log's answers move the lot (phase, room, plant count, a move to another building) or ask "Lot is now in …";
+        // an older log's answers are just recorded, so a stray room on it can't strike the log in use. A page that would
+        // start after every other log's newest page (starting the drying log) is current too.
+        function newestDailyKey(lotId, sheetId) {
+            const keys = Object.keys(pageStore(lotId)?.[sheetId]?.instances || {}).sort();
+            return keys[keys.length - 1] || null;
+        }
+        function isCurrentLog(lotId, sheetId, key = null) {
+            const sheets = DB.paperWizard?.sheets || {};
+            if (sheets[sheetId]?.cadence !== 'daily-weekly') return false;
+            const mine = [newestDailyKey(lotId, sheetId), key].filter(Boolean).sort().pop() || '';
+            for (const sid of Object.keys(pageStore(lotId) || {})) {
+                if (sid === sheetId || sheets[sid]?.cadence !== 'daily-weekly') continue;
+                const other = newestDailyKey(lotId, sid);
+                if (other && other > mine) return false;
+            }
+            return true;
+        }
+
         function stageMismatch(lotId, sheetId, key, inst) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
+            if (!isCurrentLog(lotId, sheetId, key)) return false;   // an older log never asks (one log at a time, review D9)
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
             // An older page opened to backfill a day isn't the open log either
             if (dailyChain(lotId, sheetId).some(c => c.key > key)) return false;
@@ -4092,6 +4115,7 @@
         async function checkRoomMismatch(lotId, sheetId, inst) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet || sheet.cadence !== 'daily-weekly') return false;
+            if (!isCurrentLog(lotId, sheetId, runnerCtx?.key)) return false;   // an older log never asks (review D9)
             if (inst.phaseChangeDate || inst.completedAt) return false; // already closed / done — not the open log
             // An older page opened to backfill a day isn't the open log either
             if (runnerCtx && dailyChain(lotId, sheetId).some(c => c.key > runnerCtx.key)) return false;
@@ -4238,6 +4262,7 @@
         // correcting a day from before an earlier move isn't a move (review B1).
         function buildingMoveOf(ctx) {
             if (!DeviceView.split || !roomMovesLot(ctx.sheetId)) return null;
+            if (DB.paperWizard?.sheets?.[ctx.sheetId]?.cadence === 'daily-weekly' && !isCurrentLog(ctx.lotId, ctx.sheetId, ctx.key)) return null;   // review D9
             const qs = (wizardForSheet(ctx.sheetId)?.questions || []).filter(q => q.type === 'room');
             const answer = q => String(ctx.draft[q.id] ?? '').trim();
             const q = sheetSection(ctx.sheetId) === 'harvest' ? qs.filter(answer).pop() : qs[0];
@@ -5370,6 +5395,28 @@
         // the manager signature pad, the per-day initials pad, and the strike-out capture dialog.
         // `onStroke` fires when a stroke is committed (pointerup) — the wizard runner uses it
         // to re-evaluate mandatory gating as soon as something has been drawn.
+        // Drawn initials and signatures, smaller (review H2): when the pen lifts, a stroke's points are rounded to 3
+        // decimals and the ones that don't change the line's shape are dropped (Ramer–Douglas–Peucker, within 0.003
+        // of the pad). Strokes are [[x, y], …]; they print the same.
+        function slimStroke(pts, eps = 0.003) {
+            const p = (pts || []).map(([x, y]) => [+Number(x).toFixed(3), +Number(y).toFixed(3)]);
+            if (p.length <= 2) return p;
+            const keep = new Uint8Array(p.length);
+            keep[0] = keep[p.length - 1] = 1;
+            const stack = [[0, p.length - 1]];
+            while (stack.length) {
+                const [a, z] = stack.pop();
+                const [ax, ay] = p[a], dx = p[z][0] - ax, dy = p[z][1] - ay, len = Math.hypot(dx, dy);
+                let far = -1, dmax = eps;
+                for (let i = a + 1; i < z; i++) {
+                    const px = p[i][0] - ax, py = p[i][1] - ay;
+                    const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(dy * px - dx * py) / len;
+                    if (d > dmax) { dmax = d; far = i; }
+                }
+                if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, z]); }
+            }
+            return p.filter((_, i) => keep[i]);
+        }
         function initDrawPad(canvasId, aspectRatio, strokes, onStroke) {
             const canvas = $(canvasId);
             if (!canvas) return;
@@ -5418,7 +5465,14 @@
                 g.lineTo(p[0] * W, p[1] * H);
                 g.stroke();
             });
-            const endStroke = () => { if (drawing) onStroke?.(); drawing = false; };
+            const endStroke = () => {
+                if (drawing) {
+                    const st = strokes[strokes.length - 1];
+                    if (Array.isArray(st)) st.splice(0, st.length, ...slimStroke(st));   // smaller, same look (review H2)
+                    onStroke?.();
+                }
+                drawing = false;
+            };
             canvas.addEventListener('pointerup', endStroke);
             canvas.addEventListener('pointercancel', endStroke);
             // Clear the pad's pixels + drawing state (the caller empties `strokes` itself).
@@ -6052,7 +6106,9 @@
             const nvRoom = roomQ ? String(ctx.draft[roomQ.id] ?? '').trim() : '';
             // A closed log (already struck out) never rolls over again — re-opening it to fix a
             // day just saves answers. openLog gates every strike-out below.
-            const openLog = sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate;
+            // …and only the lot's current log moves it: an older one's answers are just recorded (review D9, F4)
+            const currentLog = isCurrentLog(ctx.lotId, ctx.sheetId, ctx.key);
+            const openLog = sheet.cadence === 'daily-weekly' && !inst.phaseChangeDate && currentLog;
             const phaseChanged = !!(openLog && nvPhase && prevPhase && normalizeStage(prevPhase) !== normalizeStage(nvPhase));
             const roomChanged = !!(openLog && nvRoom && prevRoom && String(prevRoom).trim().toLowerCase() !== nvRoom.toLowerCase());
 
@@ -6144,7 +6200,7 @@
             // Only daily logs write the lot's plant count: there the change is asked its reasons, and the lot is locked to
             // them. A plant count on another sheet (propagation, harvest) is just recorded (review D3).
             let plantZero = false;
-            for (const q of sheet.cadence === 'daily-weekly' ? pcQs : []) {
+            for (const q of sheet.cadence === 'daily-weekly' && currentLog ? pcQs : []) {
                 const v = String(ctx.draft[q.id] ?? '').trim();
                 if (v === '') continue;
                 const n = Number(v);
@@ -8185,6 +8241,75 @@
         });
         window.addEventListener('focus', () => LinkLost.check());
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
+
+        // ---- The same tool open twice ----
+        // Two tabs of the same tool on the shared working copy (a tablet) each hold their own copy of the database, and
+        // the one that saves last undoes the other's changes (review A12). The newer one covers itself: close it and use
+        // the one already open (user decision 2026-10-26). Only windows on the shared copy take part: a popup saves to the
+        // SitkaTools that opened it, which doesn't open a second window of a tool (review A9), and popups of another
+        // SitkaTools (the office PC opening SitkaTools as a building too) don't share a copy. They find each other on a
+        // BroadcastChannel; the cover lifts by itself if the other one closes. Identical in every tool (WorkCopy.TOOL).
+        var OpenTwice = {
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-tools') : null,
+            id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+            since: Date.now(),
+            covered: false,
+            answered: false,
+            timer: null,
+            name() { return ({ EmployeeWizard: 'Labour & Cost Wizard' })[WorkCopy.TOOL] || WorkCopy.TOOL; },
+            // Is window `m` older than this one? (opened earlier; the id breaks a tie)
+            isOlder(m) { return m.since < this.since || (m.since === this.since && m.id < this.id); },
+            start() {
+                if (!this.channel) return;
+                this.channel.addEventListener('message', (e) => {
+                    const m = e.data || {};
+                    if (m.tool !== WorkCopy.TOOL || m.id === this.id) return;
+                    // A newer window of this tool asks who's here: an older one that is in use answers
+                    if (m.type === 'here?' && WorkCopy.inUse && !this.covered && !this.isOlder(m)) this.channel.postMessage({ type: 'here', tool: WorkCopy.TOOL, id: this.id, since: this.since, to: m.id });
+                    if (m.type === 'here' && m.to === this.id && WorkCopy.inUse && this.isOlder(m)) { this.answered = true; this.cover(); }
+                    if (m.type === 'gone' && this.covered) this.ask();   // the other one closed: check again
+                });
+                window.addEventListener('pagehide', () => { try { this.channel.postMessage({ type: 'gone', tool: WorkCopy.TOOL, id: this.id }); } catch (_) { /* closing */ } });
+                window.addEventListener('focus', () => { if (this.covered) this.ask(); });
+                // Ask once this window is on the shared copy (a tablet tab at once; a popup only if its DB never came)
+                let tries = 0;
+                const wait = setInterval(() => { if (WorkCopy.inUse) { clearInterval(wait); this.ask(); } else if (++tries > 40) clearInterval(wait); }, 250);
+            },
+            ask() {
+                this.answered = false;
+                this.channel.postMessage({ type: 'here?', tool: WorkCopy.TOOL, id: this.id, since: this.since });
+                if (!this.covered) return;
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => { if (!this.answered) this.uncover(); }, 600);   // nobody older answered: this one is free
+            },
+            cover() {
+                this.covered = true;
+                let wrap = document.getElementById('openTwice');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'openTwice';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10003; background: rgba(10, 10, 25, 0.94); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = `${this.name()} is already open in another window`;
+                wrap.querySelector('[data-text]').textContent = 'Two windows of the same tool would undo each other’s changes. Close this one (or this tab) and use the window that’s already open.';
+                wrap.style.display = 'flex';
+            },
+            uncover() {
+                this.covered = false;
+                const wrap = document.getElementById('openTwice');
+                if (wrap) wrap.style.display = 'none';
+            }
+        };
+        OpenTwice.start();
 
         function notifySitkaTools() {
             if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)

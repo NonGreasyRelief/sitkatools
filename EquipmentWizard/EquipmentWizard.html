@@ -1140,6 +1140,75 @@
         window.addEventListener('focus', () => LinkLost.check());
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
 
+        // ---- The same tool open twice ----
+        // Two tabs of the same tool on the shared working copy (a tablet) each hold their own copy of the database, and
+        // the one that saves last undoes the other's changes (review A12). The newer one covers itself: close it and use
+        // the one already open (user decision 2026-10-26). Only windows on the shared copy take part: a popup saves to the
+        // SitkaTools that opened it, which doesn't open a second window of a tool (review A9), and popups of another
+        // SitkaTools (the office PC opening SitkaTools as a building too) don't share a copy. They find each other on a
+        // BroadcastChannel; the cover lifts by itself if the other one closes. Identical in every tool (WorkCopy.TOOL).
+        var OpenTwice = {
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-tools') : null,
+            id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+            since: Date.now(),
+            covered: false,
+            answered: false,
+            timer: null,
+            name() { return ({ EmployeeWizard: 'Labour & Cost Wizard' })[WorkCopy.TOOL] || WorkCopy.TOOL; },
+            // Is window `m` older than this one? (opened earlier; the id breaks a tie)
+            isOlder(m) { return m.since < this.since || (m.since === this.since && m.id < this.id); },
+            start() {
+                if (!this.channel) return;
+                this.channel.addEventListener('message', (e) => {
+                    const m = e.data || {};
+                    if (m.tool !== WorkCopy.TOOL || m.id === this.id) return;
+                    // A newer window of this tool asks who's here: an older one that is in use answers
+                    if (m.type === 'here?' && WorkCopy.inUse && !this.covered && !this.isOlder(m)) this.channel.postMessage({ type: 'here', tool: WorkCopy.TOOL, id: this.id, since: this.since, to: m.id });
+                    if (m.type === 'here' && m.to === this.id && WorkCopy.inUse && this.isOlder(m)) { this.answered = true; this.cover(); }
+                    if (m.type === 'gone' && this.covered) this.ask();   // the other one closed: check again
+                });
+                window.addEventListener('pagehide', () => { try { this.channel.postMessage({ type: 'gone', tool: WorkCopy.TOOL, id: this.id }); } catch (_) { /* closing */ } });
+                window.addEventListener('focus', () => { if (this.covered) this.ask(); });
+                // Ask once this window is on the shared copy (a tablet tab at once; a popup only if its DB never came)
+                let tries = 0;
+                const wait = setInterval(() => { if (WorkCopy.inUse) { clearInterval(wait); this.ask(); } else if (++tries > 40) clearInterval(wait); }, 250);
+            },
+            ask() {
+                this.answered = false;
+                this.channel.postMessage({ type: 'here?', tool: WorkCopy.TOOL, id: this.id, since: this.since });
+                if (!this.covered) return;
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => { if (!this.answered) this.uncover(); }, 600);   // nobody older answered: this one is free
+            },
+            cover() {
+                this.covered = true;
+                let wrap = document.getElementById('openTwice');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'openTwice';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10003; background: rgba(10, 10, 25, 0.94); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = `${this.name()} is already open in another window`;
+                wrap.querySelector('[data-text]').textContent = 'Two windows of the same tool would undo each other’s changes. Close this one (or this tab) and use the window that’s already open.';
+                wrap.style.display = 'flex';
+            },
+            uncover() {
+                this.covered = false;
+                const wrap = document.getElementById('openTwice');
+                if (wrap) wrap.style.display = 'none';
+            }
+        };
+        OpenTwice.start();
+
         function notifySitkaTools() {
             if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
             if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);

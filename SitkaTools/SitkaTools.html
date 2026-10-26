@@ -6607,6 +6607,15 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const href = link.href;
+                // Already open: switch to that window instead of opening a second one, which would hold its own copy of
+                // the database and undo the other's changes (review A9/A12; the tools also warn in a second window)
+                const path = new URL(href, location.href).pathname;
+                const open = openSubtools.find(w => { try { return !w.win.closed && new URL(w.url, location.href).pathname === path; } catch (_) { return false; } });
+                if (open) {
+                    try { open.win.focus(); } catch (_) { /* the browser may not allow it */ }
+                    showSyncToast(`${link.querySelector('.tool-link-name')?.textContent.trim() || 'That tool'} is already open — use that window`);
+                    return;
+                }
                 WorkCopy.flush(); // a tool that can't get the DB by postMessage loads it from the shared copy
 
                 if (isMobileDevice) {
@@ -6805,9 +6814,10 @@
             const createdDate = lotDateInput.value;
             const stage = lotStageSelect.value;
             const receivedFrom = type === 'new-lot' ? $('receivedFrom').value.trim() : '';
-            // Veg/Cloning rooms are settable for new lots and sub-lots (split lots inherit from parent)
-            const vegRoom = type === 'split-lot' ? '' : vegRoomInput.value;
-            const cloningRoom = type === 'split-lot' ? '' : cloningRoomInput.value;
+            // Veg/Cloning rooms are settable for new lots and sub-lots; split lots inherit their parent's (review E15)
+            const splitParent = type === 'split-lot' && parentLotId ? DB.lots[parentLotId] : null;
+            const vegRoom = type === 'split-lot' ? (splitParent?.vegRoom || '') : vegRoomInput.value;
+            const cloningRoom = type === 'split-lot' ? (splitParent?.cloningRoom || '') : cloningRoomInput.value;
             // Dry/Trim rooms are settable for every lot type — a dry room often doubles as the
             // trim room (same name in both), or they can be two different rooms.
             const dryRoom = dryRoomInput.value;

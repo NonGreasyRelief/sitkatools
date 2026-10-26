@@ -94,6 +94,26 @@ export async function run(b, BASE) {
     const after2 = await g2();
     check('…and keeps them: 4 culled on the second day, the first day 82', after2.days[Y2].cnt === '82' && JSON.stringify(after2.days[Y]._removed) === '{"culled":4}', JSON.stringify({ d1: after2.days[Y2].cnt, d2: after2.days[Y]._removed }));
 
+    // ---- D9 / F4: one daily log at a time — an older log's answers don't move the lot ----
+    await b.run(pw, `switchTab('cabinet'); await openRunner('L200', 'dlog', '${T}', '${T}'); Object.assign(runnerCtx.draft, { dtmp: '18' }); saveRunnerEntry();`);
+    await b.sleep(300);
+    const before9 = (await lot('L200')).plantCount;
+    await b.run(pw, `switchTab('cabinet'); await openRunner('L200', 'glog', '${Y2}', '${T}'); Object.assign(runnerCtx.draft, { cnt: '70' }); saveRunnerEntry();`);
+    await answerCountReasons(b, pw, { reason: 'culled' });
+    // the day was on file: the change is a correction (initials and a reason)
+    if (await b.waitFor(pw, `return !!document.getElementById('corrOverlay');`, 3000).then(() => true).catch(() => false)) {
+        await b.run(pw, `[...document.querySelectorAll('.corr-reason')][0]?.click(); document.getElementById('corrName').value = 'WT';`, { user: true });
+        await b.drag(pw, '#corrPad', [[0.2, 0.7], [0.3, 0.2], [0.4, 0.7]]);
+        await b.run(pw, `document.getElementById('corrOkBtn').click();`, { user: true });
+    }
+    await b.sleep(300);
+    const d9 = await b.run(pw, `const g = DB.paperWizard.entries.L200.glog.instances['${Y2}']; return { cnt: g.days['${T}'].cnt, current: isCurrentLog('L200', 'glog'), dry: isCurrentLog('L200', 'dlog') };`);
+    check('once the drying log has started, the grow log is the past record (the drying log is current)', !d9.current && d9.dry, JSON.stringify(d9));
+    check('…a count saved on the grow log is recorded but doesn\'t change the lot', d9.cnt === '70' && (await lot('L200')).plantCount === before9, JSON.stringify({ d9, lot: (await lot('L200')).plantCount, before9 }));
+    await b.run(main, `DB.data.lots.L200.stage = 'drying'; markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(500);
+    check('…and the grow log doesn\'t ask "Lot is now in …"', !(await b.run(pw, `return stageMismatch('L200', 'glog', '${Y2}', DB.paperWizard.entries.L200.glog.instances['${Y2}']);`)));
+
     // ---- D2: the harvest log moves the lot only when its answer changes ----
     await save('L100', 'harv', T, null, { hph: 'Harvesting', dwt: '' });
     check('the harvest log moved the lot to Harvesting', (await lot('L100')).stage === 'harvest', (await lot('L100')).stage);

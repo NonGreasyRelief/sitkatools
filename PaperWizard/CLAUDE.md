@@ -145,7 +145,7 @@ The grow log is the record of every plant (user decision 2026-10-22). Before a d
 - Saving stamps `inst.signature.date` (local `YYYY-MM-DD`, feeds `signature.date`) and `at` (ISO, for "changed after signing"). Re-signing updates them; clearing the pad removes them. Saving without redrawing or renaming changes nothing.
 - Re-signing replaces the strokes and adds a `kind: 'signature'` change (old signer and date → new, or "cleared").
 - An unsigned instance still prints (empty box; tooltip "signature missing"). A legacy signature without `date` prints `N/A` in `signature.date` boxes until re-signed.
-- **Shared draw pad:** the signature, initials questions and strike-out initials use one pointer-captured pad, one stroke format and one SVG-polyline print path.
+- **Shared draw pad:** the signature, initials questions and strike-out initials use one pointer-captured pad, one stroke format and one SVG-polyline print path. When the pen lifts, the stroke's points are rounded to 3 decimals and the ones that don't change its shape are dropped (`slimStroke`, review H2), so drawn initials take a fraction of the space and print the same.
 
 ### Wizard
 
@@ -238,6 +238,14 @@ Paperwork that belongs to no lot (user decision 2026-10-25): **facility forms** 
 - **Bindings:** `lot.*`, `instance.phase` and `day.plantsRemoved` print N/A on these forms. `building.name` prints the cabinet's building on a building form, where the page was started (`inst.by`, or "Office") on a facility form, and the lot's current building on a lot form.
 - **Saving with split files:** building forms go in their building's file; facility forms live in Main.json, and what a building device adds waits in its file's queue until the office merges it in (root `CLAUDE.md` → "Facility queue").
 
+### One Daily Log at a Time (the lot's current log)
+
+A lot keeps one daily log at a time (user decision 2026-10-26): its grow log, then its drying log, then its trim log. The **current log** (`isCurrentLog`, review D9 / F4) is the daily sheet whose newest page started last; a page that would start after every other log's newest page (starting the drying log) is current too. The others are the lot's past record:
+
+- only the current log's answers write the lot's phase, room and plant count, move it to another building, or roll its pages over;
+- only the current log asks "Lot is now in … — close this log?";
+- an older log's answers (a day corrected later) are just recorded, with corrections as usual, so a stray room or count on it can't move the lot or strike the log in use. Backfilled days on an older log don't change the lot either.
+
 ### Phase & Room Change (grow-log rollover)
 
 A phase change (Clone → Veg → Bloom) or a room move (e.g. into the dry room) rolls the open daily-weekly log over. Both use one core, `dailyRollover`.
@@ -284,7 +292,7 @@ Saving a day that is **followed by later entries or pages** (`isBackfillDay`) ta
 
 ### Write-Back to the Main DB (PaperWizard's Special Permission)
 
-PaperWizard is the only tool allowed to write another tool's data, and only three lot fields: `plantCount`, `stage`, `currentRoom` (root `CLAUDE.md` → "Shared Database", Ownership). Every write calls `notifySitkaTools()` and travels in the normal full-DB `sitkaGit_db_update`. Once a lot has a daily-weekly page, SitkaTools locks those three fields (root `CLAUDE.md` → "🔒 A lot with a grow log is locked to it"), so PaperWizard is where they change.
+PaperWizard is the only tool allowed to write another tool's data, and only three lot fields: `plantCount`, `stage`, `currentRoom` (root `CLAUDE.md` → "Shared Database", Ownership), and only from the lot's current log (see "One Daily Log at a Time") or the harvest log. Every write calls `notifySitkaTools()` and travels in the normal full-DB `sitkaGit_db_update`. Once a lot has a daily-weekly page, SitkaTools locks those three fields (root `CLAUDE.md` → "🔒 A lot with a grow log is locked to it"), so PaperWizard is where they change.
 
 - **Plant count:** a saved value on the newest day of the chain that differs from `lot.plantCount` updates it (same value = no write). A backfilled day re-derives it from the newest recorded day (see "Backfilled Changes"). SitkaTools sets the starting count at lot creation; the per-day entries are the history.
 - **Phase / room:** an answer different from the live `stage` / `currentRoom` triggers the rollover and writes the new value. When a phase rollover already ran in the same save, the room only writes back (no second strike-out).

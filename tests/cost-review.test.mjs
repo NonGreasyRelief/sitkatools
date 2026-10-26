@@ -154,11 +154,31 @@ export async function run(b, BASE) {
     // ---- C12: the Forecast counts a room chore only on days its room is planned to hold a crop ----
     let wks = await b.run(ew, `return rptDemandWeeks(rptModel()).map(w => w.chores);`);
     check('Forecast: Wipe Grow 1 isn\'t counted while Grow 1 is empty', wks.every(h => h === 0), JSON.stringify(wks));
-    await b.run(main, `DB.data.calendarEvents.push({ id: 'ev_proj1', date: '${today(14)}', endDate: '${today(27)}', title: 'Projected', sourceTool: 'CropProjection', lotId: 'R1G1-TBA-01', roomId: 'R1G1', taskType: 'flip' });
+    // A projected lot is in its room from its transplant to its harvest's last day (rptProjectedStays, as the room Gantt draws it)
+    await b.run(main, `DB.data.calendarEvents.push({ id: 'ev_proj0', date: '${today(14)}', title: 'Projected', sourceTool: 'CropProjection', lotId: 'R1G1-TBA-01', roomId: 'R1G1', taskType: 'transplant' },
+        { id: 'ev_proj1', date: '${today(26)}', endDate: '${today(27)}', title: 'Projected', sourceTool: 'CropProjection', lotId: 'R1G1-TBA-01', roomId: 'R1G1', taskType: 'harvest' });
         markUnsaved(); await WorkCopy.flush();`);
     await b.sleep(600);
     wks = await b.run(ew, `return rptDemandWeeks(rptModel()).map(w => w.chores);`);
     check('…and is, half an hour a day, while a projected lot is planned there (14 days)', Math.abs(wks.reduce((t, h) => t + h, 0) - 7) < 1e-9, JSON.stringify(wks));
+
+    // ---- C12: one "where a lot is": the room Gantt and g / sq ft / year use the stays the costs use ----
+    // A crop scheduled into Grow 1 on day 20, whose grow log kept it in Veg 1 to day 22, then Grow 2, then Grow 1 from day 40
+    const g12 = await b.run(ew, `DB.data.rooms.R1G2 = { name: 'Grow 2', createdDate: '2026-01-01', assignedLots: [], buildingId: 'B1', isFlowering: true };
+        const D = n => dAdd('${D(0)}', n);
+        const c = { lotId: 'LX', strain: 'S', dates: { day0: D(0), planting: D(10), transplant: D(20), flip: D(24), harvestStart: D(60), harvestEnd: D(60), tankClean: D(62) },
+            rooms: { cloning: 'Clone 1', veg: 'Veg 1', flower: 'Grow 1' },
+            ctls: { logged: true, start: 100, counts: [[D(20), 100, 'Veg 1', 'Vegetation'], [D(23), 100, 'Grow 2', 'Bloom'], [D(40), 100, 'Grow 1', 'Bloom'], [D(60), 0, 'Grow 1', 'Harvesting']] } };
+        const costs = rptCropRoomDays(c).map(st => st.roomId + ':' + daysBetween(D(0), st.from) + '-' + daysBetween(D(0), st.to) + ':' + st.phase).join(' ');
+        const gantt = rptStays({ crops: [c] }).filter(st => st.lotId === 'LX').map(st => st.room + ':' + daysBetween(D(0), st.from) + '-' + daysBetween(D(0), st.to) + ':' + st.ph).join(' ');
+        const gaps = rptFlowerGaps(rptStays({ crops: [c] }).filter(st => st.lotId === 'LX')).length;
+        const held = rptFlowerHeldDays(c);
+        delete DB.data.rooms.R1G2;
+        return { costs, gantt, gaps, held };
+        function daysBetween(a, b) { return dDiff(a, b); }`);
+    check('C12: the room Gantt draws a crop where the costs put it (the grow log\'s rooms)', g12.gantt === g12.costs && g12.gantt === 'R1CL:0-9:clone R1VG:10-19:veg R1VG:20-22:veg R1G2:23-39:flower R1G1:40-60:flower', JSON.stringify(g12));
+    check('…the room it moved out of isn\'t held until the clean, so no gap is drawn', g12.gaps === 0, JSON.stringify(g12));
+    check('…and g / sq ft / year counts the days it held a flower room: 17 in Grow 2 + 21 in Grow 1 + 2 to clean (not 43 from the schedule)', g12.held === 40, JSON.stringify(g12));
 
     // ---- C15: a month back from the 31st stays in the month ----
     check('Mar 31 − 1 month is Feb 28 (periods start on the 1st, not the 4th)', await b.run(ew, `return dMonths('2026-03-31', -1) + ' ' + dMonths('2026-05-31', -3);`) === '2026-02-28 2026-02-28');

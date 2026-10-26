@@ -4,7 +4,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 
 ## Lot Manager
 
-- The create form sets all five rooms: cloning, veg, flower (`destRoom`), dry and trim (dry and trim may be the same room). It also picks a start room: the clone room by default, or the veg room for purchased clones. `currentRoom` starts from that choice.
+- The create form sets all five rooms: cloning, veg, flower (`destRoom`), dry and trim (dry and trim may be the same room). A split lot doesn't ask for cloning and veg rooms: it takes its parent's. It also picks a start room: the clone room by default, or the veg room for purchased clones. `currentRoom` starts from that choice.
 - Only `destRoom` syncs to `rooms.<id>.assignedLots`. The other room fields are names stored on the lot.
 - **New lots** may say who the plants came from (**Received from**, optional; `receivedFrom`), shown and editable in the lot list (📦). Every new lot keeps the count it started with (`startPlantCount`). Until a grow log records the lot, a count changed in the list changes that too. The Labour & Cost Wizard's 📋 CTLS month counts new lots as plants received and sub-lots as clones cut.
 - **✕ Delete** (unlocked lots): refused while the lot has paperwork pages or tasks with hours or a sign-off ("Close it out instead"); otherwise the lot goes with everything that's only its own — its events, schedule history and transfer records (`LotActions.removeLot`; review E3).
@@ -62,6 +62,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 
 - A module link click runs `WorkCopy.flush()` first, then opens the tool: `openModuleInTab` (a centred popup fed by postMessage) or, on phones, `openToolInTab` (a tab fed from the shared copy).
 - `openSubtools` holds `{ win, url, sent }` per window; a 1 s interval drops closed windows (the close event is unreliable on `file://`).
+- **A tool already open** (review A9 / A12, user decision 2026-10-26): clicking a tool's link while a window of that tool (same page path) is in `openSubtools` focuses that window and toasts "<Tool> is already open — use that window" instead of opening a second one. Two windows of one tool would each hold a copy of the DB and undo each other's changes. For tabs the hub didn't open, see root `CLAUDE.md` → "Cross-Window Database Workflow" (`OpenTwice`).
 - The first `sitkaGit_db` is resent every 200 ms (for up to 5 s, so a slow PC's popup gets it before its 1.5 s fallback to the shared copy) until `sitkaGit_ready` arrives, always sending the current DB and view.
 - `broadcastToSubtools(except)` posts `sitkaGit_db_update` with the view to each open window. It is debounced from `WorkCopy.flush()` (which `markUnsaved()` and `clearUnsaved()` schedule), and called right after taking a tool's update, skipping the sender. It skips a window whose `sent` key (`subtoolSyncKey`: the DB without `_meta`, plus the view) already matches.
 - An update from a window not in `openSubtools`, or a ping from one, gets `sitkaGit_not_linked` back.

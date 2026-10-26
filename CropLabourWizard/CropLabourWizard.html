@@ -1586,32 +1586,40 @@
             );
         }
 
-        // Day-0 spans of a fresh lot, read from its recipe (fallbacks for a recipe missing a task):
-        // flip/transplant are measured from Day 0; irrClean is the tank_irrigation_clean task's
-        // offset from harvest END. The regen cadence span is flip + bloom + irrClean (harvest
-        // follows FLIP, not transplant — for the default built-in: 34 + 63 + 2 = 99 days).
+        // A fresh lot's spans under `recipe`, as projections are generated (the recipe's default offsets, clones on, a
+        // one-day harvest, a 7-day trim), read from the shared builder so they always agree with Generate (review G5).
+        // Days from Day 0: planting, flip, transplant, harvestEnd, irrSpan (Tank & Irrigation Clean); irrClean counts
+        // from the harvest's end. The default built-in: 14, 34, 30, 97, 99 and 2. A recipe without one of the tasks
+        // falls back to the old spacing (planting 14, flip planting + 20, transplant planting + 10, Tank & Irrigation
+        // Clean harvest end + 2); a switched-off Tank & Irrigation Clean counts where it would be.
         function freshLotDay0Offsets(recipe) {
-            const off = tt => { const t = recipe?.tasks?.find(x => x.taskType === tt); return Number.isInteger(t?.defaultOffset) ? t.defaultOffset : null; };
-            const planting = off('planting') ?? 14;
-            return {
-                planting,
-                flip: planting + (off('flip') ?? 20),
-                transplant: planting + (off('transplant') ?? 10),
-                irrClean: off('tank_irrigation_clean') ?? 2
-            };
+            recipe = recipe || BUILTIN_RECIPE;
+            const day0 = '2026-01-05', d = { trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: 1 };
+            const offsets = defaultOffsetsSnapshot(recipeBloomDays(recipe), recipe).map(e => ({
+                ...e,
+                offset: Number.isInteger(e.offset) ? e.offset : 0,   // a half-typed row in the recipe editor
+                enabled: e.enabled || e.def.taskType === 'clone_cut_prep' || e.def.taskType === 'tank_irrigation_clean'
+            }));
+            const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+            const occ = scheduleOccurrences(day0, offsets, d, recipe);
+            const at = tt => { const o = occ.find(x => x.def.taskType === tt); return o && isDay(o.start) ? daysBetween(day0, o.start) : null; };
+            const planting = at('planting') ?? 14;
+            const flip = at('flip') ?? planting + 20;
+            const end = scheduleAnchors(day0, offsets, d).harvestEnd;
+            const harvestEnd = isDay(end) ? daysBetween(day0, end) : flip + recipeBloomDays(recipe);
+            const irrSpan = at('tank_irrigation_clean') ?? harvestEnd + 2;
+            return { planting, flip, transplant: at('transplant') ?? planting + 10, harvestEnd, irrSpan, irrClean: irrSpan - harvestEnd };
         }
 
-        // The recipe a lot's schedule was generated from — per-lot override (config.recipeId) or the
-        // header projection recipe. Works for real lots and projected lots alike.
+        // The recipe a lot's schedule was generated from (config.recipeId). Without one: a projected lot follows the header
+        // projection recipe (it's regenerated with it), a real lot the default built-in, as everywhere else (review G12).
         function lotRecipeFor(lotId) {
-            return getRecipeById(getScheduleConfig(lotId)?.recipeId || projectionRecipeId);
+            return getRecipeById(getScheduleConfig(lotId)?.recipeId || (isProjectedLot(lotId) ? projectionRecipeId : BUILTIN_RECIPE.id));
         }
 
-        // Days from Day 0 to a fresh lot's simulated irrigation-clean under the given recipe:
-        // flip offset + bloom length + irr-clean offset (default built-in: 34 + 63 + 2 = 99).
+        // Days from Day 0 to a fresh lot's Tank & Irrigation Clean under the given recipe (default built-in: 99)
         function freshIrrSpanDays(recipe) {
-            const f = freshLotDay0Offsets(recipe);
-            return f.flip + recipeBloomDays(recipe) + f.irrClean;
+            return freshLotDay0Offsets(recipe).irrSpan;
         }
 
         // ---- Labour estimates — recipe task `minutes` + `staff`, as in DailyWizard ----
@@ -2766,6 +2774,75 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         window.addEventListener('focus', () => LinkLost.check());
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') LinkLost.check(); });
 
+        // ---- The same tool open twice ----
+        // Two tabs of the same tool on the shared working copy (a tablet) each hold their own copy of the database, and
+        // the one that saves last undoes the other's changes (review A12). The newer one covers itself: close it and use
+        // the one already open (user decision 2026-10-26). Only windows on the shared copy take part: a popup saves to the
+        // SitkaTools that opened it, which doesn't open a second window of a tool (review A9), and popups of another
+        // SitkaTools (the office PC opening SitkaTools as a building too) don't share a copy. They find each other on a
+        // BroadcastChannel; the cover lifts by itself if the other one closes. Identical in every tool (WorkCopy.TOOL).
+        var OpenTwice = {
+            channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-tools') : null,
+            id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+            since: Date.now(),
+            covered: false,
+            answered: false,
+            timer: null,
+            name() { return ({ EmployeeWizard: 'Labour & Cost Wizard' })[WorkCopy.TOOL] || WorkCopy.TOOL; },
+            // Is window `m` older than this one? (opened earlier; the id breaks a tie)
+            isOlder(m) { return m.since < this.since || (m.since === this.since && m.id < this.id); },
+            start() {
+                if (!this.channel) return;
+                this.channel.addEventListener('message', (e) => {
+                    const m = e.data || {};
+                    if (m.tool !== WorkCopy.TOOL || m.id === this.id) return;
+                    // A newer window of this tool asks who's here: an older one that is in use answers
+                    if (m.type === 'here?' && WorkCopy.inUse && !this.covered && !this.isOlder(m)) this.channel.postMessage({ type: 'here', tool: WorkCopy.TOOL, id: this.id, since: this.since, to: m.id });
+                    if (m.type === 'here' && m.to === this.id && WorkCopy.inUse && this.isOlder(m)) { this.answered = true; this.cover(); }
+                    if (m.type === 'gone' && this.covered) this.ask();   // the other one closed: check again
+                });
+                window.addEventListener('pagehide', () => { try { this.channel.postMessage({ type: 'gone', tool: WorkCopy.TOOL, id: this.id }); } catch (_) { /* closing */ } });
+                window.addEventListener('focus', () => { if (this.covered) this.ask(); });
+                // Ask once this window is on the shared copy (a tablet tab at once; a popup only if its DB never came)
+                let tries = 0;
+                const wait = setInterval(() => { if (WorkCopy.inUse) { clearInterval(wait); this.ask(); } else if (++tries > 40) clearInterval(wait); }, 250);
+            },
+            ask() {
+                this.answered = false;
+                this.channel.postMessage({ type: 'here?', tool: WorkCopy.TOOL, id: this.id, since: this.since });
+                if (!this.covered) return;
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => { if (!this.answered) this.uncover(); }, 600);   // nobody older answered: this one is free
+            },
+            cover() {
+                this.covered = true;
+                let wrap = document.getElementById('openTwice');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'openTwice';
+                    wrap.style.cssText = 'position: fixed; inset: 0; z-index: 10003; background: rgba(10, 10, 25, 0.94); display: flex; align-items: center; justify-content: center; padding: 24px;';
+                    wrap.innerHTML = `
+                        <div style="max-width: 460px; text-align: center; background: var(--bg-secondary); border: 2px solid var(--warning); border-radius: 12px; padding: 28px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
+                            <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
+                            <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
+                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                        </div>`;
+                    wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
+                    document.body.appendChild(wrap);
+                }
+                wrap.querySelector('[data-title]').textContent = `${this.name()} is already open in another window`;
+                wrap.querySelector('[data-text]').textContent = 'Two windows of the same tool would undo each other’s changes. Close this one (or this tab) and use the window that’s already open.';
+                wrap.style.display = 'flex';
+            },
+            uncover() {
+                this.covered = false;
+                const wrap = document.getElementById('openTwice');
+                if (wrap) wrap.style.display = 'none';
+            }
+        };
+        OpenTwice.start();
+
         function notifySitkaTools() {
             if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
             if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);
@@ -3905,7 +3982,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // =====================================================
         // Crop Projection — 5-lot chain per flowering room (see root CLAUDE.md)
         // Lot Day 0 = the form's anchor date (the clone-cut date when cloning is enabled).
-        // Chain rule: Lot(k+1) Day 0 = Lot(k) harvest START − 21 days.
+        // Chain rule: Lot(k+1) Day 0 = Lot(k)'s LAST harvest day − the clone-cut days of Lot(k+1)'s recipe (nextLotDay0).
         // =====================================================
 
         const PROJECTION_LOT_COUNT = 5;
@@ -4335,12 +4412,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const irr = events.find(ev => ev.taskType === 'tank_irrigation_clean');
             if (irr) return irr.date;
             const h = events.find(ev => ev.taskType === 'harvest');
-            if (h) {
-                const cfg = getScheduleConfig(lotId);
-                const recipe = getRecipeById(cfg?.recipeId || projectionRecipeId);
-                return computeTaskDate(h.endDate || h.date, freshLotDay0Offsets(recipe).irrClean);
-            }
+            if (h) return computeTaskDate(h.endDate || h.date, freshLotDay0Offsets(lotRecipeFor(lotId)).irrClean);
             return null;
+        }
+
+        // A lot's last harvest day (null without a harvest)
+        function harvestEndOf(lotId) {
+            const h = eventsForLot(lotId).find(ev => ev.taskType === 'harvest');
+            return h ? (h.endDate || h.date) : null;
         }
 
         // Short display date for warning text (e.g. "2026-03-14" → "Mar 14")
@@ -4351,145 +4430,88 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return SHORT_MONTHS[d.getMonth()] + ' ' + d.getDate();
         }
 
-        // Late-arrival push-back plan for a pending room's reprojection. Pure — reads only, writes nothing.
-        // After the rename pass, slot i will hold current TBA-(i+1). For each slot 1..4 we ensure its
-        // transplant lands at least 1 day after the previous lot's irrigation-clean (room readiness). A
-        // lot already late enough (planned delay absorbs it) stays put; otherwise it is pushed back by the
-        // minimum delta. Stale / position-less lots are regenerated at the required position. Slot 5 is fresh.
-        // Returns an array of per-slot plans, or null if the real lot has no usable irrigation-clean anchor.
+        // The room-ready plan for a run of projected lots, shared by Reproject and the overwrite push-back (review G5).
+        // Pure — reads only, writes nothing. `slots`, in chain order: [{ index, lotId }] — lotId is the projected lot that
+        // will sit at `index`, or null for a new lot (with its `recipe`). `prev` = { irr, harvestEnd } of the lot before
+        // the first slot. Each lot's transplant must land at least 1 day after the previous lot's Tank & Irrigation Clean:
+        //   push  — earlier than that: its whole schedule moves later by the shortfall (its own Day 0 + delta, so
+        //           hand-edited spacing and clones-off lots move by exactly that);
+        //   keep  — late enough already: it stays put (its planned delay absorbs the push) and the cascade stops there;
+        //   regen — stale or position-less (or due a push with no stored Day 0 to shift from): rebuilt fresh;
+        //   fresh — a new lot.
+        // A rebuilt or new lot goes where the chain rule puts it (the previous lot's last harvest day − its recipe's
+        // clone-cut days), later only if the room isn't ready by then — never earlier than its recipe plans (review G6).
+        // Later lots are never pulled earlier. Returns [{ index, currentLotId, action, delta, transplantBefore,
+        // transplantAfter, day0 }].
+        function planRoomReady(slots, prev) {
+            const plan = [];
+            let prevIrr = prev.irr, prevHarvestEnd = prev.harvestEnd || null;
+            for (const { index, lotId, recipe: newRecipe } of slots) {
+                const requiredTransplant = computeTaskDate(prevIrr, 1);
+                const recipe = lotId ? lotRecipeFor(lotId) : newRecipe;
+                const spans = freshLotDay0Offsets(recipe);
+                const events = lotId ? eventsForLot(lotId) : [];
+                const cfg = lotId ? getProjectedLots()[lotId]?.config : null;
+                // No transplant event: where the lot's recipe puts it
+                let currentTransplant = events.find(ev => ev.taskType === 'transplant')?.date || null;
+                if (!currentTransplant && events.length && cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, spans.transplant);
+                const lotIrr = lotId ? effectiveIrrigationClean(lotId) : null;
+
+                if (!lotId || !currentTransplant || !lotIrr || (!cfg?.plantingDate && daysBetween(currentTransplant, requiredTransplant) > 0)) {
+                    const ready = computeTaskDate(requiredTransplant, -spans.transplant);
+                    const chain = prevHarvestEnd ? computeTaskDate(prevHarvestEnd, -cloneCutDays(recipe)) : null;
+                    const day0 = chain && chain > ready ? chain : ready;
+                    plan.push({ index, currentLotId: lotId, action: lotId ? 'regen' : 'fresh', delta: null, transplantBefore: null, transplantAfter: computeTaskDate(day0, spans.transplant), day0 });
+                    prevIrr = computeTaskDate(day0, spans.irrSpan);
+                    prevHarvestEnd = computeTaskDate(day0, spans.harvestEnd);
+                    continue;
+                }
+
+                const lotHarvestEnd = harvestEndOf(lotId);
+                const delta = daysBetween(currentTransplant, requiredTransplant);
+                if (delta > 0) {
+                    plan.push({ index, currentLotId: lotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0: computeTaskDate(cfg.plantingDate, delta) });
+                    prevIrr = computeTaskDate(lotIrr, delta);
+                    prevHarvestEnd = lotHarvestEnd ? computeTaskDate(lotHarvestEnd, delta) : null;
+                } else {
+                    plan.push({ index, currentLotId: lotId, action: 'keep', delta: 0, transplantBefore: currentTransplant, transplantAfter: currentTransplant, day0: null });
+                    prevIrr = lotIrr;
+                    prevHarvestEnd = lotHarvestEnd;
+                }
+            }
+            return plan;
+        }
+
+        // Reproject's plan, made before the rename: slot i (1..4) will hold today's TBA-(i+1), slot 5 is a new lot, and the
+        // real lot that took TBA-01's place comes first. Null when the real lot has no Tank & Irrigation Clean to go by
+        // (a mother lot): Reproject then just shifts the chain down.
         function computeReprojectionPushes(roomId, newRealLotId) {
-            const startIrr = effectiveIrrigationClean(newRealLotId);
-            if (!startIrr) return null;
-
-            const plan = [];
-            let prevIrr = startIrr;
-
-            for (let i = 1; i <= PROJECTION_LOT_COUNT - 1; i++) {
-                const currentLotId = projectedLotId(roomId, i + 1); // lot that will move into slot i
-                const requiredTransplant = computeTaskDate(prevIrr, 1);
-                const events = eventsForLot(currentLotId);
-                const cfg = getProjectedLots()[currentLotId]?.config;
-
-                let currentTransplant = null;
-                if (events.length > 0) {
-                    const tEv = events.find(ev => ev.taskType === 'transplant');
-                    if (tEv) currentTransplant = tEv.date;
-                    // No transplant event — derive from the lot's recipe fresh-lot offsets
-                    else if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
-                }
-                const lotIrr = effectiveIrrigationClean(currentLotId);
-
-                // Stale or position-less (or due a push with no stored Day 0 to shift from) —
-                // regenerate fresh at the required position
-                if (!currentTransplant || !lotIrr || (!cfg?.plantingDate && daysBetween(currentTransplant, requiredTransplant) > 0)) {
-                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
-                    plan.push({ index: i, currentLotId, action: 'regen', delta: null, transplantBefore: null, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(day0, freshIrrSpanDays(lotRecipeFor(currentLotId)));
-                    continue;
-                }
-
-                const delta = daysBetween(currentTransplant, requiredTransplant);
-                if (delta > 0) {
-                    // Shift the lot's own Day 0 by delta, so it moves by exactly the planned amount
-                    // even when its transplant was hand-edited or it was generated with clones off
-                    const day0 = computeTaskDate(cfg.plantingDate, delta);
-                    plan.push({ index: i, currentLotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(lotIrr, delta); // pushed forward by the same delta
-                } else {
-                    plan.push({ index: i, currentLotId, action: 'keep', delta: 0, transplantBefore: currentTransplant, transplantAfter: currentTransplant, day0: null });
-                    prevIrr = lotIrr; // unchanged — its planned delay absorbs the push
-                }
-            }
-
-            // Slot 5 — fresh lot at the required position (header projection recipe)
-            const projRecipe = getProjectionRecipe();
-            const requiredTransplant5 = computeTaskDate(prevIrr, 1);
-            plan.push({ index: PROJECTION_LOT_COUNT, currentLotId: null, action: 'fresh', delta: null, transplantBefore: null, transplantAfter: requiredTransplant5, day0: computeTaskDate(requiredTransplant5, -freshLotDay0Offsets(projRecipe).transplant) });
-
-            return plan;
+            const irr = effectiveIrrigationClean(newRealLotId);
+            if (!irr) return null;
+            const slots = [];
+            for (let i = 1; i < PROJECTION_LOT_COUNT; i++) slots.push({ index: i, lotId: projectedLotId(roomId, i + 1) });
+            slots.push({ index: PROJECTION_LOT_COUNT, lotId: null, recipe: chainRecipeFor(roomId) || getProjectionRecipe() });
+            return planRoomReady(slots, { irr, harvestEnd: harvestEndOf(newRealLotId) });
         }
 
-        // The irrigation-clean date a lot's schedule WOULD have, computed from explicit form state
-        // (day0 + offsets + durations) without writing any events. Mirrors generateLotSchedule's
-        // anchor math for the tank_irrigation_clean task: harvest reference → harvest END + offset;
-        // falls back to harvest end + 2 when the task is disabled/absent (same as effectiveIrrigationClean).
-        function simulatedIrrigationClean(day0, offsets, durations) {
+        // Where a schedule about to be generated ends its turn in the room — { irr, harvestEnd } — from the form's day 0,
+        // offsets and durations, by the shared builder, before any event is written (review G5). A switched-off Tank &
+        // Irrigation Clean counts from harvest end as a fresh lot of the recipe would.
+        function simulatedTurnover(day0, offsets, durations, recipe = activeRecipe) {
             const d = durations || { trimDays, harvestMultiDay, harvestDays };
-
-            const clonePrepEntry = offsets.find(e => e.def.taskType === 'clone_cut_prep');
-            const clonesEnabled = clonePrepEntry?.enabled !== false;
-            const plantingEntry = offsets.find(e => e.def.taskType === 'planting');
-            const plantingOffset = plantingEntry ? plantingEntry.offset : 14;
-            const flipEntry = offsets.find(e => e.def.taskType === 'flip');
-            const flipOffset = flipEntry ? flipEntry.offset : 20;
-            const harvestEntry = offsets.find(e => e.def.taskType === 'harvest');
-            const harvestOffset = harvestEntry ? harvestEntry.offset : 63;
-            const trimEntry = offsets.find(e => e.def.taskType === 'trim');
-            const trimOffset = trimEntry ? trimEntry.offset : 11;
-
-            const anchors = computeAnchors(day0, flipOffset, clonesEnabled, plantingOffset, harvestOffset, trimOffset, d.harvestMultiDay, d.harvestDays);
-
-            const irrEntry = offsets.find(e => e.def.taskType === 'tank_irrigation_clean');
-            if (irrEntry && irrEntry.enabled !== false) {
-                return computeTaskDate(anchors.harvestEnd, irrEntry.offset);
-            }
-            // Task disabled/absent — same fallback as effectiveIrrigationClean (recipe offset)
-            return computeTaskDate(anchors.harvestEnd, freshLotDay0Offsets(activeRecipe).irrClean);
+            const harvestEnd = scheduleAnchors(day0, offsets, d).harvestEnd;
+            const irr = scheduleOccurrences(day0, offsets, d, recipe).find(o => o.def.taskType === 'tank_irrigation_clean');
+            return { irr: irr ? irr.start : computeTaskDate(harvestEnd, freshLotDay0Offsets(recipe).irrClean), harvestEnd };
         }
 
-        // Forward push plan for overwriting a projected lot's schedule. Pure — reads only, writes nothing.
-        // The gate is room readiness ONLY: each later lot's transplant must land at least 1 day after
-        // the previous lot's irrigation-clean. A lot earlier than that is pushed forward by the minimum
-        // delta; a lot already late enough stays put (its planned delay absorbs the push) and stops the
-        // cascade through it. Stale / position-less lots are regenerated at the required position.
-        // Later lots are NEVER pulled backward — if the overwrite leaves extra slack, they stay where
-        // they are (Project Crop re-tightens the full chain). prevIrr = the edited lot's NEW simulated
-        // irrigation-clean date (computed before its events are rewritten, since the plan must exist
-        // before any mutation). Returns a per-slot plan array ({ index, action: 'push'|'keep'|'regen',
-        // delta, day0, … }) for slots fromIndex..5, or [] when no push is needed.
-        function computeForwardPushPlan(roomId, fromIndex, prevIrr) {
-            if (!prevIrr || fromIndex > PROJECTION_LOT_COUNT) return [];
-
-            const plan = [];
-
-            for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) {
-                const currentLotId = projectedLotId(roomId, i);
-                const requiredTransplant = computeTaskDate(prevIrr, 1);
-                const events = eventsForLot(currentLotId);
-                const cfg = getProjectedLots()[currentLotId]?.config;
-
-                let currentTransplant = null;
-                if (events.length > 0) {
-                    const tEv = events.find(ev => ev.taskType === 'transplant');
-                    if (tEv) currentTransplant = tEv.date;
-                    // No transplant event — derive from the lot's recipe fresh-lot offsets
-                    else if (cfg?.plantingDate) currentTransplant = computeTaskDate(cfg.plantingDate, freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
-                }
-                const lotIrr = effectiveIrrigationClean(currentLotId);
-
-                // Stale or position-less (or due a push with no stored Day 0 to shift from) —
-                // regenerate fresh at the required position
-                if (!currentTransplant || !lotIrr || (!cfg?.plantingDate && daysBetween(currentTransplant, requiredTransplant) > 0)) {
-                    const day0 = computeTaskDate(requiredTransplant, -freshLotDay0Offsets(lotRecipeFor(currentLotId)).transplant);
-                    plan.push({ index: i, currentLotId, action: 'regen', delta: null, transplantBefore: null, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(day0, freshIrrSpanDays(lotRecipeFor(currentLotId)));
-                    continue;
-                }
-
-                const delta = daysBetween(currentTransplant, requiredTransplant);
-                if (delta > 0) {
-                    // Shift the lot's own Day 0 by delta, so it moves by exactly the planned amount
-                    // even when its transplant was hand-edited or it was generated with clones off
-                    const day0 = computeTaskDate(cfg.plantingDate, delta);
-                    plan.push({ index: i, currentLotId, action: 'push', delta, transplantBefore: currentTransplant, transplantAfter: requiredTransplant, day0 });
-                    prevIrr = computeTaskDate(lotIrr, delta); // pushed forward by the same delta
-                } else {
-                    plan.push({ index: i, currentLotId, action: 'keep', delta: 0, transplantBefore: currentTransplant, transplantAfter: currentTransplant, day0: null });
-                    prevIrr = lotIrr; // unchanged — its planned delay absorbs the push
-                }
-            }
-
-            return plan;
+        // The overwrite push-back's plan: the projected lots fromIndex..5 after a lot whose new schedule ends its turn at
+        // `prev` (simulatedTurnover). If the overwrite leaves extra slack, they keep their dates (Project Crop re-tightens
+        // the chain). [] when there's nothing to plan.
+        function computeForwardPushPlan(roomId, fromIndex, prev) {
+            if (!prev?.irr || fromIndex > PROJECTION_LOT_COUNT) return [];
+            const slots = [];
+            for (let i = fromIndex; i <= PROJECTION_LOT_COUNT; i++) slots.push({ index: i, lotId: projectedLotId(roomId, i) });
+            return planRoomReady(slots, prev);
         }
 
         // Reproject a pending room: shift the surviving chain down one slot (TBA-2→TBA-1, …, TBA-5→TBA-4)
@@ -4783,8 +4805,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
             if (pushRoomId && pushFromIndex && !motherLot) {
-                const newIrr = simulatedIrrigationClean(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays });
-                pushPlan = computeForwardPushPlan(pushRoomId, pushFromIndex, newIrr);
+                const turnover = simulatedTurnover(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays });
+                pushPlan = computeForwardPushPlan(pushRoomId, pushFromIndex, turnover);
                 const affected = pushPlan.filter(s => s.action === 'push' || s.action === 'regen');
                 if (affected.length > 0) {
                     const firstPushed = pushPlan.find(s => s.action === 'push');

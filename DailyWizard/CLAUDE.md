@@ -88,7 +88,7 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
 - **Labour entry** (chores here; crop and equipment tasks use the same shape in the event's `labour_map[<day>]`):
   - `id` — `le_` + 10 characters (`newLabourId()`). Office and building hours on an event merge entry by entry by it (root `CLAUDE.md` → "Split Database"). Entries without one get a content-derived id when SitkaTools opens the file.
   - `employee` (roster name), or `temp` (typed name) with optional `wage`.
-  - `hours` (decimal); `initials` (`{ name, strokes }`, PaperWizard's stroke format); `at` (ISO time logged); `by` (device: building id or `office`).
+  - `hours` (decimal); `initials` (`{ name, strokes }`, each stroke `[x0, y0, x1, y1, …]` with 3 decimals, simplified when the pen lifts — `FloorPin.slimStroke`, review H2 — so a set of initials is small); `at` (ISO time logged); `by` (device: building id or `office`).
   - `note` (optional, up to 200 characters, spaces tidied): what they were doing, in their words. Always there on 🧰 Miscellaneous labour (`labour[<day>].misc`).
   - EmployeeWizard's own `labour_map` entries have no `initials` / `at` / `by`.
 - **`adjustments`** is the record of removals and corrections: removed hours (`entry`, with the floor manager who approved it in `approvedBy`), deleted tasks (`deletedTask`) and office reopens of sign-offs after their day (`reopened`). Records without `entry` are skipped by the hours view and the Labour Log. Nothing reads it for totals.

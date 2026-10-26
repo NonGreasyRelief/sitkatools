@@ -241,8 +241,9 @@ Every code path that would read `DB.lots[lotId]` goes through these helpers. Use
   - A room is ready the day after the previous lot's Tank & Irrigation Clean (`effectiveIrrigationClean`; fallback harvest end + 2). Each lot's transplant must land on or after that day.
   - A lot that is too early moves later by exactly the shortfall; its whole schedule shifts, per-task offsets kept (pushed `day0` = its own Day 0 + delta, so hand-edited spacing and clones-off lots move by exactly that).
   - A lot already late enough stays put (its planned delay absorbs the push) and stops the cascade.
-  - Stale or position-less lots, and lots due a push with no stored Day 0, are regenerated at the required position.
-  - Push-backs never pull a lot earlier or re-place it from a harvest; only Project Crop re-places the chain (Chain rule).
+  - Stale or position-less lots, and lots due a push with no stored Day 0, are rebuilt, and a new lot is added, where the chain rule puts them (the previous lot's last harvest day − their recipe's clone-cut days), later only if the room isn't ready by then: never earlier than their recipe plans (review G6).
+  - Push-backs never pull a lot earlier or re-place an existing lot from a harvest; only Project Crop re-places the chain (Chain rule).
+  - One planner (`planRoomReady`) makes the plan for Reproject and the overwrite push-back, and a fresh lot's spans (planting, flip, transplant, harvest end, Tank & Irrigation Clean: `freshLotDay0Offsets`) come from the shared builder (`scheduleOccurrences`), so a custom recipe's dates agree with Generate (review G5).
   - The plan is computed before anything changes. If any push is needed, a blocking `confirm()` lists every lot (`TBA-01: +5d (Mar 14 → Mar 19)`, `TBA-03: unchanged (planned delay absorbs it)`, `TBA-05: new — transplants Jul 31`) under a headline naming the push to the next lot. **Cancel = no changes.**
 - **Project Crop** (`generateProjectionsForRoom`): checks the room is flowering and the gate passes (else a toast naming the newest lot). Ensures 5 map entries (never prunes; refreshes `roomName`). Snapshots events and map, places Lot 1 (`reAnchorProjectedLot(roomId, 1, day0, recipeBloomDays(projRecipe))`), then `pushIfRoomNotReady` and `cascadeProjections(roomId, 2, …)` for the rest. If anything was pushed, a confirm lists it; cancel restores the snapshot.
 
@@ -280,7 +281,7 @@ User decision 2026-10-23 ("these still have the ability to do repeating crops").
 
 A new real crop may run later than the chain planned. Reprojection applies the room-ready rule (see "Projection Chain") with the real lot's `tank_irrigation_clean` as the starting point.
 
-- `computeReprojectionPushes(roomId, newRealLotId)` is pure. It walks slots 1..4 in post-rename order (slot i holds current TBA-(i+1)); the real lot is "previous" for slot 1. Slot 5 is `fresh`, with Day 0 = slot 4's required transplant − the projection recipe's transplant span (30 days with the default built-in).
+- `computeReprojectionPushes(roomId, newRealLotId)` is pure. It walks slots 1..4 in post-rename order (slot i holds current TBA-(i+1)); the real lot is "previous" for slot 1. Slot 5 is `fresh`, placed by the chain rule from slot 4 (the projection recipe's clone-cut days before slot 4's last harvest day), later only if the room isn't ready.
 - Returns `[{ index, action: 'push' | 'keep' | 'regen' | 'fresh', delta, day0, … }]`, or `null` when the real lot has no usable irrigation-clean (reprojection then does a plain shift-down).
 - Only TBA lots move; the real lot's schedule is untouched.
 
@@ -293,8 +294,8 @@ Generate on an existing schedule may push its Tank & Irrigation Clean past the n
 
 Details:
 
-- Before any change, `simulatedIrrigationClean(day0, offsets, durations)` computes the lot's new irrigation clean from the form state (same math as `generateLotSchedule`: harvest **end** + offset; fallback harvest end + 2).
-- `computeForwardPushPlan(roomId, fromIndex, prevIrr)` is pure and returns `[{ index, action: 'push' | 'keep' | 'regen', delta, day0, … }]`, or `[]` when nothing moves.
+- Before any change, `simulatedTurnover(day0, offsets, durations)` works out the lot's new Tank & Irrigation Clean and last harvest day from the form state with the shared builder (the dates Generate will write; a switched-off clean counts from harvest end as in a fresh lot of the recipe).
+- `computeForwardPushPlan(roomId, fromIndex, turnover)` is pure and returns `[{ index, action: 'push' | 'keep' | 'regen', delta, day0, … }]` (`keep` for a lot that doesn't move), or `[]` when there's nothing to plan.
 - If the overwrite leaves extra slack, later lots keep their dates — no dialog, no toast suffix. The chain may drift from its cadence; Project Crop re-tightens it.
 - Generate never cascades (`cascadeProjections` is Project Crop only).
 
@@ -308,6 +309,8 @@ Details:
 | `cascadeProjections(roomId, fromIndex, bloomDays?, recipe?)` | Project Crop only: each lot at the previous lot's `nextLotDay0` (with that lot's `projectedSlotRecipe`), then `pushIfRoomNotReady`; returns the pushes |
 | `pushIfRoomNotReady(roomId, index, prevLotId)` | one lot's room-ready check; returns `{ index, delta, transplantBefore, transplantAfter }` or null |
 | `nextLotDay0(lotId, nextRecipe?)`, `effectiveIrrigationClean(lotId)` | pure reads (null without a schedule / anchor); both count from the harvest's last day |
+| `planRoomReady(slots, prev)` | the room-ready plan for a run of projected lots (Reproject, overwrite push-back): push / keep / regen / fresh |
+| `freshLotDay0Offsets(recipe)` | a fresh lot's spans from Day 0 under a recipe, from the shared builder |
 | `projectedSlotRecipe(roomId, index, chainRecipe?)` | the recipe a projected lot follows: its own config's, else the chain's, else the projection recipe |
 | `newestRealLotId(roomId)` | latest `createdDate` (ties → `assignedLots` order); Project Crop anchor |
 | `activeRealLotId(roomId)` | the same as `newestRealLotId` (one definition of "the room's real lot", review F3); Reproject gate and real-lot overwrite |
@@ -379,4 +382,4 @@ Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop
 
 ## Tests
 
-`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `recipe-days` (day N of the plant's life / after harvest in the editor, as you type, and in the preview, with a two-day harvest and clones off; a mother recipe's life to Retire Mothers; 🖨️ Print for a built-in, a recipe with supplies and a mother recipe), `builtin-recipes` (the three built-ins: dropdowns and manager, each one's turnaround, generating on real weekdays, Project Crop's 70-day chain, re-importing an exported built-in), `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs), `projection-harvest-end` (lots with a two-day harvest ending Friday and an old clone cut: Project Crop moves the next lots in on the Monday after and flips them on the Friday, also over projections made the old way; the ⚠️ on both clone cuts here and on the SitkaTools calendar, cleared by moving the real lot's clone cut to −27; Reproject after a lot that harvests a week late pushes the chain back a week and keeps the rhythm; unticking Multi-day turns a Thursday–Friday harvest into a one-day Friday harvest with nothing else moving). Overwrite push-backs have no automated test.
+`node tests/run.mjs` (root `CLAUDE.md` → "Tests"). Covering this tool: `recipe-days` (day N of the plant's life / after harvest in the editor, as you type, and in the preview, with a two-day harvest and clones off; a mother recipe's life to Retire Mothers; 🖨️ Print for a built-in, a recipe with supplies and a mother recipe), `builtin-recipes` (the three built-ins: dropdowns and manager, each one's turnaround, generating on real weekdays, Project Crop's 70-day chain, re-importing an exported built-in), `mothers` (vegetative recipes, repeats, generating a mother lot, regenerating per repeat), `tools-smoke` (opens without errors), `cost-inputs` (price list and recipe supplies, import, save), `task-inputs` (supplies per plant at a task, in the editor and the Reports), `mark-done` (regenerating keeps sign-offs), `projection-harvest-end` (lots with a two-day harvest ending Friday and an old clone cut: Project Crop moves the next lots in on the Monday after and flips them on the Friday, also over projections made the old way; the ⚠️ on both clone cuts here and on the SitkaTools calendar, cleared by moving the real lot's clone cut to −27; Reproject after a lot that harvests a week late pushes the chain back a week and keeps the rhythm; unticking Multi-day turns a Thursday–Friday harvest into a one-day Friday harvest with nothing else moving). `schedule-review` (anchors pinned back, a schedule's own trim length, local dates; a fresh lot's spans from the shared builder, including a Tank & Irrigation Clean counted from trim; new lots placed by the chain rule, never before the room is ready). Overwrite push-backs have no automated test of their own.

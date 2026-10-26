@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-26 · a tool opened twice (two windows or tabs of the same tool) warns in the second one to close it and use the one already open, and SitkaTools' tool link switches to an open window instead of opening another; a lot's daily logs run one at a time (an older log can't move the lot); drawn initials are stored with fewer, rounded points; floor manager PINs stay a speed bump
 - 2026-10-25 · 📋 Duplicate makes a clean crop-task copy (same task type, no hours, done mark or sign-off, marked copyOf) that CropLabourWizard keeps on Generate; an event with hours or a sign-off can't be deleted by hand (its lot's close-out archives it)
 - 2026-10-25 · signing a task off (DailyWizard's ✅ Mark done, the Tasks tab's Mark completed) takes the floor manager's drawn initials and PIN; only floor managers with a PIN are offered; reopening in the Tasks tab takes a PIN too, and an office reopen after the sign-off's day is kept on record
 - 2026-10-25 · review decisions on money: every $ figure is office only and never per person (replacing the hide-under-3-people rule); no made-up wage — a missing wage shows as missing; shared labour per gram is spread over every gram harvested
