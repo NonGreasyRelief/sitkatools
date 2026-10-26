@@ -344,8 +344,9 @@ export async function ewSetHours(b, ew, lotId, evId, day, name, h, m, { fm = 'Ca
     return b.run(ew, `return document.querySelector('.toast, #toast')?.textContent || '';`);
 }
 
-// In DailyWizard: press ✍️ Mark done on a row, pick the floor manager, draw initials (unless `sign` is false), confirm
-export async function markDone(b, dw, rowMatch, name, { sign = true } = {}) {
+// In DailyWizard: press ✍️ Mark done on a row, pick the floor manager, draw initials (unless `sign` is false), enter
+// their PIN (`pin: ''` leaves it blank), confirm
+export async function markDone(b, dw, rowMatch, name, { sign = true, pin = FM_PIN } = {}) {
     const opened = await b.run(dw, `
         const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .done-btn'));
         const btn = rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)}))?.querySelector(':scope > .done-btn');
@@ -355,12 +356,14 @@ export async function markDone(b, dw, rowMatch, name, { sign = true } = {}) {
         return document.getElementById('doneOverlay').classList.contains('open') ? 'open' : 'not open';`, { user: true });
     if (opened !== 'open') return { ok: false, toast: opened };
     const options = await b.run(dw, `const w = document.getElementById('doneWho'); w.value = ${JSON.stringify(name || '')}; return [...w.options].map(o => o.value).filter(Boolean);`);
+    const form = await b.run(dw, `return { note: document.getElementById('doneWhoNote').textContent, disabled: document.getElementById('doneBtn').disabled };`);
     if (sign) await b.drag(dw, '#donePad', [[0.2, 0.3], [0.3, 0.7], [0.4, 0.3]]);
-    await b.run(dw, `document.getElementById('doneBtn').click();`, { user: true });
+    await b.run(dw, `document.getElementById('donePin').value = ${JSON.stringify(pin)}; document.getElementById('doneBtn').click();`, { user: true });
+    await b.sleep(150);   // the PIN is checked (hashed) before the sign-off is saved
     const toast = await b.run(dw, `return document.querySelector('.toast, #toast')?.textContent || '';`);
     const stillOpen = await b.run(dw, `return document.getElementById('doneOverlay').classList.contains('open');`);
     if (stillOpen) await b.run(dw, 'closeDone();');
-    return { ok: toast.startsWith('Marked done'), toast, options };
+    return { ok: toast.startsWith('Marked done'), toast, options, ...form };
 }
 
 // DailyWizard rows: the text of each row in the "⏰ Still open" section

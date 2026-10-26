@@ -5,7 +5,7 @@ import { today, makeChecker, fresh, openSitka, loadSingle, openTool, leave } fro
 export const title = 'total cost per gram (worked example)';
 
 // D0 = 120 days ago. Clone room D0..+9, veg room +10..+19, flower room +20..+40 (flip at +30, harvest at +40).
-function costDb() {
+export function costDb() {
     const D = n => today(-120 + n);
     const T = ['clone_cut_prep', 0, 'planting', 10, 'transplant', 20, 'flip', 30, 'harvest', 40, 'bucking', 45, 'weigh_ship', 50];
     const events = [];

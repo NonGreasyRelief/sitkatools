@@ -985,6 +985,10 @@
                         <canvas id="donePad" class="hours-pad"></canvas>
                         <button type="button" class="btn btn-secondary" id="donePadClear" data-t>Clear initials</button>
                     </div>
+                    <div class="form-group">
+                        <label for="donePin" data-t>PIN</label>
+                        <input type="password" id="donePin" inputmode="numeric" autocomplete="off" maxlength="8">
+                    </div>
                 </div>
             </div>
         </div>
@@ -1154,7 +1158,7 @@
             }
             if (doneCtx) {
                 if ($('doneWho').options[0]) $('doneWho').options[0].textContent = T('— Pick the floor manager —');
-                $('doneWhoNote').textContent = floorManagers().everyone ? T('No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.') : '';
+                $('doneWhoNote').textContent = floorManagers().names.length ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
                 renderDone();
             }
         }
@@ -3861,7 +3865,8 @@
         // and records the sign-off next to it:
         //   completedBy = { name, initials: { name, strokes }, at, by, day }
         // Both are floor fields, so a building device saves them in its own file (SitkaTools DbSplit). The floor
-        // managers are the roster employees ticked "Floor manager" in EmployeeWizard (everyone when none is).
+        // managers are the roster employees ticked "Floor manager" in EmployeeWizard with a PIN: signing off takes the
+        // name, drawn initials and that floor manager's PIN (user decision 2026-10-25, review Q5).
         // Reopening follows the hours rules: a building device may reopen a sign-off it made today; the office any,
         // and one reopened after its day is kept on record in the building's adjustments log.
         let doneCtx = null;     // { eventId, buildingId } while the Mark done view is open
@@ -3870,10 +3875,9 @@
         const deviceName = by => by === 'office' ? T('the office') : T('the {name} device', { name: DB.buildings[by]?.name || by });
         const doneStamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+        // The floor managers who can sign off: ticked in the Labour & Cost Wizard, with a PIN
         function floorManagers() {
-            const emps = DB.data?._EmployeeWizard?.employees || {};
-            const flagged = Object.keys(emps).filter(n => emps[n]?.floorManager === true).sort((a, b) => a.localeCompare(b));
-            return flagged.length ? { names: flagged, everyone: false } : { names: rosterNames(), everyone: true };
+            return { names: FloorPin.managers() };
         }
         const canReopen = ev => !DeviceView.building ||
             (!!ev.completedBy?.at && dateToStr(new Date(ev.completedBy.at)) === todayStr() && ev.completedBy.by === DeviceView.building);
@@ -3902,7 +3906,9 @@
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
             add('', T('— Pick the floor manager —'));
             for (const n of fm.names) add(n, n);
-            $('doneWhoNote').textContent = fm.everyone ? T('No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.') : '';
+            if (fm.names.length === 1) who.value = fm.names[0];
+            $('donePin').value = '';
+            $('doneWhoNote').textContent = fm.names.length ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
             renderDone();
             $('doneOverlay').classList.add('open');
             sizePad('donePad');
@@ -3926,8 +3932,9 @@
             const done = ev.completed === true;
             $('doneForm').hidden = done;
             $('doneBtn').hidden = done;
+            $('doneBtn').disabled = !done && !floorManagers().names.length;
             if (!done) {
-                status.appendChild(mutedLine(T('Not done yet. The floor manager picks their name and draws their initials to sign it off.')));
+                status.appendChild(mutedLine(T('Not done yet. The floor manager picks their name, draws their initials and enters their PIN to sign it off.')));
                 $('doneNote').textContent = T('Signing it off takes it off ⏰ Still open. Hours can still be logged on it.');
                 return;
             }
@@ -3958,12 +3965,32 @@
                 : T('Office: a sign-off reopened after its day is kept on record.');
         }
 
-        function markDone() {
-            const ev = doneEvent();
+        let doneChecking = false;   // one PIN check at a time (Enter or a second tap while it hashes)
+        async function markDone() {
+            if (doneChecking) return;
+            let ev = doneEvent();
             if (!ev || ev.completed === true || selectedDateStr() > todayStr()) return;
-            const name = $('doneWho').value;
+            const name = $('doneWho').value, pinEl = $('donePin'), ctx = doneCtx;
             if (!name) { showToast(T('Pick the floor manager')); return; }
             if (!doneStrokes.length) { showToast(T('The floor manager draws their initials to sign it off')); return; }
+            if (!pinEl.value) { showToast(T('Enter your PIN')); pinEl.focus(); return; }
+            // The PIN, with FloorPin's wait after too many wrong ones
+            if (Date.now() < FloorPin._waitUntil) { showToast(T('Too many wrong PINs — wait a minute, then try again')); return; }
+            doneChecking = true;
+            let right;
+            try { right = await FloorPin.check(name, pinEl.value); } finally { doneChecking = false; }
+            if (!right) {
+                pinEl.value = '';
+                if (++FloorPin._fails >= FloorPin.WAIT_AFTER) { FloorPin._fails = 0; FloorPin._waitUntil = Date.now() + FloorPin.WAIT_MS; showToast(T('Too many wrong PINs — wait a minute, then try again')); }
+                else showToast(T('Wrong PIN — try again'));
+                pinEl.focus();
+                return;
+            }
+            FloorPin._fails = 0;
+            // The DB may have changed while the PIN was checked: sign off the task as it is now
+            if (doneCtx !== ctx) return;
+            ev = doneEvent();
+            if (!ev || ev.completed === true) { closeDone(); renderAll(); return; }
             ev.completed = true;
             ev.completedBy = {
                 name, initials: { name, strokes: doneStrokes.map(st => st.slice()) },
@@ -4397,9 +4424,8 @@
             "Marked done in SitkaTools or the Labour & Cost Wizard (not signed)": { fr: "Marqué terminé dans SitkaTools ou le Labour & Cost Wizard (non signé)", es: "Marcado como hecho en SitkaTools o en el Labour & Cost Wizard (sin firma)", vi: "Đã đánh dấu xong trong SitkaTools hoặc Labour & Cost Wizard (chưa ký)", zh: "已在 SitkaTools 或 Labour & Cost Wizard 中标记完成（未签字）" },
             "Floor manager: sign this task off as done": { fr: "Superviseur : approuvez cette tâche comme terminée", es: "Supervisor: apruebe esta tarea como hecha", vi: "Tổ trưởng: ký xác nhận công việc này đã xong", zh: "现场主管：签字确认此任务已完成" },
             "— Pick the floor manager —": { fr: "— Choisissez le superviseur —", es: "— Elija al supervisor —", vi: "— Chọn tổ trưởng —", zh: "— 选择现场主管 —" },
-            "No floor managers are set yet (Labour & Cost Wizard → employee → Floor manager), so everyone on the roster is listed.": { fr: "Aucun superviseur n’est encore défini (Labour & Cost Wizard → employé → Floor manager) : tout le personnel est donc listé.", es: "Aún no hay supervisores definidos (Labour & Cost Wizard → empleado → Floor manager), así que aparece todo el personal.", vi: "Chưa đặt tổ trưởng nào (Labour & Cost Wizard → nhân viên → Floor manager), nên mọi người trong danh sách đều được hiện.", zh: "尚未设置现场主管（Labour & Cost Wizard → 员工 → Floor manager），因此列出名单上的所有人。" },
             "{building} · due {due}": { fr: "{building} · prévu le {due}", es: "{building} · para el {due}", vi: "{building} · hạn {due}", zh: "{building} · 截止 {due}" },
-            "Not done yet. The floor manager picks their name and draws their initials to sign it off.": { fr: "Pas encore terminé. Le superviseur choisit son nom et dessine ses initiales pour approuver.", es: "Aún no está hecho. El supervisor elige su nombre y dibuja sus iniciales para aprobarlo.", vi: "Chưa xong. Tổ trưởng chọn tên và vẽ chữ ký tắt để xác nhận.", zh: "尚未完成。现场主管选择自己的名字并写下签名来确认。" },
+            "Not done yet. The floor manager picks their name, draws their initials and enters their PIN to sign it off.": { fr: "Pas encore terminé. Le superviseur choisit son nom, dessine ses initiales et entre son NIP pour approuver.", es: "Aún no está hecho. El supervisor elige su nombre, dibuja sus iniciales e introduce su PIN para aprobarlo.", vi: "Chưa xong. Tổ trưởng chọn tên, vẽ chữ ký tắt và nhập mã PIN để xác nhận.", zh: "尚未完成。现场主管选择自己的名字、写下签名并输入 PIN 码来确认。" },
             "Signing it off takes it off ⏰ Still open. Hours can still be logged on it.": { fr: "Une fois approuvée, la tâche quitte ⏰ Pas encore terminé. On peut encore y saisir des heures.", es: "Al aprobarla, sale de ⏰ Aún pendiente. Todavía se pueden registrar horas.", vi: "Sau khi ký xác nhận, công việc sẽ rời khỏi ⏰ Chưa xong. Vẫn có thể ghi giờ cho việc này.", zh: "签字确认后，它会从 ⏰ 尚未完成 中移除。仍可继续记录工时。" },
             "✅ Signed off by {name}": { fr: "✅ Approuvé par {name}", es: "✅ Aprobado por {name}", vi: "✅ {name} đã ký xác nhận", zh: "✅ 由 {name} 签字确认" },
             "✅ Marked done in SitkaTools or the Labour & Cost Wizard": { fr: "✅ Marqué terminé dans SitkaTools ou le Labour & Cost Wizard", es: "✅ Marcado como hecho en SitkaTools o en el Labour & Cost Wizard", vi: "✅ Đã đánh dấu xong trong SitkaTools hoặc Labour & Cost Wizard", zh: "✅ 已在 SitkaTools 或 Labour & Cost Wizard 中标记完成" },
@@ -4551,6 +4577,7 @@
             wirePad('donePad');
             $('doneBackBtn').addEventListener('click', closeDone);
             $('doneBtn').addEventListener('click', markDone);
+            $('donePin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); markDone(); } });
             $('donePadClear').addEventListener('click', () => { doneStrokes = []; drawPad('donePad'); });
             window.addEventListener('resize', () => { if (doneCtx) sizePad('donePad'); });
 

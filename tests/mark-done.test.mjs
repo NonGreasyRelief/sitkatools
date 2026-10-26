@@ -1,7 +1,8 @@
 // DailyWizard: "⏰ Still open" lists a building's past crop / equipment tasks not yet done, hours can still be logged on
-// them, and the floor manager signs tasks off with "✍️ Mark done" (name + drawn initials).
+// them, and the floor manager signs tasks off with "✍️ Mark done" (name, drawn initials and their PIN; user decision
+// 2026-10-25). The Labour & Cost Wizard's Tasks tab signs off and reopens the same way.
 import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, saveSingle, splitFiles, openSplit, saveSplit, openTool,
-    dwBuilding, dwDate, logHours, markDone, dwStillOpen, dwDoneButton, evNames, leave } from './lib/helpers.mjs';
+    dwBuilding, dwDate, logHours, markDone, dwStillOpen, dwDoneButton, evNames, leave, withFloorManager, answerPin, answerSignoff, FM_PIN } from './lib/helpers.mjs';
 
 export const title = 'DailyWizard Still open + floor-manager Mark done';
 
@@ -36,12 +37,26 @@ export async function run(b, BASE) {
         byBuilding[0]?.length === 1 && byBuilding[0][0].includes('Room Tidy') && byBuilding[1]?.length === 1 && byBuilding[1][0].includes('Strip Fans'), JSON.stringify(byBuilding));
     await dwBuilding(b, dw, 'B1');
 
-    // ✍️ Mark done — checks first
+    // ✍️ Mark done — nobody can sign off before a floor manager has a PIN
+    const none = await markDone(b, dw, 'Room Tidy', '');
+    check('no floor manager has a PIN yet: nobody is offered, the button is off and the note says how to set one',
+        none.options.length === 0 && none.disabled && none.note.startsWith('No floor manager has a PIN yet') && !none.ok, JSON.stringify(none));
+    // Blair and Alex become floor managers with a PIN
+    const pinned = withFloorManager(withFloorManager(fixtureDb(), 'Blair'), 'Alex')._EmployeeWizard.employees;
+    await b.run(main, `const pinned = ${JSON.stringify(pinned)}; for (const n of ['Alex', 'Blair']) Object.assign(DB.data._EmployeeWizard.employees[n], pinned[n]);
+        markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+
+    // …then the checks
     const noName = await markDone(b, dw, 'Room Tidy', '');
     check('Mark done needs the floor manager\'s name', noName.toast === 'Pick the floor manager', noName.toast);
-    check('no floor managers set yet: everyone on the roster is offered', noName.options.join() === 'Alex,Blair,Casey,Drew', noName.options.join());
+    check('only floor managers with a PIN are offered', noName.options.join() === 'Alex,Blair', noName.options.join());
     const noSign = await markDone(b, dw, 'Room Tidy', 'Blair', { sign: false });
     check('Mark done needs their drawn initials', noSign.toast.startsWith('The floor manager draws their initials'), noSign.toast);
+    const noPin = await markDone(b, dw, 'Room Tidy', 'Blair', { pin: '' });
+    check('Mark done needs their PIN', noPin.toast === 'Enter your PIN' && !noPin.ok, noPin.toast);
+    const wrong = await markDone(b, dw, 'Room Tidy', 'Blair', { pin: '1111' });
+    check('a wrong PIN signs nothing off', wrong.toast === 'Wrong PIN — try again' && !(await ev(b, main, 'ev_oldb1')).completed, wrong.toast);
     const d1 = await markDone(b, dw, 'Room Tidy', 'Blair');
     check('the floor manager signed Room Tidy off', d1.ok, d1.toast);
     open = await dwStillOpen(b, dw);
@@ -79,19 +94,42 @@ export async function run(b, BASE) {
     check('the reopen record doesn\'t show as an hours entry', (await b.run(dw, `return document.querySelectorAll('#hoursList .hours-entry').length;`)) === 0);
     await b.run(dw, 'closeHours();');
 
-    // Floor managers set in EmployeeWizard
+    // Floor managers set in EmployeeWizard: Casey ticked, with a PIN
     const ew = await openTool(b, main, 'EmployeeWizard');
-    await b.run(ew, `selectEmployee('Casey'); document.getElementById('empFloorManager').click(); document.getElementById('saveEmpBtn').click();`, { user: true });
+    await b.run(ew, `selectEmployee('Casey'); const fm = document.getElementById('empFloorManager'); fm.checked = true; fm.dispatchEvent(new Event('change'));
+        document.getElementById('empPinInput').value = '${FM_PIN}'; document.getElementById('empPin2Input').value = '${FM_PIN}';
+        document.getElementById('saveEmpBtn').click(); await new Promise(r => setTimeout(r, 400));`, { user: true });
     await b.sleep(400);
-    check('EmployeeWizard: Casey ticked as floor manager', (await b.run(main, `return DB.data._EmployeeWizard.employees.Casey.floorManager;`)) === true);
+    check('EmployeeWizard: Casey ticked as floor manager, with a PIN', await b.run(main, `const c = DB.data._EmployeeWizard.employees.Casey; return c.floorManager === true && !!c.pin?.hash;`));
     const d3 = await markDone(b, dw, 'Leaf Pick', 'Casey');
-    check('Mark done offers only the floor managers', d3.options.join() === 'Casey' && d3.ok, d3.options.join());
-    // Reopening elsewhere clears the sign-off
-    await b.run(ew, `document.getElementById('tabTasks').click(); const l = document.getElementById('activeLot'); l.value = 'L100'; l.dispatchEvent(new Event('change'));
-        TASK.selectedKey = 'ev_cropb1'; TASK.editDate = '${T}'; renderTasksTab(); document.getElementById('teCompleteBtn').click();`, { user: true });
-    await b.sleep(300);
+    check('Mark done offers the floor managers with a PIN (Casey now too, never Drew)', d3.options.join() === 'Alex,Blair,Casey' && d3.ok, d3.options.join());
+    // The Tasks tab: reopening needs a floor manager's PIN, and clears the sign-off
+    const tasksTab = () => b.run(ew, `document.getElementById('tabTasks').click(); const l = document.getElementById('activeLot'); l.value = 'L100'; l.dispatchEvent(new Event('change'));
+        TASK.selectedKey = 'ev_cropb1'; TASK.editDate = '${T}'; renderTasksTab();`);
+    await tasksTab();
+    await b.run(ew, `document.getElementById('teCompleteBtn').click();`, { user: true });
+    await answerPin(b, ew, 'Casey', '1111');
+    check('Tasks tab: a wrong PIN doesn\'t reopen it', (await ev(b, main, 'ev_cropb1')).completed === true);
+    await b.run(ew, `if (!document.getElementById('floorPin').hidden) document.querySelector('#floorPin [data-fpin-cancel]').click();`);
+    await b.run(ew, `document.getElementById('teCompleteBtn').click();`, { user: true });
+    await answerPin(b, ew, 'Casey');
     const e3 = await ev(b, main, 'ev_cropb1');
-    check('reopening in EmployeeWizard\'s Tasks tab clears the sign-off', e3.completed === false && !e3.completedBy);
+    check('reopening in the Tasks tab (floor manager PIN) clears the sign-off; same day, so nothing on record', e3.completed === false && !e3.completedBy &&
+        !(await b.run(main, `return (DB.data._EmployeeWizard.signoffReopens || []).length;`)));
+    // …and Mark completed there signs it off with PIN and drawn initials
+    await b.run(ew, `document.getElementById('teCompleteBtn').click();`, { user: true });
+    await answerSignoff(b, ew, 'Casey');
+    const e3b = await ev(b, main, 'ev_cropb1');
+    check('Mark completed in the Tasks tab: the floor manager\'s sign-off (name, initials, time, device, day)', e3b.completed === true && e3b.completedBy?.name === 'Casey' &&
+        e3b.completedBy.initials?.strokes?.length > 0 && e3b.completedBy.by === 'office' && e3b.completedBy.day === T, JSON.stringify(e3b.completedBy && { ...e3b.completedBy, initials: '…' }));
+    // An older sign-off reopened at the office is kept on record
+    await b.run(main, `const e = DB.data.calendarEvents.find(e => e.id === 'ev_cropb1'); e.completedBy.at = '${Y2}T18:00:00.000Z'; e.completedBy.day = '${Y2}'; markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+    await tasksTab();
+    await b.run(ew, `document.getElementById('teCompleteBtn').click();`, { user: true });
+    await answerPin(b, ew, 'Casey');
+    const rec = await b.run(main, `return DB.data._EmployeeWizard.signoffReopens || [];`);
+    check('Tasks tab: reopening an older sign-off keeps it on record (who signed, who approved the reopen)', rec.length === 1 && rec[0].eventId === 'ev_cropb1' && rec[0].reopened?.name === 'Casey' && rec[0].approvedBy === 'Casey' && rec[0].date === Y2, JSON.stringify(rec));
     await markDone(b, dw, 'Leaf Pick', 'Casey');
     await b.run(main, `Calendar.selectEvent(DB.data.calendarEvents.find(e => e.id === 'ev_cropb1')); document.getElementById('completedCheckbox').click();`);
     const e4 = await ev(b, main, 'ev_cropb1');
@@ -110,7 +148,7 @@ export async function run(b, BASE) {
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
 
     // ---- Split files: a building device signs off and saves it in its own file ----
-    const files = await splitFiles(b, main, BASE, fixtureDb());
+    const files = await splitFiles(b, main, BASE, withFloorManager(withFloorManager(fixtureDb(), 'Blair'), 'Casey'));
     await openSplit(b, main, BASE, 'office', files);
     dw = await openTool(b, main, 'DailyWizard');
     await dwBuilding(b, dw, 'B1');

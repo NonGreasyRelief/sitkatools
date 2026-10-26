@@ -1994,7 +1994,7 @@
                 reconcileSelectedTask();
                 renderTasksTab();
                 // Only redraws while the Reports tab is open, and not under a Setup input being typed in
-                if (!document.activeElement?.closest?.('#rptBody input')) renderReports();
+                if (!document.activeElement?.closest?.('#rptBody input')) renderReports({ live: true });
                 renderLabourLog();   // only while its tab is open
                 renderPowerTab();    // likewise
             }
@@ -2134,6 +2134,24 @@
             if (!DB.data._EmployeeWizard.employees) DB.data._EmployeeWizard.employees = {};
             return DB.data._EmployeeWizard.employees;
         }
+        // An employee by name, or by a name they had before a rename (`formerNames`, review C9): hours logged under the
+        // old name elsewhere (DailyWizard's chore hours, crop summaries, removal records) still find their wage
+        function employeeByName(name) {
+            const emps = DB.data?._EmployeeWizard?.employees || {};
+            if (name == null) return null;
+            if (emps[name]) return emps[name];
+            for (const e of Object.values(emps)) if (Array.isArray(e?.formerNames) && e.formerNames.includes(name)) return e;
+            return null;
+        }
+        const formerNameOf = name => Object.entries(getEmployees()).find(([n, e]) => n !== name && Array.isArray(e?.formerNames) && e.formerNames.includes(name))?.[0] || null;
+        // Hours logged under a name: task labour maps and DailyWizard's chore hours (not removed ones)
+        function hoursLoggedAs(name) {
+            let h = 0;
+            for (const ev of DB.data.calendarEvents || []) for (const list of Object.values(ev.labour_map || {})) for (const e of Array.isArray(list) ? list : []) if (e?.employee === name) h += Number(e.hours) || 0;
+            for (const b of Object.values(DB.data._DailyWizard?.buildings || {})) for (const day of Object.values(b?.labour || {})) for (const list of Object.values(day || {}))
+                for (const e of Array.isArray(list) ? list : []) if (e?.employee === name && !e.removedAt) h += Number(e.hours) || 0;
+            return h;
+        }
 
         // ---- Roster list (left panel) ----
         function renderEmpList() {
@@ -2189,6 +2207,9 @@
             const toCount = (emps[name].timeOff || []).length;
             let msg = `Delete employee "${name}"?`;
             if (toCount > 0) msg += `\n\nThis will also remove their ${toCount} booked time-off event(s) from the shared calendar.`;
+            // Their hours stay on record under their name, but with no wage (review C9)
+            const logged = [name, ...(emps[name].formerNames || [])].reduce((t, n) => t + hoursLoggedAs(n), 0);
+            if (logged > 0) msg += `\n\n${name} has ${fmtHours(logged)} of hours logged. They stay on record under their name, but with no wage, so their labour cost will show as missing (closed-out crops keep the cost saved with their summary). To keep them costed, keep ${name} on the roster.`;
             if (!confirm(msg + '\n\nThis action cannot be undone.')) return;
 
             // Purge mirrored time-off calendar events in the same confirm step (confirmed design):
@@ -2225,6 +2246,8 @@
             if (!name) return;
             const emps = getEmployees();
             if (emps[name]) { showToast(`"${name}" already exists — names are unique`); return; }
+            const was = formerNameOf(name);
+            if (was) { showToast(`"${name}" is ${was}'s former name — hours logged under it are ${was}'s. Use another name.`); return; }
 
             emps[name] = { workDays: [1, 2, 3, 4, 5], timeOff: [] }; // Mon–Fri by default; no wage until one is entered
             $('newEmpName').value = '';
@@ -2305,9 +2328,8 @@
 
         // ---- Save employee changes (name / wage / work days) ----
         $('saveEmpBtn').addEventListener('click', async () => {
-            const emps = getEmployees();
             const oldName = EMP.selectedName;
-            if (!oldName || !emps[oldName]) return;
+            if (!oldName || !getEmployees()[oldName]) return;
 
             // A new floor manager PIN (blank = keep the one they have): 4–8 digits, typed twice, kept only as a hash
             let newPin = null;
@@ -2317,6 +2339,9 @@
                 if (pin1 !== pin2) { showToast('The two PINs don\u2019t match'); return; }
                 newPin = { ...(await FloorPin.make(pin1)), setAt: localDateStr(new Date()) };
             }
+            // The roster as it is now: a live update may have replaced the DB while the PIN was hashed (review H6)
+            const emps = getEmployees();
+            if (!emps[oldName] || EMP.selectedName !== oldName) { showToast('That employee changed elsewhere — nothing was saved'); return; }
 
             const newName = $('empNameInput').value.trim();
             // Blank wage = no wage (Wages.json not opened, or cleared) — left unset, never a made-up default.
@@ -2332,6 +2357,8 @@
             const emp = emps[oldName];
             if (newName !== oldName) {
                 if (emps[newName]) { showToast(`"${newName}" already exists — names are unique`); return; }
+                const was = formerNameOf(newName);
+                if (was && was !== oldName) { showToast(`"${newName}" is ${was}'s former name — hours logged under it are ${was}'s. Use another name.`); return; }
                 // Rename: retitle the employee's time-off events (and link older bookings to their event by id),
                 // then move the record and re-point labour-map references on tasks
                 for (const rec of emp.timeOff || []) {
@@ -2342,6 +2369,9 @@
                 }
                 delete emps[oldName];
                 emps[newName] = emp;
+                // Keep the old name: hours logged under it in other tools' data still find this employee (review C9)
+                emp.formerNames = [...new Set([...(emp.formerNames || []), oldName])].filter(n => n !== newName);
+                if (!emp.formerNames.length) delete emp.formerNames;
                 for (const ev of DB.data.calendarEvents) {
                     const lm = ev.labour_map;
                     if (!lm) continue;
@@ -2730,7 +2760,7 @@
         // time), recorded wage for temps. Deleted employees fall back to the default.
         // The entry's wage, or null when it has none (review C5: never a made-up wage)
         function entryWage(entry) {
-            const w = entry.temp != null ? entry.wage : getEmployees()[entry.employee]?.wage;
+            const w = entry.temp != null ? entry.wage : employeeByName(entry.employee)?.wage;
             return w != null && w !== '' && Number.isFinite(Number(w)) ? Number(w) : null;
         }
 
@@ -2924,7 +2954,9 @@
                 (est ? `<span title="Estimated labour (CropLabourWizard recipe)">⏱ Est. ${estimateText(est)}</span>` : '');
 
             const btn = $('teCompleteBtn');
-            btn.textContent = ev.completed ? '✓ Completed — click to reopen' : 'Mark task completed';
+            btn.textContent = ev.completed ? '✓ Completed — click to reopen' : '✍️ Mark task completed';
+            btn.title = ev.completed ? (ev.completedBy?.name ? `Signed off by ${ev.completedBy.name} — reopening needs a floor manager's PIN` : 'Reopening needs a floor manager\'s PIN')
+                : 'A floor manager signs it off: PIN and drawn initials';
             btn.classList.toggle('done', !!ev.completed);
 
             // Day selector — one button per day the task can hold labour for:
@@ -3721,15 +3753,47 @@
             showToast(`Removed ${fmtHours(removed.hours)} — kept on record (approved by ${ok.name})`);
         }
 
-        // ---- Mark task completed / reopen ----
-        $('teCompleteBtn').addEventListener('click', () => {
-            const ev = selectedTask();
-            if (!ev) return;
-            ev.completed = !ev.completed;
-            if (!ev.completed) delete ev.completedBy;   // reopened: DailyWizard's floor-manager sign-off no longer applies
+        // ---- Mark task completed / reopen (review C10, user decision 2026-10-25 Q5) ----
+        // As DailyWizard's ✅ Mark done: completing takes a floor manager's PIN and drawn initials and records the sign-off
+        // (completedBy = { name, initials, at, by, day }); reopening takes a PIN. A building device may reopen only a
+        // sign-off it made today; the office any, and one reopened after its day is kept on record in
+        // _EmployeeWizard.signoffReopens (Main.json; the Tasks tab never writes DailyWizard's data).
+        $('teCompleteBtn').addEventListener('click', async () => {
+            const ev0 = selectedTask();
+            if (!ev0) return;
+            const id = ev0.id, title = ev0.title || 'this task', today = localDateStr(new Date());
+            const find = () => DB.data.calendarEvents.find(e => e.id === id) || null;
+            if (!ev0.completed) {
+                const ok = await FloorPin.ask(`Sign off “${title}” as done`, { initials: true });
+                const ev = find();
+                if (!ok || !ev || ev.completed) { renderTasksTab(); return; }
+                ev.completed = true;
+                ev.completedBy = { name: ok.name, initials: ok.initials, at: new Date().toISOString(), by: DeviceView.building || 'office', day: today };
+                notifySitkaTools();
+                renderTasksTab();
+                showToast(`Task marked completed — signed off by ${ok.name}`);
+                return;
+            }
+            const sign0 = ev0.completedBy;
+            const sameDay = s => !!s?.at && localDateStr(new Date(s.at)) === today;
+            if (DeviceView.building && !(sameDay(sign0) && sign0.by === DeviceView.building)) {
+                showToast('This device can reopen only a sign-off it made today — ask the office');
+                return;
+            }
+            const ok = await FloorPin.ask(`Reopen “${title}”` + (sign0?.name ? ` — the sign-off by ${sign0.name} is removed` : ''));
+            const ev = find();
+            if (!ok || !ev || !ev.completed) { renderTasksTab(); return; }
+            const sign = ev.completedBy;
+            ev.completed = false;
+            delete ev.completedBy;
+            if (!sameDay(sign)) {
+                const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = {});
+                (ew.signoffReopens || (ew.signoffReopens = [])).push({ at: new Date().toISOString(), by: DeviceView.building || 'office', date: sign?.day || ev.date || null,
+                    eventId: ev.id, title: ev.title || '', reopened: sign || null, approvedBy: ok.name });
+            }
             notifySitkaTools();
             renderTasksTab();
-            showToast(ev.completed ? 'Task marked completed' : 'Task reopened');
+            showToast(`Task reopened — approved by ${ok.name}` + (sameDay(sign) ? '' : ' · kept on record'));
         });
 
         // ---- Task list controls ----
@@ -3754,10 +3818,10 @@
         //   • projections: CropProjection events (schedule and estimates only)
         //   • roster: work days, time off, wages (wages only while Wages.json is open)
         //   • PaperWizard answers to questions tagged with a report metric (question.metric)
-        //   • DailyWizard chores (estimates now; logged chore hours once DailyWizard records them)
+        //   • DailyWizard chores: their estimates and the hours logged on them
         //   • crop summaries in _EmployeeWizard.crops, which keep closed-out lots in the charts
-        // Reports may read every tool's data (user decision, 2026-10-12). They write only
-        // _EmployeeWizard.crops and _EmployeeWizard.settings. Charts are hand-rolled SVG.
+        // Reports may read every tool's data (user decision, 2026-10-12). They write only _EmployeeWizard.crops,
+        // .settings, .cropCosts, .ctls and .overheadCosts. Charts are hand-rolled SVG.
         // =====================================================
 
         // Report metrics a PaperWizard question can be tagged with (question.metric, unit in question.metricUnit).
@@ -3800,7 +3864,6 @@
         const RPT_IPM = ['ipm.pests', 'ipm.disease', 'ipm.herm', 'ipm.issue'];
         const RPT_HARVEST_CORE = ['harvest.wetWeight', 'harvest.dryWeight', 'harvest.bigs', 'harvest.trim', 'harvest.potency', 'harvest.terpenes'];
         const RPT_KEEP_MONTHS = 36;                        // crop summaries older than this are dropped on save
-        const RPT_MIN_PEOPLE = 3;                          // a $ figure from fewer paid people would reveal a wage
         const RPT_TARGETS = { 'env.temp': [70, 82], 'env.rh': [40, 65], vpd: [0.8, 1.6] };   // default bands
 
         const RPT = { page: 'overview', period: '12m', building: '', room: '', strain: '', per: 'plant', ganttLot: '', envLot: '', exX: 'labour', exY: 'gpp' };
@@ -3818,7 +3881,8 @@
         const R_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const rToday = () => localDateStr(new Date());
         const dAdd = (s, n) => localDateStr(addDays(parseISO(s), n));
-        const dMonths = (s, n) => { const d = parseISO(s); return localDateStr(new Date(d.getFullYear(), d.getMonth() + n, d.getDate())); };
+        // n months on, the day kept within the month (Mar 31 − 1 month = Feb 28, not Mar 3; review C15)
+        const dMonths = (s, n) => { const d = parseISO(s), last = new Date(d.getFullYear(), d.getMonth() + n + 1, 0).getDate(); return localDateStr(new Date(d.getFullYear(), d.getMonth() + n, Math.min(d.getDate(), last))); };
         const dDiff = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000);
         const dFmt = s => { const d = parseISO(s); return `${R_MON[d.getMonth()]} ${d.getDate()}`; };
         const dFmtY = s => { const d = parseISO(s); return `${R_MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; };
@@ -4150,17 +4214,24 @@
         }
 
         // Labour cost of a crop with today's wages: null while Wages.json isn't open
+        // A lot's labour cost frozen in Wages.json, if it belongs to the summary saved now. A summary saved again without
+        // Wages.json open has newer hours than the cost frozen with the older one: that cost doesn't count (review C11).
+        function rptFrozenLabour(lotId) {
+            const f = DB.data._EmployeeWizard?.cropCosts?.[lotId], s = DB.data._EmployeeWizard?.crops?.[lotId];
+            if (!f || !Number.isFinite(Number(f.cost))) return null;
+            return !f.savedAt || !s?.savedAt || f.savedAt === s.savedAt ? f : null;
+        }
         function rptCropCost(c) {
             if (!wagesLoaded()) return null;
             const people = Object.keys(c.labour?.byPerson || {});
             // A closed-out lot uses the cost frozen when its summary was saved (kept in Wages.json), so a later raise
             // doesn't restate it. Live lots always use today's wages.
-            const frozen = c.closed ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId] : null;
-            if (frozen && Number.isFinite(Number(frozen.cost))) return { cost: Number(frozen.cost), missing: Number(frozen.missingHours) || 0, people, frozen: true };
+            const frozen = c.closed ? rptFrozenLabour(c.lotId) : null;
+            if (frozen) return { cost: Number(frozen.cost), missing: Number(frozen.missingHours) || 0, people, frozen: true };
             let cost = c.labour.tempCost || 0, missing = c.labour.tempNoWage || 0;
             for (const k of people) {
                 if (k.startsWith('temp:')) continue;
-                const raw = rptEmployees()[k]?.wage, w = Number(raw);
+                const raw = employeeByName(k)?.wage, w = Number(raw);
                 if (raw == null || !Number.isFinite(w)) missing += c.labour.byPerson[k];
                 else cost += c.labour.byPerson[k] * w;
             }
@@ -4208,6 +4279,7 @@
                             const h = Number(e?.hours) || 0;
                             if (h <= 0 || e.removedAt) continue;
                             rows.push({ date: d, hours: h, logged: h, kind: 'chore', code, roomId, buildingId: bid,
+                                entryKey: e.id || `${bid}|${d}|${code}|${e.employee ?? 'temp:' + e.temp}|${h}`,
                                 choreKey: `${bid}:${code}`, label: t ? `${t.emoji || '📋'} ${t.name}` : `📋 Daily task ${code}`,
                                 person: e.temp != null ? 'temp:' + e.temp : e.employee, temp: e.temp != null, wage: e.temp != null ? Number(e.wage) || null : null });
                         }
@@ -4248,6 +4320,17 @@
         function rptApplyChores(crops, rows, targets = null) {
             if (!rows.some(r => r.kind === 'chore' && r.roomId)) { for (const c of targets || crops) rptChoresDone.add(c); return rows; }
             const occupants = rptRoomOccupancy(crops), give = targets ? new Set(targets) : null;
+            // A closed-out crop's summary carries its share of a room chore only if it was saved with that entry: one
+            // that synced in later, or a chore tied to a room later, stays in the overhead instead of vanishing (review
+            // C6). A summary saved before entries were listed (no choreEntries) is taken to carry them all.
+            const carriedSets = new Map();
+            const carries = (c, r) => {
+                if (!(c.closed && c.version >= 3)) return false;
+                const list = c.labour?.choreEntries;
+                if (!Array.isArray(list)) return true;
+                if (!carriedSets.has(c)) carriedSets.set(c, new Set(list));
+                return carriedSets.get(c).has(r.entryKey);
+            };
             for (const r of rows) {
                 if (r.kind !== 'chore' || !r.roomId) continue;
                 r.shares = occupants(r.roomId, r.date);
@@ -4255,7 +4338,7 @@
                 for (const { c, frac, phase } of r.shares) {
                     const gets = give ? give.has(c) : !c.closed;
                     if (gets) rptAddChore(c, r, r.logged * frac, phase);
-                    if (gets || (c.closed && c.version >= 3)) carried += frac;
+                    if (gets || carries(c, r)) carried += frac;
                 }
                 r.hours = r.logged * Math.max(0, 1 - carried);
             }
@@ -4266,6 +4349,7 @@
             if (!(h > 0)) return;
             const L = c.labour, chores = L.chores || (L.chores = {});
             const ch = chores[r.choreKey] || (chores[r.choreKey] = { name: r.label, roomId: r.roomId, act: 0, temp: 0, days: {}, byPhase: {} });
+            if (r.entryKey) (L.choreEntries || (L.choreEntries = [])).push(r.entryKey);   // saved with the summary (review C6)
             const ph = phase === 'dry' || phase === 'trim' ? 'post' : phase;
             ch.act += h; ch.days[r.date] = (ch.days[r.date] || 0) + h; ch.byPhase[ph] = (ch.byPhase[ph] || 0) + h;
             L.act += h;
@@ -4370,14 +4454,19 @@
             let cost = 0, missing = 0;
             for (const r of M.other) {
                 if (!inRange(r.date, from, to) || frozen[r.date.slice(0, 7)]) continue;
-                const w = r.temp ? r.wage : Number(rptEmployees()[r.person]?.wage);
+                const w = r.temp ? r.wage : Number(employeeByName(r.person)?.wage);
                 if (w > 0) cost += r.hours * w; else missing += r.hours;
             }
             for (const [ym, f] of Object.entries(frozen)) {
                 if (`${ym}-31` < from || `${ym}-01` > to) continue;
-                for (const [d, bid, roomId, , , c, miss] of f.rows || []) {
+                // Room-chore hours frozen as shared that a crop now carries (its grow log, filled in late, puts it in the
+                // room that day): the frozen $ keeps its rate, for only the hours still shared, so none count twice (review C7)
+                const live = (M._ovLive || (M._ovLive = {}))[ym] || (M._ovLive[ym] = new Map(rptOverheadRows(M, ym).map(r => [r.slice(0, 4).join('|'), r[4]])));
+                for (const [d, bid, roomId, kind, h, c, miss] of f.rows || []) {
                     if (!inRange(d, from, to) || !rptRowMatch({ buildingId: bid || null, roomId: roomId || null })) continue;
-                    cost += c; missing += miss;
+                    const lh = kind === 'chore' && roomId ? live.get([d, bid, roomId, kind].join('|')) || 0 : h;
+                    const k = h > 0 && lh < h ? lh / h : 1;
+                    cost += c * k; missing += miss * k;
                 }
             }
             return { cost, missing };
@@ -4400,7 +4489,7 @@
                 if (r.date.slice(0, 7) !== ym) continue;
                 const key = [r.date, r.buildingId || '', r.roomId || '', r.kind].join('|');
                 const a = agg.get(key) || agg.set(key, [r.date, r.buildingId || '', r.roomId || '', r.kind, 0, 0, 0]).get(key);
-                const w = r.temp ? r.wage : Number(rptEmployees()[r.person]?.wage);
+                const w = r.temp ? r.wage : Number(employeeByName(r.person)?.wage);
                 a[4] += r.hours;
                 if (w > 0) a[5] += r.hours * w; else a[6] += r.hours;
             }
@@ -4569,7 +4658,7 @@
         // missingLights: Set(roomId), source, rate }
         function rptPowerModel(crops) {
             const cfg = rptCostConfig(), today = rToday(), rooms = DB.data.rooms || {};
-            const byCrop = new Map(crops.map(c => [c.lotId, { kWh: 0, lights: 0, equip: 0, cost: 0, pctMissing: 0, billDays: 0 }]));
+            const byCrop = new Map(crops.map(c => [c.lotId, { kWh: 0, lights: 0, equip: 0, cost: 0, pctMissing: 0, billDays: 0, unbilledDays: 0 }]));
             const unallocated = { kWh: 0, cost: 0 }, missingLights = new Set();
             const stays = [];
             for (const c of crops) for (const st of rptCropRoomDays(c)) stays.push({ c, ...st });
@@ -4632,6 +4721,12 @@
                     for (const [lotId, n] of occ) { give(lotId, kWh * n / plants, 'equip'); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants); }
                 }
                 if (cfg.source === 'bills') {
+                    // A crop in a building no bill covers that day (its building's meter or the whole site): its power
+                    // is missing, not $0 (review C2) — until that bill is added
+                    for (const [b, m] of Object.entries(inBuilding)) {
+                        if (billDay[d]?.['*'] != null || (b !== 'null' && billDay[d]?.[b] != null)) continue;
+                        for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.unbilledDays++; }
+                    }
                     // Each meter's $ for the day, split by the crops' estimated use that day (by plants when there's no estimate)
                     for (const [meter, amount] of Object.entries(billDay[d] || {})) {
                         const lots = meter === '*' ? [...dayKwh.keys(), ...Object.values(inBuilding).flatMap(m => [...m.keys()])]
@@ -4710,13 +4805,28 @@
         // A crop's non-labour costs. A closed-out lot keeps the costs frozen in its summary. Each part's `cost` is null
         // when it can't be priced (no rate, no logs), so the per-gram figures only use crops that have it.
         // fresh: work them out now even for a closed-out lot (to freeze them)
+        // Worked out once per crop per report model (the pages ask for it many times; review C14)
         function rptCropInputCost(c, M, fresh = false) {
-            // Summaries frozen before property costs existed have none: work theirs out from the buildings now
-            if (!fresh && c.closed && c.costs) return c.costs.property !== undefined ? c.costs : { ...c.costs, property: rptCropProperty(c, M) };
+            if (!M || !c) return rptCropInputCostNow(c, M, fresh);
+            const memo = M._inputCost || (M._inputCost = new Map());
+            const slot = memo.get(c) || memo.set(c, {}).get(c), k = fresh ? 'fresh' : 'kept';
+            return slot[k] || (slot[k] = rptCropInputCostNow(c, M, fresh));
+        }
+        function rptCropInputCostNow(c, M, fresh) {
+            // Summaries frozen before property costs existed have none: work theirs out from the buildings now. One frozen
+            // while some of its days had no power bill froze its electricity as missing: it takes the bills as they are
+            // now, so a bill added later reaches it (review C2)
+            if (!fresh && c.closed && c.costs) {
+                let k = c.costs.property !== undefined ? c.costs : { ...c.costs, property: rptCropProperty(c, M) };
+                if (k.power?.unbilledDays > 0 && rptCostConfig().source === 'bills') k = { ...k, power: rptCropInputCost(c, M, true).power };
+                return k;
+            }
             const cfg = rptCostConfig();
-            const pw = rptPowerFor(M, c) || { kWh: 0, lights: 0, equip: 0, cost: null, pctMissing: 0 };
-            const hasPower = pw.kWh > 0 || (cfg.source === 'bills' && pw.cost > 0);
-            const power = { kWh: pw.kWh, lights: pw.lights, equip: pw.equip, cost: hasPower ? pw.cost : null, source: cfg.source, pctMissingDays: pw.pctMissing };
+            const pw = rptPowerFor(M, c) || { kWh: 0, lights: 0, equip: 0, cost: null, pctMissing: 0, unbilledDays: 0 };
+            const unbilled = cfg.source === 'bills' ? pw.unbilledDays || 0 : 0;
+            const hasPower = !unbilled && (pw.kWh > 0 || (cfg.source === 'bills' && pw.cost > 0));
+            const power = { kWh: pw.kWh, lights: pw.lights, equip: pw.equip, cost: hasPower ? pw.cost : null, source: cfg.source, pctMissingDays: pw.pctMissing,
+                ...(unbilled ? { unbilledDays: unbilled, billedCost: pw.cost } : {}) };
             const L = c.env?.waterL;
             const water = { L: L ?? null, cost: L > 0 && cfg.waterRate != null ? L / 1000 * cfg.waterRate : null };
             const byProduct = {}, unpriced = [];
@@ -4751,7 +4861,8 @@
             const k = rptCropInputCost(c, M, true);
             const r2 = v => v == null ? null : Math.round(v * 100) / 100;
             return {
-                power: { kWh: Math.round(k.power.kWh), lights: Math.round(k.power.lights), equip: Math.round(k.power.equip), cost: r2(k.power.cost), source: k.power.source, pctMissingDays: k.power.pctMissingDays },
+                power: { kWh: Math.round(k.power.kWh), lights: Math.round(k.power.lights), equip: Math.round(k.power.equip), cost: r2(k.power.cost), source: k.power.source, pctMissingDays: k.power.pctMissingDays,
+                    ...(k.power.unbilledDays ? { unbilledDays: k.power.unbilledDays } : {}) },
                 water: { L: k.water.L, cost: r2(k.water.cost) },
                 fert: { byProduct: Object.fromEntries(Object.entries(k.fert.byProduct).map(([n, x]) => [n, { mL: x.mL, cost: r2(x.cost) }])), unpriced: k.fert.unpriced, cost: r2(k.fert.cost) },
                 supplies: { items: k.supplies.items.map(x => ({ ...x, cost: r2(x.cost) })), unpriced: k.supplies.unpriced, cost: r2(k.supplies.cost) },
@@ -4786,8 +4897,8 @@
             let cost = t.tempCost || 0;
             for (const [who, h] of Object.entries(t.people)) {
                 if (who.startsWith('temp:')) continue;
-                const w = Number(rptEmployees()[who]?.wage);
-                if (rptEmployees()[who]?.wage == null || !Number.isFinite(w)) return null;
+                const w = Number(employeeByName(who)?.wage);
+                if (employeeByName(who)?.wage == null || !Number.isFinite(w)) return null;
                 cost += h * w;
             }
             return cost;
@@ -4851,14 +4962,29 @@
         // from a mother lot. A closed-out lot uses the charge frozen with its summary (labour in Wages.json, the rest in Main.json).
         function rptCloneCharge(c, M) {
             if (c.closed && c.costs?.clones) {
-                const f = c.costs.clones, lab = wagesLoaded() ? DB.data._EmployeeWizard?.cropCosts?.[c.lotId]?.cloneLabour : undefined;
+                const f = c.costs.clones, lab = wagesLoaded() ? rptFrozenLabour(c.lotId)?.cloneLabour : undefined;
                 return { n: f.n, mother: f.mother, frozen: true, parts: { ...(f.parts || {}), labour: lab ?? null } };
             }
             const CM = rptCloneModel(M), mom = CM.motherOf(c);
             if (!mom) return null;
             const pr = CM.priceOf(mom), n = rptClonesOf(c);
             if (!pr?.perClone || !(n > 0)) return { n, mother: mom, parts: {}, unpriced: true };
-            return { n, mother: mom, people: pr.people, parts: Object.fromEntries(RPT_PART_KEYS.map(p => [p, pr.perClone[p] != null ? pr.perClone[p] * n : null])) };
+            // A mother lot keeps costing while it lives, so a lot closed out early froze a smaller share. The lots not
+            // frozen yet carry what's left — the mother's cost less the frozen charges — over the clones not charged yet,
+            // so the charges add up to what the mother cost (review C8). A part a frozen lot has no figure for stays at
+            // the average.
+            const per = pr.perLeft || (pr.perLeft = (() => {
+                const frozen = pr.kids.filter(k => k.crop?.closed && k.crop.costs?.clones);
+                if (!frozen.length) return pr.perClone;
+                const nLeft = pr.clones - rSum(frozen, k => Number(k.crop.costs.clones.n) || 0);
+                return Object.fromEntries(RPT_PART_KEYS.map(p => {
+                    if (pr.total[p] == null) return [p, null];
+                    const charges = frozen.map(k => p === 'labour' ? (wagesLoaded() ? rptFrozenLabour(k.lotId)?.cloneLabour : null) : k.crop.costs.clones.parts?.[p]);
+                    if (charges.some(v => v == null || !Number.isFinite(Number(v))) || !(nLeft > 0)) return [p, pr.perClone[p]];
+                    return [p, Math.max(0, pr.total[p] - rSum(charges, Number)) / nLeft];
+                }));
+            })());
+            return { n, mother: mom, people: pr.people, parts: Object.fromEntries(RPT_PART_KEYS.map(p => [p, per[p] != null ? per[p] * n : null])) };
         }
         // A crop's labour $ as the cost per gram counts it: its own (its cutting included), plus its clones' share of the
         // mother's labour. Same shape as rptCropCost.
@@ -4912,15 +5038,18 @@
             const hours = rptHours(M, from, to);
             const done = rptDoneTasks(M, from, to);
             let cost = null, direct = null, loaded = null;
+            // $ shows only on the office, never per person (user decision 2026-10-25, review Q6: this replaced the
+            // 3-person rule). wagesLoaded() is false on a building device.
             if (wagesLoaded() && withFlower.length) {
                 const costed = withFlower.map(c => ({ c, k: rptCropLabour(c, M) })).filter(x => x.k && x.k.missing === 0 && x.k.cost > 0);
-                const people = new Set(costed.flatMap(x => x.k.people));
                 const g = rSum(costed, x => x.c.weights.flower);
-                if (costed.length && people.size >= RPT_MIN_PEOPLE && g > 0) {
+                if (costed.length && g > 0) {
                     cost = rSum(costed, x => x.k.cost);
                     direct = cost / g;
+                    // Shared labour belongs to every gram harvested, so it's spread over all of them — not only over the
+                    // crops whose own hours are all priced, which would pile it onto the few that are (review C1)
                     const other = rptOtherCost(M, from, to);
-                    loaded = direct + (other ? other.cost / g : 0);
+                    loaded = direct + (other && flower > 0 ? other.cost / flower : 0);
                 }
             }
             return {
@@ -5446,14 +5575,14 @@
             return { svg: rSvg(W, H, s, 'Labour mix'), table: { cols: [{ h: 'Work type' }, { h: 'Hours', n: 1 }, { h: 'Share', n: 1 }], rows: segs.map(g => [g.k, rN(g.v, 1), rPct(g.v / total, 1)]).concat([['Staff shift hours scheduled', rN(sched, 0), ''], ['Staff hours logged', rN(staffLogged, 1), sched > 0 ? rPct(staffLogged / sched, 1) : '']]) } };
         }
         function rptWaterfall(M) {
-            if (!wagesLoaded()) return { empty: rEmpty('Open Wages.json in SitkaTools to see labour cost.', 'Costs use today’s wages (closed-out lots keep the cost saved with their summary). No figure is shown per person, or for groups of fewer than 3 people.') };
+            if (!wagesLoaded()) return { empty: rEmpty('Open Wages.json in SitkaTools to see labour cost.', 'Costs use today’s wages (closed-out lots keep the cost saved with their summary). No figure is shown per person.') };
             const per = RPT.per;
             const costed = rptHarvested(M, M.per.from, M.per.to).map(c => ({ c, k: rptCropCost(c), d: rptPerDenom(c, per) }))
                 .filter(x => x.k && x.k.missing === 0 && x.k.cost > 0 && x.c.labour.act > 0 && x.d);
-            const people = new Set(costed.flatMap(x => x.k.people));
             if (!costed.length) return { empty: rEmpty(`No harvested crops with fully-costed hours${per === 'g' ? ' and a flower weight' : per === 'sqft' ? ' and canopy sq ft' : per === 'light' ? ' and a light count (Room Manager)' : per === 'plant' ? ' and a plant count' : ''} in this period.`, 'Needs a wage for everyone who logged hours on the crop' + (per === 'g' ? ', and harvest numbers.' : '.')) };
-            if (people.size < RPT_MIN_PEOPLE) return { empty: rEmpty('Hidden: fewer than 3 people logged hours on these crops.', 'A cost from so few people would show their wage.') };
             const denom = rSum(costed, x => x.d), by = { clone: 0, veg: 0, flower: 0, post: 0 };
+            // Shared labour over every crop harvested in the period, as in rptAgg (review C1)
+            const allDenom = rSum(rptHarvested(M, M.per.from, M.per.to).map(c => rptPerDenom(c, per)).filter(Boolean)) || denom;
             for (const { c, k } of costed) {
                 const rate = k.cost / c.labour.act;   // the crop's average $/h, spread over its tasks
                 for (const [tt, t] of Object.entries(c.labour.byTask || {})) by[rptPhaseOf(tt)] += t.act * rate;
@@ -5461,7 +5590,7 @@
                 for (const ch of Object.values(c.labour.chores || {})) for (const [ph, h] of Object.entries(ch.byPhase || {})) by[ph in by ? ph : 'flower'] += h * rate;
             }
             const other = rptOtherCost(M, M.per.from, M.per.to);
-            const steps = [...RPT_CROP_PHASES.map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Shared chores & equipment', v: (other?.cost || 0) / denom, c: 'var(--rv-neutral)' }];
+            const steps = [...RPT_CROP_PHASES.map(k => ({ k: RPT_PHASES[k], v: by[k] / denom, c: `var(--rv-ph-${k})` })), { k: 'Shared chores & equipment', v: (other?.cost || 0) / allDenom, c: 'var(--rv-neutral)' }];
             const total = rSum(steps, x => x.v);
             const dp = per === 'g' ? 3 : per === 'total' ? 0 : 2, money = v => rMoney(v, dp);
             const W = 640, H = 270, X0 = 62, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
@@ -5834,14 +5963,27 @@
                 for (let d = ev.date; d <= taskEnd(ev); d = dAdd(d, 1)) { const k = wk(d); if (k >= 0) weeks[k][ev.sourceTool === 'CropProjection' ? 'proj' : 'crop'] += perDay; }
             }
             if (!RPT.strain && !RPT.room) {
+                // A room chore is on DailyWizard's list only while a lot is in its room: count it on the days its room is
+                // planned to hold a crop (the crops' stays, and projected lots' spans in their room; review C12)
+                const occ = rptRoomOccupancy(M.crops), proj = {};
+                for (const ev of DB.data.calendarEvents) {
+                    if (ev.sourceTool !== 'CropProjection' || !ev.roomId || !isDay(ev.date)) continue;
+                    const k = `${ev.roomId}|${ev.lotId}`, e = taskEnd(ev), p = proj[k] || (proj[k] = [ev.date, e]);
+                    if (ev.date < p[0]) p[0] = ev.date; if (e > p[1]) p[1] = e;
+                }
+                const projIn = Object.entries(proj).map(([k, span]) => [k.split('|')[0], span]);
+                const occupied = (roomId, d) => occ(roomId, d).length > 0 || projIn.some(([r, [a, z]]) => r === roomId && a <= d && d <= z);
                 for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
                     if (RPT.building && bid !== RPT.building) continue;
                     for (const t of b?.tasks || []) {
                         const h = (Number(t.minutes) || 0) * (Number(t.staff) || 1) / 60;
                         if (h <= 0) continue;
+                        const roomId = rptChoreRoomId(bid, t);
                         for (let d = W0; d <= end; d = dAdd(d, 1)) {
                             const dt = parseISO(d);
-                            if ((t.days || []).includes(dt.getDay()) || (t.monthDays || []).includes(dt.getDate())) weeks[wk(d)].chores += h;
+                            if (!((t.days || []).includes(dt.getDay()) || (t.monthDays || []).includes(dt.getDate()))) continue;
+                            if (roomId && !occupied(roomId, d)) continue;
+                            weeks[wk(d)].chores += h;
                         }
                     }
                 }
@@ -6026,7 +6168,7 @@
 
             // 4. Inputs used by the crops harvested in the period
             const fert = {}, sup = {};
-            let waterL = 0, waterCost = 0, kWh = 0, kWhCost = 0, propDays = 0, propCost = 0;
+            let waterL = 0, waterCost = 0, kWh = 0, kWhCost = 0, kWhUnpriced = false, propDays = 0, propCost = 0;
             for (const c of cur) {
                 const k = rptCropInputCost(c, M);
                 for (const [n, x] of Object.entries(k.fert.byProduct)) { const t = fert[n] || (fert[n] = { mL: 0, cost: 0, priced: true }); t.mL += x.mL; if (x.cost != null) t.cost += x.cost; else t.priced = false; }
@@ -6035,14 +6177,15 @@
                     const t = sup[key] || (sup[key] = { qty: 0, unit: x.unit, cost: 0, priced: true }); t.qty += x.qty; if (x.cost != null) t.cost += x.cost; else t.priced = false;
                 }
                 if (k.water.L > 0) { waterL += k.water.L; waterCost += k.water.cost || 0; }
-                if (k.power.kWh > 0) { kWh += k.power.kWh; kWhCost += k.power.cost || 0; }
+                if (k.power.kWh > 0) { kWh += k.power.kWh; if (k.power.cost != null) kWhCost += k.power.cost; else kWhUnpriced = true; }
                 if (k.property?.cost > 0) { propDays += k.property.days || 0; propCost += k.property.cost; }
             }
             const usedRows = [
                 ...Object.entries(fert).sort().map(([n, x]) => [`🧪 ${n}`, `${rN(x.mL / 1000, 1)} L`, x.priced ? rMoney(x.cost) : 'no price']),
                 ...Object.entries(sup).sort().map(([n, x]) => [`📦 ${n}`, `${rN(x.qty, x.qty < 10 ? 1 : 0)} ${x.unit}`, x.priced ? rMoney(x.cost) : 'no price']),
                 ...(waterL > 0 ? [['💧 Water', `${rN(waterL, 0)} L`, cfg.waterRate != null ? rMoney(waterCost) : 'no rate']] : []),
-                ...(kWh > 0 ? [['⚡ Electricity', `${rN(kWh, 0)} kWh`, rMoney(kWhCost)]] : []),
+                // Not $0.00 when some of it can't be priced (no rate, or days no power bill covers; review C15)
+                ...(kWh > 0 ? [['⚡ Electricity', `${rN(kWh, 0)} kWh`, !kWhUnpriced ? rMoney(kWhCost) : kWhCost > 0 ? `${rMoney(kWhCost)} + some not priced` : cfg.source === 'bills' ? 'no bill yet' : 'no rate']] : []),
                 ...(propCost > 0 ? [['🏠 Property (rent & fees)', `${rN(propDays, 0)} crop-day${propDays === 1 ? '' : 's'}`, rMoney(propCost)]] : [])
             ];
             const usedBody = usedRows.length ? `<div class="rpt-tbl">${rTable({ cols: [{ h: 'Input' }, { h: 'Used', n: 1 }, { h: 'Cost', n: 1 }], rows: usedRows })}</div>` : rEmpty('Nothing used yet in this period.', '');
@@ -6051,11 +6194,19 @@
             const miss = [];
             const pm = M.power || (M.power = rptPowerModel(M.crops));
             if (!wagesLoaded()) miss.push('Labour isn’t costed — open Wages.json in SitkaTools.');
+            const otherNow = rptOtherCost(M, M.per.from, M.per.to);
+            if (otherNow?.missing > 0) miss.push(`${rN(otherNow.missing, 1)} h of shared labour (whole-building chores, equipment and other tasks) ha${otherNow.missing === 1 ? 's' : 've'} no wage, so ${otherNow.missing === 1 ? 'it costs' : 'they cost'} nothing here — set the wages in the Employees tab.`);
             if (cfg.source === 'estimate' && cfg.rate == null) miss.push('No electricity rate — set it in ⚡ Power & Rates.');
             if (cfg.source === 'bills') {
                 const billed = cfg.bills.filter(bl => bl.to >= M.per.from && bl.from <= M.per.to);
                 if (!billed.length) miss.push('No power bills in this period — add them in ⚡ Power & Rates (or switch to estimated usage).');
                 if (pm.unallocated.cost > 0) miss.push(`${rMoney(pm.unallocated.cost)} of power bills fell on days with no crop in the building, so no crop carries it.`);
+                const unbilled = weighed.map(c => ({ c, p: rptCropInputCost(c, M).power })).filter(x => x.p.unbilledDays > 0);
+                if (unbilled.length) miss.push(`No power bill covers some days of ${unbilled.map(x => `${x.c.lotId} (${rN(x.p.unbilledDays, 0)} day${x.p.unbilledDays === 1 ? '' : 's'})`).join(', ')}, so ${unbilled.length === 1 ? 'its' : 'their'} electricity isn’t counted yet — add the bills in ⚡ Power & Rates.`);
+                // Closed-out lots frozen with a different power figure than the bills give now (a bill added or changed since)
+                const restated = weighed.filter(c => c.closed && c.costs?.power && !(c.costs.power.unbilledDays > 0)).map(c => ({ c, was: c.costs.power.cost, now: rptCropInputCost(c, M, true).power.cost }))
+                    .filter(x => x.now != null && Math.abs((x.now || 0) - (x.was || 0)) > Math.max(1, 0.01 * Math.abs(x.now)));
+                if (restated.length) miss.push(`Power bills changed after these closed-out lots were saved, so their electricity stays as it was frozen: ${restated.map(x => `${x.c.lotId} (frozen ${x.was != null ? rMoney(x.was) : 'with none'}, the bills give ${rMoney(x.now)})`).join(', ')}.`);
             }
             for (const id of pm.missingLights) miss.push(`${rptRoomName(id)} has no light count or watts per light — set them in SitkaTools’ Room Manager.`);
             const noPower = Object.entries(DB.data._EquipmentWizard?.rooms || {}).reduce((t, [, r]) => t + (r?.equipment || []).filter(e => !(Number(e?.power?.watts) > 0)).length, 0);
@@ -6186,7 +6337,7 @@
         const CTLS_REMOVED = { destroyed: 'Destroyed', culled: 'Culled', sampled: 'Sampled', harvested: 'Harvested', moved: 'Moved to another lot', sold: 'Sold / transferred' };
         const CTLS_MOVED_IN = /moved in|from another lot/i;   // a higher count for this reason came from another lot
         const CTLS_MONTHS_BACK = 36;
-        const CTLS_STAGE_WORDS = { cloning: 'Cloning', veg: 'Vegetation', flower: 'Bloom', harvest: 'Harvesting', drying: 'Drying', curing: 'Curing' };
+        const CTLS_STAGE_WORDS = { cloning: 'Cloning', mother: 'Mother', veg: 'Vegetation', flower: 'Bloom', harvest: 'Harvesting', drying: 'Drying', curing: 'Curing' };
 
         // sheetId → the 🌱 plant-count and ✍️ initials questions of each daily-weekly sheet (as PaperWizard's plantCountQuestion)
         function ctlsSheetQuestions() {
@@ -6289,6 +6440,8 @@
         }
         const ctlsSumTo = (list, d) => list.reduce((t, [day, g]) => day <= d ? t + g : t, 0);
         const ctlsDryDate = L => L.dry.length ? L.dry[0][0] : null;
+        // Wet weight counts up to the day the dry weight is recorded; one recorded after it counts nowhere (review C15)
+        const ctlsWetTo = L => { const dd = ctlsDryDate(L); return dd ? L.wet.filter(([d]) => d <= dd) : L.wet; };
         // Wet weight still hanging: harvested, and the lot's dry weight not recorded yet
         const ctlsHanging = (L, d) => { const dd = ctlsDryDate(L); return dd && dd <= d ? 0 : ctlsSumTo(L.wet, d); };
 
@@ -6308,22 +6461,24 @@
 
         // Every lot that could hold plants or cannabis: the DB's lots (live), plus closed-out lots' summaries
         function ctlsLots() {
-            const qmap = rptQuestionMap(), sq = ctlsSheetQuestions(), crops = DB.data._EmployeeWizard?.crops || {};
+            const qmap = rptQuestionMap(), sq = ctlsSheetQuestions(), crops = DB.data._EmployeeWizard?.crops || {}, closed = DB.data._closedLots || {};
             const lots = [], old = [];
             for (const [lotId, lot] of Object.entries(DB.lots)) {
                 if (lot) lots.push({ lotId, strain: lot.strain || '—', live: true, L: ctlsLedger(lot, DB.data._PaperWizard?.entries?.[lotId], qmap, null, sq), saved: crops[lotId] || null });
             }
             for (const [lotId, s] of Object.entries(crops)) {
                 if (DB.lots[lotId] || !s || typeof s !== 'object') continue;
-                if (s.ctls?.v) lots.push({ lotId, strain: s.strain || '—', live: false, L: s.ctls });
+                if (s.ctls?.v) lots.push({ lotId, strain: s.strain || '—', live: false, L: s.ctls, savedAt: s.savedAt || null, closedAt: closed[lotId]?.closedAt || null });
                 else old.push({ lotId, s });   // saved before the CTLS history existed
             }
-            return { lots, old };
+            // Closed out with split files (SitkaTools' notice in Main) and no summary at all: in no month (review C3)
+            const missing = Object.entries(closed).filter(([id]) => !DB.lots[id] && !crops[id]).map(([lotId, rec]) => ({ lotId, closedAt: rec?.closedAt || null }));
+            return { lots, old, missing };
         }
 
         function ctlsModel(ym) {
             const B = ctlsBounds(ym), today = rToday();
-            const { lots, old } = ctlsLots();
+            const { lots, old, missing } = ctlsLots();
             // ---- Plants ----
             const rows = [];
             for (const x of lots) {
@@ -6362,9 +6517,9 @@
                 const L = x.L, dd = ctlsDryDate(L);
                 for (const [d, g] of L.wet) {
                     if (!inRange(d, B.start, B.end)) continue;
-                    if (dd && dd < B.start) oddWet.push({ lotId: x.lotId, date: d, g }); else wetIn.push({ date: d, lotId: x.lotId, strain: x.strain, g, room: L.dryRoom || '' });
+                    if (dd && d > dd) oddWet.push({ lotId: x.lotId, date: d, g }); else wetIn.push({ date: d, lotId: x.lotId, strain: x.strain, g, room: L.dryRoom || '' });
                 }
-                if (dd && inRange(dd, B.start, B.end)) wetOut.push({ date: dd, lotId: x.lotId, strain: x.strain, wet: ctlsSumTo(L.wet, B.end), dry: ctlsSumTo(L.dry, B.end) });
+                if (dd && inRange(dd, B.start, B.end)) wetOut.push({ date: dd, lotId: x.lotId, strain: x.strain, wet: ctlsSumTo(ctlsWetTo(L), dd), dry: ctlsSumTo(L.dry, B.end) });
                 const h = ctlsHanging(L, B.end);
                 if (h > 0) hanging.push({ lotId: x.lotId, strain: x.strain, room: L.dryRoom || '', since: L.wet[0]?.[0] || '', g: h });
                 for (const [d, g] of L.dry) if (inRange(d, B.start, B.end)) dryOut.push({ date: d, lotId: x.lotId, strain: x.strain, g });
@@ -6403,6 +6558,12 @@
             if (undated.length) checks.push({ sev: 'info', text: `Lot ${lotList(undated.map(x => x.lotId))} has a weight in a 📌 constant, which has no date, so it isn't counted.` });
             const oldIn = old.filter(({ s }) => { const ds = Object.values(s.dates || {}).filter(isDay).sort(); return ds.length && ds[0] <= B.end && ds[ds.length - 1] >= dAdd(B.start, -120); });
             if (oldIn.length) checks.push({ sev: 'warn', text: `Closed-out lot ${lotList(oldIn.map(o => o.lotId))} ${oldIn.length === 1 ? 'was' : 'were'} saved without ${oldIn.length === 1 ? 'its' : 'their'} plant history. Import the archive file again (⚙️ Setup & data → 📂 Import archived lots) to count ${oldIn.length === 1 ? 'it' : 'them'}.`, go: 'settings' });
+            // Closed-out lots whose saved history still holds plants or wet weight: the summary was saved before the lot
+            // ended, so they're counted in every month since (review C3)
+            const stale = lots.filter(x => !x.live && (ctlsCountAt(x.L, B.end) > 0 || ctlsHanging(x.L, B.end) > 0) && B.end >= rSavedDay(x.closedAt || x.savedAt || ''));
+            if (stale.length) checks.push({ sev: 'warn', text: `Closed-out lot ${stale.map(x => `${x.lotId} (${[ctlsCountAt(x.L, B.end) > 0 ? `${rN(ctlsCountAt(x.L, B.end))} plants` : '', ctlsHanging(x.L, B.end) > 0 ? `${ctlsG(ctlsHanging(x.L, B.end))} wet` : ''].filter(Boolean).join(', ')})`).join(', ')} still ${stale.length === 1 ? 'has' : 'have'} plants or wet weight in ${stale.length === 1 ? 'its' : 'their'} saved history, which was saved before ${stale.length === 1 ? 'it' : 'they'} ended — so ${stale.length === 1 ? 'they are' : 'those are'} counted in this month. Import the archive file again (⚙️ Setup & data → 📂 Import archived lots) to bring the history up to its close-out.`, go: 'settings' });
+            const gone = missing.filter(m => !m.closedAt || rSavedDay(m.closedAt) >= B.start);
+            if (gone.length) checks.push({ sev: 'warn', text: `Closed-out lot ${lotList(gone.map(m => m.lotId))} ${gone.length === 1 ? 'has' : 'have'} no saved summary, so ${gone.length === 1 ? 'its' : 'their'} plants and weights aren't in this month or the ones before ${gone.length === 1 ? 'its' : 'their'} close-out. Import ${gone.length === 1 ? 'its' : 'their'} archive file (⚙️ Setup & data → 📂 Import archived lots).`, go: 'settings' });
             const offPlants = closing - opening - rSum(rows, r => r.delta), offWet = wet.closing - wet.opening - wet.in + wet.out;
             if (Math.abs(offPlants) > 1e-9 || Math.abs(offWet) > 0.05) checks.push({ sev: 'crit', text: `The changes don't add up to the month-end numbers (plants ${ctlsSigned(offPlants)}, wet ${rN(offWet, 1)} g). Please report this.` });
             const filed = ctlsFiled(), pf = filed[B.prevYm], tf = filed[ym];
@@ -6526,6 +6687,7 @@ ${ctlsBody(C, true)}
             const s = JSON.parse(JSON.stringify(c));
             delete s.closed;
             delete s.plantLows;   // only for working out live supplies; a summary keeps its frozen costs
+            if (s.labour && !Array.isArray(s.labour.choreEntries)) s.labour.choreEntries = [];   // the room-chore entries it carries: none (review C6)
             s.savedAt = new Date().toISOString();
             return s;
         }
@@ -6580,12 +6742,12 @@ ${ctlsBody(C, true)}
             const status = c => {
                 const s = saved[c.lotId];
                 if (!s) return doneBy(c) && doneBy(c) < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
-                const cost = wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : '';
+                const cost = !wagesLoaded() || !DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? '' : rptFrozenLabour(c.lotId) ? ' · cost saved' : ' · cost saved with an older summary — Update to save it again';
                 return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(rSavedDay(s.savedAt))}${cost}</span>` : `<span class="rpt-warn">Saved ${rEsc(rSavedDay(s.savedAt))}${cost} — out of date</span>`;
             };
             const fmtW = g => g != null ? rKg(g) : '—';
             const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${c.mother ? `🌿 mothers · retire ${rEsc(c.dates.retire || '—')}` : rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
-                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${wagesLoaded() && DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? ' · cost saved' : ''}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
+                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${!wagesLoaded() || !DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? '' : rptFrozenLabour(c.lotId) ? ' · cost saved' : ' · cost saved with an older summary, so labour uses today’s wages'}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
             // Metric hook-up: which questions feed each metric, and how many answers they hold
             const tagged = {};
             for (const [wid, w] of Object.entries(DB.data._PaperWizard?.wizards || {})) for (const q of w?.questions || []) if (q?.metric && REPORT_METRICS[q.metric]) (tagged[q.metric] || (tagged[q.metric] = [])).push({ sheet: DB.data._PaperWizard?.sheets?.[w.sheetId]?.name || w.sheetId, label: q.label, unit: q.metricUnit, sheetId: w.sheetId, qid: q.id, wid });
@@ -6732,7 +6894,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             $('rptPeriod').value = RPT.period;
             $('rptPer').value = RPT.per;
         }
-        function renderReports() {
+        // live: redrawn for a live update, which a tool never answers (no notifySitkaTools), so nothing is frozen then
+        function renderReports({ live = false } = {}) {
             const body = $('rptBody');
             if (!body || !DB.data || DeviceView.building || !$('paneReports').classList.contains('active')) return;
             rptFillFilters();
@@ -6740,8 +6903,9 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             $('paneReports').classList.toggle('rpt-ctls-page', RPT.page === 'ctls');   // the CTLS month is for the whole facility: no filters
             try {
                 const M = rptModel();
-                // 🔒 Finished months' overhead is frozen the first time the Reports open after the month ends
-                const froze = rptFreezeOverhead(M);
+                // 🔒 Finished months' overhead is frozen the first time the Reports open after the month ends — on
+                // the office's own redraw, never inside a live update (review C13)
+                const froze = live ? [] : rptFreezeOverhead(M);
                 if (froze.length) {
                     notifySitkaTools();
                     showToast(`🔒 Overhead frozen for ${froze.map(ym => ctlsMonthName(ym)).join(', ')} (Setup & data) — save to keep it`);
@@ -7015,6 +7179,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 }
                 if (en.editedAt) out.push(['warn', `✏️ ${en.signedHours !== undefined ? `signed for ${logFmt(en.signedHours)}, ` : ''}changed in the Tasks tab ${logStamp(en.editedAt)}${en.editedSignoff?.name ? ` · approved by ${en.editedSignoff.name}` : ''}`]);
                 if (en.temp != null) out.push(['', 'not on the roster']);
+                else if (en.employee && !getEmployees()[en.employee]) out.push(formerNameOf(en.employee) ? ['', `renamed — now ${formerNameOf(en.employee)}`] : ['warn', 'no longer on the roster (no wage)']);
                 if (r.split && !r.removed) out.push(['', r.split]);
                 if (!r.removed) {
                     const pd = personDay.get(`${logName(en)}|${r.day}`) || 0;
@@ -7044,7 +7209,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             for (const r of all) names.set(logName(r.en), names.get(logName(r.en)) || r.en.temp != null);
             const sel = $('logPerson');
             sel.innerHTML = '<option value="">Everyone</option>' + [...names.keys()].sort((a, b) => a.localeCompare(b))
-                .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}${names.get(n) && !getEmployees()[n] ? ' (not on roster)' : ''}</option>`).join('');
+                .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}${names.get(n) && !getEmployees()[n] ? (formerNameOf(n) ? ` (now ${escapeHtml(formerNameOf(n))})` : ' (not on roster)') : ''}</option>`).join('');
             if (!names.has(LOG.person)) LOG.person = '';
             sel.value = LOG.person;
             const bsel = $('logBuilding');

@@ -242,6 +242,12 @@ export async function run(b, BASE) {
     await b.waitFor(ew, `return !DB.lots.K1;`);
     const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), per: rptCloneModel(M).priceOf('M100').perClone };`);
     check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 147.67) && near(after.parts.power, 174) && !near(after.per.labour, 40 / 150), JSON.stringify(after));
+    // The lots still open carry what's left of the mother's cost, so the charges add up to it (review C8): K2's 50 clones
+    const left = await b.run(ew, `const M = rptModel(), pr = rptCloneModel(M).priceOf('M100');
+        const k2 = rptCloneCharge({ lotId: 'K2', parentLotId: 'M100', ctls: { type: 'sub-lot', start: 50 } }, M);
+        return { total: pr.total, k2: k2.parts, k1: { labour: 26.67, power: 174 } };`);
+    check('a lot still open is charged the mother\'s cost less what closed-out K1 carries (labour, power)',
+        near(left.k2.labour, left.total.labour - 26.67, 1e-6) && near(left.k2.power, left.total.power - 174, 1e-6), JSON.stringify(left));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, m3);
     return results;

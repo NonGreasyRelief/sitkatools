@@ -189,7 +189,7 @@ Each floor manager has their own PIN, set by the office in the Labour & Cost Wiz
   - **✏️ Edit tasks** asks for the PIN. Then the bar shows **+ Add Task**, **✅ Done editing** and "✏️ Editing as {name}", the rows show ▲ ▼, and the detail view shows Edit Task, Delete Task and step editing.
   - It ends with ✅ Done editing, or after 10 minutes without an edit (checked every 15 s; never while the task editor is open or a step is being typed). It lasts for this window only and is never stored.
 - **Deletions ask every time:** removing an hours entry, and deleting a whole task even in edit mode. Each goes in `adjustments` with `approvedBy` (see "Database Key"). Deleting a step in edit mode needs no extra PIN.
-- **Applies on every device**, the office included. Ticks, ⏱ Log, timers and ✅ Mark done need no PIN.
+- **Applies on every device**, the office included. Ticks, ⏱ Log and timers need no PIN; ✅ Mark done takes the floor manager's PIN with their initials (below).
 - **Limits:** a PIN slows people down but can't stop someone with the files or the browser's developer tools; the drawn initials and the records are the real control. A PIN set or changed at the office reaches a tablet when it reopens the files.
 
 ## ⏰ Still open and ✅ Mark done
@@ -206,7 +206,7 @@ Each floor manager has their own PIN, set by the office in the Labour & Cost Wiz
 ### ✅ Mark done
 
 - **The button** (`makeDoneButton`): on every crop and equipment row whose building is known (Still open, and Scheduled today in both views). Reads **✍️ Mark done**, or **✅ Done** once completed (tooltip names who signed). Disabled for future dates.
-- **The view:** the task, its building and due dates; **Floor manager** — roster employees with `floorManager` ticked in EmployeeWizard, or everyone (with a note) when none is; the floor manager's **initials pad**. Its **✅ Mark done** needs a name and at least one stroke, sets `completed: true` and `completedBy`, then `notifySitkaTools()`.
+- **The view:** the task, its building and due dates; **Floor manager** — roster employees with `floorManager` ticked in EmployeeWizard **and a PIN** (`FloorPin.managers()`; with none, a note says the office sets them and the button is off); the floor manager's **initials pad**; their **PIN**. Its **✅ Mark done** needs a name, at least one stroke and that floor manager's PIN (user decision 2026-10-25, review Q5: `FloorPin.check`, with FloorPin's one-minute wait after 5 wrong PINs; one check at a time), then sets `completed: true` and `completedBy` on the task as it is after the check, and `notifySitkaTools()`.
 - **`completedBy`** = `{ name, initials: { name, strokes }, at, by, day }` — the floor manager, their initials (PaperWizard stroke format), ISO time, device, and the day the view was on.
   - A floor field: a building device saves it in its own file (root `CLAUDE.md` → "Split Database"). CropLabourWizard and EquipmentWizard carry it over on regeneration. SitkaTools' event panel shows "Completed — signed off by …".
   - Unticking Completed in SitkaTools or reopening in EmployeeWizard's Tasks tab deletes it. Ticking Completed there asks for no signature; such tasks show as done but not signed.
