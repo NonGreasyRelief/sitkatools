@@ -19,7 +19,8 @@ export async function run(b, BASE) {
     db.calendarEvents.find(e => e.id === 'ev_cropb1').labour_map = { [T]: [{ id: 'le_hub0000001', employee: 'Casey', hours: 2 }] };
     db.calendarEvents.find(e => e.id === 'ev_cropb1').completed = true;
     db.calendarEvents.find(e => e.id === 'ev_cropb1').completedBy = { name: 'Casey', at: new Date().toISOString(), by: 'office', day: T };
-    db.calendarEvents.push({ id: 'ev_multi', date: today(2), endDate: today(5), title: '✂️ Trim', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'trim' });
+    // A leaf pick, not a schedule task: those move only in CropLabourWizard (schedule-lock)
+    db.calendarEvents.push({ id: 'ev_multi', date: today(2), endDate: today(5), title: '🍃 Early Flower Leaf Pick', sourceTool: 'CropLabourWizard', lotId: 'L200', taskType: 'leafpick_early' });
     db.lots.L300 = { name: 'L300', strain: 'Fresh', stage: 'veg', createdDate: T, destRoom: 'Grow 1', currentRoom: 'Clone 1', plantCount: 0 };
     db.calendarEvents.push({ id: 'ev_l300', date: today(3), title: 'Plant', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'planting' });
     const main = await fresh(b);
@@ -93,7 +94,7 @@ export async function run(b, BASE) {
     check('two time-off events on a day are no cluster', cl === false);
 
     // ---- E12: our own ICS back in adds nothing ----
-    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:sitka-ev_multi@sitkatools.local', `DTSTART;VALUE=DATE:${today(1).replace(/-/g, '')}`, 'SUMMARY:✂️ Trim (moved on another calendar)', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:sitka-ev_multi@sitkatools.local', `DTSTART;VALUE=DATE:${today(1).replace(/-/g, '')}`, 'SUMMARY:🍃 Early Flower Leaf Pick (moved on another calendar)', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     const before = await run(`return DB.data.calendarEvents.length;`);
     await run(`CalendarIO.importICS({ target: { files: [new File([${JSON.stringify(ics)}], 'cal.ics')], value: '' } }); await new Promise(r => setTimeout(r, 300));`);
     check('re-importing our own exported event (moved since) adds nothing', (await run(`return DB.data.calendarEvents.length;`)) === before);

@@ -1792,6 +1792,15 @@
         }
         .cut-mismatch-banner .cut-mismatch-detail { color: var(--text-primary); font-weight: 400; margin-top: 4px; }
 
+        /* Under a schedule task's read-only dates in the event panel */
+        .schedule-lock-note {
+            grid-column: 1 / -1;
+            color: var(--warning);
+            font-weight: 700;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
         .holiday-banner {
             background: rgba(243, 156, 18, 0.15);
             border: 1px solid var(--warning);
@@ -2044,6 +2053,10 @@
 
         .sync-toast.show {
             animation: slideInToast 0.3s ease-out;
+        }
+
+        .sync-toast.warn {
+            border-color: var(--warning);
         }
 
         .sync-toast.hidden {
@@ -6739,15 +6752,20 @@
         const syncToastText = $('syncToastText');
         let syncToastTimer;
 
-        function showSyncToast(message) {
+        const syncToastIcon = syncToast.querySelector('.sync-toast-icon');
+        function showSyncToast(message, { warn = false, ms = 3000 } = {}) {
             syncToastText.textContent = message;
+            syncToastIcon.textContent = warn ? '⚠️' : '🔄';
+            syncToast.classList.toggle('warn', warn);
             syncToast.classList.remove('hidden', 'show');
             // Force reflow so the animation restarts on next frame
             void syncToast.offsetHeight;
             syncToast.classList.add('show');
             clearTimeout(syncToastTimer);
-            syncToastTimer = setTimeout(() => syncToast.classList.add('hidden'), 3000);
+            syncToastTimer = setTimeout(() => syncToast.classList.add('hidden'), ms);
         }
+        // Amber, and up a little longer: something was refused
+        const showWarningToast = message => showSyncToast(message, { warn: true, ms: 5000 });
 
         // Open subtool as a centered popup window and send DB via postMessage
         function openModuleInTab(url) {
@@ -7501,6 +7519,18 @@
                 updateCalendarStatusBar();
             }
             return result;
+        }
+
+        // ---- Schedule tasks move only in CropLabourWizard (user decision 2026-10-26) ----
+        // The tasks a crop's schedule is built from: the anchors (CropLabourWizard reads them back from where their events
+        // sit), the transplant, both clone cuts (the next lot's Day 0) and the room-ready cleans (when the next lot can move
+        // in). On real and projected lots, dragging, ↻ Reschedule and the event panel's dates refuse them. A 📋 Duplicate copy
+        // (copyOf) isn't part of the schedule and moves freely.
+        const SCHEDULE_TASK_TYPES = ['clone_cut_prep', 'planting', 'transplant', 'flip', 'harvest', 'trim', 'retire', 'clone_cut', 'room_clean', 'tank_irrigation_clean'];
+        const SCHEDULE_TASK_TEXT = 'Tasks that change the schedule of crops must be moved using crop labour wizard';
+        function isScheduleTask(ev) {
+            return !!ev && (ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection')
+                && !('copyOf' in ev) && SCHEDULE_TASK_TYPES.includes(ev.taskType);
         }
 
         // ---- Clone cut vs projections (user request 2026-10-24) ----
@@ -9918,6 +9948,8 @@
                         // Drag events — carry the event's stable id, not its array index: an open tool can
                         // replace DB.data mid-drag, and an index would then point at a different event
                         eventEl.addEventListener('dragstart', (e) => {
+                            // A schedule task never leaves its day: the drag is cancelled as it starts
+                            if (isScheduleTask(event)) { e.preventDefault(); showWarningToast(SCHEDULE_TASK_TEXT); return; }
                             this.draggedEvent = event;
                             eventEl.classList.add('dragging');
                             e.dataTransfer.effectAllowed = 'move';
@@ -9982,6 +10014,7 @@
                 // Found by id in the current DB — gone (e.g. deleted by a tool mid-drag) → nothing to move
                 const event = this.eventById(eventId);
                 if (!event) return;
+                if (isScheduleTask(event)) { showWarningToast(SCHEDULE_TASK_TEXT); return; }
                 const oldDate = event.date;
                 // Dragged by one of its later days: the whole task moves by the distance dragged, not to the drop day (review E7)
                 if (fromDate && fromDate !== event.date && fromDate > event.date && fromDate <= (event.endDate || event.date)) {
@@ -10078,13 +10111,17 @@
                 // everything else about an event is office work it couldn't save.
                 const readOnly = !!DeviceView.building;
                 // The title and lot are the tool's (moving an event to another lot would move its hours with it; review E6)
-                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                // A schedule task's dates are CropLabourWizard's: shown, not edited (user decision 2026-10-26)
+                const datesLocked = !readOnly && isScheduleTask(event);
+                const lockedDates = datesLocked ? ['date', ...(event.endDate ? ['endDate'] : [])] : [];
+                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours']
+                    .filter(f => !datesLocked || (f !== 'date' && f !== 'endDate'));
                 const HIDDEN_FIELDS = ['type', 'id', 'completedBy'];   // the sign-off shows in the Completed row
                 const READONLY_FIELDS = [];
 
                 // Build field list from the event, ensuring all modifiable fields are always present
                 // so users can add missing fields (e.g., add endDate to convert a single-day task to multi-day)
-                const fields = [...new Set([...MODIFIABLE_FIELDS, ...Object.keys(event)])];
+                const fields = [...new Set([...lockedDates, ...MODIFIABLE_FIELDS, ...Object.keys(event)])];
 
                 // Completed toggle row at top
                 const isCompleted = event.completed === true;
@@ -10125,6 +10162,7 @@
                     }
 
                     html += `</div>`;
+                    if (key === lockedDates[lockedDates.length - 1]) html += `<div class="schedule-lock-note">⚠️ ${escapeHtml(SCHEDULE_TASK_TEXT)}</div>`;
                 });
 
                 html += '</div>';
@@ -10425,6 +10463,7 @@
                 // Remove any existing picker
                 const existing = document.querySelector('.terminal-reschedule-picker');
                 if (existing) existing.remove();
+                if (isScheduleTask(event)) { showWarningToast(SCHEDULE_TASK_TEXT); return; }
 
                 const rect = button.getBoundingClientRect();
                 const picker = document.createElement('div');
