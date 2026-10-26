@@ -4225,6 +4225,7 @@
             mainFacility: {},     // Main's _PaperWizard.facilityEntries as opened / last saved — what a building's queue is released against
             facilityPickups: [],  // office: [{ id, n }] facility pages with additions taken in from building queues on open (not in Main yet)
             madeHere: new Set(),  // office: building files this session's split made (it may save them until the files are reopened)
+            texts: {},            // file name → its text as opened / last saved here (memory only): reopened as another device
             pending: null,        // manual (link) save in progress
 
             roleLabel(role = this.role, db = DB.data) {
@@ -4254,6 +4255,7 @@
                 this.diskTransfers = {};
                 this.diskOverlays = {};
                 this.madeHere = new Set();   // building files this session's split made: the office may save them again
+                this.texts = {};
                 this.pending = null;
             },
 
@@ -4271,6 +4273,47 @@
                 }
                 this.role = await askDeviceRole(buildings, this.role);
                 return this.role;
+            },
+
+            // 🏷️ Set this device… picked another device (user request 2026-10-26): reopen the files as it, as its link would,
+            // so lots on their way here are picked up and it saves its own file. From the folder when one is open, else
+            // from the files as this session opened or last saved them. Returns false when the switch was called off.
+            async switchDevice(before) {
+                const role = this.role;
+                if (hasUnsavedChanges && !confirm(`${this.roleLabel(before)} has changes that aren't saved. Setting the device reopens the files as ` +
+                    `${this.roleLabel(role)}, and those changes would be lost.\n\nSwitch anyway? (Cancel, then 💾 Save DB, to keep them.)`)) {
+                    this.role = before;
+                    return false;
+                }
+                // open() takes the device from the page link first; the address then says the device it is now
+                this.linkRole = role;
+                try { history.replaceState(history.state, '', this.linkFor(role)); } catch (_) { /* file:// may refuse: the link card shows it */ }
+                let set = null;
+                if (DbFolder.active && DbFolder.handle) {
+                    try { set = await DbFolder.readSplitFolder(DbFolder.handle); } catch (_) { set = null; }
+                }
+                if (!set) set = this.savedSet();
+                if (!set) {   // a session restored after a crash keeps no copy of the files
+                    alert('Device changed for this session. Reopen the database files so this device saves the right ones.');
+                    return true;
+                }
+                if (await this.open(set)) {
+                    showSyncToast(`Reopened the files as ${this.roleLabel()}`);
+                    WorkCopy.schedule();
+                }
+                return true;
+            },
+
+            // The files as this session opened or last saved them (memory only)
+            savedSet() {
+                if (!this.texts[SPLIT_MAIN]) return null;
+                const file = name => ({ name, text: this.texts[name] });
+                return {
+                    main: file(SPLIT_MAIN),
+                    wages: this.texts[SPLIT_WAGES] ? file(SPLIT_WAGES) : null,
+                    buildings: Object.keys(this.texts).filter(n => SPLIT_BUILDING_RE.test(n)).map(file),
+                    folder: null
+                };
             },
 
             matchRole(value, buildings) {
@@ -5152,6 +5195,7 @@
                 this.baseParts[name] = this.partJson(part);
                 this.metas[name] = meta;
                 this.hashes[name] = contentHash(text);
+                this.texts[name] = text;
                 this.loaded.add(name);
                 if (name === SPLIT_MAIN) {
                     DB.data._meta = meta;
@@ -5218,6 +5262,7 @@
                 this.metas = {};
                 this.hashes = {};
                 this.madeHere = new Set();   // reopened: building files are saved by their own devices again
+                this.texts = {};
                 this.pending = null;
                 DB.data = db;
                 DB.ensureStructure();
@@ -5229,6 +5274,7 @@
                     this.loaded.add(name);
                     this.metas[name] = data?._meta || {};
                     this.hashes[name] = contentHash(text);
+                    this.texts[name] = text;
                 };
                 record(SPLIT_MAIN, files.main.text, main);
                 if (wages) record(SPLIT_WAGES, files.wages.text, wages);
@@ -5332,6 +5378,7 @@
                 this.loaded.add(SPLIT_WAGES);
                 this.metas[SPLIT_WAGES] = file._meta || {};
                 this.hashes[SPLIT_WAGES] = contentHash(text);
+                this.texts[SPLIT_WAGES] = text;
                 this.haveWages = true;
                 DB.fileName = this.filesLabel([...this.loaded].filter(n => SPLIT_BUILDING_RE.test(n)).length);
                 refreshAllViews();
@@ -6046,12 +6093,13 @@
         $('changeRoleBtn').addEventListener('click', async () => {
             const before = DbSplit.role;
             await DbSplit.ensureRole(DB.data?.buildings || {}, true);
+            // Another device with split files open: the files are reopened as it
+            if (DbSplit.active && before && before !== DbSplit.role && !await DbSplit.switchDevice(before)) return;
             if (DB.data) refreshAllViews(); // what this device sees follows its role
             WorkCopy.schedule();            // open tool tabs pick up the new view
             updateIOStatusBar();
             updateSplitCard();
             showDeviceLink(DbSplit.role);
-            if (DbSplit.active && before && before !== DbSplit.role) alert('Device changed for this session. Reopen the database files so this device saves the right ones.');
         });
         $('splitDbBtn').addEventListener('click', () => DbSplit.splitLegacy());
 

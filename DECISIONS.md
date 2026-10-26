@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-26 · 🏷️ Set this device… reopens the files as the device picked (from the folder, or the files as this session opened or saved them), so a lot moved there is picked up and it saves its own file; unsaved changes are asked about first; wages stay with the office
 - 2026-10-26 · 💾 Save DB with split files offers every file the device may save, changed or not ("(no changes)"), so a Save As that went wrong can be done again; after the first split the office keeps offering the new building files until the files are reopened
 - 2026-10-26 · a tool opened twice (two windows or tabs of the same tool) warns in the second one to close it and use the one already open, and SitkaTools' tool link switches to an open window instead of opening another; a lot's daily logs run one at a time (an older log can't move the lot); drawn initials are stored with fewer, rounded points; floor manager PINs stay a speed bump
 - 2026-10-25 · 📋 Duplicate makes a clean crop-task copy (same task type, no hours, done mark or sign-off, marked copyOf) that CropLabourWizard keeps on Generate; an event with hours or a sign-off can't be deleted by hand (its lot's close-out archives it)
