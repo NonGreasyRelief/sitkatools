@@ -122,7 +122,7 @@ export async function run(b, BASE) {
     const s9 = withRent();
     s9.calendarEvents.find(e => e.taskType === 'harvest').labour_map[D(40)].push({ employee: 'Drew', hours: 2 }, { temp: 'Tess', hours: 1.5 });
     s9._EmployeeWizard.employees.Drew = { workDays: [1, 2, 3, 4, 5], timeOff: [] };   // no wage
-    r = await measure(s9, `return { miss: rptCosts(M), attn: rptAttention(M).map(x => x.text).join(' | '), pg: rptAgg(M, rptHarvested(M, M.per.from, M.per.to), M.per.from, M.per.to).costPG.labour };`);
+    r = await measure(s9, `return { miss: rptCosts(M), attn: rptAttention(M).map(x => x.text).join(' | '), pg: rptCostAgg(M, M.per.from, M.per.to).costPG.labour };`);
     check('a crop with hours that have no wage is named, with who and how much', /Lot L100 is left out of labour \$: Drew 2 h \(no wage\), temps 1\.5 h \(no wage typed on their hours\)/.test(r.miss), (r.miss.match(/Lot L100 is left out[^<]*/) || [''])[0]);
     check('…in Needs attention too, and it has no labour figure', /1 harvested crop is left out of labour \$/.test(r.attn) && r.pg == null, r.attn);
 

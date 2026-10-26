@@ -67,7 +67,7 @@ export async function run(b, BASE) {
     await loadSingle(b, main, costDb());
     const ew = await openTool(b, main, 'EmployeeWizard');
     const costs = () => b.run(ew, `const M = rptModel(), c = M.crops.find(c => c.lotId === 'L100');
-        return { k: rptCropInputCost(c, M), parts: rptCropCostParts(c, M), pg: rptCostPerGram(M, [c], rptAgg(M, [c], '2000-01-01', '2100-01-01').loaded),
+        return { k: rptCropInputCost(c, M), parts: rptCropCostParts(c, M), pg: rptCostAgg(M, '2000-01-01', '2100-01-01').costPG,
             flower: c.weights.flower, una: (M.power || rptPowerModel(M.crops)).unallocated,
             propIdle: Object.values((M.property || rptPropertyModel(M.crops)).unallocated).reduce((t, v) => t + v, 0) };`);
 
@@ -87,9 +87,12 @@ export async function run(b, BASE) {
     check('supplies: 100 peat pucks ($25) + 6 coco blocks ($18) = $43', near(r.k.supplies.cost, 43) && r.k.supplies.items.find(x => x.name === 'Peat puck')?.qty === 100, JSON.stringify(r.k.supplies));
     check('labour: 30 h at $20/$21/$22 = $630', near(r.parts.labour, 630), r.parts.labour);
     check('flower: 10,000 g', r.flower === 10000);
-    check('cost per gram by part (labour .063, power .07596, water .00025, fertilizer .0013, supplies .0043)',
-        near(r.pg.labour, 0.063) && near(r.pg.power, 0.07596) && near(r.pg.water, 0.00025) && near(r.pg.fert, 0.0013) && near(r.pg.supplies, 0.0043), JSON.stringify(r.pg));
-    check('all in: $0.14481 per gram', near(r.pg.allIn, 0.14481), r.pg.allIn);
+    // Idle days go into the grams (user decision 2026-10-26): after the crop leaves (D41) until today (D120) Building 1 holds
+    // no crop, and its dehumidifier (24 kWh/d) and hall AC (12 kWh/d) run on: 80 days × 36 kWh × $0.10 = $288
+    check('idle building days\' power: 80 days × 36 kWh × $0.10 = $288, spread over the grams shipped', near(r.una.kWh, 2880) && near(r.una.cost, 288), JSON.stringify(r.una));
+    check('cost per gram by part (labour .063, power (759.60 + 288) / 10,000 = .10476, water .00025, fertilizer .0013, supplies .0043)',
+        near(r.pg.labour, 0.063) && near(r.pg.power, 0.10476) && near(r.pg.water, 0.00025) && near(r.pg.fert, 0.0013) && near(r.pg.supplies, 0.0043), JSON.stringify(r.pg));
+    check('all in: $0.17361 per gram', near(r.pg.allIn, 0.17361), r.pg.allIn);
 
     // ---- Power bills: $4,100 over the crop's 41 days in the building, $500 after it left ----
     await b.run(main, `const c = DB.data._EmployeeWizard.costs; c.electricity = 'bills';
@@ -98,15 +101,16 @@ export async function run(b, BASE) {
     await b.sleep(600);
     r = await costs();
     check('bills: the crop carries the $4,100 bill', near(r.k.power.cost, 4100), r.k.power.cost);
-    check('bills: the $500 after it left is not charged to any crop', near(r.una.cost, 500), r.una.cost);
+    check('bills: the $500 after it left is an idle day\'s: no crop carries it…', near(r.una.cost, 500), r.una.cost);
+    check('…so it\'s spread over the grams shipped: electricity ($4,100 + $500) / 10,000 = $0.46 a gram', near(r.pg.power, 0.46), r.pg.power);
     check('bills: kWh still estimated (7,596)', near(r.k.power.kWh, 7596), r.k.power.kWh);
 
     // ---- The pages draw ----
     await b.run(ew, `document.getElementById('tabReports').click();`, { user: true });
     await b.run(ew, `const p = document.getElementById('rptPeriod'); p.value = '12m'; p.dispatchEvent(new Event('change'));`);
     const tile = await b.run(ew, `return [...document.querySelectorAll('.rpt-kpi')].find(k => k.textContent.includes('Cost / g'))?.innerText.replace(/\\s+/g, ' ') || null;`);
-    // bills mode: labour .063 + electricity .41 + water .00025 + fertilizer .0013 + supplies .0043 = $0.4786
-    check('overview: the all-in Cost / g tile ($0.48 with the bills)', /cost \/ g \(all in\)/i.test(tile || '') && tile.includes('$0.48') && tile.includes('electricity $0.41') && tile.includes('fertilizer $0.001'), tile);
+    // bills mode: labour .063 + electricity .46 + water .00025 + fertilizer .0013 + supplies .0043 = $0.52885
+    check('overview: the all-in Cost / g tile ($0.53 with the bills)', /cost \/ g \(all in\)/i.test(tile || '') && tile.includes('$0.53') && tile.includes('electricity $0.46') && tile.includes('fertilizer $0.001'), tile);
     await b.run(ew, `document.querySelector('#rptPages button[data-page="costs"]').click();`, { user: true });
     const page = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
     check('💲 Costs page draws its cards, no NaN/undefined', page.includes('What does a gram of flower cost?') && page.includes('What did the crops use?') && !/NaN|undefined|Infinity/.test(page));
@@ -118,16 +122,18 @@ export async function run(b, BASE) {
     // The crop is in Building 1 from Day 0 (clone room) to the end of harvest (D40): 41 days, each $3,000 ÷ its month's days
     const propFor = monthly => { let t = 0; for (let n = 0; n <= 40; n++) { const [y, m] = today(-120 + n).split('-').map(Number); t += monthly / new Date(y, m, 0).getDate(); } return t; };
     const expProp = propFor(3000), allInBefore = r.pg.allIn;
+    // …and D41 to today (D120) the building holds no crop: idle days, spread over the grams shipped
+    let idleProp = 0; for (let n = 41; n <= 120; n++) { const [y, m] = today(-120 + n).split('-').map(Number); idleProp += 3000 / new Date(y, m, 0).getDate(); }
     await b.run(main, `DB.data.buildings.B1.monthlyPropertyCost = 3000; markUnsaved(); await WorkCopy.flush();`);
     await b.sleep(600);
     r = await costs();
     check(`property: 41 days of $3,000 a month ($${expProp.toFixed(2)})`, near(r.k.property.cost, expProp) && r.k.property.days === 41, JSON.stringify(r.k.property));
-    check('property per gram, and in the all-in', near(r.pg.property, expProp / 10000) && near(r.pg.allIn, allInBefore + expProp / 10000), JSON.stringify({ p: r.pg.property, all: r.pg.allIn }));
-    check('property on days with no crop in the building is not charged to any crop', r.propIdle > 0, r.propIdle);
+    check('property per gram (its 41 days + the 80 idle days), and in the all-in', near(r.pg.property, (expProp + idleProp) / 10000) && near(r.pg.allIn, allInBefore + (expProp + idleProp) / 10000), JSON.stringify({ p: r.pg.property, all: r.pg.allIn }));
+    check('property on days with no crop in the building: no crop carries it, the grams do', near(r.propIdle, idleProp), r.propIdle);
     await b.run(ew, `document.querySelector('#rptPages button[data-page="costs"]').click();`, { user: true });
     const page2 = await b.run(ew, `return document.getElementById('rptBody').innerText;`);
     check('💲 Costs page lists property, no NaN/undefined', page2.includes('Property (rent & fees)') && page2.includes('41 crop-days') && !page2.includes('Building 1 has no monthly property cost') && !/NaN|undefined|Infinity/.test(page2));
-    check('…and notes the property cost no crop carries', page2.includes('of property cost fell on days with no crop in the building'));
+    check('…and notes the property cost of idle days, spread over the grams', page2.includes('of property cost fell on days with no crop in the building; it’s spread over the grams shipped in the period'));
 
     // ---- Closed out: the summary keeps its costs even when the rates change ----
     await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'L100')]);`);
@@ -146,7 +152,7 @@ export async function run(b, BASE) {
     r = await costs();
     check('an older summary (no frozen property) gets its property from the buildings', near(r.k.property.cost, propFor(5000)) && r.k.property.days === 41, JSON.stringify(r.k.property));
 
-    // ---- Two crops in Building 1: shared by the rooms' lights (the default), or by plants ----
+    // ---- Two crops in Building 1: shared by floor area (the default; no room has one here, so by lights), or by plants ----
     // L300 is in Veg 1 (10 lights) on D20–D40 while L100 is in Grow 1 (20 lights), so L100 carries 2/3 of those days
     await b.run(main, `DB.data.lots.L300 = { name: 'L300', strain: 'Test Kush', createdDate: '${today(-100)}', vegRoom: 'Veg 1', destRoom: 'Grow 1', currentRoom: 'Veg 1', plantCount: 50 };
         DB.data.calendarEvents.push({ id: 'ev_l3p', date: '${today(-100)}', title: 'T planting', sourceTool: 'CropLabourWizard', lotId: 'L300', taskType: 'planting' },

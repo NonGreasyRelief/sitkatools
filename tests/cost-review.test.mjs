@@ -30,7 +30,7 @@ export async function run(b, BASE) {
     await loadSingle(b, main, db);
     const ew = await openTool(b, main, 'EmployeeWizard');
     const agg = () => b.run(ew, `const M = rptModel(), cs = M.crops.filter(c => ['L100', 'L200'].includes(c.lotId));
-        const a = rptAgg(M, cs, '2000-01-01', '2100-01-01');
+        const a = rptCostAgg(M, '2000-01-01', '2100-01-01');   // costs count by ship day (cost audit 2026-10-26)
         return { direct: a.direct, loaded: a.loaded, other: rptOtherCost(M, '2000-01-01', '2100-01-01'), n: cs.length };`);
 
     // ---- C1 ----
@@ -38,7 +38,7 @@ export async function run(b, BASE) {
     check('both crops are in the report', r.n === 2, r.n);
     check('direct labour: L100 only (L200 has an hour with no wage): $630 ÷ 10,000 g', near(r.direct, 0.063), r.direct);
     check('shared labour: $200, and the temp on L200 isn\'t shared labour', near(r.other?.cost, 200) && r.other.missing === 0, JSON.stringify(r.other));
-    check('fully loaded: the $200 over all 20,000 g harvested ($0.073), not over L100\'s 10,000 g ($0.083)', near(r.loaded, 0.073), r.loaded);
+    check('fully loaded: the $200 over all 20,000 g shipped ($0.073), not over L100\'s 10,000 g ($0.083)', near(r.loaded, 0.073), r.loaded);
 
     // A temp with no wage on the shared work (added before the Reports open: opening them freezes finished months)
     await b.run(main, `DB.data.calendarEvents.find(e => e.id === 'ev_eq1').labour_map['${D(35)}'].push({ id: 'le_eq00000002', temp: 'Sam', hours: 2 }); markUnsaved(); await WorkCopy.flush();`);
