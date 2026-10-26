@@ -1358,24 +1358,22 @@
 
         // ---- Facility & building paperwork (user decision 2026-10-25) ----
         // Paperwork that belongs to no lot. A cabinet id is a real lot id, or:
-        //   '@building:<BID>'  — that building's forms (e.g. its sanitation form), saved in its building file;
-        //   '@facility:<origin>' — the company-wide forms (destruction, inventory logs) one origin started, saved in
-        //                          Main.json. The origin is 'office' or the building whose device started the page, so two
-        //                          buildings starting the same day's page never collide (a building's device can't save
-        //                          Main: it queues its facility pages in its own file until the office takes them in).
-        // The header's '@facility' shows every origin's facility pages together.
-        const SCOPE_BUILDING = '@building:', SCOPE_FACILITY = '@facility:', FACILITY_CABINET = '@facility';
+        //   '@building:<BID>' — that building's forms (e.g. its sanitation form), saved in its building file;
+        //   '@facility'       — the company-wide forms (destruction, inventory logs): one record for the whole company,
+        //                       saved in Main.json. Every building adds to it at once: a building device can't save Main,
+        //                       so what it adds waits in its own file's queue, and the office merges every building's
+        //                       additions into Main (SitkaTools DbSplit). Buildings only ever add (new pages, new
+        //                       entries, answers still blank); what's on file is changed at the office (appendOnly).
+        const SCOPE_BUILDING = '@building:', FACILITY_CABINET = '@facility';
         const isScopedId = id => typeof id === 'string' && id.startsWith('@');
         function scopeOf(id) {
             if (!isScopedId(id)) return null;
             if (id === FACILITY_CABINET) return { kind: 'facility', id: null };
             if (id.startsWith(SCOPE_BUILDING)) return { kind: 'building', id: id.slice(SCOPE_BUILDING.length) };
-            if (id.startsWith(SCOPE_FACILITY)) return { kind: 'facility', id: id.slice(SCOPE_FACILITY.length) };
             return null;
         }
-        // Who starts new facility pages on this device
-        const deviceOrigin = () => DeviceView.building || 'office';
-        const STORE_KEYS = { building: 'buildingEntries', facility: 'facilityEntries' };
+        // A building device only adds to facility forms (with split files; a single-file DB has no building devices)
+        const appendOnlyHere = id => scopeOf(id)?.kind === 'facility' && !!DeviceView.building && DeviceView.split;
 
         // The { sheetId: entry } paperwork of one cabinet id (null when there is none yet). With `create` the path is made,
         // so only a save creates the new keys (an empty one would show as an office change a building can't save).
@@ -1383,8 +1381,12 @@
             const pw = DB.paperWizard;
             if (!pw || !id) return null;
             const sc = scopeOf(id);
-            if (isScopedId(id) && !sc?.id) return null;   // the combined facility cabinet holds no pages itself
-            const key = sc ? STORE_KEYS[sc.kind] : 'entries', k = sc ? sc.id : id;
+            if (isScopedId(id) && !sc) return null;
+            if (sc?.kind === 'facility') {
+                if (!pw.facilityEntries || typeof pw.facilityEntries !== 'object') { if (!create) return null; pw.facilityEntries = {}; }
+                return pw.facilityEntries;
+            }
+            const key = sc ? 'buildingEntries' : 'entries', k = sc ? sc.id : id;
             if (!pw[key] || typeof pw[key] !== 'object') { if (!create) return null; pw[key] = {}; }
             if (!pw[key][k] || typeof pw[key][k] !== 'object') { if (!create) return null; pw[key][k] = {}; }
             return pw[key][k];
@@ -1392,22 +1394,20 @@
         // A cancelled save leaves no empty facility / building store behind (lots keep today's behaviour)
         function pruneStore(id) {
             const sc = scopeOf(id), pw = DB.paperWizard;
-            if (!sc?.id || !pw) return;
-            const key = STORE_KEYS[sc.kind];
-            if (pw[key]?.[sc.id] && !Object.keys(pw[key][sc.id]).length) delete pw[key][sc.id];
-            if (pw[key] && !Object.keys(pw[key]).length) delete pw[key];
-        }
-        // Every [cabinet id, store] a cabinet shows: the combined facility cabinet shows every origin's
-        function cabinetStores(id) {
-            if (id === FACILITY_CABINET) {
-                return Object.keys(DB.paperWizard?.facilityEntries || {}).sort((a, b) => (a === 'office' ? -1 : b === 'office' ? 1 : a.localeCompare(b)))
-                    .map(o => [SCOPE_FACILITY + o, pageStore(SCOPE_FACILITY + o)]).filter(([, s]) => s);
+            if (!sc || !pw) return;
+            if (sc.kind === 'facility') {
+                if (pw.facilityEntries && !Object.keys(pw.facilityEntries).length) delete pw.facilityEntries;
+                return;
             }
+            if (pw.buildingEntries?.[sc.id] && !Object.keys(pw.buildingEntries[sc.id]).length) delete pw.buildingEntries[sc.id];
+            if (pw.buildingEntries && !Object.keys(pw.buildingEntries).length) delete pw.buildingEntries;
+        }
+        // Every [cabinet id, store] a cabinet shows
+        function cabinetStores(id) {
             const s = pageStore(id);
             return s ? [[id, s]] : [];
         }
         const buildingName = bid => DB.buildings?.[bid]?.name || bid;
-        const originName = origin => origin === 'office' ? 'the office' : buildingName(origin);
         // A sheet's scope, from Configure Sheets → Document
         function sheetScope(sheetId) {
             const d = DB.paperWizard?.sheets?.[sheetId]?.document;
@@ -1419,7 +1419,7 @@
             const sc = scopeOf(id);
             if (!sc) return id || '';
             if (sc.kind === 'building') return `🏢 ${buildingName(sc.id)} paperwork`;
-            return sc.id && sc.id !== 'office' ? `🏭 Facility paperwork (started at ${buildingName(sc.id)})` : '🏭 Facility paperwork';
+            return '🏭 Facility paperwork';
         }
 
         // Resolve the room a lot currently lives in — live currentRoom (by name) wins, else
@@ -3113,6 +3113,12 @@
         }
 
         // Is the runner question's answer on file in its page as saved?
+        // The answer on file for a question (this day's for a row-scoped one) is filled in
+        function answerOnFile(ctx, q) {
+            const saved = pageStore(ctx.lotId)?.[ctx.sheetId]?.instances?.[ctx.key];
+            const v = q.rowScoped ? saved?.days?.[ctx.day]?.[q.id] : saved?.header?.[q.id];
+            return q.type === 'initials' ? !!v?.strokes?.length : v != null && String(v).trim() !== '';
+        }
         function runnerScopeOnFile(ctx, q) {
             if (!ctx?.inst || ctx.mode === 'init' || !q) return false;
             if (!pageStore(ctx.lotId)?.[ctx.sheetId]?.instances?.[ctx.key]) return false;   // not saved yet
@@ -4164,17 +4170,13 @@
         // - In another building right now (listed because its flower room is here): its pages are saved there.
         function lotElsewhere(lotId) {
             if (!DeviceView.building) return null;
-            // Facility & building paperwork: a building device fills its own building's forms and the facility pages
-            // it started; the rest it can view and print
+            // Facility & building paperwork: a building device fills its own building's forms, and adds to the facility
+            // forms (appendOnlyHere); another building's forms it can view and print
             if (isScopedId(lotId)) {
                 const sc = scopeOf(lotId);
                 if (sc?.kind === 'building' && sc.id !== DeviceView.building) return {
                     banner: `🔒 Read only on this device — ${buildingName(sc.id)}'s paperwork is filled and saved there. You can view and print it here.`,
                     toast: `Read only here — ${buildingName(sc.id)}'s paperwork is filled there`
-                };
-                if (sc?.kind === 'facility' && sc.id && sc.id !== DeviceView.building) return {
-                    banner: `🔒 Read only on this device — started at ${originName(sc.id)}. You can view and print it here.`,
-                    toast: `Read only here — this page was started at ${originName(sc.id)}`
                 };
                 return null;
             }
@@ -4442,7 +4444,7 @@
             if (kind === 'building' && field === 'name') {
                 const sc = scopeOf(ctx.lotId);
                 if (sc?.kind === 'building') return buildingName(sc.id);
-                if (sc?.kind === 'facility') return sc.id === 'office' ? 'Office' : (sc.id ? buildingName(sc.id) : null);
+                if (sc?.kind === 'facility') return !ctx.inst?.by ? null : ctx.inst.by === 'office' ? 'Office' : buildingName(ctx.inst.by);
                 const b = roomBuildingFor(DB.lots[ctx.lotId]?.currentRoom);
                 return b ? buildingName(b) : null;
             }
@@ -4549,14 +4551,9 @@
             const wiz = wizardForSheet(sheetId);
             if (!sheet || !wiz) { showToast('No wizard configured for this sheet'); return; }
             if (isScopedId(lotId)) {
-                if (!scopeOf(lotId)?.id) return;
+                if (!scopeOf(lotId)) return;
                 const bad = (wiz.questions || []).filter(q => LOT_ONLY_TYPES.includes(q.type));
                 if (bad.length) { showToast(`This form asks ${bad.map(q => `"${q.label || q.id}"`).join(', ')} — plant count, phase and room belong to lot paperwork. Change it in Configure Sheets.`); return; }
-                // The office changing a page a building started: both sides changing it before the other's save
-                // reaches them means the later change wins (whole page)
-                const sc = scopeOf(lotId);
-                if (sc.kind === 'facility' && sc.id !== 'office' && !DeviceView.building && DeviceView.split && pageStore(lotId)?.[sheetId]?.instances?.[key] &&
-                    !confirm(`Started at ${buildingName(sc.id)}.\n\nChange it only while ${buildingName(sc.id)}'s tablet isn't using it: if both change this page before the office saves, the later change wins.\n\nOpen it?`)) return;
             }
             // A daily-weekly sheet whose questions are ALL constant fields has nothing to ask
             // per day — its values live in the Initialize quiz (lot-level), not in instances.
@@ -4582,6 +4579,8 @@
                          room: sheet.cadence === 'daily-weekly' ? (DB.lots[lotId]?.currentRoom || null) : null,
                          header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
+                // A facility page records where it was started (building.name prints it)
+                if (scopeOf(lotId)?.kind === 'facility') inst.by = DeviceView.building || 'office';
             }
 
             let day = null;
@@ -4597,7 +4596,7 @@
                     if (!day) day = instKey;
                 }
             }
-            runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst };
+            runnerCtx = { lotId, sheetId, key: instKey, day, idx: 0, draft: {}, inst, appendOnly: appendOnlyHere(lotId) };
             // Reverse-direction phase detection (Step 9): stage changed in SitkaTools since this
             // instance was created → confirm the move and roll over (no write-back — DB is current).
             if (await checkStageMismatch(lotId, sheetId, inst)) return;
@@ -4766,6 +4765,11 @@
             const unnamed = qs.find(q => q.type === 'initials' && initialsNeedName(form[q.id], editing ? editing[q.id] : null));
             if (unnamed) { showToast(`Type the initials for "${unnamed.label}" as well as drawing them`); return false; }
             const row = { id: editing ? ts.entries[ts.edit].id : newRowId() };
+            if (scopeOf(ctx.lotId)?.kind === 'facility') {
+                const was = editing ? ts.entries[ts.edit] : null;
+                row.at = was?.at || new Date().toISOString();
+                row.by = was?.by || DeviceView.building || 'office';
+            }
             for (const q of qs) {
                 row[q.id] = q.type === 'initials'
                     ? (has(q) ? { name: String(form[q.id].name || '').trim(), strokes: form[q.id].strokes.map(st => st.slice()) } : null)
@@ -4849,6 +4853,7 @@
                         ${row.void === 'pending'
                             ? `<span class="ent-tag">deleted on Save</span><button type="button" class="ent-btn ent-undo" data-i="${i}" title="Keep this entry">↩</button>`
                             : row.void ? '<span class="ent-tag">deleted</span>'
+                            : ctx.appendOnly && ctx.repFiled?.has(row.id) ? '<span class="ent-tag" title="On file — the office changes it">🔒 on file</span>'
                             : `<button type="button" class="ent-btn ent-edit" data-i="${i}" title="Change this entry">✎</button>
                         <button type="button" class="ent-btn ent-del" data-i="${i}" title="Delete this entry">🗑</button>`}
                     </div>`).join('')
@@ -4916,6 +4921,7 @@
             ov.querySelectorAll('.ent-edit').forEach(b => b.addEventListener('click', () => {
                 const i = Number(b.dataset.i);
                 if (!ts.entries[i] || ts.entries[i].void) return;
+                if (ctx.appendOnly && ctx.repFiled?.has(ts.entries[i].id)) return;
                 if (entryFormDirty(ts) && !confirm('Drop the entry you were typing and change this one instead?')) return;
                 ts.edit = i;
                 resetEntryForm(ctx, ts, qs, ts.entries[i]);
@@ -4925,6 +4931,7 @@
                 const i = Number(b.dataset.i);
                 const row = ts.entries[i];
                 if (!row || row.void) return;
+                if (ctx.appendOnly && ctx.repFiled?.has(row.id)) return;
                 if (ctx.repFiled?.has(row.id)) {
                     // On file: it stays on the page struck out, with initials and date, and stops counting
                     if (!confirm(`Entry ${i + 1} is on file. Deleting it keeps it on the page, struck out, with your initials and today's date, and Reports stop counting it.\n\nDelete entry ${i + 1}?`)) return;
@@ -5330,6 +5337,8 @@
             if (!sheet?.signature) { showToast('No signature box configured for this sheet'); return; }
             const inst = pageStore(lotId)?.[sheetId]?.instances?.[key] || null;
             if (!inst) { showToast('No entry yet — fill it first'); return; }
+            // A building adds a signature to a facility page that has none; re-signing is done at the office
+            if (inst.signature && appendOnlyHere(lotId)) { showToast('Already signed — the office changes a signature on file'); return; }
 
             sigModalCtx = {
                 lotId, sheetId, key, inst,
@@ -5570,9 +5579,15 @@
             // initials on file are shown, not redrawn.
             const filed = !isInit && q.type !== 'entries' && runnerScopeOnFile(ctx, q);
             const initLocked = filed && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0;
+            // A building adding to a facility form: an answer on file stays as it is (a blank one can be filled)
+            const appendLocked = !isInit && ctx.appendOnly && filed && q.type !== 'initials' && answerOnFile(ctx, q);
             let onFileHtml = '';
             if (!isInit && q.type === 'entries') {
-                if (ctx.repFiled?.size) onFileHtml = `<div class="wiz-onfile">✏️ Saved entries are on file. Changing or deleting one keeps the old values on the page, struck out, with your initials and today's date.</div>`;
+                if (ctx.repFiled?.size) onFileHtml = ctx.appendOnly
+                    ? `<div class="wiz-onfile">🔒 Saved entries are on file — add new ones here; the office changes or removes what's on file.</div>`
+                    : `<div class="wiz-onfile">✏️ Saved entries are on file. Changing or deleting one keeps the old values on the page, struck out, with your initials and today's date.</div>`;
+            } else if (appendLocked) {
+                onFileHtml = `<div class="wiz-onfile">🔒 On file — buildings add to facility forms; the office changes what's on file.</div>`;
             } else if (filed) {
                 onFileHtml = `<div class="wiz-onfile">✏️ ${q.rowScoped ? 'This day is' : 'This page is'} on file. A change keeps the old value on the page, struck out, with your initials and today's date.</div>`;
             }
@@ -5640,10 +5655,11 @@
                 } else if (q.type === 'plant-count' && String(ctx.draft[q.id] ?? '').trim() === '0') {
                     strikeHint = `<div class="wiz-hint">⚠️ Plant count <b>0</b> means all plants are gone — this log will be struck out when you save, after the rest of today's entry is filled in.</div>`;
                 }
+                if (appendLocked) ctl = ctl.replace('id="wizCtl"', 'id="wizCtl" disabled');
                 bodyInner = `
                 <div class="wiz-q-label">${escapeHtml(q.label)}${q.mandatory ? '<span class="wiz-mandatory" title="This question must be answered before you can continue">⚠️ Mandatory</span>' : ''}</div>
                 <div class="wiz-q-ctl">${ctl}</div>
-                ${filed ? `<div class="wiz-was" id="wizWas">${runnerWasHtml(ctx, q)}</div>${runnerHistHtml(ctx, q)}` : ''}
+                ${filed && !appendLocked ? `<div class="wiz-was" id="wizWas">${runnerWasHtml(ctx, q)}</div>${runnerHistHtml(ctx, q)}` : ''}
                 ${strikeHint}
                 ${anySame ? `<button type="button" class="wiz-same" id="wizSameBtn"${sameEnabled ? '' : ' disabled'}>⏪ Same as last time</button>` : ''}`;
             }
@@ -5825,6 +5841,8 @@
                          room: sheet.cadence === 'daily-weekly' ? (DB.lots[ctx.lotId]?.currentRoom || null) : null,
                          header: {}, days: {}, phaseChangeDate: null, strikeInitials: null,
                          snapshots: {}, signature: null, completedAt: null, printedAt: null };
+                // A facility page records where it was started (building.name prints it)
+                if (ctx.inst?.by) inst.by = ctx.inst.by;
                 sheetData.instances[ctx.key] = inst;
             }
             ctx.inst = inst; // keep the runner's reference on the persisted object (rollover reads ctx.inst)
@@ -5863,13 +5881,14 @@
                 const sd = pageStore(ctx.lotId)?.[ctx.sheetId];
                 const pending = findCorrections(ctx.sheetId, sdBefore, sd, { key: ctx.key, day: ctx.day });
                 if (!pending.length) return 0;
-                const drawn = await captureCorrection(pending);
+                // A building only adds to a facility form: a change to what's on file is made at the office
+                const drawn = ctx.appendOnly ? null : await captureCorrection(pending);
                 if (!drawn) {
                     if (backup.lot && lotRec) Object.assign(lotRec, backup.lot);
                     if (sdBefore) pageStore(ctx.lotId, true)[ctx.sheetId] = sdBefore;
                     else { delete pageStore(ctx.lotId, true)[ctx.sheetId]; pruneStore(ctx.lotId); }
                     ctx.inst = pageStore(ctx.lotId)?.[ctx.sheetId]?.instances?.[ctx.key] || JSON.parse(ctxInstBefore) || ctx.inst;
-                    showToast('Correction cancelled — nothing was saved');
+                    showToast(ctx.appendOnly ? 'Nothing was saved — buildings add to facility forms; the office changes what’s on file' : 'Correction cancelled — nothing was saved');
                     return null;
                 }
                 recordCorrections(sd, pending, drawn, { key: ctx.key, day: ctx.day });
@@ -6761,12 +6780,11 @@
             const pw = DB.paperWizard;
             const sc = scopeOf(activeLotId);
             const kind = sc.kind;
-            const ownId = kind === 'building' ? activeLotId : SCOPE_FACILITY + deviceOrigin();
-            const stores = kind === 'building' ? [[activeLotId, pageStore(activeLotId) || {}]] : cabinetStores(FACILITY_CABINET);
-            if (!stores.some(([id]) => id === ownId)) stores.push([ownId, {}]);
+            const ownId = activeLotId;
+            const stores = [[activeLotId, pageStore(activeLotId) || {}]];
             const sheets = Object.entries(pw.sheets || {}).filter(([id]) => sheetScope(id) === kind)
                 .sort(([a, x], [b, y]) => String(x.name || a).localeCompare(String(y.name || b)));
-            const where = cab => { const o = scopeOf(cab); return kind === 'facility' && o.id !== 'office' ? ` · ${escapeHtml(buildingName(o.id))}` : ''; };
+            const where = () => '';
             const roLeaf = html => html.replace('<div class="cab-leaf"', '<div class="cab-leaf" data-ro="1"');
 
             let totalDocs = 0;
@@ -6817,8 +6835,8 @@
             const what = kind === 'facility' ? '🏭 Facility form' : '🏢 Building form';
             const none = !sheets.length
                 ? `<div class="cab-hint">No ${kind} forms yet — ${DeviceView.building ? 'the office sets them up' : 'in <b>Configure Sheets</b>, pick a sheet and set its Document to <b>' + what + '</b>'}.</div>` : '';
-            const note = kind === 'facility' && DeviceView.building && DeviceView.split
-                ? `<div class="cab-hint">Facility pages started here are saved in this building's file until the office takes them into Main.json. Pages started at the office or another building are view and print only.</div>` : '';
+            const note = appendOnlyHere(activeLotId)
+                ? `<div class="cab-hint">Every building adds to these forms. What you add here is saved in this building's file until the office brings it into Main.json; what's already on file is changed at the office.</div>` : '';
             panel.innerHTML = `
                 <div class="cab-head">${escapeHtml(cabinetTitle(activeLotId))} — ${totalDocs} doc${totalDocs === 1 ? '' : 's'}</div>
                 ${ownRo ? `<div class="cab-warn">${escapeHtml(ownRo.banner)}</div>` : ''}
@@ -6857,8 +6875,7 @@
             const out = [];
             for (const [cab, store] of cabinetStores(lotId)) for (const [sheetId, sd] of Object.entries(store || {})) {
                 if (!sd || typeof sd !== 'object') continue;
-                const o = scopeOf(cab);
-                const doc = (DB.paperWizard.sheets?.[sheetId]?.name || sheetId) + (o?.kind === 'facility' && o.id !== 'office' ? ` (${buildingName(o.id)})` : '');
+                const doc = DB.paperWizard.sheets?.[sheetId]?.name || sheetId;
                 for (const c of sd.constantChanges || []) out.push({ c, sheetId, key: null, doc, page: 'every page' });
                 for (const [key, inst] of Object.entries(sd.instances || {})) {
                     for (const c of inst?.changes || []) out.push({ c, sheetId, key, doc, page: pageLabelFor(sheetId, key) });
