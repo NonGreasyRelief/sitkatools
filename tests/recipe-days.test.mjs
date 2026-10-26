@@ -27,7 +27,7 @@ export async function run(b, BASE) {
     const want = { clone_cut_prep: "day 1 of the plant's life", planting: "day 15 of the plant's life", transplant: "day 31 of the plant's life",
         ipm_spray_veg_second: "day 32 of the plant's life", flip: "day 35 of the plant's life", leafpick_early: "days 52–53 of the plant's life",
         clone_cut: "day 71 of the plant's life", leafpick_late: "days 75–76 of the plant's life", harvest: "day 98 of the plant's life",
-        room_clean: 'day 1 after harvest', tank_irrigation_clean: 'day 2 after harvest', trim: 'days 11–17 after harvest', weigh_ship: 'day 19 after harvest' };
+        room_clean: 'day 1 after harvest', tank_irrigation_clean: 'day 2 after harvest', bucking: 'day 12 after harvest', trim: 'days 13–19 after harvest', weigh_ship: 'day 21 after harvest' };
     for (const [tt, w] of Object.entries(want)) check(`editor, default recipe: ${tt} on ${w}`, ed[tt] === w, ed[tt]);
     // Typing a new flip day moves everything after it, as you type
     await b.run(clw, `const tr = [...document.querySelectorAll('#recipeTaskBody tr')].find(r => r.querySelector('input.t-type').value === 'flip');
@@ -50,8 +50,8 @@ export async function run(b, BASE) {
         out[e.def.taskType] = row?.querySelector('.preview-task-life')?.textContent; }); return { out, label: document.getElementById('anchorDateLabel').textContent };`);
     let pv = await preview();
     check('preview: the date reads "Cloning Date (day 1)"', pv.label === 'Cloning Date (day 1)', pv.label);
-    check('preview: early leaf pick on days 52–53 of the plant\'s life, harvest on day 98, Grow-Room Clean on day 1 after harvest, Weigh & Ship day 19 after',
-        pv.out.leafpick_early === "days 52–53 of the plant's life" && pv.out.harvest === "day 98 of the plant's life" && pv.out.room_clean === 'day 1 after harvest' && pv.out.weigh_ship === 'day 19 after harvest', JSON.stringify(pv.out));
+    check('preview: early leaf pick on days 52–53 of the plant\'s life, harvest on day 98, Grow-Room Clean on day 1 after harvest, Weigh & Ship day 21 after',
+        pv.out.leafpick_early === "days 52–53 of the plant's life" && pv.out.harvest === "day 98 of the plant's life" && pv.out.room_clean === 'day 1 after harvest' && pv.out.weigh_ship === 'day 21 after harvest', JSON.stringify(pv.out));
     check('…a switched-off task still says where it would land (second veg spray, day 32)', pv.out.ipm_spray_veg_second === "day 32 of the plant's life", pv.out.ipm_spray_veg_second);
     await b.run(clw, `document.getElementById('harvestMultiCheck').click();`, { user: true });
     pv = await preview();
@@ -78,13 +78,13 @@ export async function run(b, BASE) {
     const p = await printed(`[...document.querySelectorAll('#recipeList .recipe-row')].find(r => r.textContent.includes('20-day veg')).querySelector('.recipe-actions button:last-child').click();`);
     check('🖨️ Print on a recipe row opens a print window with a Print / Save as PDF button', p?.h1?.includes('Sitka Standard: 20-day veg, Saturday cuts') && p.btn === '🖨️ Print / Save as PDF', JSON.stringify(p && { h1: p.h1, btn: p.btn }));
     const facts = (p?.facts || []).join(' | ');
-    check('…saying veg 20 / bloom 63 days, the plants live 98 days, the work after harvest runs to day 19, a new lot every 70 days',
-        facts.includes('Veg 20 days') && facts.includes('bloom 63 days') && facts.includes('The plants live 98 days') && facts.includes('day 19 after harvest') && facts.includes('A new lot every 70 days'), facts);
+    check('…saying veg 20 / bloom 63 days, the plants live 98 days, the work after harvest runs to day 21, a new lot every 70 days',
+        facts.includes('Veg 20 days') && facts.includes('bloom 63 days') && facts.includes('The plants live 98 days') && facts.includes('day 21 after harvest') && facts.includes('A new lot every 70 days'), facts);
     const row = name => p?.rows?.find(r => r.Task.includes(name)) || {};
     check('…every task in order, with when, its day, how long it runs and whether it\'s optional (no Repeats or Labour columns: no task has them)',
         p?.rows?.length === 32 && p.heads.join() === '#,Task,When,Day,Runs,Optional' && row('Harvest').When === '+63 days after Flip to Flower' && row('Harvest').Day === "day 98 of the plant's life"
         && row('Early Flower Leaf Pick').Day === "days 52–53 of the plant's life" && row('Early Flower Leaf Pick').Runs === '2 days'
-        && row('Weigh Final').Day === 'day 19 after harvest' && row('Second veg IPM').Optional === 'yes · off by default' && row('Cutting Clones').When === 'On Cloning',
+        && row('Weigh Final').Day === 'day 21 after harvest' && row('Second veg IPM').Optional === 'yes · off by default' && row('Cutting Clones').When === 'On Cloning',
         JSON.stringify([row('Harvest'), row('Early Flower Leaf Pick'), row('Weigh Final'), row('Second veg IPM'), row('Cutting Clones')]));
     // A recipe with supplies prints them
     const p2 = await printed(`DB.data._CropLabourWizard.recipes.sup1 = Object.assign(cloneRecipeData(BUILTIN_RECIPE), { id: 'sup1', name: 'With supplies',

@@ -1291,13 +1291,13 @@
             // Post-harvest tasks (offset from harvest)
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2 },
-            { name: 'Clean and Prepare Totes for Bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 9 },
-            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 10 },
-            { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 10 },
+            { name: 'Clean and Prepare Totes for Bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 11 },
+            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 12 },
+            { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 12 },
             // Day before trim starts — prep the trim room
-            { name: 'Prepare Trim Room', emoji: '🧽', taskType: 'trim_room_prep', reference: 'harvest', defaultOffset: 10 },
+            { name: 'Prepare Trim Room', emoji: '🧽', taskType: 'trim_room_prep', reference: 'harvest', defaultOffset: 12 },
             // Trim is multi-day (length user-selectable, default 7), offset from harvest end
-            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 11 },
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 13 },
             // Post-trim tasks (offset from trim start; re-based by resolveTaskAnchor so +7/+8 land after trim ends for any length)
             { name: 'Machine Trim Smalls', emoji: '⚙️', taskType: 'machine_trim', reference: 'trim', defaultOffset: 7, hasToggle: true },
             { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
@@ -1374,7 +1374,7 @@
                 planting: off('planting') ?? 14,
                 flip: off('flip') ?? 20,
                 harvest: off('harvest') ?? 63,
-                trim: off('trim') ?? 11,
+                trim: off('trim') ?? 13,
                 retire: off('retire') ?? DEFAULT_RETIRE_DAYS
             };
         }
@@ -3250,9 +3250,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // plantingOffset: days from cloning to planting (only used when clonesEnabled)
         // flipOffset: days from planting to flip (defaults to 20)
         // harvestOffset: days from flip to harvest (defaults to 63 = 9 weeks bloom)
-        // trimOffset: days from harvest to the start of trim (defaults to 11)
+        // trimOffset: days from harvest to the start of trim (defaults to 13: 12 days drying, bucking on day 12)
         // retireOffset: days from planting to Retire Mothers (vegetative recipes; ignored by bloom tasks)
-        function computeAnchors(topDate, flipOffset = 20, clonesEnabled = false, plantingOffset = 14, harvestOffset = 63, trimOffset = 11, multiDayHarvest = false, hDays = 1, retireOffset = DEFAULT_RETIRE_DAYS) {
+        function computeAnchors(topDate, flipOffset = 20, clonesEnabled = false, plantingOffset = 14, harvestOffset = 63, trimOffset = 13, multiDayHarvest = false, hDays = 1, retireOffset = DEFAULT_RETIRE_DAYS) {
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
@@ -4098,7 +4098,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function scheduleAnchors(day0, offsets, d) {
             const off = (tt, dflt) => { const e = offsets.find(x => x.def.taskType === tt); return e ? e.offset : dflt; };
             const clonesEnabled = offsets.find(e => e.def.taskType === 'clone_cut_prep')?.enabled !== false;
-            return computeAnchors(day0, off('flip', 20), clonesEnabled, off('planting', 14), off('harvest', 63), off('trim', 11), d.harvestMultiDay, d.harvestDays, off('retire', DEFAULT_RETIRE_DAYS));
+            return computeAnchors(day0, off('flip', 20), clonesEnabled, off('planting', 14), off('harvest', 63), off('trim', 13), d.harvestMultiDay, d.harvestDays, off('retire', DEFAULT_RETIRE_DAYS));
         }
 
         function generateLotSchedule(lotId, day0, offsets, durations, recipe = activeRecipe) {

@@ -37,7 +37,7 @@ export async function run(b, BASE) {
         const sim = simulatedTurnover(day0, defaultOffsetsSnapshot(recipeBloomDays(r), r), { trimDays: 7, harvestMultiDay: false, harvestDays: 1 }, r);
         return { b: [b.planting, b.flip, b.transplant, b.harvestEnd, b.irrSpan, b.irrClean].join(), irrSpan: f.irrSpan, genIrr, sim: daysBetween(day0, sim.irr) };`);
     check('G5: a fresh lot\'s spans come from the shared builder (the default: planting 14, flip 34, transplant 30, harvest 97, clean 99)', g5.b === '14,34,30,97,99,2', g5.b);
-    check('…a Tank & Irrigation Clean counted from trim lands where Generate puts it', g5.irrSpan === g5.genIrr && g5.sim === g5.genIrr && g5.genIrr === 97 + 11 + 9, JSON.stringify(g5));
+    check('…a Tank & Irrigation Clean counted from trim lands where Generate puts it', g5.irrSpan === g5.genIrr && g5.sim === g5.genIrr && g5.genIrr === 97 + 13 + 9, JSON.stringify(g5));
     const g6 = await b.run(clw, `const mk = cut => { const r = JSON.parse(JSON.stringify(BUILTIN_RECIPE)); r.id = 'g6' + cut; r.tasks.find(t => t.taskType === 'clone_cut').defaultOffset = -cut; return r; };
         const end = '2026-06-05', prev = { irr: computeTaskDate(end, 2), harvestEnd: end };
         const late = planRoomReady([{ index: 1, lotId: null, recipe: mk(20) }], prev)[0], early = planRoomReady([{ index: 1, lotId: null, recipe: mk(30) }], prev)[0];
