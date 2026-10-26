@@ -88,10 +88,10 @@ export async function run(b, BASE) {
     await b.run(ew, `document.getElementById('tabReports').click(); RPT.page = 'costs'; RPT.period = '12m'; renderReports();`, { user: true });
     await b.run(ew, `document.querySelector('[data-ledger="L100"]').click();`, { user: true });
     let page = await b.run(ew, `return { page: RPT.page, lot: document.getElementById('rptLedgerLot')?.value, html: document.getElementById('rptBody').innerHTML,
-        text: document.getElementById('rptBody').innerText, csv: document.getElementById('rptLedgerCsv') ? await (await fetch(document.getElementById('rptLedgerCsv').href)).text() : '',
+        text: document.getElementById('rptBody').innerText, first: document.querySelector('#rptBody .rpt-card')?.innerText || '', csv: document.getElementById('rptLedgerCsv') ? await (await fetch(document.getElementById('rptLedgerCsv').href)).text() : '',
         name: document.getElementById('rptLedgerCsv')?.getAttribute('download'), active: document.querySelector('#rptPages button.active')?.dataset.page };`);
     check('🔍 on the Costs page opens the ledger for that lot', page.page === 'ledger' && page.lot === 'L100' && page.active === 'ledger', JSON.stringify({ page: page.page, lot: page.lot }));
-    check('…the summary says each of the six parts adds up, with no NaN or undefined', (page.text.match(/✓ adds up/g) || []).length === 6 && !/NaN|undefined/.test(page.html), page.text.slice(0, 400));
+    check('…the summary says each of the six parts adds up, with no NaN or undefined', (page.first.match(/✓ adds up/g) || []).length === 6 && !/NaN|undefined/.test(page.html), page.text.slice(0, 400));
     const csvRows = page.csv.replace(/^﻿/, '').trim().split('\r\n');
     check('…⬇ CSV has every line, with the arithmetic', page.name === `Ledger-L100-${today()}.csv` && csvRows[0] === 'Lot,Date,Part,Building,Rooms,Amount,Unit,$,How it was worked out'
         && csvRows.length - 1 === r.L100.lines && csvRows.some(x => x.includes('156 kWh × $0.10 per kWh')), `${csvRows.length} rows`);

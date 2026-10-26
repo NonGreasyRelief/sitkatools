@@ -6248,7 +6248,18 @@
 
             // Archived: remove the lot. With split files Main also records the close-out, so each building drops what it
             // still holds of the lot from its own file (DbSplit.closedLots); a single-file DB just loses it.
+            // The lot's 🔍 Cost ledger saved with its crop summary: the lines in Main.json, the labour lines in Wages.json
+            ledgerOf(lotId) {
+                const ew = DB.data._EmployeeWizard || {}, a = ew.crops?.[lotId]?.costs?.ledger, b = ew.cropCosts?.[lotId]?.ledger;
+                if (!a && !b) return {};
+                const lines = [...(a?.lines || []), ...(b?.lines || [])].sort((x, y) => String(x.d).localeCompare(String(y.d)));
+                return { ledger: { savedAt: a?.savedAt || b?.savedAt || null, lines } };
+            },
             closedOut(lotId, archiveName) {
+                // The archive holds its ledger now: the copies kept for it beside its summary go
+                const ew = DB.data._EmployeeWizard;
+                if (ew?.crops?.[lotId]?.costs?.ledger) delete ew.crops[lotId].costs.ledger;
+                if (ew?.cropCosts?.[lotId]?.ledger) delete ew.cropCosts[lotId].ledger;
                 if (DbSplit.active) {
                     if (!DB.data._closedLots) DB.data._closedLots = {};
                     // What each building file holds of the lot as archived: a building drops only that (DbSplit.closedLate)
@@ -6310,6 +6321,8 @@
                     generations: (DB.data._CropLabourWizard?.generations || []).filter(g => g.lotId === lotId),
                     paperwork: DB.data._PaperWizard?.entries?.[lotId] || {},
                     transfers: this.transfers().filter(t => t.lotId === lotId),
+                    // 🔍 Its Cost ledger, as the Labour & Cost Wizard saved it with its crop summary (labour lines from Wages.json)
+                    ...this.ledgerOf(lotId),
                     _meta: { schemaVersion: DB_SCHEMA_VERSION, kind: 'lot-archive' }
                 };
                 const text = JSON.stringify(archive, null, 2);

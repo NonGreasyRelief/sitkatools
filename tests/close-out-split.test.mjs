@@ -64,11 +64,12 @@ export async function run(b, BASE) {
     check('L100 is archived and removed; Main records the close-out, with a fingerprint per building file', !st.lot && !st.page && st.notice?.archive?.startsWith('Archive/Lot-L100-') && st.notice.by === 'Office'
         && typeof st.notice.files?.B1 === 'string' && typeof st.notice.files?.B2 === 'string', JSON.stringify(st));
     let p = await plan();
-    check('the office saves Main.json only — Building 1\'s file is left as it is', p.save.join() === 'Main.json' && !!p.main?.L100 && holds(p.b1).page && holds(p.b1).move && holds(p.b1).overlay, JSON.stringify({ save: p.save, b1: holds(p.b1) }));
+    // Wages.json too: the lot's labour ledger lines kept beside its labour cost went into the archive (2026-10-26)
+    check('the office saves Main.json and Wages.json only — Building 1\'s file is left as it is', p.save.slice().sort().join() === 'Main.json,Wages.json' && !!p.main?.L100 && holds(p.b1).page && holds(p.b1).move && holds(p.b1).overlay, JSON.stringify({ save: p.save, b1: holds(p.b1) }));
     let pn = await panel();
     check('the close-out panel says Building 1 still holds it (no 🧹: the office never writes a building\'s file)', !pn.btn && pn.note.includes('Building 1 (L100)') && pn.note.includes('next save'), JSON.stringify(pn));
     const s1 = await saveSplit(b, main);
-    check('saved: Main.json only', Object.keys(s1).join() === 'Main.json', Object.keys(s1).join());
+    check('saved: Main.json and Wages.json (no building file)', Object.keys(s1).sort().join() === 'Main.json,Wages.json', Object.keys(s1).join());
     const f2 = { ...files, ...s1 };
 
     // ---- Reopened, the office ignores what's left of L100 in Building 1's file ----
