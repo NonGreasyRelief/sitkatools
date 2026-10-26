@@ -4130,10 +4130,13 @@
         // Per-lot values: once-per-lot metrics in `once`, daily series in `series[metric][day]`, and the room
         // the grow log was filled for on each day in `rooms[day]` (for the IPM heat map)
         function rptRollup(answers) {
-            const once = {}, onceDate = {}, daily = {}, rooms = {}, products = {};
+            const once = {}, onceDate = {}, daily = {}, rooms = {}, products = {}, productDays = {};
             for (const a of answers) {
                 const def = rptMetricDef(a.metric);
-                if (a.product != null) products[a.product] = (products[a.product] || 0) + a.value;   // fertilizer mL by product ('' = not linked)
+                if (a.product != null) {
+                    products[a.product] = (products[a.product] || 0) + a.value;   // fertilizer mL by product ('' = not linked)
+                    if (a.date) { const pd = productDays[a.date] || (productDays[a.date] = {}); pd[a.product] = (pd[a.product] || 0) + a.value; }
+                }
                 if (def.daily) {
                     if (!a.date) continue;
                     const m = daily[a.metric] || (daily[a.metric] = {});
@@ -4164,7 +4167,7 @@
             // The lowest plant count of each day (a move day can hold two entries: before and after a cull), for supplies
             // charged per plant at a recipe task
             const plantLows = Object.fromEntries(Object.entries(daily[RPT_PLANTS] || {}).map(([d, c]) => [d, c.min]));
-            return { once, series, rooms, products, plantLows };
+            return { once, series, rooms, products, productDays, plantLows };
         }
 
         // The room a crop task happens in (CropLabourWizard's phase rules, as taskRoomId), for any lot record
@@ -4218,6 +4221,7 @@
                 if (ev.completed === true) t.done++;
                 if (est) { t.est += est.hours; c.labour.est += est.hours; t.estStaff = est.staff; t.estMinutes = est.minutes; }
                 if (!t.roomId) t.roomId = rptTaskRoom(ev, lot);
+                const evBuilding = DB.data.rooms?.[rptTaskRoom(ev, lot)]?.buildingId || '';   // where this task's hours were worked
                 for (const [d, entries] of Object.entries(ev.labour_map || {})) {
                     if (!isDay(d) || !Array.isArray(entries)) continue;
                     for (const e of entries) {
@@ -4225,6 +4229,7 @@
                         if (h <= 0) continue;
                         t.act += h; c.labour.act += h;
                         t.days[d] = (t.days[d] || 0) + h;
+                        rptLabourInto(c.labour, evBuilding, d, e.temp != null ? 'temp:' + e.temp : e.employee, h, e.temp != null, e.wage);
                         // 🌿 Cutting Clones: who did it, so the cutting is priced at their own wages (hours only; temps' $
                         // as the crop's temp cost already is)
                         if (tt === RPT_CUT_TASK) {
@@ -4246,7 +4251,7 @@
             }
 
             const answers = rptAnswers(paper, qmap);
-            const { once, series, rooms, products, plantLows } = rptRollup(answers);
+            const { once, series, rooms, products, productDays, plantLows } = rptRollup(answers);
             c.plantLows = plantLows;
             const grades = {};
             for (const g of RPT_GRADES) if (once['harvest.' + g] != null) grades[g] = once['harvest.' + g];
@@ -4306,6 +4311,7 @@
             c.ipm = { flagDays: flagged.size, hermDays: herm.size };
             Object.defineProperty(c, 'series', { value: series, enumerable: false });
             Object.defineProperty(c, 'rooms_', { value: rooms, enumerable: false });
+            Object.defineProperty(c, 'productDays', { value: productDays, enumerable: false });   // fertilizer mL by day and product
             return c;
         }
 
@@ -4474,6 +4480,25 @@
                 ch.temp += h; L.temp += h;
                 if (r.wage > 0) L.tempCost += h * r.wage; else L.tempNoWage += h;
             }
+            rptLabourInto(L, r.buildingId, r.date, r.person, h, !!r.temp, r.wage);
+        }
+        // A crop's hours by the building they were worked in and the month, by person — hours only, never wages (saved with
+        // the summary): for "where was each lot's money spent" (cost audit 2026-10-26). Temps' $ as their entries carry it.
+        function rptLabourInto(L, b, d, who, h, isTemp, wage) {
+            const B = L.byBuilding || (L.byBuilding = {}), byM = B[b || ''] || (B[b || ''] = {});
+            const m = byM[d.slice(0, 7)] || (byM[d.slice(0, 7)] = { people: {}, tempCost: 0, tempNoWage: 0 });
+            if (who) m.people[who] = (m.people[who] || 0) + h;
+            if (isTemp) { if (Number(wage) > 0) m.tempCost += h * Number(wage); else m.tempNoWage += h; }
+        }
+        // One building-month of a crop's hours at today's wages: { cost, missing hours }
+        function rptPriceLabourSlot(m) {
+            let cost = m.tempCost || 0, missing = m.tempNoWage || 0;
+            for (const [who, h] of Object.entries(m.people || {})) {
+                if (who.startsWith('temp:')) continue;
+                const w = employeeByName(who)?.wage;
+                if (w == null || !Number.isFinite(Number(w))) missing += h; else cost += h * Number(w);
+            }
+            return { cost, missing };
         }
         // A chore's name for the charts (key `<building>:<code>`): the chore as it is now, else as the crop saved it
         function rptChoreLabel(key, saved) {
@@ -4887,7 +4912,12 @@
                     for (let d = bl.from; d <= bl.to && d <= today; d = dAdd(d, 1)) (billDay[d] || (billDay[d] = {}))[key] = (billDay[d]?.[key] || 0) + perDay;
                 }
             }
-            const give = (lotId, kWh, part) => { const o = byCrop.get(lotId); if (!o) return; o.kWh += kWh; o[part] += kWh; };
+            // kBM / cBM: the lot's kWh (and, with bills, its $) by building and month: 'building|YYYY-MM' (where it was spent)
+            const give = (lotId, kWh, part, b, d) => {
+                const o = byCrop.get(lotId); if (!o) return;
+                o.kWh += kWh; o[part] += kWh;
+                if (kWh) { const k = (b && b !== 'null' ? b : '') + '|' + d.slice(0, 7); (o.kBM || (o.kBM = {}))[k] = (o.kBM[k] || 0) + kWh; }
+            };
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const dayKwh = new Map(), inBuilding = {}, pool = {};
                 for (const [roomId, r] of Object.entries(info)) {
@@ -4914,8 +4944,8 @@
                         const plants = rSum(occ, st => st.plants), litPlants = rSum(lit, st => st.plants);
                         for (const st of occ) {
                             const share = st.plants / plants, lightShare = litPlants > 0 && lit.includes(st) ? st.plants / litPlants : 0;
-                            give(st.c.lotId, lightKwh * lightShare, 'lights');
-                            give(st.c.lotId, equipKwh * share, 'equip');
+                            give(st.c.lotId, lightKwh * lightShare, 'lights', r.b, d);
+                            give(st.c.lotId, equipKwh * share, 'equip', r.b, d);
                             dayKwh.set(st.c.lotId, (dayKwh.get(st.c.lotId) || 0) + lightKwh * lightShare + equipKwh * share);
                         }
                     } else if (equipKwh > 0) {
@@ -4929,7 +4959,7 @@
                     const occ = inBuilding[b === 'null' ? null : b];
                     if (!occ || !occ.size) { unallocated.kWh += kWh; idle(b === 'null' ? '' : b, d).kWh += kWh; continue; }
                     const plants = [...occ.values()].reduce((t, n) => t + n, 0);
-                    for (const [lotId, n] of occ) { give(lotId, kWh * n / plants, 'equip'); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants); }
+                    for (const [lotId, n] of occ) { give(lotId, kWh * n / plants, 'equip', b, d); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants); }
                 }
                 if (cfg.source === 'bills') {
                     // A crop in a building no bill covers that day (its building's meter or the whole site): its power
@@ -4947,12 +4977,20 @@
                         const w = uniq.map(id => dayKwh.get(id) || 0), wt = w.reduce((t, x) => t + x, 0);
                         const plantsOf = id => { for (const m of Object.values(inBuilding)) if (m.has(id)) return m.get(id); return 1; };
                         const pt = uniq.reduce((t, id) => t + plantsOf(id), 0);
-                        uniq.forEach((id, i) => { const o = byCrop.get(id); if (!o) return; o.cost += amount * (wt > 0 ? w[i] / wt : plantsOf(id) / pt); o.billDays++; });
+                        uniq.forEach((id, i) => {
+                            const o = byCrop.get(id); if (!o) return;
+                            const v = amount * (wt > 0 ? w[i] / wt : plantsOf(id) / pt), k = (meter === '*' ? '' : meter) + '|' + d.slice(0, 7);
+                            o.cost += v; o.billDays++;
+                            (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
+                        });
                     }
                 }
             }
             if (cfg.source === 'estimate') {
-                for (const o of byCrop.values()) o.cost = cfg.rate != null ? o.kWh * cfg.rate : null;
+                for (const o of byCrop.values()) {
+                    o.cost = cfg.rate != null ? o.kWh * cfg.rate : null;
+                    if (cfg.rate != null) o.cBM = Object.fromEntries(Object.entries(o.kBM || {}).map(([k, v]) => [k, v * cfg.rate]));
+                }
                 unallocated.cost = cfg.rate != null ? unallocated.kWh * cfg.rate : null;
                 for (const days of Object.values(idleBy)) for (const x of Object.values(days)) x.cost = cfg.rate != null ? x.kWh * cfg.rate : null;
             }
@@ -5020,7 +5058,12 @@
                     for (const [, m, w] of weights) {
                         if (!(w > 0)) continue;
                         const roomAmount = amount * w / total, pt = plantsIn(m);
-                        for (const [lotId, n] of m) { const o = byCrop.get(lotId); if (!o) continue; o.cost += roomAmount * n / pt; o.days++; }
+                        for (const [lotId, n] of m) {
+                            const o = byCrop.get(lotId); if (!o) continue;
+                            const v = roomAmount * n / pt, k = b + '|' + d.slice(0, 7);
+                            o.cost += v; o.days++;
+                            (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
+                        }
                     }
                 }
             }
@@ -5106,6 +5149,9 @@
                 fert: { byProduct: Object.fromEntries(Object.entries(k.fert.byProduct).map(([n, x]) => [n, { mL: x.mL, cost: r2(x.cost) }])), unpriced: k.fert.unpriced, cost: r2(k.fert.cost) },
                 supplies: { items: k.supplies.items.map(x => ({ ...x, cost: r2(x.cost) })), unpriced: k.supplies.unpriced, cost: r2(k.supplies.cost) },
                 property: { days: k.property.days, cost: r2(k.property.cost) },
+                // Where it was spent, by building and month (labour goes with the wages, shared out by its hours)
+                spend: Object.fromEntries([...rptCropSpend(c, M)].map(([key, parts]) => [key, Object.fromEntries(Object.entries(parts).filter(([part]) => part !== 'labour').map(([part, v]) => [part, r2(v)]))])
+                    .filter(([, parts]) => Object.keys(parts).length)),
                 savedAt: new Date().toISOString()
             };
         }
@@ -5261,6 +5307,89 @@
             }
             return out;
         }
+        // =====================================================
+        // 🏢 Where the money was spent (cost audit 2026-10-26): every cost by the building it was spent in, and the month.
+        // A lot's own costs: 'building|YYYY-MM' → { labour, power, water, fert, supplies, property } (its clones apart).
+        // Labour: its hours where they were worked (crop tasks by their room, room chores by theirs), at today's wages; a
+        // closed-out lot's frozen cost shared out by the same hours. Power and property: its share of each room, day by day.
+        // Water and fertilizer: the building its grow log had it in that day. Supplies: the task's building when charged at a
+        // task, else the building it started in. A part the lot can't price (partial = missing) has no spend here.
+        // =====================================================
+        function rptBuildingOnDay(c) {
+            const stays = rptCropRoomDays(c), ship = rptCropBuilding(c) || '';
+            return d => { const st = stays.find(x => x.from <= d && d <= x.to); return (st && DB.data.rooms?.[st.roomId]?.buildingId) || ship; };
+        }
+        function rptCropSpend(c, M) {
+            const memo = M._spend || (M._spend = new Map());
+            if (memo.has(c)) return memo.get(c);
+            const out = new Map();
+            const add = (b, ym, part, v) => { if (!(v > 0)) return; const key = (b || '') + '|' + ym; const o = out.get(key) || out.set(key, {}).get(key); o[part] = (o[part] || 0) + v; };
+            const addBM = (bm, part) => { for (const [key, v] of Object.entries(bm || {})) { const [b, ym] = key.split('|'); add(b, ym, part, v); } };
+            const k = rptCropInputCost(c, M), cfg = rptCostConfig();
+            const shipB = rptCropBuilding(c), shipYm = (rptShipDay(c) || c.dates?.harvestStart || rToday()).slice(0, 7);
+            if (c.closed) {
+                if (c.costs?.spend) for (const [key, parts] of Object.entries(c.costs.spend)) for (const [part, v] of Object.entries(parts)) { const [b, ym] = key.split('|'); add(b, ym, part, v); }
+                // A summary saved before the spend was kept: all of it in the building it shipped from, in its ship month
+                else for (const part of ['power', 'water', 'fert', 'supplies', 'property']) add(shipB, shipYm, part, k[part]?.cost);
+            } else {
+                if (k.power.cost != null) addBM(rptPowerFor(M, c)?.cBM, 'power');
+                if (k.property.cost != null) addBM(rptPropertyFor(M, c)?.cBM, 'property');
+                const on = rptBuildingOnDay(c);
+                if (k.water.cost != null) for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) add(on(d), d.slice(0, 7), 'water', litres / 1000 * cfg.waterRate);
+                if (k.fert.cost != null) for (const [d, prods] of Object.entries(c.productDays || {})) for (const [name, mL] of Object.entries(prods)) {
+                    const pr = cfg.fertPrice(name);
+                    if (pr != null) add(on(d), d.slice(0, 7), 'fert', mL / 1000 * pr);
+                }
+                if (k.supplies.cost != null) {
+                    const first = rptCropRoomDays(c)[0], startDay = first?.from || c.dates?.day0 || rToday();
+                    for (const x of k.supplies.items) {
+                        if (x.at?.date) {
+                            const ev = (DB.data.calendarEvents || []).find(e => e.lotId === c.lotId && e.sourceTool === 'CropLabourWizard' && e.taskType === x.at.task);
+                            add((ev && DB.data.rooms?.[rptTaskRoom(ev, DB.lots[c.lotId])]?.buildingId) || on(x.at.date), x.at.date.slice(0, 7), 'supplies', x.cost);
+                        } else add(on(startDay), startDay.slice(0, 7), 'supplies', x.cost);
+                    }
+                }
+            }
+            // Labour where it was worked: today's wages for a live lot; a closed-out lot's frozen cost, shared out by its hours
+            const L = rptCropCost(c);
+            if (L && L.cost > 0) {
+                const slots = [];
+                for (const [b, byM] of Object.entries(c.labour?.byBuilding || {})) for (const [ym, m] of Object.entries(byM)) slots.push({ b, ym, ...rptPriceLabourSlot(m) });
+                const priced = rSum(slots, x => x.cost);
+                if (!slots.length || !(priced > 0)) add(shipB, shipYm, 'labour', L.cost);
+                else if (L.frozen) for (const x of slots) add(x.b, x.ym, 'labour', L.cost * x.cost / priced);
+                else for (const x of slots) add(x.b, x.ym, 'labour', x.cost);
+            }
+            memo.set(c, out);
+            return out;
+        }
+        // A lot's spend by building (months added up): building → { parts…, total }
+        function rptCropSpendByBuilding(c, M) {
+            const out = new Map();
+            for (const [key, parts] of rptCropSpend(c, M)) {
+                const b = key.split('|')[0], o = out.get(b) || out.set(b, { total: 0 }).get(b);
+                for (const [part, v] of Object.entries(parts)) { o[part] = (o[part] || 0) + v; o.total += v; }
+            }
+            return out;
+        }
+        // Every $ spent, by building and month: each lot's own spend (mothers and unscheduled lots too), shared labour and idle
+        // building days. '' = no building (and the whole-site meter). Clones aren't spend: the mothers' costs already are.
+        function rptFacilitySpend(M) {
+            if (M._facSpend) return M._facSpend;
+            const out = new Map();
+            const add = (b, ym, part, v) => { if (!(v > 0)) return; const key = (b || '') + '|' + ym; const o = out.get(key) || out.set(key, {}).get(key); o[part] = (o[part] || 0) + v; };
+            for (const c of M.crops) for (const [key, parts] of rptCropSpend(c, M)) { const [b, ym] = key.split('|'); for (const [part, v] of Object.entries(parts)) add(b, ym, part, v); }
+            if (wagesLoaded()) {
+                const months = new Set([...(M.otherAll || []).map(r => r.date.slice(0, 7)), ...Object.keys(rptFrozenOverhead())]);
+                for (const ym of months) {
+                    const [y, m] = ym.split('-').map(Number);
+                    for (const [b, x] of rptOverheadBy(M, `${ym}-01`, localDateStr(new Date(y, m, 0)))) add(b, ym, 'labour', x.cost);
+                }
+            }
+            for (const [b, days] of Object.entries((M.property || (M.property = rptPropertyModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) add(b, d.slice(0, 7), 'property', v);
+            for (const [b, days] of Object.entries((M.power || (M.power = rptPowerModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) add(b === '*' ? '' : b, d.slice(0, 7), 'power', v.cost || 0);
+            return (M._facSpend = out);
+        }
         // One crop's cost per part, in $ (labour = its direct labour cost, null without wages). A lot cut from a mother lot
         // carries its clones (at the mother's cost per clone) in each part; its own cutting is already in its own costs.
         function rptCropCostParts(c, M) {
@@ -5374,8 +5503,9 @@
         }
         // Live crops with flower weights whose scheduled ship day is past but whose Weigh & Ship isn't signed off done
         const rptUnshipped = M => M.crops.filter(c => !c.closed && !c.mother && rptCropMatch(c) && c.weights?.flower > 0 && !rptShipDay(c) && isDay(c.dates?.ship) && c.dates.ship < M.today);
-        function rptCostAgg(M, from, to) {
-            const crops = rptShipped(M, from, to).filter(c => c.weights?.flower > 0);
+        // list: the crops to cost (default: those shipped in the period, filtered) — e.g. one building's
+        function rptCostAgg(M, from, to, list = null) {
+            const crops = (list || rptShipped(M, from, to)).filter(c => c.weights?.flower > 0);
             const SR = rptSharedRates(M, from, to), shared = rptSharedPerGram(SR, crops);
             let cost = null, direct = null, loaded = null;
             if (wagesLoaded() && crops.length) {
@@ -6679,11 +6809,105 @@
                 rows: mothers.map(({ c, pr }) => [c.lotId + (c.closed ? ' (closed out)' : ''), c.strain, c.rooms?.flower || c.rooms?.veg || '—', c.dates?.planting || '—', c.dates?.retire || '—', rN(pr.clones),
                     ...RPT_PART_KEYS.map(p => pr.perClone?.[p] != null ? rMoney(pr.perClone[p], 3) : '—'), allInOf(pr.perClone) != null ? rMoney(allInOf(pr.perClone), 3) : '—']) };
 
+            // ---- 🏢 By building (user decision 2026-10-26: cost by building and for the whole org) ----
+            // Each building's cost per gram: the crops it shipped (each in the building it flowered in, with all its costs) and its
+            // shared costs; the org: every crop. The buildings add up to the org.
+            const groups = new Map();
+            for (const c of a.crops) { const bid = rptCropBuilding(c) || ''; (groups.get(bid) || groups.set(bid, []).get(bid)).push(c); }
+            const bRows = [...groups].map(([bid, list]) => ({ bid, name: bid ? rptBuildingName(bid) : 'No building', x: rptCostAgg(M, M.per.from, M.per.to, list) }))
+                .sort((p, q) => p.name.localeCompare(q.name));
+            if (bRows.length > 1) bRows.push({ bid: '*', name: 'All buildings', x: a, org: true });
+            const hBars = (rows, valueOf, partsOf, labelOf, subOf, tipOf) => {
+                const max = Math.max(0.01, ...rows.map(valueOf)), xs = rLin(0, max, X0 + 60, X1);
+                let out = '';
+                rows.forEach((row, i) => {
+                    const y = 14 + i * 46;
+                    out += rT(X0 + 50, y + 18, rShort(labelOf(row), 22), row.org ? 'rv-lblp' : 'rv-lbl', 'end') + rT(X0 + 50, y + 33, subOf(row), 'rv-axs', 'end');
+                    let x = X0 + 60;
+                    for (const [k] of RPT_COST_PARTS) {
+                        const v = partsOf(row)[k];
+                        if (!(v > 0)) continue;
+                        const w = xs(v) - (X0 + 60);
+                        out += rRect(x, y, w, 30, `fill:${color[k]}`, rTip(tipOf(row, k, v)));
+                        x += w;
+                    }
+                    out += valueOf(row) > 0 ? rT(x + 8, y + 20, rMoney(valueOf(row), valueOf(row) < 1 ? 3 : 0), 'rv-val') : rT(X0 + 68, y + 20, 'nothing priced', 'rv-axs');
+                });
+                return rSvg(W, 20 + rows.length * 46, out, 'By building');
+            };
+            const byBuilding = bRows.length ? hBars(bRows, r => r.x.costPG.allIn || 0, r => r.x.costPG, r => r.name, r => `${r.x.n} crop${r.x.n === 1 ? '' : 's'} · ${rN(r.x.flower / 1000, 1)} kg`,
+                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v, 3)} per gram`) : rEmpty('No crops shipped in this period.', 'A crop counts once its Weigh & Ship task is signed off done.');
+            const byBuildingTable = { cols: [{ h: 'Building' }, { h: 'Crops', n: 1 }, { h: 'Flower kg', n: 1 }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $/g`, n: 1 })), { h: 'All in $/g', n: 1 }],
+                rows: bRows.map(r => [r.name, r.x.n, rN(r.x.flower / 1000, 1), ...RPT_COST_PARTS.map(([k]) => r.x.costPG[k] != null ? rMoney(r.x.costPG[k], 3) : '—'), r.x.costPG.allIn != null ? rMoney(r.x.costPG.allIn, 3) : '—']) };
+            // What each building cost to run: every $ spent in it, by part (calendar months touching the period). The nursery shows here.
+            const spendAll = rptFacilitySpend(M), months = [];
+            for (let m = M.per.from.slice(0, 7); m <= M.per.to.slice(0, 7) && months.length < 40; m = dMonths(m + '-01', 1).slice(0, 7)) months.push(m);
+            const spentB = new Map(), byMonth = new Map();
+            for (const [key, parts] of spendAll) {
+                const [bid, ym] = key.split('|');
+                if (!months.includes(ym) || (RPT.building && bid !== RPT.building)) continue;
+                const o = spentB.get(bid) || spentB.set(bid, { total: 0 }).get(bid);
+                for (const [part, v] of Object.entries(parts)) { o[part] = (o[part] || 0) + v; o.total += v; }
+                const mm = byMonth.get(ym) || byMonth.set(ym, new Map()).get(ym);
+                mm.set(bid, (mm.get(bid) || 0) + rSum(Object.values(parts)));
+            }
+            const sRows = [...spentB].map(([bid, o]) => ({ bid, name: bid ? rptBuildingName(bid) : 'No building / whole site', o })).sort((p, q) => p.name.localeCompare(q.name));
+            if (sRows.length > 1) sRows.push({ bid: '*', name: 'All buildings', org: true, o: sRows.reduce((t, r) => { for (const [k, v] of Object.entries(r.o)) t[k] = (t[k] || 0) + v; return t; }, {}) });
+            const nursery = sRows.filter(r => r.bid && r.bid !== '*' && !groups.has(r.bid));
+            const spendChart = sRows.length ? hBars(sRows, r => r.o.total || 0, r => r.o, r => r.name, r => r.org ? `${months.length} month${months.length === 1 ? '' : 's'}` : groups.has(r.bid) ? `${groups.get(r.bid).length} shipped` : 'shipped none',
+                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v)}`) : rEmpty('Nothing spent in this period yet.', '');
+            const spendTable = { cols: [{ h: 'Building' }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $`, n: 1 })), { h: 'Total $', n: 1 }, { h: 'A month', n: 1 }],
+                rows: sRows.map(r => [r.name, ...RPT_COST_PARTS.map(([k]) => r.o[k] > 0 ? rMoney(r.o[k]) : '—'), rMoney(r.o.total || 0), rMoney((r.o.total || 0) / Math.max(1, months.length))]) };
+            const spendBuildings = sRows.filter(r => !r.org);
+            const monthTable = spendBuildings.length ? `<div class="rpt-tbl">${rTable({ cols: [{ h: 'Month' }, ...spendBuildings.map(r => ({ h: r.name, n: 1 })), ...(spendBuildings.length > 1 ? [{ h: 'All', n: 1 }] : [])],
+                rows: months.filter(ym => byMonth.has(ym)).map(ym => [ctlsMonthName(ym), ...spendBuildings.map(r => byMonth.get(ym).get(r.bid) > 0 ? rMoney(byMonth.get(ym).get(r.bid)) : '—'),
+                    ...(spendBuildings.length > 1 ? [rMoney(rSum([...byMonth.get(ym).values()]))] : [])]) })}</div>` : '';
+            const nurseryNote = nursery.length ? `<p class="rpt-note">${nursery.map(r => `<b>${rEsc(r.name)}</b> shipped no flower this period: its ${rMoney(r.o.total)} reaches the grams through the lots that grew there (their nursery days), its mother lots’ clones (cost per clone) and, for its shared labour and idle days, every gram shipped.`).join(' ')}</p>` : '';
+            const unpricedHours = wagesLoaded() ? rSum(a.crops, c => rptCropCost(c)?.missing || 0) : 0;
+            const spendNote = `${nurseryNote}<p class="rpt-note">Everything spent in each building: its lots’ labour, electricity, water, fertilizer, supplies and rent, its shared labour, and its idle days — by calendar month${wagesLoaded() ? '' : '; labour isn’t included without Wages.json'}${unpricedHours > 0 ? `; hours with no wage aren’t priced` : ''}. Not filtered by flower room or strain.</p>${monthTable}`;
+            // Each lot: what was spent on it in the building it ships from, in other buildings (its nursery days), and its clones
+            const split = weighed.map(c => {
+                const sb = rptCropSpendByBuilding(c, M), own = rptCropBuilding(c) || '', g = c.weights.flower;
+                const elsewhere = [...sb].filter(([bid]) => bid !== own).map(([bid, o]) => ({ bid, v: o.total })).filter(e => e.v > 0);
+                const ch = rptCloneCharge(c, M), clones = ch && !ch.unpriced ? rSum(RPT_PART_KEYS.map(p => ch.parts[p]).filter(v => v != null)) : 0;
+                return { c, own, g, inOwn: sb.get(own)?.total || 0, elsewhere, other: rSum(elsewhere, e => e.v), clones, mom: ch?.mother || null };
+            }).filter(x => x.inOwn + x.other + x.clones > 0);
+            const splitCol = { inOwn: 'var(--rv-ph-flower)', other: 'var(--rv-ph-veg)', clones: 'var(--rv-ph-mother)' };
+            let splitChart = rEmpty('No crops shipped in this period.', '');
+            if (split.length) {
+                const H = 280, CX0 = 52, CX1 = 1080, Y0 = 232, Y1 = 22;
+                const top = Math.max(...split.map(x => (x.inOwn + x.other + x.clones) / x.g));
+                const yn = rNice(0, top * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(split.length, 6);
+                let sp = '';
+                yn.t.forEach(v => { sp += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoney(v, v < 1 ? 2 : 0), 'rv-ax', 'end'); });
+                split.forEach((x, i) => {
+                    const cx = CX0 + bw * i + bw * 0.15, w = bw * 0.7;
+                    const tip = `Lot ${x.c.lotId} · ships from ${rptBuildingName(x.own)}\n${rptBuildingName(x.own)}: ${rMoney(x.inOwn / x.g, 3)}/g` +
+                        x.elsewhere.map(e => `\n${rptBuildingName(e.bid)}: ${rMoney(e.v / x.g, 3)}/g`).join('') + (x.clones ? `\nIts clones (mother lot ${x.mom}): ${rMoney(x.clones / x.g, 3)}/g` : '');
+                    let y = Y0;
+                    for (const k of ['clones', 'other', 'inOwn']) {
+                        if (!(x[k] > 0)) continue;
+                        const h = Y0 - ys(x[k] / x.g);
+                        sp += rRect(cx, y - h, w, h, `fill:${splitCol[k]}`, rTip(tip), 0);
+                        y -= h;
+                    }
+                    sp += rT(cx + w / 2, Y0 + 14, rShort(x.c.lotId, 6), 'rv-axs', 'middle');
+                });
+                splitChart = rSvg(1100, H, sp, 'Where each lot’s money was spent');
+            }
+            const splitTable = { cols: [{ h: 'Lot' }, { h: 'Ships from' }, { h: 'In its building $/g', n: 1 }, { h: 'In other buildings $/g', n: 1 }, { h: 'Where else' }, { h: 'Its clones $/g', n: 1 }, { h: 'Nursery share', n: 1 }, { h: 'Total $/g', n: 1 }],
+                rows: split.map(x => { const t = x.inOwn + x.other + x.clones; return [x.c.lotId, rptBuildingName(x.own), rMoney(x.inOwn / x.g, 3), x.other ? rMoney(x.other / x.g, 3) : '—', x.elsewhere.map(e => rptBuildingName(e.bid)).join(', ') || '—',
+                    x.clones ? rMoney(x.clones / x.g, 3) : '—', t > 0 ? rPct((x.other + x.clones) / t) : '—', rMoney(t / x.g, 3)]; }) };
+
             return `<div class="rpt-grid">` +
                 rCard({ wide: true, title: 'What does a gram of flower cost?', sub: `All in: labour (fully loaded), electricity, water, fertilizer, supplies and property (rent and fees), divided by the grams of the crops shipped in the period (Weigh & Ship signed off). Each part counts the crops that can price all of it; shared labour and idle building days are spread over the grams shipped, each building’s over its own; ${srcNote}.`, body: breakdown, table: breakdownTable, legend, source: 'Labour: wages × hours · electricity: rooms, equipment, light % and bills · water and fertilizer: grow logs · supplies: the lot’s recipe · property: each building’s monthly rent and fees, shared by its rooms in use' }) +
+                rCard({ wide: true, title: '🏢 What does a gram cost in each building?', sub: 'Each building’s crops shipped in the period (a crop counts in the building it flowered in, with all its costs — its nursery days and clones too), with the building’s own shared labour and idle days; costs tied to no building, and a building that shipped nothing, are spread over every gram. The buildings add up to “All buildings”.', body: byBuilding, table: byBuildingTable, legend, source: 'The crops shipped in the period, by building' }) +
+                rCard({ wide: true, title: '🏢 What does each building cost to run?', sub: 'Every dollar spent in each building in the period, by part — the nursery included. This is where the money went; the cost per gram above is what the grams carry.', body: spendChart, table: spendTable, legend, after: spendNote, source: 'Each lot’s costs where they were spent (rooms, tasks, grow-log days) · shared labour · idle building days' }) +
                 rCard({ wide: true, title: '🌿 What does a clone cost?', sub: 'Growing the mothers, per clone: each mother lot’s labour (its tasks and its share of Mother-room chores), its Mother room’s electricity and property share, and its water, fertilizer and supplies, divided by the clones cut from it — for the clones cut in the period. A lot cut from a mother lot carries its clones at this price in its cost per gram. Cutting the clones is each bloom lot’s own cost (shown below, not in the price).', body: cloneBreakdown, table: cloneTable, legend, after: cloneNote, source: 'Mother lots: lots scheduled with a 🌿 vegetative recipe · clones: the starting counts of the lots cut from them (sub-lots)' }) +
                 rCard({ wide: true, title: 'Cost per clone, mother lot by mother lot', sub: 'Each mother lot’s cost per clone so far (from its start to today, or its end), by part.', body: byMother, table: byMotherTable, legend, source: 'Mother lots and the lots cut from them' }) +
                 rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each crop shipped in the period: its cost per gram of its own flower, by part, plus its building’s share of the period’s shared labour and idle building days.', body: byCrop, table: byCropTable, legend, source: 'Crops shipped in the period with a flower weight' }) +
+                rCard({ wide: true, title: '🌱 Nursery and flowering: where was each lot’s money spent?', sub: 'Each crop shipped in the period, per gram of its flower: what was spent on it in the building it ships from, in other buildings (its days in the nursery), and its clones (growing the mothers). Its own costs only — shared labour and idle days are in the building figures above.', body: splitChart, table: splitTable,
+                    legend: rSw(splitCol.inOwn, 'in the building it ships from') + rSw(splitCol.other, 'in other buildings (the nursery)') + rSw(splitCol.clones, 'its clones'), source: 'Each lot’s costs where they were spent · its clones at the mother lot’s cost per clone' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops shipped in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
                 rCard({ wide: true, title: 'What’s missing from the cost?', sub: 'Fill these in and the cost per gram covers more of what a gram really costs.', body: health, source: 'Room Manager (rooms and buildings) · EquipmentWizard · PaperWizard tags · CropLabourWizard price list · ⚡ Power & Rates' }) +
