@@ -21,6 +21,12 @@ function ledgerDb({ bills = false, next = true, bill = null } = {}) {
     db.buildings.B1.assignedRooms.push('R1DR');
     Object.assign(db.lots.L100, { dryRoom: 'Dry 1', trimRoom: 'Dry 1' });
     if (next) db.lots.L200 = { name: 'L200', strain: 'Test Kush', stage: 'flower', createdDate: D(41), currentRoom: 'Grow 1', destRoom: 'Grow 1', plantCount: 80, startPlantCount: 80 };
+    // A room chore in Grow 1 on D45, shared by L200 (80 plants) and L400 (20): Alex 5 h → 4 h and 1 h
+    if (next) {
+        db.lots.L400 = { name: 'L400', strain: 'Test Kush', stage: 'flower', createdDate: D(41), currentRoom: 'Grow 1', destRoom: 'Grow 1', plantCount: 20, startPlantCount: 20 };
+        db._DailyWizard = { buildings: { B1: { tasks: [{ code: 'gr01', emoji: '🧽', name: 'Wipe Grow 1', minutes: 30, staff: 1, days: [0, 1, 2, 3, 4, 5, 6], monthDays: [], steps: [], roomId: 'R1G1' }],
+            labour: { [D(45)]: { gr01: [{ id: 'le_rc00000045', employee: 'Alex', hours: 5 }] } } } } };
+    }
     // A power bill for D25–D35 only: $1,100 over 11 days = $100 a day
     if (bills) Object.assign(db._EmployeeWizard.costs, { electricity: 'bills', bills: [bill || { id: 'pb1', buildingId: 'B1', from: D(25), to: D(35), kWh: 2000, amount: 1100 }] });
     return db;
@@ -35,6 +41,7 @@ export async function run(b, BASE) {
         return openTool(b, main, 'EmployeeWizard');
     };
     const close = async ew => { await leave(b, ew); await b.send('browsingContext.close', { context: ew }); };
+    const pw = x => x.t.find(t => t.p === 'power');
     const totals = `const M = rptModel(); const out = {};
         for (const c of M.crops) { const { lines } = rptLedger(M, c.lotId); const k = rptCropInputCost(c, M);
             out[c.lotId] = { lines: lines.length, t: rptLedgerTotals(c, M, lines).map(t => ({ p: t.p, adds: t.adds, sum: t.sum, page: t.page })), power: k.power.cost, property: k.property.cost }; }
@@ -43,14 +50,30 @@ export async function run(b, BASE) {
     // ---- Estimated electricity ----
     let ew = await open(ledgerDb());
     let r = await b.run(ew, totals);
-    check('every lot\'s electricity and property lines add up to the 💲 Costs page (L100, L200)',
-        ['L100', 'L200'].every(id => r[id].t.every(t => t.adds && t.page != null && Math.abs(t.sum - t.page) < 0.005)), JSON.stringify(r));
+    check('every part of L100\'s lines adds up to the 💲 Costs page: labour, electricity, water, fertilizer, supplies, property',
+        r.L100.t.length === 6 && r.L100.t.every(t => t.adds && t.page != null && Math.abs(t.sum - t.page) < 0.005), JSON.stringify(r.L100));
+    check('…and every lot\'s lines add up to what the cost code worked out (L200, L400 have no water, fertilizer or supplies: nothing to add)',
+        ['L200', 'L400'].every(id => r[id].t.every(t => t.adds !== false)) && ['L200', 'L400'].every(id => r[id].t.filter(t => ['power', 'property', 'labour'].includes(t.p)).every(t => t.adds)), JSON.stringify([r.L200, r.L400]));
     const line = (id, d, part) => b.run(ew, `const M = rptModel(); return rptLedger(M, '${id}').lines.find(l => l.d === '${d}' && l.part === '${part}') || null;`);
     let l = await line('L100', D(30), 'power');
     check('a flower day\'s electricity, written out: Grow 1\'s lights at the grow log\'s 50 %, its dehumidifier, the hall\'s AC, × $0.10',
         l && l.how.includes('Grow 1 lights: 20 × 1,000 W × 12 h (bloom) × 50 % (grow log) = 120 kWh') && l.how.includes('Grow 1 equipment: Dehu 1,000 W × 1 × 24 h = 24 kWh')
         && l.how.includes('empty rooms\' equipment in Building 1: Hall 1 (AC 500 W × 1 × 24 h) = 12 kWh, × its 100 of the 100 plants in the building = 12 kWh')
         && l.how.includes('156 kWh × $0.10 per kWh = $15.60') && Math.abs(l.cost - 15.6) < 1e-9, l?.how);
+    l = await line('L100', D(40), 'labour');
+    check('a task\'s labour, person by person at their wage: the harvest\'s 30 h = $630',
+        l && l.how === 'T harvest: Alex 10 h × $20.00/h = $200.00 · Blair 10 h × $21.00/h = $210.00 · Casey 10 h × $22.00/h = $220.00 · $630.00 in all' && l.cost === 630, l?.how);
+    l = await line('L200', D(45), 'labour');
+    check('a room chore shared by plants: Alex\'s 5 h in Grow 1 × L200\'s 80 of the 100 plants = 4 h × $20 = $80',
+        l && l.how === '🧽 Wipe Grow 1 in Grow 1: Alex 5 h × its 80 of the 100 plants in the room = 4 h × $20.00/h = $80.00' && Math.abs(l.cost - 80) < 1e-9, l?.how);
+    l = await line('L100', D(30), 'water');
+    check('a grow-log day\'s water: 100 L × $2.50 per 1,000 L = $0.25', l && l.how === 'grow log: 100 L × $2.50 per 1,000 L ÷ 1,000 = $0.2500' && Math.abs(l.cost - 0.25) < 1e-12, l?.how);
+    const fert = await b.run(ew, `const M = rptModel(); return rptLedger(M, 'L100').lines.filter(l => l.d === '${D(30)}' && l.part === 'fert').map(l => l.how);`);
+    check('…its fertilizer, product by product: Activator 10 mL × $50/L, Core 20 mL × $40/L',
+        fert.includes('grow log: Activator 10 mL × $50.00 per L ÷ 1,000 = $0.5000') && fert.includes('grow log: Core 20 mL × $40.00 per L ÷ 1,000 = $0.8000'), fert.join(' | '));
+    const sup = await b.run(ew, `const M = rptModel(); return rptLedger(M, 'L100').lines.filter(l => l.part === 'supplies').map(l => l.how);`);
+    check('…and its recipe\'s supplies: a peat puck per plant at the start, 6 coco blocks per crop',
+        sup.includes('recipe: Peat puck, 1 puck per plant × its 100 plants at the start × $0.25 = $25.00') && sup.includes('recipe: Coco block, 6 block per crop × $3.00 = $18.00'), sup.join(' | '));
     l = await line('L100', D(30), 'property');
     const day = n => { const [y, m] = D(n).split('-').map(Number); return new Date(y, m, 0).getDate(); };
     check('a growing day\'s rent, written out: the month ÷ its days, by the lights of the rooms with a lot growing',
@@ -59,7 +82,7 @@ export async function run(b, BASE) {
     l = await line('L100', D(45), 'property');
     check('a drying day: no rent, and the line says why', l && l.cost === 0 && l.how.includes('drying or trimming in Dry 1: no rent (by lights, only the rooms with a lot growing share it)'), l?.how);
     l = await line('L200', D(45), 'property');
-    check('…the lot growing in Grow 1 that day carries the building', l && Math.abs(l.cost - 3000 / day(45)) < 1e-9 && l.how.includes('→ Grow 1 20 of 20'), l?.how);
+    check('…the lots growing in Grow 1 that day carry the building, by plants: L200 80 of the 100', l && Math.abs(l.cost - 3000 / day(45) * 0.8) < 1e-9 && l.how.includes('→ Grow 1 20 of 20') && l.how.includes('× its 80 of the 100 plants in the room'), l?.how);
 
     // The page: picked from the 💲 Costs page's crop-by-crop card
     await b.run(ew, `document.getElementById('tabReports').click(); RPT.page = 'costs'; RPT.period = '12m'; renderReports();`, { user: true });
@@ -68,9 +91,9 @@ export async function run(b, BASE) {
         text: document.getElementById('rptBody').innerText, csv: document.getElementById('rptLedgerCsv') ? await (await fetch(document.getElementById('rptLedgerCsv').href)).text() : '',
         name: document.getElementById('rptLedgerCsv')?.getAttribute('download'), active: document.querySelector('#rptPages button.active')?.dataset.page };`);
     check('🔍 on the Costs page opens the ledger for that lot', page.page === 'ledger' && page.lot === 'L100' && page.active === 'ledger', JSON.stringify({ page: page.page, lot: page.lot }));
-    check('…the summary says each part adds up, with no NaN or undefined', (page.text.match(/✓ adds up/g) || []).length === 2 && !/NaN|undefined/.test(page.html), page.text.slice(0, 400));
+    check('…the summary says each of the six parts adds up, with no NaN or undefined', (page.text.match(/✓ adds up/g) || []).length === 6 && !/NaN|undefined/.test(page.html), page.text.slice(0, 400));
     const csvRows = page.csv.replace(/^﻿/, '').trim().split('\r\n');
-    check('…⬇ CSV has every line, with the arithmetic', page.name === `Ledger-L100-${today()}.csv` && csvRows[0] === 'Lot,Date,Part,Building,Rooms,kWh,$,How it was worked out'
+    check('…⬇ CSV has every line, with the arithmetic', page.name === `Ledger-L100-${today()}.csv` && csvRows[0] === 'Lot,Date,Part,Building,Rooms,Amount,Unit,$,How it was worked out'
         && csvRows.length - 1 === r.L100.lines && csvRows.some(x => x.includes('156 kWh × $0.10 per kWh')), `${csvRows.length} rows`);
     await b.run(ew, `const s = document.getElementById('rptLedgerPart'); s.value = 'property'; s.dispatchEvent(new Event('change'));`, { user: true });
     page = await b.run(ew, `return [...document.querySelectorAll('.rpt-ledger tbody tr')].map(tr => tr.cells[1].textContent);`);
@@ -82,8 +105,8 @@ export async function run(b, BASE) {
     // hall's AC 12 = 396 kWh a day; D30–D35 bloom at 50 %: 120 + 24 + 12 = 156. 5 × 396 + 6 × 156 = 2,916 kWh → $1,100 ÷ 2,916
     ew = await open(ledgerDb({ bills: true }));
     r = await b.run(ew, totals);
-    check('with bills: the lines add up to the billed days, and the page says the rest is missing', r.L100.power === null && r.L100.t[0].adds
-        && Math.abs(r.L100.t[0].sum - 1100) < 1e-6, JSON.stringify(r.L100));
+    check('with bills: the lines add up to the billed days, and the page says the rest is missing', r.L100.power === null && pw(r.L100).adds
+        && Math.abs(pw(r.L100).sum - 1100) < 1e-6, JSON.stringify(r.L100));
     l = await line('L100', D(30), 'power');
     check('…a billed day, written out: the bill ÷ the building\'s kWh over the bill × the lot\'s kWh that day (156 × $1,100 ÷ 2,916)',
         l && l.how.includes(`Building 1 power bill $1,100.00 for ${D(25)} → ${D(35)} ÷ the 2,916 kWh estimated for Building 1 over those days = $0.3772 per kWh; its 156 kWh today × $0.3772 = $58.85`)
@@ -103,7 +126,7 @@ export async function run(b, BASE) {
     check('a drying day alone in the building: its 36 kWh × $2,100 ÷ 2,196 kWh = $34.43, not $100 (1/21 of the bill)',
         l && Math.abs(l.cost - 36 * 2100 / 2196) < 1e-9 && l.how.includes('÷ the 2,196 kWh estimated for Building 1 over those days'), l?.how);
     r = await b.run(ew, totals);
-    check('…and the lot still carries the whole bill: $2,100', Math.abs(r.L100.t[0].sum - 2100) < 1e-6, JSON.stringify(r.L100.t[0]));
+    check('…and the lot still carries the whole bill: $2,100', Math.abs(pw(r.L100).sum - 2100) < 1e-6, JSON.stringify(pw(r.L100)));
     await close(ew);
     // With L200 growing in Grow 1 from D41: every line of the bill's days is at the same $ per kWh
     ew = await open(ledgerDb({ bills: true, bill: dryBill }));
@@ -111,7 +134,7 @@ export async function run(b, BASE) {
     const rates = [...new Set(perKwh.map(([, , x]) => x.toFixed(9)))];
     check('two lots on one bill: one $ per kWh on every day of it (drying or flowering)', perKwh.length > 20 && rates.length === 1, rates.slice(0, 4).join(', '));
     r = await b.run(ew, totals);
-    check('…and the two lots add up to the bill', Math.abs(r.L100.t[0].sum + r.L200.t[0].sum - 2100) < 1e-6, JSON.stringify([r.L100.t[0].sum, r.L200.t[0].sum]));
+    check('…and the lots add up to the bill (L100, L200 and L400)', Math.abs(pw(r.L100).sum + pw(r.L200).sum + pw(r.L400).sum - 2100) < 1e-6, JSON.stringify([pw(r.L100).sum, pw(r.L200).sum, pw(r.L400).sum]));
     await close(ew);
 
     // ---- The round-number demo DB: every lot, four cost setups ----
@@ -135,8 +158,9 @@ export async function run(b, BASE) {
             if (setup === 'plants' || setup === 'area') c.propertyShare = setup;
             ew = await open(db);
             r = await b.run(ew, totals);
-            const bad = Object.entries(r).flatMap(([id, x]) => x.t.filter(t => !t.adds).map(t => `${id} ${t.p}`));
-            check(`demo DB (${setup}): all ${Object.keys(r).length} lots' lines add up (${Object.values(r).reduce((t, x) => t + x.lines, 0)} lines)`, Object.keys(r).length === 11 && !bad.length, bad.join(', '));
+            const bad = Object.entries(r).flatMap(([id, x]) => x.t.filter(t => t.adds !== true).map(t => `${id} ${t.p}`));
+            check(`demo DB (${setup}): every part of all ${Object.keys(r).length} lots' lines adds up, clones included (${Object.values(r).reduce((t, x) => t + x.lines, 0)} lines)`,
+                Object.keys(r).length === 11 && Object.values(r).every(x => x.t.length === 6) && !bad.length, bad.join(', '));
             await close(ew);
         }
     } finally { rmSync(dir, { recursive: true, force: true }); }

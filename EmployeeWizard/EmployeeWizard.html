@@ -4335,7 +4335,8 @@
                         if (h <= 0) continue;
                         t.act += h; c.labour.act += h;
                         t.days[d] = (t.days[d] || 0) + h;
-                        rptLabourInto(c.labour, evBuilding, d, e.temp != null ? 'temp:' + e.temp : e.employee, h, e.temp != null, e.wage);
+                        rptLabourInto(c.labour, evBuilding, d, e.temp != null ? 'temp:' + e.temp : e.employee, h, e.temp != null, e.wage,
+                            { key: 'task|' + (ev.id || tt), title: ev.title || rptTaskLabel(tt), roomId: rptTaskRoom(ev, lot) || null });
                         // 🌿 Cutting Clones: who did it, so the cutting is priced at their own wages (hours only; temps' $
                         // as the crop's temp cost already is)
                         if (tt === RPT_CUT_TASK) {
@@ -4544,7 +4545,7 @@
             return (roomId, day) => {
                 const occ = (byRoom[roomId] || []).filter(st => st.from <= day && day <= st.to).map(st => ({ ...st, plants: rptPlantsOn(st.c, day) }));   // plants that day
                 const plants = rSum(occ, st => st.plants);
-                return occ.map(st => ({ c: st.c, frac: st.plants / plants, phase: st.phase }));
+                return occ.map(st => ({ c: st.c, frac: st.plants / plants, phase: st.phase, plants: st.plants, roomPlants: plants }));
             };
         }
 
@@ -4598,11 +4599,17 @@
                 ch.temp += h; L.temp += h;
                 if (r.wage > 0) L.tempCost += h * r.wage; else L.tempNoWage += h;
             }
-            rptLabourInto(L, r.buildingId, r.date, r.person, h, !!r.temp, r.wage);
+            const sh = (r.shares || []).find(x => x.c === c);
+            rptLabourInto(L, r.buildingId, r.date, r.person, h, !!r.temp, r.wage,
+                { key: 'chore|' + r.choreKey, title: r.label, roomId: r.roomId, chore: true, logged: r.logged, plants: sh?.plants, roomPlants: sh?.roomPlants });
         }
         // A crop's hours by the building they were worked in and the month, by person — hours only, never wages (saved with
         // the summary): for "where was each lot's money spent" (cost audit 2026-10-26). Temps' $ as their entries carry it.
-        function rptLabourInto(L, b, d, who, h, isTemp, wage) {
+        // 🔍 Each hour as it was added (task or room chore), for the Cost ledger's labour lines; kept beside the crop, never saved
+        const RPT_LABOUR_SRC = new WeakMap();
+        function rptLabourInto(L, b, d, who, h, isTemp, wage, src = null) {
+            const list = RPT_LABOUR_SRC.get(L) || (RPT_LABOUR_SRC.set(L, []), RPT_LABOUR_SRC.get(L));
+            list.push({ b: b || '', d, who, h, temp: !!isTemp, wage, src });
             const B = L.byBuilding || (L.byBuilding = {}), byD = B[b || ''] || (B[b || ''] = {});
             const m = byD[d] || (byD[d] = { people: {}, tempCost: 0, tempNoWage: 0 });
             if (who) m.people[who] = (m.people[who] || 0) + h;
@@ -5364,7 +5371,8 @@
             const slot = memo.get(c) || memo.set(c, {}).get(c), k = fresh ? 'fresh' : 'kept';
             return slot[k] || (slot[k] = rptCropInputCostNow(c, M, fresh));
         }
-        function rptCropInputCostNow(c, M, fresh) {
+        // trace: { lotId, lines } — also write the 🔍 ledger's water, fertilizer and supplies lines (rptLedger)
+        function rptCropInputCostNow(c, M, fresh, trace = null) {
             // Summaries frozen before property costs existed have none: work theirs out from the buildings now. One frozen
             // while some of its days had no power bill froze its electricity as missing: it takes the bills as they are
             // now, so a bill added later reaches it (review C2)
@@ -5387,18 +5395,27 @@
             let waterCost = null;
             if (L > 0) {
                 waterCost = 0;
+                let unpricedDay = false;
                 for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) {
                     const r = cfg.waterRateOn(d);
-                    if (r == null) { waterCost = null; break; }
-                    waterCost += litres / 1000 * r;
+                    if (trace) trace.lines.push({ d, part: 'water', b: '', rooms: [], qty: litres, unit: 'L', cost: r == null ? null : litres / 1000 * r,
+                        how: r == null ? `grow log: ${lgK(litres)} L — no water rate set for this day, so this lot's water is missing` : `grow log: ${lgK(litres)} L × ${lgRate(r)} per 1,000 L ÷ 1,000 = ${lgM(litres / 1000 * r)}` });
+                    if (r == null) { unpricedDay = true; if (!trace) break; continue; }
+                    if (!unpricedDay) waterCost += litres / 1000 * r;
                 }
+                if (unpricedDay) waterCost = null;
             }
             const water = { L: L ?? null, cost: waterCost };
             const byProduct = {}, unpriced = [];
             for (const [name, mL] of Object.entries(c.env?.nutrientByProduct || {})) {
                 if (!(mL > 0)) continue;
-                const cost = name ? rptFertCost(c, name, mL, cfg) : null;
+                const fl = trace ? [] : null, cost = name ? rptFertCost(c, name, mL, cfg, fl) : null;
                 byProduct[name || '(product not linked)'] = { mL, cost };
+                if (trace && !name) trace.lines.push({ d: rptStartDay(c), part: 'fert', b: '', rooms: [], qty: mL, unit: 'mL', cost: null,
+                    how: `${lgK(mL)} mL of fertilizer the grow log doesn't link to a product (PaperWizard → Configure Sheets), so this lot's fertilizer is missing` });
+                if (fl) for (const x of fl) trace.lines.push({ d: x.d || rptStartDay(c), part: 'fert', b: '', rooms: [], qty: x.mL, unit: 'mL', cost: x.cost,
+                    how: `${x.d ? 'grow log' : 'mL with no day (a 📌 constant on the paperwork), at today’s price'}: ${name} ${lgK(x.mL)} mL × ` +
+                        (x.price == null ? `no price for ${name} on the price list, so this lot's fertilizer is missing` : `${lgRate(x.price)} per L ÷ 1,000 = ${lgM(x.cost)}`) });
                 if (cost == null) unpriced.push(name || '(product not linked)');
             }
             // Partial = missing (user decision 2026-10-26): one product without a price (or mL not linked to a product) leaves
@@ -5418,6 +5435,14 @@
                 const label = atTask ? (rt?.name ? `${rt.emoji || ''} ${rt.name}`.trim() : rptTaskLabel(x.at)) : null;
                 items.push({ name: item?.name || x.name, unit: item?.unit || x.unit || '', qty, cost: p != null ? qty * p : null,
                     ...(atTask ? { at: { task: x.at, label, plants: atTask.plants, how: atTask.how, date: atTask.date || null } } : {}) });
+                if (trace) {
+                    const nm = item?.name || x.name, per = Number(x.qty) || 0;
+                    const unit = item?.unit || x.unit || '';
+                    const plantsText = atTask ? ` per plant × ${lgK(atTask.plants)} plants at ${label}${atTask.how === 'start' ? ' (no count logged by then: its starting plants)' : atTask.how === 'now' ? ' (still ahead: today’s count)' : ''}`
+                        : x.per === 'plant' ? ` per plant × its ${lgK(rptStartPlants(c))} plants at the start` : ' per crop';
+                    trace.lines.push({ d: atTask?.date || rptStartDay(c), part: 'supplies', b: '', rooms: [], qty, unit, cost: p != null ? qty * p : null,
+                        how: `recipe: ${nm}, ${lgK(per)} ${unit}${plantsText} × ` + (p == null ? `no price for ${nm} on the price list, so this lot's supplies are missing` : `${lgRate(p)} = ${lgM(qty * p)}`) });
+                }
                 if (p == null) unpricedSupplies.push(item?.name || x.name);
             }
             const supplyCosts = items.map(x => x.cost).filter(v => v != null);
@@ -5426,18 +5451,26 @@
         }
         // A product's fertilizer $ for a lot: each day's mL at that day's price; mL with no day (a 📌 constant) at today's. Null when
         // any of it has no price (partial = missing)
-        function rptFertCost(c, name, mL, cfg) {
-            let sum = 0, dated = 0;
+        // trace: an array that gets each day's { d, mL, price, cost } (the 🔍 ledger), every day even when one has no price
+        function rptFertCost(c, name, mL, cfg, trace = null) {
+            let sum = 0, dated = 0, missing = false;
             for (const [d, prods] of Object.entries(c.productDays || {})) {
                 const v = prods[name];
                 if (!(v > 0)) continue;
                 const pr = cfg.fertPrice(name, d);
-                if (pr == null) return null;
-                sum += v / 1000 * pr; dated += v;
+                if (trace) trace.push({ d, mL: v, price: pr, cost: pr == null ? null : v / 1000 * pr });
+                dated += v;
+                if (pr == null) { missing = true; if (!trace) return null; continue; }
+                sum += v / 1000 * pr;
             }
             const rest = mL - dated;
-            if (rest > 1e-9) { const pr = cfg.fertPrice(name); if (pr == null) return null; sum += rest / 1000 * pr; }
-            return sum;
+            if (rest > 1e-9) {
+                const pr = cfg.fertPrice(name);
+                if (trace) trace.push({ d: null, mL: rest, price: pr, cost: pr == null ? null : rest / 1000 * pr });
+                if (pr == null) return null;
+                sum += rest / 1000 * pr;
+            }
+            return missing ? null : sum;
         }
         // The day a lot started: its Day 0, else its planting, else its first day in a room
         const rptStartDay = c => c.dates?.day0 || c.dates?.planting || rptCropRoomDays(c)[0]?.from || rToday();
@@ -7307,7 +7340,63 @@
         // lines themselves (rptPowerModel / rptPropertyModel with a trace) from the same numbers they add up, so a lot's
         // lines always add up to its figures on the 💲 Costs page. A lot's whole life, whatever the period. Read-only.
         // =====================================================
-        const LEDGER_PARTS = [['power', '⚡ Electricity'], ['property', '🏠 Property']];
+        const LEDGER_PARTS = [['labour', '👥 Labour'], ['power', '⚡ Electricity'], ['water', '💧 Water'], ['fert', '🧪 Fertilizer'], ['supplies', '📦 Supplies'], ['property', '🏠 Property']];
+        // "(their wage from 2026-10-01)": the wage history entry an hour was priced with
+        function lgWageFrom(name, day) {
+            const emps = DB.data._EmployeeWizard?.employees || {};
+            const key = emps[name] ? name : Object.keys(emps).find(k => Array.isArray(emps[k]?.formerNames) && emps[k].formerNames.includes(name));
+            const hist = key ? DB.data._EmployeeWizard?.wageHistory?.[key] : null;
+            const renamed = key && key !== name ? `, now ${key}` : '';
+            if (!Array.isArray(hist) || !hist.length) return renamed ? ` (${renamed.slice(2)})` : '';
+            const sorted = hist.slice().sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+            let at = sorted[0];
+            for (const h of sorted) if ((h.from || '') <= day) at = h;
+            return ` (their wage ${at.from ? 'from ' + at.from : 'from the start'}${renamed})`;
+        }
+        // The lot's labour lines: each task's (or room chore's) hours that day, person by person, at the wage of the day
+        function rptLedgerLabour(c) {
+            const priced = wagesLoaded(), groups = new Map();
+            for (const x of RPT_LABOUR_SRC.get(c.labour) || []) {
+                const key = x.d + '|' + (x.src?.key || 'other') + '|' + x.b;
+                const g = groups.get(key) || groups.set(key, { d: x.d, b: x.b, src: x.src, items: [] }).get(key);
+                g.items.push(x);
+            }
+            const lines = [];
+            for (const g of groups.values()) {
+                let cost = 0, unpriced = false;
+                const parts = g.items.map(x => {
+                    const name = x.temp ? String(x.who || '').replace(/^temp:/, '') : x.who;
+                    const wage = x.temp ? (Number(x.wage) > 0 ? Number(x.wage) : null) : wageOn(x.who, x.d);
+                    const share = g.src?.chore && g.src.roomPlants > 0 && g.src.plants < g.src.roomPlants
+                        ? ` × its ${lgK(g.src.plants)} of the ${lgK(g.src.roomPlants)} plants in the room = ${lgK(x.h)} h` : '';
+                    const hrs = g.src?.chore && share ? `${lgK(x.h / (g.src.plants / g.src.roomPlants))} h${share}` : `${lgK(x.h)} h`;
+                    if (!priced) { unpriced = true; return `${name}${x.temp ? ' (temp)' : ''} ${hrs}`; }
+                    if (wage == null) { unpriced = true; return `${name}${x.temp ? ' (temp)' : ''} ${hrs} — no wage on file, so this lot's labour $ is missing`; }
+                    cost += x.h * wage;
+                    return `${name}${x.temp ? ' (temp, their own wage)' : ''} ${hrs} × ${lgRate(wage)}/h${x.temp ? '' : lgWageFrom(x.who, x.d)} = ${lgM(x.h * wage)}`;
+                });
+                const head = g.src?.chore ? `${g.src.title || 'Room chore'} in ${rptRoomName(g.src.roomId)}` : g.src?.title || 'Task';
+                const total = g.items.length > 1 && priced && !unpriced ? ` · ${lgM(cost)} in all` : '';
+                lines.push({ d: g.d, part: 'labour', b: g.b, rooms: g.src?.roomId ? [g.src.roomId] : [], qty: rSum(g.items, x => x.h), unit: 'h',
+                    cost: priced ? cost : null, how: `${head}: ${parts.join(' · ')}${total}${priced ? '' : ' — open Wages.json to price these hours'}` });
+            }
+            return lines;
+        }
+        // The lot's clones from its mother lot, one line per part (a lot cut on site: the mother's cost per clone)
+        function rptLedgerClones(c, M) {
+            const ch = rptCloneCharge(c, M);
+            if (!ch || ch.frozen || !(ch.n > 0)) return [];
+            const pr = rptCloneModel(M).priceOf(ch.mother), d = c.dates?.day0 || rptStartDay(c);
+            return LEDGER_PARTS.map(([p, name]) => {
+                const v = ch.parts[p];
+                if (v == null) return { d, part: p, clone: true, b: '', rooms: [], qty: ch.n, unit: 'clones', cost: null,
+                    how: `🌿 its ${lgK(ch.n)} clones from mother lot ${ch.mother}: ${ch.unpriced ? 'the mother lot has no cost per clone yet' : `${ch.mother} has no ${name.replace(/^\S+\s/, '').toLowerCase()} figure`}, so this part is missing for this lot` };
+                const per = v / ch.n, base = pr?.perClone?.[p];
+                return { d, part: p, clone: true, b: '', rooms: [], qty: ch.n, unit: 'clones', cost: v,
+                    how: `🌿 its ${lgK(ch.n)} clones from mother lot ${ch.mother} × ${rMoney(per, 4)} per clone = ${lgM(v)} · ${ch.mother}'s ${name.replace(/^\S+\s/, '').toLowerCase()} so far ${lgM(pr?.total?.[p] ?? null)} ÷ the ${lgK(pr?.clones || 0)} clones cut from it` +
+                        (base != null && Math.abs(base - per) > 1e-9 ? `, less what lots already closed out carry` : '') };
+            });
+        }
         const ledgerPartName = p => (LEDGER_PARTS.find(([k]) => k === p) || [p, p])[1];
         const ledgerWhere = l => [String(l.b || '').split(', ').filter(Boolean).map(rptBuildingName).join(', '), (l.rooms || []).map(rptRoomName).join(', ')].filter(Boolean).join(' · ');
         function rptLedger(M, lotId) {
@@ -7316,35 +7405,52 @@
             const trace = { lotId, lines: [] };
             rptPowerModel(M.crops, trace);
             rptPropertyModel(M.crops, trace);
+            rptCropInputCostNow(c, M, false, trace);
+            trace.lines.push(...rptLedgerLabour(c), ...rptLedgerClones(c, M));
+            for (const l of trace.lines) if (l.part === 'power') { l.qty = l.kWh; l.unit = 'kWh'; }
             const order = Object.fromEntries(LEDGER_PARTS.map(([k], i) => [k, i]));
             trace.lines.sort((a, b) => a.d.localeCompare(b.d) || order[a.part] - order[b.part]);
             return { c, lines: trace.lines };
         }
-        // Each part: the sum of its lines, the model's own total, and the figure the 💲 Costs page uses (null: missing)
+        // Each part: the sum of its lines, what the cost code's own total for it is (its own + its clones), and the figure the
+        // 💲 Costs page uses (null: missing, with why)
         function rptLedgerTotals(c, M, lines) {
-            const k = rptCropInputCost(c, M);
+            const k = rptCropInputCost(c, M), page = rptCropCostParts(c, M), ch = rptCloneCharge(c, M), lab = rptCropCost(c);
+            const own = { labour: lab ? lab.cost : null, power: rptPowerFor(M, c)?.cost ?? null, water: k.water.cost, fert: k.fert.cost, supplies: k.supplies.cost, property: rptPropertyFor(M, c)?.cost ?? null };
+            const plural = n => `${lgK(n)} day${n === 1 ? '' : 's'}`;
             return LEDGER_PARTS.map(([p, name]) => {
-                const ls = lines.filter(l => l.part === p), sum = rSum(ls, l => l.cost), kWh = p === 'power' ? rSum(ls, l => l.kWh) : null;
-                const plural = n => `${n} day${n === 1 ? '' : 's'}`;
-                let page, model, why = [];
-                if (p === 'power') {
-                    page = k.power.cost; model = rptPowerFor(M, c)?.cost ?? null;
-                    if (k.power.unbilledDays) why.push(`${plural(k.power.unbilledDays)} no power bill covers`);
-                    if (k.power.noWattsDays) why.push(`${plural(k.power.noWattsDays)} in a room with no watts per light`);
-                    if (page == null && !why.length) why.push(model == null ? 'no $ per kWh set' : 'no electricity worked out');
-                } else {
-                    page = k.property.cost; model = rptPropertyFor(M, c)?.cost ?? null;
-                    if (k.property.noRentDays) why.push(`${plural(k.property.noRentDays)} in a building with no property cost set`);
+                const ls = lines.filter(l => l.part === p), mine = ls.filter(l => !l.clone), sum = rSum(ls, l => l.cost);
+                const cl = ch && !ch.frozen && ch.n > 0 ? ch.parts[p] : 0;   // null: its clones can't be priced in this part
+                const model = own[p] != null && cl != null ? own[p] + cl : null;
+                const why = [];
+                if (page[p] == null) {
+                    if (p === 'labour') {
+                        if (!wagesLoaded()) why.push('Wages.json isn’t open');
+                        else if (lab?.missing > 0) why.push(`${lgK(lab.missing)} h with no wage`);
+                        else if (!(lab?.cost > 0)) why.push('no hours logged');
+                    }
+                    if (p === 'power') {
+                        if (k.power.unbilledDays) why.push(`${plural(k.power.unbilledDays)} no power bill covers`);
+                        if (k.power.noWattsDays) why.push(`${plural(k.power.noWattsDays)} in a room with no watts per light`);
+                        if (own.power == null) why.push('no $ per kWh set');
+                    }
+                    if (p === 'water') why.push(k.water.L > 0 ? 'a day with no water rate set' : 'no water logged');
+                    if (p === 'fert') why.push(k.fert.unpriced.length ? `no price for ${k.fert.unpriced.join(', ')}` : 'no fertilizer logged');
+                    if (p === 'supplies') why.push(k.supplies.unpriced.length ? `no price for ${k.supplies.unpriced.join(', ')}` : 'no supplies in its recipe');
+                    if (p === 'property' && k.property.noRentDays) why.push(`${plural(k.property.noRentDays)} in a building with no property cost set`);
+                    if (cl == null) why.push('its clones can’t be priced in this part');
+                    if (!why.length) why.push('nothing to price');
                 }
-                const adds = model != null ? Math.abs(sum - model) < 0.005 : !ls.some(l => l.cost != null && l.cost !== 0);
-                return { p, name, n: ls.length, kWh, sum, page, model, adds, why: page == null ? why : [] };
+                const units = [...new Set(mine.map(l => l.unit).filter(Boolean))];
+                const qty = units.length === 1 ? `${lgK(rSum(mine, l => l.qty))} ${units[0]}` : '';
+                return { p, name, n: ls.length, qty, sum, page: page[p], model, adds: model != null ? Math.abs(sum - model) < 0.005 : null, why };
             });
         }
         function rptLedgerCsv(lotId, lines) {
             const q = v => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-            const rows = [['Lot', 'Date', 'Part', 'Building', 'Rooms', 'kWh', '$', 'How it was worked out']];
-            for (const l of lines) rows.push([lotId, l.d, ledgerPartName(l.part).replace(/^\S+\s/, ''), String(l.b || '').split(', ').filter(Boolean).map(rptBuildingName).join(', '),
-                (l.rooms || []).map(rptRoomName).join(', '), l.kWh != null ? +l.kWh.toFixed(6) : '', l.cost != null ? +l.cost.toFixed(6) : '', l.how]);
+            const rows = [['Lot', 'Date', 'Part', 'Building', 'Rooms', 'Amount', 'Unit', '$', 'How it was worked out']];
+            for (const l of lines) rows.push([lotId, l.d, ledgerPartName(l.part).replace(/^\S+\s/, '') + (l.clone ? ' (clones)' : ''), String(l.b || '').split(', ').filter(Boolean).map(rptBuildingName).join(', '),
+                (l.rooms || []).map(rptRoomName).join(', '), l.qty != null ? +Number(l.qty).toFixed(6) : '', l.unit || '', l.cost != null ? +l.cost.toFixed(6) : '', l.how]);
             return '﻿' + rows.map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
         }
         function rptLedgerPage(M) {
@@ -7364,7 +7470,8 @@
             const monthSel = `<select id="rptLedgerMonth" class="rpt-inline-sel" aria-label="Month">${opt('', 'Every month', month)}${months.map(ym => opt(ym, ctlsMonthName(ym), month)).join('')}</select>`;
             const cfg = rptCostConfig();
             const how = `Electricity: ${cfg.source === 'bills' ? 'each power bill ÷ the kWh estimated on its meter over all its days = its $ per kWh, and each lot pays its own estimated kWh × that (lights × watts × hours × light %, plus equipment)' : `estimated kWh (lights × watts × hours × light %, plus equipment) × the $ per kWh of the day`}. ` +
-                `Property: each building’s monthly cost ÷ the days in the month, shared ${cfg.propertyShare === 'plants' ? 'by every lot’s plants that day' : cfg.propertyShare === 'area' ? 'by the floor area of the rooms in use, then by plants' : 'by the lights of the rooms with a lot growing, then by plants (a lot drying or trimming pays none)'}.`;
+                `Property: each building’s monthly cost ÷ the days in the month, shared ${cfg.propertyShare === 'plants' ? 'by every lot’s plants that day' : cfg.propertyShare === 'area' ? 'by the floor area of the rooms in use, then by plants' : 'by the lights of the rooms with a lot growing, then by plants (a lot drying or trimming pays none)'}. ` +
+                `Labour: each hour on its tasks, and its share of room chores by plants, at the wage of the day it was worked. Water, fertilizer and supplies: its grow logs and recipe, at the price of the day. Clones: the mother lot’s cost so far ÷ the clones cut from it, part by part.`;
 
             if (c.closed) {
                 const k = rptCropInputCost(c, M);
@@ -7372,18 +7479,21 @@
                 return `<div class="rpt-grid">${rCard({ wide: true, title: `🔍 Cost ledger — lot ${lotId}`, control: lotSel, body, source: 'Crop summary (frozen at close-out)' })}</div>`;
             }
             const totals = rptLedgerTotals(c, M, lines);
-            const check = t => t.adds ? (t.page != null ? '✓ adds up' : '✓ adds up (the days it could price)') : '✗ doesn’t add up — please report it';
-            const sumTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Part</th><th class="n">Lines</th><th class="n">kWh</th><th class="n">The lines add up to</th><th class="n">On the 💲 Costs page</th><th>Check</th></tr></thead><tbody>` +
-                totals.map(t => `<tr><td>${rEsc(t.name)}</td><td class="n">${t.n}</td><td class="n">${t.kWh != null ? lgK(t.kWh) : ''}</td><td class="n">${lgM(t.sum)}</td>` +
-                    `<td class="n">${t.page != null ? lgM(t.page) : `missing (${rEsc(t.why.join(', '))})`}</td><td class="${t.adds ? 'ok' : 'bad'}">${check(t)}</td></tr>`).join('') +
-                `</tbody></table></div>`;
-            const byMonth = months.map(ym => { const ls = lines.filter(l => l.d.startsWith(ym)); return [ym, ...LEDGER_PARTS.map(([k]) => rSum(ls.filter(l => l.part === k), l => l.cost)), rSum(ls.filter(l => l.part === 'power'), l => l.kWh)]; });
-            const monthTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Month</th><th class="n">kWh</th>${LEDGER_PARTS.map(([, n]) => `<th class="n">${rEsc(n)}</th>`).join('')}</tr></thead><tbody>` +
-                byMonth.map(([ym, ...v]) => `<tr><td>${rEsc(ctlsMonthName(ym))}</td><td class="n">${lgK(v[LEDGER_PARTS.length])}</td>${LEDGER_PARTS.map((_, i) => `<td class="n">${lgM(v[i])}</td>`).join('')}</tr>`).join('') + `</tbody></table></div>`;
-            const rows = shown.map(l => `<tr><td>${rEsc(l.d)}</td><td>${rEsc(ledgerPartName(l.part))}</td><td>${rEsc(ledgerWhere(l))}</td><td class="how">${rEsc(l.how)}</td>` +
-                `<td class="n">${l.kWh != null ? lgK(l.kWh) : ''}</td><td class="n${l.cost == null ? ' bad' : ''}">${l.cost == null ? 'missing' : lgM(l.cost)}</td></tr>`).join('');
-            const linesTable = shown.length ? `<div class="rpt-tbl rpt-ledger"><table><thead><tr><th>Date</th><th>Part</th><th>Where</th><th>How it was worked out</th><th class="n">kWh</th><th class="n">$</th></tr></thead><tbody>${rows}</tbody>` +
-                `<tfoot><tr><td colspan="4">The ${shown.length} line${shown.length === 1 ? '' : 's'} shown</td><td class="n">${shown.some(l => l.kWh != null) ? lgK(rSum(shown, l => l.kWh)) : ''}</td><td class="n">${lgM(rSum(shown, l => l.cost))}</td></tr></tfoot></table></div>`
+            const check = t => t.adds == null ? '— see the lines marked missing' : t.adds ? (t.page != null ? '✓ adds up' : '✓ adds up (what it could price)') : '✗ doesn’t add up — please report it';
+            const allIn = totals.every(t => t.page != null) ? rSum(totals, t => t.page) : null, grams = Number(c.weights?.flower) || 0;
+            const sumTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Part</th><th class="n">Lines</th><th class="n">Amount</th><th class="n">The lines add up to</th><th class="n">On the 💲 Costs page</th><th>Check</th></tr></thead><tbody>` +
+                totals.map(t => `<tr><td>${rEsc(t.name)}</td><td class="n">${t.n}</td><td class="n">${rEsc(t.qty)}</td><td class="n">${lgM(t.sum)}</td>` +
+                    `<td class="n">${t.page != null ? lgM(t.page) : `missing (${rEsc(t.why.join(', '))})`}</td><td class="${t.adds === false ? 'bad' : 'ok'}">${check(t)}</td></tr>`).join('') +
+                `</tbody><tfoot><tr><td>Its own costs, clones included</td><td class="n">${lines.length}</td><td></td><td class="n">${lgM(rSum(totals, t => t.sum))}</td>` +
+                `<td class="n">${allIn != null ? lgM(allIn) + (grams > 0 ? ` · ${rMoney(allIn / grams, 4)} per g of its ${lgK(grams)} g` : '') : 'not every part can be priced'}</td><td></td></tr></tfoot></table></div>`;
+            const byMonth = months.map(ym => { const ls = lines.filter(l => l.d.startsWith(ym)); return [ym, ...LEDGER_PARTS.map(([k]) => rSum(ls.filter(l => l.part === k), l => l.cost)), rSum(ls.filter(l => l.part === 'power'), l => l.kWh), rSum(ls, l => l.cost)]; });
+            const NP = LEDGER_PARTS.length;
+            const monthTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Month</th><th class="n">kWh</th>${LEDGER_PARTS.map(([, n]) => `<th class="n">${rEsc(n)}</th>`).join('')}<th class="n">All parts</th></tr></thead><tbody>` +
+                byMonth.map(([ym, ...v]) => `<tr><td>${rEsc(ctlsMonthName(ym))}</td><td class="n">${lgK(v[NP])}</td>${LEDGER_PARTS.map((_, i) => `<td class="n">${lgM(v[i])}</td>`).join('')}<td class="n">${lgM(v[NP + 1])}</td></tr>`).join('') + `</tbody></table></div>`;
+            const rows = shown.map(l => `<tr><td>${rEsc(l.d)}</td><td>${rEsc(ledgerPartName(l.part))}${l.clone ? ' 🌿' : ''}</td><td>${rEsc(ledgerWhere(l))}</td><td class="how">${rEsc(l.how)}</td>` +
+                `<td class="n">${l.qty != null ? `${lgK(l.qty)} ${rEsc(l.unit || '')}` : ''}</td><td class="n${l.cost == null ? ' bad' : ''}">${l.cost == null ? 'missing' : lgM(l.cost)}</td></tr>`).join('');
+            const linesTable = shown.length ? `<div class="rpt-tbl rpt-ledger"><table><thead><tr><th>Date</th><th>Part</th><th>Where</th><th>How it was worked out</th><th class="n">Amount</th><th class="n">$</th></tr></thead><tbody>${rows}</tbody>` +
+                `<tfoot><tr><td colspan="5">The ${shown.length} line${shown.length === 1 ? '' : 's'} shown</td><td class="n">${lgM(rSum(shown, l => l.cost))}</td></tr></tfoot></table></div>`
                 : rEmpty('No lines for these choices.', '');
             if (RPT.ledgerUrl) URL.revokeObjectURL(RPT.ledgerUrl);
             RPT.ledgerUrl = lines.length ? URL.createObjectURL(new Blob([rptLedgerCsv(lotId, lines)], { type: 'text/csv' })) : '';
