@@ -89,7 +89,7 @@ export async function run(b, BASE) {
 
     // ---- Plants ----
     const C = await b.run(ew, `const C = ctlsModel('2026-09'); return { opening: C.opening, closing: C.closing, tot: C.tot, rows: C.rows.map(r => [r.date, r.lotId, r.bucket, r.delta, r.party, r.by]),
-        atEnd: C.atEnd.map(o => [o.lotId, o.n, o.room, o.phase]), wet: C.wet, hanging: C.hanging.map(h => [h.lotId, h.g, h.room]), dry: C.dryOut.map(d => [d.date, d.lotId, d.g]), dryTotal: C.dryTotal,
+        atEnd: C.atEnd.map(o => [o.lotId, o.n, o.room, o.phase]), wet: C.wet, hanging: C.hanging.map(h => [h.lotId, h.g, h.room]), dry: C.shippedOut.map(d => [d.date, d.lotId, d.g, d.how]), dryTotal: C.shippedTotal, dried: C.dried,
         checks: C.checks.map(c => c.text) };`);
     check('opening: the plants on hand on Aug 31 (100 + 30 + 20 from the closed-out lot)', C.opening === 150, C.opening);
     check('closing: the plants on hand on Sep 30 (12 + 50 + 28)', C.closing === 90, C.closing);
@@ -107,7 +107,8 @@ export async function run(b, BASE) {
     // ---- Wet hanging, dry sent out ----
     check('wet: 3,000 g hanging on Aug 31, 8,400.5 g harvested, 3,000 g dried, 8,400.5 g hanging on Sep 30',
         C.wet.opening === 3000 && C.wet.in === 8400.5 && C.wet.out === 3000 && C.wet.closing === 8400.5 && JSON.stringify(C.hanging) === JSON.stringify([['A100', 8400.5, 'Dry 1']]), JSON.stringify([C.wet, C.hanging]));
-    check('dry flower sent out: 0.7 kg answered in kg, counted as 700 g on the day it was recorded', JSON.stringify(C.dry) === JSON.stringify([['2026-09-12', 'D400', 700]]) && C.dryTotal === 700, JSON.stringify(C.dry));
+    // D400 has no Weigh & Ship task: its dry weight ships on the day it's recorded, as before (cost audit 2026-10-26)
+    check('shipped out: 0.7 kg answered in kg, 700 g on the day it was recorded (no Weigh & Ship task)', JSON.stringify(C.dry) === JSON.stringify([['2026-09-12', 'D400', 700, 'dry']]) && C.dryTotal === 700 && C.dried.closing === 0, JSON.stringify([C.dry, C.dried]));
 
     // ---- Checks ----
     check('checks: the sub-lot with no grow log, the count with no reason, the lot closed without its plant history', C.checks.length === 3
@@ -129,7 +130,7 @@ export async function run(b, BASE) {
     await b.run(ew, `document.getElementById('ctlsFile').click();`, { user: true });
     await b.sleep(300);
     const filed = await b.run(main, `return DB.data._EmployeeWizard.ctls?.['2026-09'];`);
-    check('Mark as filed keeps September\'s closing numbers, and SitkaTools has them to save', filed?.plants === 90 && filed.wetG === 8400.5 && filed.dryG === 700 && !!filed.filedAt, JSON.stringify(filed));
+    check('Mark as filed keeps September\'s closing numbers, and SitkaTools has them to save', filed?.plants === 90 && filed.wetG === 8400.5 && filed.shippedG === 700 && filed.driedG === 0 && filed.rule === 2 && !!filed.filedAt, JSON.stringify(filed));
     let octChecks = await b.run(ew, `return ctlsModel('2026-10').checks.map(c => c.text);`);
     check('October\'s opening matches September\'s filing: nothing to say', !octChecks.some(t => t.includes('was filed with different closing numbers')), octChecks.join(' | '));
     await b.run(main, `const d = DB.data._PaperWizard.entries.E500.glog.instances['2026-09-01'].days['2026-09-30']; d.cnt = '27'; d._removed = { destroyed: 1 }; markUnsaved(); broadcastToSubtools();`);

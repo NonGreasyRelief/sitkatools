@@ -4383,7 +4383,7 @@
             c.recipeId = lot?._tool_CropLabourWizard?.recipeId || null;
             // 📋 CTLS: the lot's dated plant and weight history (version 4), kept with the summary so a lot closed out
             // mid-month still counts in that month's numbers
-            c.ctls = ctlsLedger(lot, paper, qmap, answers);
+            c.ctls = ctlsLedger(lot, paper, qmap, answers, undefined, tasks);
             // 🌿 A mother lot (scheduled with a vegetative recipe): no harvest; it lives in its Mother room until it's retired
             // or its plants reach 0 (its stays and costs end there)
             const cfg = lot?._tool_CropLabourWizard;
@@ -7116,7 +7116,8 @@
         //     moves: [{ date, kind: 'removed' | 'added' | 'unexplained', reason?, n, to?, by? }],
         //     wet: [[day, g]], dry: [[day, g]], undatedWeights? }
         // `unexplained` is a change in the count with no reason on the day (entries from before reasons were asked).
-        function ctlsLedger(lot, paper, qmap, answers = null, sq = ctlsSheetQuestions()) {
+        // events: the lot's CropLabourWizard events (its ✅ Weigh & Ship sign-off is its ship day)
+        function ctlsLedger(lot, paper, qmap, answers = null, sq = ctlsSheetQuestions(), events = null) {
             const byDay = {};
             for (const [sheetId, entry] of Object.entries(paper || {})) {
                 const s = sq[sheetId];
@@ -7165,9 +7166,9 @@
                 if (!last || last[1] !== row[1] || last[2] !== row[2] || last[3] !== row[3] || d === days[days.length - 1]) counts.push(row);
                 last = row;
             }
-            const wet = {}, dry = {};
+            const wet = {}, dry = {}, ans = answers || rptAnswers(paper, qmap);
             let undated = false;
-            for (const a of answers || rptAnswers(paper, qmap)) {
+            for (const a of ans) {
                 if (a.metric !== 'harvest.wetWeight' && a.metric !== 'harvest.dryWeight') continue;
                 if (!a.date) { undated = true; continue; }
                 const m = a.metric === 'harvest.wetWeight' ? wet : dry;
@@ -7177,9 +7178,20 @@
             const type = ['new-lot', 'sub-lot', 'split-lot'].includes(lot?.type) ? lot.type : (lot?.parentLotId ? 'sub-lot' : 'new-lot');
             let created = isDay(lot?.createdDate) ? lot.createdDate : null;
             if (days.length && (!created || days[0] < created)) created = days[0];
-            const L = { v: 1, type, created, start, from: lot?.receivedFrom || null, parent: lot?.parentLotId || null,
+            // 📦 Shipped out (user decision 2026-10-26): the flower (the grades, or the all-grades total) and trim weighed out, on
+            // the day the lot's ✅ Weigh & Ship was signed off done. A lot with no Weigh & Ship task (or no schedule) ships each dry
+            // weight on the day it's recorded, as before (`how: 'dry'`). Not signed off yet: null — its dry weight is on hand.
+            const sums = {};
+            for (const a of ans) if (/^harvest\.(bigs|mids|smalls|popcorn|flowerTotal|trim)$/.test(a.metric)) sums[a.metric] = (sums[a.metric] || 0) + a.value;
+            const grades = ['bigs', 'mids', 'smalls', 'popcorn'].filter(g => sums['harvest.' + g] != null);
+            const r1 = v => v == null ? null : Math.round(v * 10) / 10;
+            const out = { flower: r1(grades.length ? rSum(grades.map(g => sums['harvest.' + g])) : (sums['harvest.flowerTotal'] ?? null)), trim: r1(sums['harvest.trim'] ?? null) };
+            const shipEvs = (events || []).filter(e => e && e.sourceTool === 'CropLabourWizard' && e.taskType === 'weigh_ship');
+            const doneDay = ev => isDay(ev.completedBy?.day) ? ev.completedBy.day : ev.completedBy?.at ? rSavedDay(ev.completedBy.at) : (ev.endDate || ev.date);
+            const ship = shipEvs.length ? (shipEvs.every(ev => ev.completed === true) ? { day: shipEvs.map(doneDay).filter(isDay).sort().pop() || null, how: 'signed' } : null) : { day: null, how: 'dry' };
+            const L = { v: 2, type, created, start, from: lot?.receivedFrom || null, parent: lot?.parentLotId || null,
                 dryRoom: lot?.dryRoom || null, room: lot?.currentRoom || null, stage: lot?.stage || null, logged: days.length > 0,
-                counts, moves, wet: byDate(wet), dry: byDate(dry), ...(undated ? { undatedWeights: true } : {}) };
+                counts, moves, wet: byDate(wet), dry: byDate(dry), ship, out, ...(undated ? { undatedWeights: true } : {}) };
             Object.defineProperty(L, 'days', { value: new Set(days), enumerable: false });   // every logged day (live lots: missing days)
             return L;
         }
@@ -7203,6 +7215,11 @@
         const ctlsWetTo = L => { const dd = ctlsDryDate(L); return dd ? L.wet.filter(([d]) => d <= dd) : L.wet; };
         // Wet weight still hanging: harvested, and the lot's dry weight not recorded yet
         const ctlsHanging = (L, d) => { const dd = ctlsDryDate(L); return dd && dd <= d ? 0 : ctlsSumTo(L.wet, d); };
+        // 📦 How a lot ships: its own record (history version 2); a history saved before ships were kept ships each dry weight
+        // on the day it was recorded, as before. 'dry': dry weights go out on their day; 'signed': on its Weigh & Ship day
+        const ctlsShip = L => L.ship !== undefined ? L.ship : { day: null, how: 'dry' };
+        // Dried cannabis on hand at the end of a day: its dry weight recorded by then, until it's shipped (signed off)
+        const ctlsDried = (L, d) => { const s = ctlsShip(L); return !s || s.how !== 'signed' ? (s ? 0 : ctlsSumTo(L.dry, d)) : (s.day && s.day <= d ? 0 : ctlsSumTo(L.dry, d)); };
 
         // ---- Months ----
         const ctlsBounds = ym => {
@@ -7221,9 +7238,10 @@
         // Every lot that could hold plants or cannabis: the DB's lots (live), plus closed-out lots' summaries
         function ctlsLots() {
             const qmap = rptQuestionMap(), sq = ctlsSheetQuestions(), crops = DB.data._EmployeeWizard?.crops || {}, closed = DB.data._closedLots || {};
-            const lots = [], old = [];
+            const lots = [], old = [], evByLot = {};
+            for (const ev of DB.data.calendarEvents || []) if (ev?.lotId && ev.sourceTool === 'CropLabourWizard') (evByLot[ev.lotId] || (evByLot[ev.lotId] = [])).push(ev);
             for (const [lotId, lot] of Object.entries(DB.lots)) {
-                if (lot) lots.push({ lotId, strain: lot.strain || '—', live: true, L: ctlsLedger(lot, DB.data._PaperWizard?.entries?.[lotId], qmap, null, sq), saved: crops[lotId] || null });
+                if (lot) lots.push({ lotId, strain: lot.strain || '—', live: true, L: ctlsLedger(lot, DB.data._PaperWizard?.entries?.[lotId], qmap, null, sq, evByLot[lotId] || []), saved: crops[lotId] || null });
             }
             for (const [lotId, s] of Object.entries(crops)) {
                 if (DB.lots[lotId] || !s || typeof s !== 'object') continue;
@@ -7270,8 +7288,8 @@
             const byPhase = {};
             for (const o of atEnd) byPhase[o.phase || 'No phase'] = (byPhase[o.phase || 'No phase'] || 0) + o.n;
 
-            // ---- Wet cannabis hanging, and dry flower sent out ----
-            const wetIn = [], wetOut = [], hanging = [], dryOut = [], oddWet = [];
+            // ---- Wet cannabis hanging, dried cannabis on hand, and what was shipped out ----
+            const wetIn = [], wetOut = [], hanging = [], oddWet = [];
             for (const x of lots) {
                 const L = x.L, dd = ctlsDryDate(L);
                 for (const [d, g] of L.wet) {
@@ -7281,12 +7299,38 @@
                 if (dd && inRange(dd, B.start, B.end)) wetOut.push({ date: dd, lotId: x.lotId, strain: x.strain, wet: ctlsSumTo(ctlsWetTo(L), dd), dry: ctlsSumTo(L.dry, B.end) });
                 const h = ctlsHanging(L, B.end);
                 if (h > 0) hanging.push({ lotId: x.lotId, strain: x.strain, room: L.dryRoom || '', since: L.wet[0]?.[0] || '', g: h });
-                for (const [d, g] of L.dry) if (inRange(d, B.start, B.end)) dryOut.push({ date: d, lotId: x.lotId, strain: x.strain, g });
+            }
+            // 📦 Dried cannabis (user decision 2026-10-26): a lot's dry weight is on hand from the day it's recorded until the lot
+            // ships — its ✅ Weigh & Ship signed off — when its flower and trim go out and the rest is stems & waste. A lot with
+            // no Weigh & Ship task (or a history saved before ships were kept) ships each dry weight on its day, as before.
+            const driedIn = [], shippedOut = [], onHand = [], oddDry = [], unweighed = [];
+            for (const x of lots) {
+                const L = x.L, s = ctlsShip(L);
+                for (const [d, g] of L.dry) {
+                    if (!inRange(d, B.start, B.end)) continue;
+                    if (s?.how === 'signed' && s.day && d > s.day) oddDry.push({ lotId: x.lotId, date: d, g });
+                    else {
+                        driedIn.push({ date: d, lotId: x.lotId, strain: x.strain, g });
+                        if (s?.how === 'dry') shippedOut.push({ date: d, lotId: x.lotId, strain: x.strain, flower: null, trim: null, g, dried: g, waste: 0, how: 'dry' });
+                    }
+                }
+                if (s?.how === 'signed' && s.day && inRange(s.day, B.start, B.end)) {
+                    const dried = ctlsSumTo(L.dry, s.day), weighed = L.out?.flower != null || L.out?.trim != null;
+                    const g = weighed ? (L.out.flower || 0) + (L.out.trim || 0) : dried;
+                    if (!weighed) unweighed.push(x.lotId);
+                    shippedOut.push({ date: s.day, lotId: x.lotId, strain: x.strain, flower: L.out?.flower ?? null, trim: L.out?.trim ?? null, g, dried, waste: dried - g, how: 'signed' });
+                }
+                const h = ctlsDried(L, B.end);
+                if (h > 0) onHand.push({ lotId: x.lotId, strain: x.strain, since: L.dry[0]?.[0] || '', g: h, weighed: L.out?.flower != null, pending: s === null });
             }
             const bySort = (a, b) => (a.date || '').localeCompare(b.date || '') || ctlsLotSort(a.lotId, b.lotId);
-            wetIn.sort(bySort); wetOut.sort(bySort); dryOut.sort(bySort); hanging.sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
+            wetIn.sort(bySort); wetOut.sort(bySort); driedIn.sort(bySort); shippedOut.sort(bySort); hanging.sort((a, b) => ctlsLotSort(a.lotId, b.lotId)); onHand.sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
             const wet = { opening: rSum(lots, x => ctlsHanging(x.L, B.prevEnd)), closing: rSum(lots, x => ctlsHanging(x.L, B.end)), in: rSum(wetIn, r => r.g), out: rSum(wetOut, r => r.wet) };
-            const dryTotal = rSum(dryOut, r => r.g);
+            const dried = { opening: rSum(lots, x => ctlsDried(x.L, B.prevEnd)), closing: rSum(lots, x => ctlsDried(x.L, B.end)), in: rSum(driedIn, r => r.g),
+                out: rSum(shippedOut, r => r.dried), shipped: rSum(shippedOut, r => r.g), waste: rSum(shippedOut, r => r.waste) };
+            const shippedTotal = dried.shipped;
+            // The old rule's number (every dry weight recorded in the month), for months filed before ships were kept
+            const dryRecorded = rSum(lots.flatMap(x => x.L.dry.filter(([d]) => inRange(d, B.start, B.end))), ([, g]) => g);
 
             // ---- Checks: what could make these numbers wrong ----
             const checks = [];
@@ -7323,21 +7367,32 @@
             if (stale.length) checks.push({ sev: 'warn', text: `Closed-out lot ${stale.map(x => `${x.lotId} (${[ctlsCountAt(x.L, B.end) > 0 ? `${rN(ctlsCountAt(x.L, B.end))} plants` : '', ctlsHanging(x.L, B.end) > 0 ? `${ctlsG(ctlsHanging(x.L, B.end))} wet` : ''].filter(Boolean).join(', ')})`).join(', ')} still ${stale.length === 1 ? 'has' : 'have'} plants or wet weight in ${stale.length === 1 ? 'its' : 'their'} saved history, which was saved before ${stale.length === 1 ? 'it' : 'they'} ended — so ${stale.length === 1 ? 'they are' : 'those are'} counted in this month. Import the archive file again (⚙️ Setup & data → 📂 Import archived lots) to bring the history up to its close-out.`, go: 'settings' });
             const gone = missing.filter(m => !m.closedAt || rSavedDay(m.closedAt) >= B.start);
             if (gone.length) checks.push({ sev: 'warn', text: `Closed-out lot ${lotList(gone.map(m => m.lotId))} ${gone.length === 1 ? 'has' : 'have'} no saved summary, so ${gone.length === 1 ? 'its' : 'their'} plants and weights aren't in this month or the ones before ${gone.length === 1 ? 'its' : 'their'} close-out. Import ${gone.length === 1 ? 'its' : 'their'} archive file (⚙️ Setup & data → 📂 Import archived lots).`, go: 'settings' });
-            const offPlants = closing - opening - rSum(rows, r => r.delta), offWet = wet.closing - wet.opening - wet.in + wet.out;
-            if (Math.abs(offPlants) > 1e-9 || Math.abs(offWet) > 0.05) checks.push({ sev: 'crit', text: `The changes don't add up to the month-end numbers (plants ${ctlsSigned(offPlants)}, wet ${rN(offWet, 1)} g). Please report this.` });
+            // 📦 Shipping
+            if (oddDry.length) checks.push({ sev: 'warn', text: `Dry weight recorded after the lot shipped (not counted): lot ${lotList(oddDry.map(o => o.lotId))}.` });
+            if (unweighed.length) checks.push({ sev: 'warn', text: `Shipped (Weigh & Ship signed off) with no flower or trim weighed out on the harvest log: lot ${lotList(unweighed)} — its dry weight is counted as shipped. Tag the weigh-out questions (bigs, mids, smalls, popcorn, trim).` });
+            const over = shippedOut.filter(r => r.how === 'signed' && r.waste < -0.05);
+            if (over.length) checks.push({ sev: 'warn', text: `Shipped more flower and trim than the dry weight recorded: lot ${lotList(over.map(r => r.lotId))}. Check the weights on the harvest log.` });
+            const pending = onHand.filter(o => o.weighed && o.pending);   // weighed out, and its Weigh & Ship still not signed off
+            if (pending.length) checks.push({ sev: 'info', text: `Weighed out, but Weigh & Ship isn't signed off, so ${pending.length === 1 ? 'its' : 'their'} dry weight is still on hand: lot ${lotList(pending.map(o => o.lotId))}. Sign it off (DailyWizard ✅ Mark done, or the Tasks tab) on the day it ships.` });
+            const offPlants = closing - opening - rSum(rows, r => r.delta), offWet = wet.closing - wet.opening - wet.in + wet.out, offDried = dried.closing - dried.opening - dried.in + dried.out;
+            if (Math.abs(offPlants) > 1e-9 || Math.abs(offWet) > 0.05 || Math.abs(offDried) > 0.05) checks.push({ sev: 'crit', text: `The changes don't add up to the month-end numbers (plants ${ctlsSigned(offPlants)}, wet ${rN(offWet, 1)} g, dried ${rN(offDried, 1)} g). Please report this.` });
             const filed = ctlsFiled(), pf = filed[B.prevYm], tf = filed[ym];
-            if (pf && (pf.plants !== opening || Math.abs((pf.wetG || 0) - wet.opening) > 0.05)) {
-                const diffs = [pf.plants !== opening ? `${rN(pf.plants)} plants → ${rN(opening)} (${ctlsSigned(opening - pf.plants)})` : '', Math.abs((pf.wetG || 0) - wet.opening) > 0.05 ? `${ctlsG(pf.wetG || 0)} wet → ${ctlsG(wet.opening)}` : ''].filter(Boolean).join(', ');
+            const pfDried = pf && pf.driedG != null && Math.abs(pf.driedG - dried.opening) > 0.05;
+            if (pf && (pf.plants !== opening || Math.abs((pf.wetG || 0) - wet.opening) > 0.05 || pfDried)) {
+                const diffs = [pf.plants !== opening ? `${rN(pf.plants)} plants → ${rN(opening)} (${ctlsSigned(opening - pf.plants)})` : '', Math.abs((pf.wetG || 0) - wet.opening) > 0.05 ? `${ctlsG(pf.wetG || 0)} wet → ${ctlsG(wet.opening)}` : '',
+                    pfDried ? `${ctlsG(pf.driedG)} dried on hand → ${ctlsG(dried.opening)}` : ''].filter(Boolean).join(', ');
                 checks.push({ sev: 'warn', text: `${ctlsMonthName(B.prevYm)} was filed with different closing numbers than the logs now give for ${dFmtY(B.prevEnd)}: ${diffs}. CTLS expects this month's opening to match last month's closing (within 5 %); report the difference under “Other”.` });
             }
-            if (tf && (tf.plants !== closing || Math.abs((tf.wetG || 0) - wet.closing) > 0.05 || Math.abs((tf.dryG || 0) - dryTotal) > 0.05))
-                checks.push({ sev: 'warn', text: `Changed since it was filed on ${dFmtY(rSavedDay(tf.filedAt))}: filed ${rN(tf.plants)} plants, ${ctlsG(tf.wetG || 0)} wet, ${ctlsG(tf.dryG || 0)} dry; the logs now give ${rN(closing)} plants, ${ctlsG(wet.closing)} wet, ${ctlsG(dryTotal)} dry.` });
+            // A month filed before ships were kept (no rule 2) is compared with the old rule's dry number
+            const filedOut = tf?.rule === 2 ? tf.shippedG || 0 : tf?.dryG || 0, nowOut = tf?.rule === 2 ? shippedTotal : dryRecorded;
+            if (tf && (tf.plants !== closing || Math.abs((tf.wetG || 0) - wet.closing) > 0.05 || Math.abs(filedOut - nowOut) > 0.05 || (tf.rule === 2 && Math.abs((tf.driedG || 0) - dried.closing) > 0.05)))
+                checks.push({ sev: 'warn', text: `Changed since it was filed on ${dFmtY(rSavedDay(tf.filedAt))}: filed ${rN(tf.plants)} plants, ${ctlsG(tf.wetG || 0)} wet, ${tf.rule === 2 ? `${ctlsG(tf.driedG || 0)} dried on hand, ${ctlsG(filedOut)} shipped` : `${ctlsG(filedOut)} dry`}; the logs now give ${rN(closing)} plants, ${ctlsG(wet.closing)} wet, ${tf.rule === 2 ? `${ctlsG(dried.closing)} dried on hand, ${ctlsG(nowOut)} shipped` : `${ctlsG(nowOut)} dry`}.` });
 
             // Lots that could be closed out: no plants and nothing hanging. Their history must be saved first.
-            const ready = lots.filter(x => x.live && x.L.created && ctlsCountAt(x.L, today) === 0 && ctlsHanging(x.L, today) === 0 && (x.L.logged || x.L.wet.length))
+            const ready = lots.filter(x => x.live && x.L.created && ctlsCountAt(x.L, today) === 0 && ctlsHanging(x.L, today) === 0 && ctlsDried(x.L, today) === 0 && (x.L.logged || x.L.wet.length))
                 .map(x => ({ lotId: x.lotId, strain: x.strain, state: !x.saved?.ctls ? 'none' : JSON.stringify(x.saved.ctls) === JSON.stringify(x.L) ? 'ok' : 'old' }))
                 .sort((a, b) => ctlsLotSort(a.lotId, b.lotId));
-            return { ym, B, today, rows, opening, closing, tot, atEnd, byPhase, wet, wetIn, wetOut, hanging, dryOut, dryTotal, checks, ready,
+            return { ym, B, today, rows, opening, closing, tot, atEnd, byPhase, wet, wetIn, wetOut, hanging, dried, driedIn, shippedOut, onHand, shippedTotal, dryRecorded, checks, ready,
                 filed: tf || null, prevFiled: pf || null, done: B.end < today };
         }
 
@@ -7378,12 +7433,26 @@
                     + (C.hanging.length ? `<h5 class="ctls-h5">Still hanging at the end of ${rEsc(endDay)}</h5>` + T('<th>Lot</th><th>Strain</th><th>Dry room</th><th>Harvested</th><th class="n">Wet weight</th>', hangRows,
                         `<tr class="ctls-total"><td colspan="4"><b>Total</b></td><td class="n"><b>${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.closing)}</b></td></tr>`) : ''),
                 source: 'harvest.wetWeight and harvest.dryWeight answers (PaperWizard → Report metric), dated by their page' });
-            // Dry
-            const dryRows = C.dryOut.map(r => `<tr><td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td class="n">${ctlsG(r.g)}</td><td class="n">${ctlsKg(r.g)}</td></tr>`).join('');
-            const dryCard = rCard({ wide: true, title: '🌾 Dry flower sent out', sub: 'Each lot’s dry weight from the harvest log, on the day it was recorded.',
-                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th class="n">Grams</th><th class="n">kg</th>', dryRows || `<tr><td colspan="5" class="rpt-muted">No dry weights recorded this month.</td></tr>`,
-                    `<tr class="ctls-total"><td colspan="3"><b>Total</b></td><td class="n"><b>${ctlsG(C.dryTotal)}</b></td><td class="n"><b>${ctlsKg(C.dryTotal)}</b></td></tr>`),
-                source: 'harvest.dryWeight answers' });
+            // 🗄️ Dried cannabis on hand, and 📦 what was shipped out (user decision 2026-10-26)
+            const driedRows = [...C.driedIn.map(r => ({ date: r.date, html: `<td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>Dried — dry weight recorded</td><td class="n">+${ctlsG(r.g)}</td>` })),
+                ...C.shippedOut.map(r => ({ date: r.date, html: `<td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${r.how === 'signed'
+                    ? `Shipped (Weigh &amp; Ship signed off): ${ctlsG(r.g)} out${r.waste > 0.05 ? `, ${ctlsG(r.waste)} stems &amp; waste` : ''}` : 'Shipped on its dry-weight day (no Weigh &amp; Ship task)'}</td><td class="n">−${ctlsG(r.dried)}</td>` }))]
+                .sort((a, b) => a.date.localeCompare(b.date)).map(r => `<tr>${r.html}</tr>`).join('');
+            const driedFoot = wline(`Opening: on hand at the end of ${rEsc(prevDay)}`, `${ctlsG(C.dried.opening)} · ${ctlsKg(C.dried.opening)}`, 'ctls-sub')
+                + wline('Dried (dry weight)', '+' + ctlsG(C.dried.in)) + wline('Shipped out (flower + trim)', '−' + ctlsG(C.dried.shipped))
+                + (C.dried.waste > 0.05 ? wline('Stems &amp; waste at weigh-out', '−' + ctlsG(C.dried.waste)) : '')
+                + wline(`<b>Closing: on hand at the end of ${rEsc(endDay)}</b>`, `<b>${ctlsG(C.dried.closing)} · ${ctlsKg(C.dried.closing)}</b>`, 'ctls-total');
+            const onHandRows = C.onHand.map(o => `<tr><td>${rEsc(o.lotId)}</td><td>${rEsc(o.strain)}</td><td>${o.since ? rEsc(dFmtY(o.since)) : '—'}</td><td>${o.weighed ? 'Weighed out, Weigh &amp; Ship not signed off' : 'Drying done, not weighed out'}</td><td class="n">${ctlsG(o.g)}</td></tr>`).join('');
+            const driedCard = rCard({ wide: true, title: '🗄️ Dried cannabis on hand', sub: 'A lot’s dry weight is on hand from the day it’s recorded until the lot ships (its ✅ Weigh & Ship signed off): then its flower and trim go out, and the rest is stems & waste.',
+                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th>What happened</th><th class="n">Grams</th>', driedRows || `<tr><td colspan="5" class="rpt-muted">No dry weights or shipments this month.</td></tr>`, driedFoot)
+                    + (C.onHand.length ? `<h5 class="ctls-h5">On hand at the end of ${rEsc(endDay)}</h5>` + T('<th>Lot</th><th>Strain</th><th>Dried</th><th>Where it stands</th><th class="n">Dry weight</th>', onHandRows,
+                        `<tr class="ctls-total"><td colspan="4"><b>Total</b></td><td class="n"><b>${ctlsG(C.dried.closing)} · ${ctlsKg(C.dried.closing)}</b></td></tr>`) : ''),
+                source: 'harvest.dryWeight answers · the lot\'s Weigh & Ship sign-off · the weigh-out (harvest.bigs, mids, smalls, popcorn or flowerTotal, and trim)' });
+            const shipRows = C.shippedOut.map(r => `<tr><td>${rEsc(dFmt(r.date))}</td><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td class="n">${r.flower != null ? ctlsG(r.flower) : '—'}</td><td class="n">${r.trim != null ? ctlsG(r.trim) : '—'}</td><td class="n">${ctlsG(r.g)}</td><td class="n">${ctlsKg(r.g)}</td></tr>`).join('');
+            const shipCard = rCard({ wide: true, title: '📦 Shipped out — flower and trim', sub: 'What each lot weighed out (flower grades and trim), on the day its ✅ Weigh & Ship was signed off done. A lot with no Weigh & Ship task counts its dry weight, on the day it was recorded.',
+                body: T('<th>Date</th><th>Lot</th><th>Strain</th><th class="n">Flower</th><th class="n">Trim</th><th class="n">Grams</th><th class="n">kg</th>', shipRows || `<tr><td colspan="7" class="rpt-muted">Nothing shipped this month.</td></tr>`,
+                    `<tr class="ctls-total"><td colspan="5"><b>Total</b></td><td class="n"><b>${ctlsG(C.shippedTotal)}</b></td><td class="n"><b>${ctlsKg(C.shippedTotal)}</b></td></tr>`),
+                source: 'The weigh-out on the harvest log · the Weigh & Ship sign-off (DailyWizard ✅ Mark done, or the Tasks tab)' });
             // Checks
             const checksCard = rCard({ wide: true, title: 'Checks — what could make these numbers wrong', sub: '',
                 body: C.checks.length ? `<ul class="rpt-attn">${C.checks.map(c => `<li><span class="rpt-sev ${c.sev === 'crit' ? 'crit' : c.sev === 'info' ? 'info' : ''}">${c.sev === 'crit' ? 'Error' : c.sev === 'info' ? 'Note' : 'Check'}</span><span>${rEsc(c.text)}</span>${c.go && !print ? `<button type="button" class="rpt-go" data-go="${c.go}">Open →</button>` : ''}</li>`).join('')}</ul>`
@@ -7393,8 +7462,8 @@
                 body: T('<th>Lot</th><th>Strain</th><th>Plant history</th><th>Costs</th><th></th>', C.ready.map(r => { const why = rptCloseOutCostGap(r.lotId); return `<tr><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${r.state === 'ok' ? '<span class="rpt-ok">✓ Saved</span>' : r.state === 'old' ? '<span class="rpt-warn">Saved — out of date</span>' : '<span class="rpt-warn">Not saved</span>'}</td><td>${why ? `<span class="rpt-warn">${rEsc(why)}</span>` : '<span class="rpt-ok">🔒 Ready for close-out</span>'}</td><td>${r.state === 'ok' && !why ? '' : `<button type="button" class="rpt-tbtn" data-ctls-keep="${rEsc(r.lotId)}">💾 ${r.state === 'old' || why ? 'Update' : 'Save'}</button>`}</td></tr>`; }).join('')),
                 source: '_EmployeeWizard.crops[<lot>].ctls' }) : '';
             const kpi = (label, value, sub) => `<div class="rpt-kpi"><span class="rpt-kpi-label">${label}</span><div class="rpt-kpi-row"><span class="rpt-kpi-value">${value}</span></div><span class="rpt-kpi-sub">${sub}</span></div>`;
-            const kpis = `<div class="rpt-kpis">${kpi('Plants at month end', rN(C.closing), `${rN(C.opening)} at the start · ${ctlsSigned(C.closing - C.opening)}`)}${kpi('Plants in', rN(t('received') + t('produced')), `${rN(t('received'))} received · ${rN(t('produced'))} clones cut`)}${kpi('Plants out', rN(-(t('destroyed') + t('culled') + t('sampled') + t('sold') + t('harvested') + t('other'))), `${rN(-(t('destroyed') + t('culled')))} destroyed · ${rN(-t('harvested'))} harvested · ${rN(-(t('sold') + t('sampled')))} sold or sampled`)}${kpi('Wet hanging at month end', ctlsKg(C.wet.closing), `${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.opening)} at the start`)}${kpi('Dry flower sent out', ctlsKg(C.dryTotal), ctlsG(C.dryTotal))}</div>`;
-            return kpis + `<div class="rpt-grid">${checksCard}${plantsCard}${endCard}${wetCard}${dryCard}${readyCard}</div>`;
+            const kpis = `<div class="rpt-kpis">${kpi('Plants at month end', rN(C.closing), `${rN(C.opening)} at the start · ${ctlsSigned(C.closing - C.opening)}`)}${kpi('Plants in', rN(t('received') + t('produced')), `${rN(t('received'))} received · ${rN(t('produced'))} clones cut`)}${kpi('Plants out', rN(-(t('destroyed') + t('culled') + t('sampled') + t('sold') + t('harvested') + t('other'))), `${rN(-(t('destroyed') + t('culled')))} destroyed · ${rN(-t('harvested'))} harvested · ${rN(-(t('sold') + t('sampled')))} sold or sampled`)}${kpi('Wet hanging at month end', ctlsKg(C.wet.closing), `${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.opening)} at the start`)}${kpi('Dried on hand at month end', ctlsKg(C.dried.closing), `${ctlsG(C.dried.closing)} · ${ctlsKg(C.dried.opening)} at the start`)}${kpi('Shipped out (flower + trim)', ctlsKg(C.shippedTotal), ctlsG(C.shippedTotal))}</div>`;
+            return kpis + `<div class="rpt-grid">${checksCard}${plantsCard}${endCard}${wetCard}${driedCard}${shipCard}${readyCard}</div>`;
         }
         function rptCtls() {
             if (!RPT.ctlsMonth) RPT.ctlsMonth = ctlsDefaultMonth();
@@ -7407,7 +7476,7 @@
             const filedNote = C.filed ? `<span class="rpt-ok">📌 Filed ${rEsc(dFmtY(rSavedDay(C.filed.filedAt)))}</span><button type="button" class="rpt-tbtn danger" id="ctlsUnfile">Remove filing</button>`
                 : `<button type="button" class="rpt-tbtn" id="ctlsFile"${C.done ? '' : ' disabled title="The month isn’t over yet"'}>📌 Mark as filed</button>`;
             const head = rCard({ wide: true, title: `📋 CTLS monthly numbers — ${ctlsMonthName(C.ym)}${C.done ? '' : ' (so far)'}`,
-                sub: `The cultivation numbers for Health Canada’s monthly CTLS report, for the whole facility: plants, wet cannabis drying, and dry flower sent out. Kilograms are shown to 3 decimals, as CTLS takes them. Mark the month as filed once it’s submitted: its closing numbers are kept, and next month’s opening is checked against them.`,
+                sub: `The cultivation numbers for Health Canada’s monthly CTLS report, for the whole facility: plants, wet cannabis drying, dried cannabis on hand, and what shipped out (flower and trim, on the day Weigh & Ship is signed off). Kilograms are shown to 3 decimals, as CTLS takes them. Mark the month as filed once it’s submitted: its closing numbers are kept, and next month’s opening is checked against them.`,
                 control: `<select class="rpt-inline-sel" id="ctlsMonth" aria-label="Month">${opts.join('')}</select>${filedNote}<button type="button" class="rpt-tbtn" id="ctlsPrint">🖨️ Print</button>`,
                 body: '', source: '_EmployeeWizard.ctls (filed months)' });
             return `<div class="rpt-grid ctls-head">${head}</div>` + ctlsBody(C, false);
@@ -7432,11 +7501,13 @@ ${ctlsBody(C, true)}
         function ctlsFile(ym) {
             const C = ctlsModel(ym);
             if (!C.done) return;
-            if (!confirm(`Mark ${ctlsMonthName(ym)} as filed with CTLS?\n\nIts closing numbers are kept: ${rN(C.closing)} plants, ${ctlsG(C.wet.closing)} of wet cannabis hanging, ${ctlsG(C.dryTotal)} of dry flower sent out. Next month's opening is checked against them.`)) return;
+            if (!confirm(`Mark ${ctlsMonthName(ym)} as filed with CTLS?\n\nIts closing numbers are kept: ${rN(C.closing)} plants, ${ctlsG(C.wet.closing)} of wet cannabis hanging, ${ctlsG(C.dried.closing)} of dried cannabis on hand, ${ctlsG(C.shippedTotal)} shipped out (flower + trim). Next month's opening is checked against them.`)) return;
             const ew = rptEnsureOwnKeys();
             if (!ew.ctls || typeof ew.ctls !== 'object') ew.ctls = {};
-            ew.ctls[ym] = { filedAt: new Date().toISOString(), plants: C.closing, wetG: Math.round(C.wet.closing * 10) / 10, dryG: Math.round(C.dryTotal * 10) / 10,
-                openingPlants: C.opening, openingWetG: Math.round(C.wet.opening * 10) / 10 };
+            const g1 = v => Math.round(v * 10) / 10;
+            // rule 2: dried cannabis on hand and shipped out (flower + trim, on the ship day) — user decision 2026-10-26
+            ew.ctls[ym] = { filedAt: new Date().toISOString(), rule: 2, plants: C.closing, wetG: g1(C.wet.closing), driedG: g1(C.dried.closing), shippedG: g1(C.shippedTotal),
+                openingPlants: C.opening, openingWetG: g1(C.wet.opening), openingDriedG: g1(C.dried.opening) };
             notifySitkaTools();
             showToast(`${ctlsMonthName(ym)} marked as filed`);
             renderReports();
