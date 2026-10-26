@@ -4284,6 +4284,19 @@
             // from the files as this session opened or last saved them. Returns false when the switch was called off.
             async switchDevice(before) {
                 const role = this.role;
+                let set = null;
+                if (DbFolder.active && DbFolder.handle) {
+                    try { set = await DbFolder.readSplitFolder(DbFolder.handle); } catch (_) { set = null; }
+                }
+                if (!set) set = this.savedSet();
+                // Files the split made that were never saved: there's nothing to reopen, and only the office saves them
+                const notSaved = set ? [] : [...this.loaded].filter(n => !this.hashes[n]);
+                if (notSaved.length) {
+                    alert(`${notSaved.join(', ')} ${notSaved.length === 1 ? "isn't" : "aren't"} saved yet, so the files can't be reopened as ` +
+                        `${this.roleLabel(role)}.\n\n💾 Save DB first, then set the device.`);
+                    this.role = before;
+                    return false;
+                }
                 if (hasUnsavedChanges && !confirm(`${this.roleLabel(before)} has changes that aren't saved. Setting the device reopens the files as ` +
                     `${this.roleLabel(role)}, and those changes would be lost.\n\nSwitch anyway? (Cancel, then 💾 Save DB, to keep them.)`)) {
                     this.role = before;
@@ -4292,13 +4305,8 @@
                 // open() takes the device from the page link first; the address then says the device it is now
                 this.linkRole = role;
                 try { history.replaceState(history.state, '', this.linkFor(role)); } catch (_) { /* file:// may refuse: the link card shows it */ }
-                let set = null;
-                if (DbFolder.active && DbFolder.handle) {
-                    try { set = await DbFolder.readSplitFolder(DbFolder.handle); } catch (_) { set = null; }
-                }
-                if (!set) set = this.savedSet();
-                if (!set) {   // a session restored after a crash keeps no copy of the files
-                    alert('Device changed for this session. Reopen the database files so this device saves the right ones.');
+                if (!set) {   // a restored session keeps no copy of the files: 📂 Load DB opens them as this device (the link now says it)
+                    alert(`This session was restored, so its files aren't in memory. To finish switching to ${this.roleLabel()}, open them again with 📂 Load DB.`);
                     return true;
                 }
                 if (await this.open(set)) {
@@ -4308,9 +4316,10 @@
                 return true;
             },
 
-            // The files as this session opened or last saved them (memory only)
+            // The files as this session opened or last saved them (memory only). Null unless it holds every file opened:
+            // a restored session holds none, and saving after a restore adds only the files saved
             savedSet() {
-                if (!this.texts[SPLIT_MAIN]) return null;
+                if (!this.texts[SPLIT_MAIN] || [...this.loaded].some(n => !this.texts[n])) return null;
                 const file = name => ({ name, text: this.texts[name] });
                 return {
                     main: file(SPLIT_MAIN),

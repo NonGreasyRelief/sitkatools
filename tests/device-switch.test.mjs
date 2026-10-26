@@ -1,6 +1,7 @@
 // 🏷️ Set this device… with split files open reopens the files as the device picked (user request 2026-10-26), as its
 // link would: a lot moved to it is picked up and it saves its own file. Unsaved changes are asked about first.
-import { fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, leave, today } from './lib/helpers.mjs';
+// A restored session has no copy of the files, so it says to open them with 📂 Load DB (user decision 2026-10-26).
+import { fixtureDb, makeChecker, fresh, splitFiles, openSplit, saveSplit, leave, today, openSitka, loadSingle } from './lib/helpers.mjs';
 
 export const title = 'setting the device reopens the files as it: a lot moved there is picked up and saved in its file';
 
@@ -73,7 +74,29 @@ export async function run(b, BASE) {
     // ---- A session restored after a crash keeps no copy of the files ----
     await b.run(main, `const s = DbSplit.exportState(); DbSplit.importState(s);`);
     r = await switchTo('B2');
-    check('a restored session asks to reopen the files by hand', r.role === 'B2' && /Reopen the database files/.test(r.alerts[0] || ''), JSON.stringify(r));
+    check('a restored session says why it can\'t reopen the files, and to open them with 📂 Load DB',
+        r.role === 'B2' && /^This session was restored, so its files aren't in memory\. To finish switching to Building 2, open them again with 📂 Load DB\.$/.test(r.alerts[0] || '') &&
+        /device=B2/.test(r.search), JSON.stringify(r));
+
+    // ---- …and after a restore the office saved only Main: still no full copy, so nothing is reopened without the building files ----
+    await openSplit(b, main, BASE, 'office', files);
+    await b.run(main, `const s = DbSplit.exportState(); DbSplit.importState(s); DB.data.lots.L100.name = 'Renamed'; markUnsaved();`);
+    const officeSaved = await saveSplit(b, main);
+    await b.run(main, `closeSavePopup();`);
+    r = await switchTo('B1');
+    check('a restored office that saved Main says to open the files…', Object.keys(officeSaved).join() === 'Main.json' && r.role === 'B1' &&
+        /This session was restored/.test(r.alerts[0] || ''), Object.keys(officeSaved).join() + ' ' + JSON.stringify(r));
+    check('…and keeps the building files\' paperwork (not reopened from Main alone)', await b.run(main, `return !!DB.data._PaperWizard?.entries?.L100?.glog;`));
+
+    // ---- Right after the split, before its files are saved: nothing to reopen, so it stays the office ----
+    await fresh(b);
+    await openSitka(b, main, BASE, 'office');
+    await loadSingle(b, main, fixtureDb());
+    await b.run(main, `window.alert = () => {}; window.confirm = () => true; await DbSplit.splitLegacy(); closeSavePopup();`, { user: true });
+    r = await switchTo('B1');
+    check('the split\'s files not saved yet: refused, still the office, nothing asked',
+        r.role === 'office' && r.asked.length === 0 && /aren't saved yet, so the files can't be reopened as Building 1\.\n\n💾 Save DB first/.test(r.alerts[0] || '') &&
+        !/device=B1/.test(r.search), JSON.stringify(r));
     await leave(b, main);
     return results;
 }
