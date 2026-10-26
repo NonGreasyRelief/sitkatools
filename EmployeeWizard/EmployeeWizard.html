@@ -1117,6 +1117,14 @@
         .rpt-tbtn.danger:hover { border-color: var(--danger); }
         .rpt-tbl { overflow: auto; max-height: 420px; }
         .rpt-ctls-page .rpt-filters .form-group { display: none; }
+        .rpt-ledger-page .rpt-filters .form-group { display: none; }
+        .rpt-tbl.rpt-ledger { max-height: 640px; }
+        .rpt-ledger td.how { min-width: 340px; line-height: 1.45; }
+        .rpt-ledger tfoot td { background: var(--bg-primary); font-weight: 600; }
+        .rpt-ledger td.bad, .rpt-ledger-sum td.bad { color: var(--danger); font-weight: 600; }
+        .rpt-ledger td.ok, .rpt-ledger-sum td.ok { color: var(--accent); }
+        .rpt-ledger-links { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--text-secondary); }
+        .rpt-ledger-note { font-size: 0.8rem; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.45; max-width: 90ch; }
         .rpt-tbl.ctls-tbl { max-height: none; }
         .ctls-tbl tfoot td { background: var(--bg-primary); }
         .ctls-tbl tr.ctls-internal td { color: var(--rv-muted); }
@@ -1511,6 +1519,7 @@
                 <button type="button" data-page="timeline">Crop Timeline</button>
                 <button type="button" data-page="labour">Labour</button>
                 <button type="button" data-page="costs">💲 Costs</button>
+                <button type="button" data-page="ledger">🔍 Cost ledger</button>
                 <button type="button" data-page="yield">Yield &amp; Quality</button>
                 <button type="button" data-page="rooms">Rooms &amp; Environment</button>
                 <button type="button" data-page="forecast">Forecast</button>
@@ -4079,6 +4088,10 @@
         const rH = h => (h >= 100 ? rN(h, 0) : rN(h, 1)) + ' h';
         const rKg = g => rN(g / 1000, g >= 100000 ? 0 : 1) + ' kg';
         const rMoney = (v, d = 2) => '$' + rN(v, d);
+        // 🔍 Ledger numbers: up to 2 decimals as needed; money to the cent (4 decimals under a dollar)
+        const lgK = v => Number(v).toLocaleString('en-CA', { maximumFractionDigits: 2 });
+        const lgM = v => v == null ? '—' : rMoney(v, v !== 0 && Math.abs(v) < 1 ? 4 : 2);
+        const lgRate = r => rMoney(r, Number.isInteger(Math.round(r * 1e6) / 1e4) ? 2 : 4);   // $0.11, $0.1234
         // A money axis tick: whole dollars when the step is whole, else enough decimals for the step (a $1.50 tick never reads "$2")
         const rMoneyTick = (v, step) => { const s = String(+Number(step).toFixed(6)), dec = (s.split('.')[1] || '').length; return rMoney(v, dec ? Math.max(2, dec) : 0); };
         const R_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -4990,7 +5003,8 @@
 
         // The power model for a set of crops: { byCrop: Map(lotId → { kWh, lights, equip, cost, pctMissing }), unallocated,
         // missingLights: Set(roomId), source, rate }
-        function rptPowerModel(crops) {
+        // trace: { lotId, lines: [] } — also write that lot's 🔍 ledger lines (rptLedger), one per day, from the same numbers
+        function rptPowerModel(crops, trace = null) {
             const cfg = rptCostConfig(), today = rToday(), rooms = DB.data.rooms || {};
             const byCrop = new Map(crops.map(c => [c.lotId, { kWh: 0, lights: 0, equip: 0, cost: 0, pctMissing: 0, billDays: 0, unbilledDays: 0, noWatts: 0 }]));
             const unallocated = { kWh: 0, cost: 0 }, missingLights = new Set();
@@ -5008,10 +5022,11 @@
             for (const [id, r] of Object.entries(rooms)) {
                 const n = Number(r?.lightCount), w = Number(r?.lightWattage);
                 info[id] = {
-                    b: r?.buildingId || null, lightKw: n > 0 && w > 0 ? n * w / 1000 : 0, hasLights: n > 0,
+                    b: r?.buildingId || null, lightKw: n > 0 && w > 0 ? n * w / 1000 : 0, hasLights: n > 0, lights: n, watts: w,
                     veg: Number(r?.vegLightHours) > 0 ? Number(r.vegLightHours) : 18, bloom: Number(r?.bloomLightHours) > 0 ? Number(r.bloomLightHours) : 12,
                     equip: (DB.data._EquipmentWizard?.rooms?.[id]?.equipment || []).filter(e => Number(e?.power?.watts) > 0)
-                        .map(e => ({ from: isDay(e.installedDate) ? e.installedDate : '0000-00-00', kWh: e.power.watts * (Number(e.power.units) || 1) * (e.power.hoursPerDay ?? 12) / 1000 })),
+                        .map(e => ({ from: isDay(e.installedDate) ? e.installedDate : '0000-00-00', kWh: e.power.watts * (Number(e.power.units) || 1) * (e.power.hoursPerDay ?? 12) / 1000,
+                            name: e.name || e.type || 'Equipment', watts: Number(e.power.watts), units: Number(e.power.units) || 1, hours: e.power.hoursPerDay ?? 12 })),
                     stays: stays.filter(st => st.roomId === id)
                 };
             }
@@ -5042,25 +5057,29 @@
                     }
                 }
             };
+            // 🔍 The traced lot's day, as the ledger shows it: what it was given, and how
+            const equipText = (r, d) => r.equip.filter(e => e.from <= d).map(e => `${e.name} ${lgK(e.watts)} W × ${lgK(e.units)} × ${lgK(e.hours)} h`).join(' + ');
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const dayKwh = new Map(), inBuilding = {}, pool = {};
+                const T = trace ? { parts: [], kWh: 0, b: new Set(), rooms: new Set(), bills: [], unbilled: [] } : null, poolRooms = {};
                 for (const [roomId, r] of Object.entries(info)) {
                     // Each lot in the room that day, with its plants that day
                     const occ = r.stays.filter(st => st.from <= d && d <= st.to).map(st => ({ ...st, plants: rptPlantsOn(st.c, d) }));
                     const equipKwh = r.equip.reduce((t, e) => t + (e.from <= d ? e.kWh : 0), 0);
-                    let lightKwh = 0;
+                    let lightKwh = 0, bloom = false, pctText = '', noWattsHere = false;
                     if (occ.length) {
                         for (const st of occ) (inBuilding[r.b] || (inBuilding[r.b] = new Map())).set(st.c.lotId, (inBuilding[r.b]?.get(st.c.lotId) || 0) + st.plants);
                         // A lot drying or trimming doesn't light the room (cost audit 2026-10-26): only the lots growing in it do
                         const lit = occ.filter(st => st.phase !== 'dry' && st.phase !== 'trim');
                         if (lit.length && r.lightKw > 0) {
                             // Bloom hours: the grow log says Bloom, or (planned stays) the crop has flipped
-                            const bloom = lit.some(st => st.phase === 'flower' && (st.fromLog || (st.c.dates?.flip && d >= st.c.dates.flip)));
+                            bloom = lit.some(st => st.phase === 'flower' && (st.fromLog || (st.c.dates?.flip && d >= st.c.dates.flip)));
                             const pcts = lit.map(st => st.c.series?.['env.lightPct']?.[d]).filter(v => v != null && Number.isFinite(v));
                             if (!pcts.length) lit.forEach(st => byCrop.get(st.c.lotId) && byCrop.get(st.c.lotId).pctMissing++);
                             lightKwh = r.lightKw * (bloom ? r.bloom : r.veg) * (pcts.length ? Math.min(100, Math.max(0, rMean(pcts))) / 100 : 1);
+                            if (T) pctText = pcts.length ? `${lgK(Math.min(100, Math.max(0, rMean(pcts))))} % (grow log)` : '100 % (light % not logged)';
                         } else if (lit.length && (r.hasLights || rooms[roomId]?.isFlowering)) {
-                            missingLights.add(roomId);
+                            missingLights.add(roomId); noWattsHere = true;
                             // Partial = missing (user decision 2026-10-26): its lights can't be worked out, so the lots growing
                             // in it have no electricity figure until the room has its lights and watts per light
                             lit.forEach(st => { const o = byCrop.get(st.c.lotId); if (o) o.noWatts++; });
@@ -5071,11 +5090,23 @@
                             give(st.c.lotId, lightKwh * lightShare, 'lights', r.b, d);
                             give(st.c.lotId, equipKwh * share, 'equip', r.b, d);
                             dayKwh.set(st.c.lotId, (dayKwh.get(st.c.lotId) || 0) + lightKwh * lightShare + equipKwh * share);
+                            if (T && st.c.lotId === trace.lotId) {
+                                const rn = rptRoomName(roomId);
+                                T.b.add(r.b); T.rooms.add(roomId); T.kWh += lightKwh * lightShare + equipKwh * share;
+                                if (lit.includes(st)) {
+                                    if (lightKwh > 0) T.parts.push(`${rn} lights: ${lgK(r.lights)} × ${lgK(r.watts)} W × ${lgK(bloom ? r.bloom : r.veg)} h (${bloom ? 'bloom' : 'veg'}) × ${pctText} = ${lgK(lightKwh)} kWh` +
+                                        (lightShare < 1 ? `, × its ${lgK(st.plants)} of the ${lgK(litPlants)} plants growing there = ${lgK(lightKwh * lightShare)} kWh` : ''));
+                                    else if (noWattsHere) T.parts.push(`${rn} has ${r.hasLights ? 'no watts per light' : 'no lights set'}: its lights can't be worked out, so this lot's electricity is missing`);
+                                } else if (r.lightKw > 0) T.parts.push(`${rn} lights: not counted for a lot drying or trimming`);
+                                if (equipKwh > 0) T.parts.push(`${rn} equipment: ${equipText(r, d)} = ${lgK(equipKwh)} kWh` +
+                                    (share < 1 ? `, × its ${lgK(st.plants)} of the ${lgK(plants)} plants in the room = ${lgK(equipKwh * share)} kWh` : ''));
+                            }
                         }
                     } else if (equipKwh > 0) {
                         // An empty room is dark (a Mother room too: its mothers are a lot of their own, user decision
                         // 2026-10-23); its equipment's power goes to the building's crops that day
                         pool[r.b] = (pool[r.b] || 0) + equipKwh;
+                        if (T) (poolRooms[r.b] || (poolRooms[r.b] = [])).push(`${rptRoomName(roomId)} (${equipText(r, d)})`);
                     }
                 }
                 // Empty rooms' power goes to the building's crops that day, by plants
@@ -5083,14 +5114,20 @@
                     const occ = inBuilding[b === 'null' ? null : b];
                     if (!occ || !occ.size) { unallocated.kWh += kWh; idle(b === 'null' ? '' : b, d).kWh += kWh; continue; }
                     const plants = [...occ.values()].reduce((t, n) => t + n, 0);
-                    for (const [lotId, n] of occ) { give(lotId, kWh * n / plants, 'equip', b, d); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants); }
+                    for (const [lotId, n] of occ) {
+                        give(lotId, kWh * n / plants, 'equip', b, d); dayKwh.set(lotId, (dayKwh.get(lotId) || 0) + kWh * n / plants);
+                        if (T && lotId === trace.lotId) {
+                            T.kWh += kWh * n / plants;
+                            T.parts.push(`empty rooms' equipment in ${rptBuildingName(b === 'null' ? null : b)}: ${(poolRooms[b] || []).join(' + ')} = ${lgK(kWh)} kWh, × its ${lgK(n)} of the ${lgK(plants)} plants in the building = ${lgK(kWh * n / plants)} kWh`);
+                        }
+                    }
                 }
                 if (cfg.source === 'bills') {
                     // A crop in a building no bill covers that day (its building's meter or the whole site): its power
                     // is missing, not $0 (review C2) — until that bill is added
                     for (const [b, m] of Object.entries(inBuilding)) {
                         if (billDay[d]?.['*'] != null || (b !== 'null' && billDay[d]?.[b] != null)) continue;
-                        for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.unbilledDays++; }
+                        for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.unbilledDays++; if (T && lotId === trace.lotId) T.unbilled.push(b); }
                     }
                     // Each meter's $ for the day, split by the crops' estimated use that day (by plants when there's no estimate)
                     for (const [meter, amount] of Object.entries(billDay[d] || {})) {
@@ -5107,8 +5144,28 @@
                             o.cost += v; o.billDays++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
                             (o.cBD || (o.cBD = {}))[bk + '|' + d] = (o.cBD[bk + '|' + d] || 0) + v;
+                            if (T && id === trace.lotId) T.bills.push({ meter, amount, v, w: w[i], wt, plants: plantsOf(id), pt });
                         });
                     }
+                }
+                if (T && (T.parts.length || T.bills.length || T.unbilled.length)) {
+                    let cost = null, how = T.parts.join(' · ');
+                    if (cfg.source === 'estimate') {
+                        const r = rateAt(d);
+                        if (!(T.kWh > 0)) cost = 0;
+                        else if (r == null) how += ` · no $ per kWh set for this day, so it isn't priced`;
+                        else { cost = T.kWh * r; how += ` · ${lgK(T.kWh)} kWh × ${lgRate(r)} per kWh = ${lgM(cost)}`; }
+                    } else {
+                        cost = rSum(T.bills, x => x.v);
+                        for (const x of T.bills) {
+                            const bl = cfg.bills.filter(bl => (bl.buildingId || '*') === x.meter && bl.from <= d && d <= bl.to)
+                                .map(bl => `${rMoney(Number(bl.amount))} for ${bl.from} → ${bl.to} ÷ ${dDiff(bl.from, bl.to) + 1} days`).join(' + ');
+                            how += ` · ${x.meter === '*' ? 'whole-site' : rptBuildingName(x.meter)} power bill ${bl} = ${lgM(x.amount)} today, × ` +
+                                (x.wt > 0 ? `its ${lgK(x.w)} kWh of the ${lgK(x.wt)} kWh ${x.meter === '*' ? 'all the lots on site' : `all of ${rptBuildingName(x.meter)}’s lots`} used today` : `its ${lgK(x.plants)} of the ${lgK(x.pt)} plants (no kWh estimated today)`) + ` = ${lgM(x.v)}`;
+                        }
+                        if (T.unbilled.length) how += ` · no power bill covers today in ${T.unbilled.map(b => rptBuildingName(b === 'null' ? null : b)).join(', ')}, so this lot's electricity is missing until that bill is added`;
+                    }
+                    trace.lines.push({ d, part: 'power', b: [...T.b].filter(Boolean).join(', '), rooms: [...T.rooms], kWh: T.kWh, cost, how });
                 }
             }
             if (cfg.source === 'estimate') {
@@ -5141,7 +5198,8 @@
         // - "area": between the rooms holding a crop by floor area (a day when one has none: by lights, as above).
         // - "plants": between every lot in the building by its plants that day, the lot drying or trimming included.
         // A day with no crop in the building is an idle day (unallocated, idleBy): spread over the period's grams.
-        function rptPropertyModel(crops) {
+        // trace: { lotId, lines: [] } — also write that lot's 🔍 ledger lines (rptLedger), one per day and building
+        function rptPropertyModel(crops, trace = null) {
             const today = rToday(), rooms = DB.data.rooms || {}, cfg = rptCostConfig(), share = cfg.propertyShare;
             const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0, noRent: 0 }])), unallocated = {}, idleBy = {}, monthly = {}, noLights = new Set(), noArea = new Set();
             // A building with its property cost set now, or with a history of it (price by date: each day takes its own figure)
@@ -5174,9 +5232,17 @@
                         m.set(st.lotId, (m.get(st.lotId) || 0) + n);
                         if (st.growing) { const g = growingIn.get(st.roomId) || growingIn.set(st.roomId, new Map()).get(st.roomId); g.set(st.lotId, (g.get(st.lotId) || 0) + n); }
                     }
+                    // 🔍 The traced lot, when it's in this building today: its line says what it was given, and how
+                    const T = trace && [...inRoom.values()].some(m => m.has(trace.lotId)) ? { parts: [], cost: 0, rooms: [...inRoom].filter(([, m]) => m.has(trace.lotId)).map(([id]) => id) } : null;
+                    const line = (cost, how) => trace.lines.push({ d, part: 'property', b, rooms: T.rooms, cost, how });
                     // 📅 The building's figure that day (price by date); a day it had none leaves its lots' property out
-                    if (perMonth == null) { for (const m of inRoom.values()) for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.noRent++; } continue; }
+                    if (perMonth == null) {
+                        for (const m of inRoom.values()) for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.noRent++; }
+                        if (T) line(null, `${rptBuildingName(b)} has no monthly property cost set for this day, so this lot's property is missing`);
+                        continue;
+                    }
                     const amount = perMonth / days;
+                    const base = T ? `${rptBuildingName(b)}: ${rMoney(perMonth)} a month ÷ ${days} days = ${lgM(amount)} today` : '';
                     const idleDay = () => {
                         // An idle day: its cost goes into the period's grams (user decision 2026-10-26)
                         unallocated[d] = (unallocated[d] || 0) + amount;
@@ -5184,25 +5250,35 @@
                     };
                     if (!inRoom.size) { idleDay(); continue; }   // no crop in the building
                     // Floor area: a day when a room in use has no floor area set is split by lights instead
-                    let mode = share;
+                    let mode = share, note = '';
                     if (mode === 'area') {
                         const without = [...inRoom.keys()].filter(id => !(Number(rooms[id]?.floorSqFt) > 0));
                         without.forEach(id => noArea.add(id));
-                        if (without.length) mode = 'lights';
+                        if (without.length) { mode = 'lights'; if (T) note = ` (${without.map(rptRoomName).join(', ')} ${without.length === 1 ? 'has' : 'have'} no floor area, so by lights today)`; }
                     }
                     // By lights only the rooms with a growing lot share the day, and only their growing lots; a day with only
                     // lots drying or trimming in the building is an idle day (user decision 2026-10-26)
                     const sharing = mode === 'lights' ? growingIn : inRoom;
-                    if (!sharing.size) { idleDay(); continue; }
+                    if (!sharing.size) {
+                        idleDay();
+                        if (T) line(0, `${base} · only lots drying or trimming in the building today, no lot growing: an idle day, so its rent goes into the grams the building ships, not to this lot`);
+                        continue;
+                    }
                     let weights = [...sharing].map(([roomId, m]) => [roomId, m, mode === 'area' ? Number(rooms[roomId].floorSqFt) : mode === 'lights' ? Number(rooms[roomId]?.lightCount) || 0 : plantsIn(m)]);
-                    let total = weights.reduce((t, [, , w]) => t + w, 0);
+                    let total = weights.reduce((t, [, , w]) => t + w, 0), by = mode;
                     if (mode === 'lights') {
                         weights.forEach(([roomId, , w]) => { if (!(w > 0)) noLights.add(roomId); });
-                        if (!(total > 0)) { weights = weights.map(([roomId, m]) => [roomId, m, plantsIn(m)]); total = weights.reduce((t, [, , w]) => t + w, 0); }
+                        if (!(total > 0)) { weights = weights.map(([roomId, m]) => [roomId, m, plantsIn(m)]); total = weights.reduce((t, [, , w]) => t + w, 0); by = 'plants'; if (T) note += ' (no room with a lot growing has a light count, so by plants today)'; }
                     }
-                    if (!(total > 0)) { idleDay(); continue; }   // nothing to share it by (no plants on record): no lot carries it
-                    for (const [, m, w] of weights) {
-                        if (!(w > 0)) continue;
+                    if (!(total > 0)) {
+                        idleDay();
+                        if (T) line(0, `${base} · no plants on record to share it by: no lot carries it`);
+                        continue;
+                    }   // nothing to share it by (no plants on record): no lot carries it
+                    const unit = by === 'area' ? 'sq ft' : by === 'lights' ? 'lights' : 'plants';
+                    const split = T ? weights.filter(([, , w]) => w > 0).map(([id, , w]) => `${rptRoomName(id)} ${lgK(w)}`).join(' + ') + ` = ${lgK(total)} ${unit}` : '';
+                    for (const [roomId, m, w] of weights) {
+                        if (!(w > 0)) { if (T && m.has(trace.lotId)) T.parts.push(`${rptRoomName(roomId)} has no light count, so it gets no share (listed under What's missing)`); continue; }
                         const roomAmount = amount * w / total, pt = plantsIn(m);
                         for (const [lotId, n] of m) {
                             const o = byCrop.get(lotId); if (!o) continue;
@@ -5211,7 +5287,17 @@
                             o.cost += v; o.days++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
                             (o.cBD || (o.cBD = {}))[b + '|' + d] = (o.cBD[b + '|' + d] || 0) + v;   // by day, for a period's own days
+                            if (T && lotId === trace.lotId) {
+                                T.cost += v;
+                                T.parts.push(`by ${by === 'area' ? 'floor area' : by}${note}: ${split} → ${rptRoomName(roomId)} ${lgK(w)} of ${lgK(total)} = ${lgM(roomAmount)}` +
+                                    (m.size > 1 ? `, × its ${pt > 0 ? `${lgK(n)} of the ${lgK(pt)} plants` : `1 of the ${m.size} lots`} in the room = ${lgM(v)}` : ''));
+                            }
                         }
+                    }
+                    if (T) {
+                        // In the building but not sharing today (by lights: drying or trimming)
+                        for (const id of T.rooms) if (!sharing.get(id)?.has(trace.lotId)) T.parts.push(`drying or trimming in ${rptRoomName(id)}: no rent (by lights, only the rooms with a lot growing share it)`);
+                        line(T.cost, `${base} · ${T.parts.length ? T.parts.join(' · ') : 'no share'}${T.parts.filter(p => p.startsWith('by ')).length > 1 ? ` · in all ${lgM(T.cost)}` : ''}`);
                     }
                 }
             }
@@ -7167,12 +7253,108 @@
                 rCard({ wide: true, title: '🏢 What does each building cost to run?', sub: 'Every dollar spent in each building in the period, by part — the nursery included. This is where the money went; the cost per gram above is what the grams carry.', body: spendChart, table: spendTable, legend, after: spendNote, source: 'Each lot’s costs where they were spent (rooms, tasks, grow-log days) · shared labour · idle building days' }) +
                 rCard({ wide: true, title: '🌿 What does a clone cost?', sub: 'Growing the mothers, per clone: each mother lot’s labour (its tasks and its share of Mother-room chores), its Mother room’s electricity and property share, and its water, fertilizer and supplies, divided by the clones cut from it — for the clones cut in the period. A lot cut from a mother lot carries its clones at this price in its cost per gram. Cutting the clones is each bloom lot’s own cost (shown below, not in the price).', body: cloneBreakdown, table: cloneTable, legend, after: cloneNote, source: 'Mother lots: lots scheduled with a 🌿 vegetative recipe · clones: the starting counts of the lots cut from them (sub-lots)' }) +
                 rCard({ wide: true, title: 'Cost per clone, mother lot by mother lot', sub: 'Each mother lot’s cost per clone so far (from its start to today, or its end), by part.', body: byMother, table: byMotherTable, legend, source: 'Mother lots and the lots cut from them' }) +
-                rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each crop shipped in the period: its cost per gram of its own flower, by part, plus its building’s share of the period’s shared labour and idle building days.', body: byCrop, table: byCropTable, legend, source: 'Crops shipped in the period with a flower weight' }) +
+                rCard({ wide: true, title: 'Cost per gram, crop by crop', sub: 'Each crop shipped in the period: its cost per gram of its own flower, by part, plus its building’s share of the period’s shared labour and idle building days.', body: byCrop, table: byCropTable, legend, source: 'Crops shipped in the period with a flower weight',
+                    after: weighed.length ? `<div class="rpt-ledger-links">🔍 Where did a lot’s costs come from, day by day? ${weighed.map(c => `<button type="button" class="rpt-tbtn" data-ledger="${rEsc(c.lotId)}">${rEsc(c.lotId)}</button>`).join('')}</div>` : '' }) +
                 rCard({ wide: true, title: '🌱 Nursery and flowering: where was each lot’s money spent?', sub: 'Each crop shipped in the period, per gram of its flower: what was spent on it in the building it ships from, in other buildings (its days in the nursery), and its clones (growing the mothers). Its own costs only — shared labour and idle days are in the building figures above.', body: splitChart, table: splitTable,
                     legend: rSw(splitCol.inOwn, 'in the building it ships from') + rSw(splitCol.other, 'in other buildings (the nursery)') + rSw(splitCol.clones, 'its clones'), source: 'Each lot’s costs where they were spent · its clones at the mother lot’s cost per clone' }) +
                 rCard({ title: 'How much electricity does a crop use?', sub: `kWh per crop: its lights (watts × hours × light %) and its share of the equipment and empty rooms in its building. ${cfg.source === 'bills' ? 'Charged from the power bills.' : 'Charged at the rate in ⚡ Power & Rates.'}`, body: powerChart, table: powerTable, legend: rSw('var(--rv-yellow)', 'lights') + rSw('var(--rv-orange)', 'equipment & shared'), source: 'Room Manager lights · EquipmentWizard power · grow-log light %' }) +
                 rCard({ title: 'What did the crops use?', sub: 'Fertilizer by product, supplies, water, electricity and property for the crops shipped in this period.', body: usedBody, source: 'Grow logs · recipes · price list · rates · building property costs' }) +
                 rCard({ wide: true, title: 'What’s missing from the cost?', sub: 'Fill these in and the cost per gram covers more of what a gram really costs.', body: health, source: 'Room Manager (rooms and buildings) · EquipmentWizard · PaperWizard tags · CropLabourWizard price list · ⚡ Power & Rates' }) +
+                `</div>`;
+        }
+
+        // =====================================================
+        // 🔍 Cost ledger — where each lot's costs came from, day by day, and how each was worked out (user request
+        // 2026-10-26: "used x/y of the electric bill this day, because Grow j has k lights…"). The cost models write the
+        // lines themselves (rptPowerModel / rptPropertyModel with a trace) from the same numbers they add up, so a lot's
+        // lines always add up to its figures on the 💲 Costs page. A lot's whole life, whatever the period. Read-only.
+        // =====================================================
+        const LEDGER_PARTS = [['power', '⚡ Electricity'], ['property', '🏠 Property']];
+        const ledgerPartName = p => (LEDGER_PARTS.find(([k]) => k === p) || [p, p])[1];
+        const ledgerWhere = l => [String(l.b || '').split(', ').filter(Boolean).map(rptBuildingName).join(', '), (l.rooms || []).map(rptRoomName).join(', ')].filter(Boolean).join(' · ');
+        function rptLedger(M, lotId) {
+            const c = M.crops.find(x => x.lotId === lotId) || null;
+            if (!c || c.closed) return { c, lines: [] };
+            const trace = { lotId, lines: [] };
+            rptPowerModel(M.crops, trace);
+            rptPropertyModel(M.crops, trace);
+            const order = Object.fromEntries(LEDGER_PARTS.map(([k], i) => [k, i]));
+            trace.lines.sort((a, b) => a.d.localeCompare(b.d) || order[a.part] - order[b.part]);
+            return { c, lines: trace.lines };
+        }
+        // Each part: the sum of its lines, the model's own total, and the figure the 💲 Costs page uses (null: missing)
+        function rptLedgerTotals(c, M, lines) {
+            const k = rptCropInputCost(c, M);
+            return LEDGER_PARTS.map(([p, name]) => {
+                const ls = lines.filter(l => l.part === p), sum = rSum(ls, l => l.cost), kWh = p === 'power' ? rSum(ls, l => l.kWh) : null;
+                const plural = n => `${n} day${n === 1 ? '' : 's'}`;
+                let page, model, why = [];
+                if (p === 'power') {
+                    page = k.power.cost; model = rptPowerFor(M, c)?.cost ?? null;
+                    if (k.power.unbilledDays) why.push(`${plural(k.power.unbilledDays)} no power bill covers`);
+                    if (k.power.noWattsDays) why.push(`${plural(k.power.noWattsDays)} in a room with no watts per light`);
+                    if (page == null && !why.length) why.push(model == null ? 'no $ per kWh set' : 'no electricity worked out');
+                } else {
+                    page = k.property.cost; model = rptPropertyFor(M, c)?.cost ?? null;
+                    if (k.property.noRentDays) why.push(`${plural(k.property.noRentDays)} in a building with no property cost set`);
+                }
+                const adds = model != null ? Math.abs(sum - model) < 0.005 : !ls.some(l => l.cost != null && l.cost !== 0);
+                return { p, name, n: ls.length, kWh, sum, page, model, adds, why: page == null ? why : [] };
+            });
+        }
+        function rptLedgerCsv(lotId, lines) {
+            const q = v => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+            const rows = [['Lot', 'Date', 'Part', 'Building', 'Rooms', 'kWh', '$', 'How it was worked out']];
+            for (const l of lines) rows.push([lotId, l.d, ledgerPartName(l.part).replace(/^\S+\s/, ''), String(l.b || '').split(', ').filter(Boolean).map(rptBuildingName).join(', '),
+                (l.rooms || []).map(rptRoomName).join(', '), l.kWh != null ? +l.kWh.toFixed(6) : '', l.cost != null ? +l.cost.toFixed(6) : '', l.how]);
+            return '﻿' + rows.map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
+        }
+        function rptLedgerPage(M) {
+            const crops = M.crops.slice().sort((a, b) => (a.closed - b.closed) || String(rptStartDay(a)).localeCompare(String(rptStartDay(b))) || a.lotId.localeCompare(b.lotId));
+            if (!crops.length) return `<div class="rpt-grid">${rCard({ wide: true, title: '🔍 Cost ledger', body: rEmpty('No lots yet.', 'Each lot’s costs, day by day, show here once it has a schedule or a grow log.') })}</div>`;
+            const want = RPT.ledgerLot || activeLotId();
+            const lotId = crops.some(c => c.lotId === want) ? want : (crops.find(c => !c.closed) || crops[0]).lotId;
+            RPT.ledgerLot = lotId;
+            const { c, lines } = rptLedger(M, lotId);
+            const months = [...new Set(lines.map(l => l.d.slice(0, 7)))];
+            const part = LEDGER_PARTS.some(([k]) => k === RPT.ledgerPart) ? RPT.ledgerPart : '';
+            const month = months.includes(RPT.ledgerMonth) ? RPT.ledgerMonth : '';
+            const shown = lines.filter(l => (!part || l.part === part) && (!month || l.d.startsWith(month)));
+            const opt = (v, label, cur) => `<option value="${rEsc(v)}"${v === cur ? ' selected' : ''}>${rEsc(label)}</option>`;
+            const lotSel = `<select id="rptLedgerLot" class="rpt-inline-sel" aria-label="Lot">${crops.map(x => opt(x.lotId, `${x.lotId}${x.strain ? ' — ' + x.strain : ''}${x.mother ? ' (mother lot)' : x.closed ? ' (closed out)' : ''}`, lotId)).join('')}</select>`;
+            const partSel = `<select id="rptLedgerPart" class="rpt-inline-sel" aria-label="Part">${opt('', 'Every part', part)}${LEDGER_PARTS.map(([k, n]) => opt(k, n, part)).join('')}</select>`;
+            const monthSel = `<select id="rptLedgerMonth" class="rpt-inline-sel" aria-label="Month">${opt('', 'Every month', month)}${months.map(ym => opt(ym, ctlsMonthName(ym), month)).join('')}</select>`;
+            const cfg = rptCostConfig();
+            const how = `Electricity: ${cfg.source === 'bills' ? 'each power bill spread over its days, each day split between the meter’s lots by their estimated kWh (lights × watts × hours × light %, plus equipment)' : `estimated kWh (lights × watts × hours × light %, plus equipment) × the $ per kWh of the day`}. ` +
+                `Property: each building’s monthly cost ÷ the days in the month, shared ${cfg.propertyShare === 'plants' ? 'by every lot’s plants that day' : cfg.propertyShare === 'area' ? 'by the floor area of the rooms in use, then by plants' : 'by the lights of the rooms with a lot growing, then by plants (a lot drying or trimming pays none)'}.`;
+
+            if (c.closed) {
+                const k = rptCropInputCost(c, M);
+                const body = `<p class="rpt-ledger-note">🔒 Lot ${rEsc(lotId)} is closed out: its costs are locked as its crop summary froze them — electricity ${lgM(k.power.cost)}, property ${lgM(k.property.cost)}. Its day-by-day lines aren’t kept with the summary.</p>`;
+                return `<div class="rpt-grid">${rCard({ wide: true, title: `🔍 Cost ledger — lot ${lotId}`, control: lotSel, body, source: 'Crop summary (frozen at close-out)' })}</div>`;
+            }
+            const totals = rptLedgerTotals(c, M, lines);
+            const check = t => t.adds ? (t.page != null ? '✓ adds up' : '✓ adds up (the days it could price)') : '✗ doesn’t add up — please report it';
+            const sumTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Part</th><th class="n">Lines</th><th class="n">kWh</th><th class="n">The lines add up to</th><th class="n">On the 💲 Costs page</th><th>Check</th></tr></thead><tbody>` +
+                totals.map(t => `<tr><td>${rEsc(t.name)}</td><td class="n">${t.n}</td><td class="n">${t.kWh != null ? lgK(t.kWh) : ''}</td><td class="n">${lgM(t.sum)}</td>` +
+                    `<td class="n">${t.page != null ? lgM(t.page) : `missing (${rEsc(t.why.join(', '))})`}</td><td class="${t.adds ? 'ok' : 'bad'}">${check(t)}</td></tr>`).join('') +
+                `</tbody></table></div>`;
+            const byMonth = months.map(ym => { const ls = lines.filter(l => l.d.startsWith(ym)); return [ym, ...LEDGER_PARTS.map(([k]) => rSum(ls.filter(l => l.part === k), l => l.cost)), rSum(ls.filter(l => l.part === 'power'), l => l.kWh)]; });
+            const monthTable = `<div class="rpt-tbl rpt-ledger-sum"><table><thead><tr><th>Month</th><th class="n">kWh</th>${LEDGER_PARTS.map(([, n]) => `<th class="n">${rEsc(n)}</th>`).join('')}</tr></thead><tbody>` +
+                byMonth.map(([ym, ...v]) => `<tr><td>${rEsc(ctlsMonthName(ym))}</td><td class="n">${lgK(v[LEDGER_PARTS.length])}</td>${LEDGER_PARTS.map((_, i) => `<td class="n">${lgM(v[i])}</td>`).join('')}</tr>`).join('') + `</tbody></table></div>`;
+            const rows = shown.map(l => `<tr><td>${rEsc(l.d)}</td><td>${rEsc(ledgerPartName(l.part))}</td><td>${rEsc(ledgerWhere(l))}</td><td class="how">${rEsc(l.how)}</td>` +
+                `<td class="n">${l.kWh != null ? lgK(l.kWh) : ''}</td><td class="n${l.cost == null ? ' bad' : ''}">${l.cost == null ? 'missing' : lgM(l.cost)}</td></tr>`).join('');
+            const linesTable = shown.length ? `<div class="rpt-tbl rpt-ledger"><table><thead><tr><th>Date</th><th>Part</th><th>Where</th><th>How it was worked out</th><th class="n">kWh</th><th class="n">$</th></tr></thead><tbody>${rows}</tbody>` +
+                `<tfoot><tr><td colspan="4">The ${shown.length} line${shown.length === 1 ? '' : 's'} shown</td><td class="n">${shown.some(l => l.kWh != null) ? lgK(rSum(shown, l => l.kWh)) : ''}</td><td class="n">${lgM(rSum(shown, l => l.cost))}</td></tr></tfoot></table></div>`
+                : rEmpty('No lines for these choices.', '');
+            if (RPT.ledgerUrl) URL.revokeObjectURL(RPT.ledgerUrl);
+            RPT.ledgerUrl = lines.length ? URL.createObjectURL(new Blob([rptLedgerCsv(lotId, lines)], { type: 'text/csv' })) : '';
+            const csv = lines.length ? `<a class="rpt-tbtn" id="rptLedgerCsv" href="${RPT.ledgerUrl}" download="Ledger-${rEsc(lotId)}-${rToday()}.csv" title="Every line of this lot, to add up in a spreadsheet">⬇ CSV (all ${lines.length} lines)</a>` : '';
+            const note = `<p class="rpt-ledger-note">Lot ${rEsc(lotId)}’s own costs, every day of its life (the period above doesn’t apply). Each line is written by the same code that adds up the 💲 Costs page, at the moment it gives the lot that piece of the cost, so the lines and the page can’t disagree. ${rEsc(how)} Shared costs (shared labour, and rent and power on idle building days) aren’t a lot’s own: the 💲 Costs page adds them per gram for each period.</p>`;
+            return `<div class="rpt-grid">` +
+                rCard({ wide: true, title: `🔍 Cost ledger — lot ${lotId}`, sub: 'Where this lot’s costs came from, day by day, and the arithmetic behind each one.', control: lotSel, body: sumTable + note, source: 'The cost models of the 💲 Costs page' }) +
+                rCard({ wide: true, title: 'By month', sub: 'The lines added up by calendar month, to set beside the power bills and the rent.', body: monthTable, source: 'The lines below' }) +
+                rCard({ wide: true, title: 'Every line', sub: 'One line per day and part, with the arithmetic written out.', control: partSel + monthSel + csv, body: linesTable, source: 'The same cost code as the 💲 Costs page, for this lot' }) +
                 `</div>`;
         }
 
@@ -7861,6 +8043,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             rptFillFilters();
             document.querySelectorAll('#rptPages button').forEach(b => b.classList.toggle('active', b.dataset.page === RPT.page));
             $('paneReports').classList.toggle('rpt-ctls-page', RPT.page === 'ctls');   // the CTLS month is for the whole facility: no filters
+            $('paneReports').classList.toggle('rpt-ledger-page', RPT.page === 'ledger');   // a lot's whole life: no filters
             try {
                 const M = rptModel();
                 // 🔒 Finished months' overhead is frozen the first time the Reports open after the month ends — on
@@ -7870,13 +8053,16 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     notifySitkaTools();
                     showToast(`🔒 Overhead frozen for ${froze.map(ym => ctlsMonthName(ym)).join(', ')} (Setup & data) — save to keep it`);
                 }
-                const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, yield: rptYield, rooms: rptRooms, forecast: rptForecast, ctls: rptCtls, settings: rptSetup };
+                const pages = { overview: rptOverview, timeline: rptTimeline, labour: rptLabour, costs: rptCosts, ledger: rptLedgerPage, yield: rptYield, rooms: rptRooms, forecast: rptForecast, ctls: rptCtls, settings: rptSetup };
                 body.innerHTML = (pages[RPT.page] || rptOverview)(M);
             } catch (err) {
                 console.error(err);
                 body.innerHTML = rEmpty('This report hit a problem.', rEsc(err && err.message || err));
             }
             const cm = $('ctlsMonth'); if (cm) cm.addEventListener('change', () => { RPT.ctlsMonth = cm.value; renderReports(); });
+            for (const [id, key] of [['rptLedgerLot', 'ledgerLot'], ['rptLedgerPart', 'ledgerPart'], ['rptLedgerMonth', 'ledgerMonth']]) {
+                const sel = $(id); if (sel) sel.addEventListener('change', () => { RPT[key] = sel.value; if (key === 'ledgerLot') RPT.ledgerMonth = ''; renderReports(); });
+            }
             const gl = $('rptGanttLot'); if (gl) gl.addEventListener('change', () => { RPT.ganttLot = gl.value; renderReports(); });
             const el = $('rptEnvLot'); if (el) el.addEventListener('change', () => { RPT.envLot = el.value; renderReports(); });
             const ex = $('rptExX'), ey = $('rptExY');
@@ -7919,6 +8105,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             }
             const go = t.closest('[data-go]');
             if (go) { RPT.page = go.dataset.go; renderReports(); return; }
+            const lg = t.closest('[data-ledger]');
+            if (lg) { RPT.page = 'ledger'; RPT.ledgerLot = lg.dataset.ledger; RPT.ledgerMonth = ''; renderReports(); return; }
             if (t.closest('#rptImportBtn')) { $('rptArchiveInput').click(); return; }
             if (t.closest('#ctlsPrint')) { ctlsPrint(); return; }
             if (t.closest('#ctlsFile')) { ctlsFile(RPT.ctlsMonth || ctlsDefaultMonth()); return; }
