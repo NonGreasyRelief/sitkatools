@@ -67,6 +67,53 @@ export async function run(b, BASE) {
     check('…and the nursery\'s spend includes it ($18 + $652.32)', near(r.fac.B2?.power, 18 + 652.32), JSON.stringify(r.fac.B2));
     check('…and the lot-by-lot split shows its clones', /Its clones \$\/g/.test(r.page), '');
 
+    // 📅 What each building cost to run counts only the period's own days (user decision 2026-10-26), not every calendar
+    // month the period touches. Building 1 pays $3,000 a month (spread over each month's days) on every day. The period
+    // starts D30 (D31 when D30 is the 1st, so it starts partway through a month)
+    const F = D(30).endsWith('-01') ? 31 : 30, FROM = D(F);
+    // (the nursery's rent is $0, set, so L100's property is priced: partial = missing)
+    const rentDb = () => { const db = nurseryDb(); db.buildings.B1.monthlyPropertyCost = 3000; db.buildings.B2.monthlyPropertyCost = 0; return db; };
+    const rentFrom = n0 => { let t = 0; for (let n = n0; n <= 120; n++) { const [y, m] = D(n).split('-').map(Number); t += 3000 / new Date(y, m, 0).getDate(); } return t; };
+    const inPeriod = `const sumB = map => { const o = {}; for (const [key, parts] of map) { const bid = key.split('|')[0]; const x = o[bid] || (o[bid] = {}); for (const [p, v] of Object.entries(parts)) x[p] = (x[p] || 0) + v; } return o; };
+        const P = sumB(rptFacilitySpendIn(M, '${FROM}', M.today));`;
+    r = await measure(rentDb(), `${inPeriod} return { P, all: fac() };`);
+    check(`a period from D${F} counts Building 1's rent on its own days (D${F}–D120), not the whole month it starts in`,
+        near(r.P.B1?.property, rentFrom(F), 1e-4) && near(r.all.B1?.property, rentFrom(0), 1e-4), JSON.stringify({ got: r.P.B1?.property, want: rentFrom(F) }));
+    // From D30: the dehumidifier and hall AC (36 kWh a day) every day to D120, and Grow 1's lights while L100 flowered:
+    // 120 kWh a day at 50 % light to D39, 240 kWh on harvest day (D40)
+    const kWhFrom = (121 - F) * 36 + (40 - F) * 120 + 240;
+    check(`…and Building 1's electricity on those days: ${kWhFrom.toLocaleString()} kWh × $0.10`, near(r.P.B1?.power, kWhFrom * 0.1, 1e-4), r.P.B1?.power);
+
+    // A closed-out lot's locked costs are month totals: the month the period starts in counts the share of the lot's days
+    // in Building 1 that month (it was there D10–D40) that fall in the period
+    await openSitka(b, main, BASE);
+    await loadSingle(b, main, rentDb());
+    const ew = await openTool(b, main, 'EmployeeWizard');
+    await b.run(ew, `rptSaveSummaries([rptModel().crops.find(c => c.lotId === 'L100')]);`);
+    await b.sleep(300);
+    await b.run(main, `delete DB.data.lots.L100; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'L100'); markUnsaved(); await WorkCopy.flush();`);
+    await b.sleep(600);
+    r = await b.run(ew, `const M = rptModel(); ${inPeriod}
+        const c = M.crops.find(x => x.lotId === 'L100'), from = '${FROM}', ym0 = from.slice(0, 7);
+        const days = (a, z) => a > z ? 0 : dDiff(a, z) + 1, mEnd = localDateStr(new Date(+ym0.slice(0, 4), +ym0.slice(5, 7), 0));
+        const lo = '${D(10)}' > ym0 + '-01' ? '${D(10)}' : ym0 + '-01', hi = '${D(40)}' < mEnd ? '${D(40)}' : mEnd;
+        const share = days(lo > from ? lo : from, hi) / days(lo, hi);
+        let want = 0;
+        for (const [key, parts] of Object.entries(c.costs?.spend || {})) { const [bid, ym] = key.split('|'); if (bid === 'B1' && ym >= ym0) want += (parts.property || 0) * (ym === ym0 ? share : 1); }
+        const idle = Object.entries(M.property.idleBy.B1 || {}).filter(([d]) => d >= from).reduce((t, [, v]) => t + v, 0);
+        return { closed: !!c?.closed, got: P.B1?.property, want: want + idle, share };`);
+    check('a closed-out lot\'s locked month totals: the month the period starts in counts the share of its days there inside the period',
+        r.closed && near(r.got, r.want, 0.02) && r.share > 0 && r.share < 1, JSON.stringify(r));
+    await leave(b, ew); await b.send('browsingContext.close', { context: ew });
+
+    // The labels: a $/g bar keeps its cents, a money axis the decimals of its step (a $1.50 tick never reads "$2"), and a
+    // month the period starts partway through says so
+    r = await measure(rentDb(), `RPT.period = '3m'; DB.data._EmployeeWizard.costs.kWhRate = 100; const M3 = rptModel();
+        return { ticks: [rMoneyTick(1.5, 0.5), rMoneyTick(2, 1), rMoneyTick(0.025, 0.025), rMoneyTick(5, 2.5)], page: rptCosts(M3), from: M3.per.from, fromLabel: dFmt(M3.per.from) };`);
+    check('money axis ticks: $1.50, $2, $0.025, $5.00', r.ticks.join() === '$1.50,$2,$0.025,$5.00', r.ticks.join());
+    check('the by-building $/g bars show cents to 3 places above $1 (not "$72")', /class="rv-val"[^>]*>\$\d[\d,]*\.\d{3}</.test(r.page), (r.page.match(/class="rv-val"[^>]*>[^<]*</g) || []).join(' '));
+    check('the month the period starts in is marked "(from …)"', r.from.endsWith('-01') || r.page.includes(`(from ${r.fromLabel})`), r.from);
+
     await leave(b, main);
     return results;
 }

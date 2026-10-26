@@ -4079,6 +4079,8 @@
         const rH = h => (h >= 100 ? rN(h, 0) : rN(h, 1)) + ' h';
         const rKg = g => rN(g / 1000, g >= 100000 ? 0 : 1) + ' kg';
         const rMoney = (v, d = 2) => '$' + rN(v, d);
+        // A money axis tick: whole dollars when the step is whole, else enough decimals for the step (a $1.50 tick never reads "$2")
+        const rMoneyTick = (v, step) => { const s = String(+Number(step).toFixed(6)), dec = (s.split('.')[1] || '').length; return rMoney(v, dec ? Math.max(2, dec) : 0); };
         const R_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const rToday = () => localDateStr(new Date());
         const dAdd = (s, n) => localDateStr(addDays(parseISO(s), n));
@@ -5020,19 +5022,23 @@
                     for (let d = bl.from; d <= bl.to && d <= today; d = dAdd(d, 1)) (billDay[d] || (billDay[d] = {}))[key] = (billDay[d]?.[key] || 0) + perDay;
                 }
             }
-            // kBM / cBM: the lot's kWh (and, with bills, its $) by building and month: 'building|YYYY-MM' (where it was spent)
+            // kBM / cBM: the lot's kWh (and, with bills, its $) by building and month: 'building|YYYY-MM' (where it was spent);
+            // cBD: its $ by building and day ('building|YYYY-MM-DD'), so a period that starts mid-month counts only its days
             // 📅 Estimated usage is priced at each day's $/kWh (price by date)
             const rateDay = {}, rateAt = d => d in rateDay ? rateDay[d] : (rateDay[d] = cfg.rateOn(d));
             const give = (lotId, kWh, part, b, d) => {
                 const o = byCrop.get(lotId); if (!o) return;
                 o.kWh += kWh; o[part] += kWh;
                 if (!kWh) return;
-                const k = (b && b !== 'null' ? b : '') + '|' + d.slice(0, 7);
+                const bk = b && b !== 'null' ? b : '', k = bk + '|' + d.slice(0, 7);
                 (o.kBM || (o.kBM = {}))[k] = (o.kBM[k] || 0) + kWh;
                 if (cfg.source === 'estimate') {
                     const r = rateAt(d);
                     if (r == null) o.noRate = true;
-                    else { o.est = (o.est || 0) + kWh * r; (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + kWh * r; }
+                    else {
+                        o.est = (o.est || 0) + kWh * r; (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + kWh * r;
+                        (o.cBD || (o.cBD = {}))[bk + '|' + d] = (o.cBD[bk + '|' + d] || 0) + kWh * r;
+                    }
                 }
             };
             for (let d = start; d <= today; d = dAdd(d, 1)) {
@@ -5096,9 +5102,10 @@
                         const pt = uniq.reduce((t, id) => t + plantsOf(id), 0);
                         uniq.forEach((id, i) => {
                             const o = byCrop.get(id); if (!o) return;
-                            const v = amount * (wt > 0 ? w[i] / wt : plantsOf(id) / pt), k = (meter === '*' ? '' : meter) + '|' + d.slice(0, 7);
+                            const v = amount * (wt > 0 ? w[i] / wt : plantsOf(id) / pt), bk = meter === '*' ? '' : meter, k = bk + '|' + d.slice(0, 7);
                             o.cost += v; o.billDays++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
+                            (o.cBD || (o.cBD = {}))[bk + '|' + d] = (o.cBD[bk + '|' + d] || 0) + v;
                         });
                     }
                 }
@@ -5189,6 +5196,7 @@
                             const v = roomAmount * n / pt, k = b + '|' + d.slice(0, 7);
                             o.cost += v; o.days++;
                             (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + v;
+                            (o.cBD || (o.cBD = {}))[b + '|' + d] = (o.cBD[b + '|' + d] || 0) + v;   // by day, for a period's own days
                         }
                     }
                 }
@@ -5470,7 +5478,9 @@
         }
         // =====================================================
         // 🏢 Where the money was spent (cost audit 2026-10-26): every cost by the building it was spent in, and the month.
-        // A lot's own costs: 'building|YYYY-MM' → { labour, power, water, fert, supplies, property } (its clones apart).
+        // A lot's own costs: 'building|YYYY-MM' → { labour, power, water, fert, supplies, property } (its clones apart), and
+        // `.days`: the part of it known by the day ('building|YYYY-MM-DD'), so a period that starts mid-month counts only its
+        // own days (rptFacilitySpendIn). A closed-out lot's locked costs are month totals (only its labour is by day).
         // Labour: its hours where they were worked (crop tasks by their room, room chores by theirs), at today's wages; a
         // closed-out lot's frozen cost shared out by the same hours. Power and property: its share of each room, day by day.
         // Water and fertilizer: the building its grow log had it in that day. Supplies: the task's building when charged at a
@@ -5483,9 +5493,15 @@
         function rptCropSpend(c, M) {
             const memo = M._spend || (M._spend = new Map());
             if (memo.has(c)) return memo.get(c);
-            const out = new Map();
-            const add = (b, ym, part, v) => { if (!(v > 0)) return; const key = (b || '') + '|' + ym; const o = out.get(key) || out.set(key, {}).get(key); o[part] = (o[part] || 0) + v; };
-            const addBM = (bm, part) => { for (const [key, v] of Object.entries(bm || {})) { const [b, ym] = key.split('|'); add(b, ym, part, v); } };
+            const out = new Map(), days = new Map();
+            // `when`: a day (also kept by the day) or a month (known only by the month)
+            const put = (map, key, part, v) => { const o = map.get(key) || map.set(key, {}).get(key); o[part] = (o[part] || 0) + v; };
+            const add = (b, when, part, v) => {
+                if (!(v > 0)) return;
+                put(out, (b || '') + '|' + when.slice(0, 7), part, v);
+                if (when.length === 10) put(days, (b || '') + '|' + when, part, v);
+            };
+            const addBM = (bm, part) => { for (const [key, v] of Object.entries(bm || {})) { const [b, when] = key.split('|'); add(b, when, part, v); } };
             const k = rptCropInputCost(c, M), cfg = rptCostConfig();
             const shipB = rptCropBuilding(c), shipYm = (rptShipDay(c) || c.dates?.harvestStart || rToday()).slice(0, 7);
             if (c.closed) {
@@ -5493,16 +5509,16 @@
                 // A summary saved before the spend was kept: all of it in the building it shipped from, in its ship month
                 else for (const part of ['power', 'water', 'fert', 'supplies', 'property']) add(shipB, shipYm, part, k[part]?.cost);
             } else {
-                if (k.power.cost != null) addBM(rptPowerFor(M, c)?.cBM, 'power');
-                if (k.property.cost != null) addBM(rptPropertyFor(M, c)?.cBM, 'property');
+                if (k.power.cost != null) { const pw = rptPowerFor(M, c); addBM(pw?.cBD || pw?.cBM, 'power'); }
+                if (k.property.cost != null) { const pr = rptPropertyFor(M, c); addBM(pr?.cBD || pr?.cBM, 'property'); }
                 const on = rptBuildingOnDay(c);
-                if (k.water.cost != null) for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) add(on(d), d.slice(0, 7), 'water', litres / 1000 * (cfg.waterRateOn(d) || 0));
+                if (k.water.cost != null) for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) add(on(d), d, 'water', litres / 1000 * (cfg.waterRateOn(d) || 0));
                 if (k.fert.cost != null) {
                     const dated = {};
                     for (const [d, prods] of Object.entries(c.productDays || {})) for (const [name, mL] of Object.entries(prods)) {
                         const pr = cfg.fertPrice(name, d);
                         dated[name] = (dated[name] || 0) + mL;
-                        if (pr != null) add(on(d), d.slice(0, 7), 'fert', mL / 1000 * pr);
+                        if (pr != null) add(on(d), d, 'fert', mL / 1000 * pr);
                     }
                     // mL with no day (a 📌 constant): where it ships from, at today's price
                     for (const [name, mL] of Object.entries(c.env?.nutrientByProduct || {})) {
@@ -5515,8 +5531,8 @@
                     for (const x of k.supplies.items) {
                         if (x.at?.date) {
                             const ev = (DB.data.calendarEvents || []).find(e => e.lotId === c.lotId && e.sourceTool === 'CropLabourWizard' && e.taskType === x.at.task);
-                            add((ev && DB.data.rooms?.[rptTaskRoom(ev, DB.lots[c.lotId])]?.buildingId) || on(x.at.date), x.at.date.slice(0, 7), 'supplies', x.cost);
-                        } else add(on(startDay), startDay.slice(0, 7), 'supplies', x.cost);
+                            add((ev && DB.data.rooms?.[rptTaskRoom(ev, DB.lots[c.lotId])]?.buildingId) || on(x.at.date), x.at.date, 'supplies', x.cost);
+                        } else add(on(startDay), startDay, 'supplies', x.cost);
                     }
                 }
             }
@@ -5524,12 +5540,13 @@
             const L = rptCropCost(c);
             if (L && L.cost > 0) {
                 const slots = [];
-                for (const [b, byD] of Object.entries(c.labour?.byBuilding || {})) for (const [day, m] of Object.entries(byD)) slots.push({ b, ym: day.slice(0, 7), ...rptPriceLabourSlot(m, day) });
+                for (const [b, byD] of Object.entries(c.labour?.byBuilding || {})) for (const [day, m] of Object.entries(byD)) slots.push({ b, day, ...rptPriceLabourSlot(m, day) });
                 const priced = rSum(slots, x => x.cost);
                 if (!slots.length || !(priced > 0)) add(shipB, shipYm, 'labour', L.cost);
-                else if (L.frozen) for (const x of slots) add(x.b, x.ym, 'labour', L.cost * x.cost / priced);
-                else for (const x of slots) add(x.b, x.ym, 'labour', x.cost);
+                else if (L.frozen) for (const x of slots) add(x.b, x.day, 'labour', L.cost * x.cost / priced);
+                else for (const x of slots) add(x.b, x.day, 'labour', x.cost);
             }
+            out.days = days;
             memo.set(c, out);
             return out;
         }
@@ -5559,6 +5576,63 @@
             for (const [b, days] of Object.entries((M.property || (M.property = rptPropertyModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) add(b, d.slice(0, 7), 'property', v);
             for (const [b, days] of Object.entries((M.power || (M.power = rptPowerModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) add(b === '*' ? '' : b, d.slice(0, 7), 'power', v.cost || 0);
             return (M._facSpend = out);
+        }
+        // Every $ spent in [from, to] only, by building and month (user decision 2026-10-26: a period that starts partway through
+        // a month counts only its own days). What's known by the day counts on its day: open lots' costs, every lot's labour,
+        // shared labour, idle building days. What's known only by the month (a closed-out lot's locked costs) is shared out
+        // by the lot's days in that building that month: the part of them inside the period (rptMonthShare).
+        function rptFacilitySpendIn(M, from, to) {
+            const memo = M._facSpendIn || (M._facSpendIn = {}), mk = from + '|' + to;
+            if (memo[mk]) return memo[mk];
+            const out = new Map();
+            const add = (b, ym, part, v) => { if (!(v > 0)) return; const key = (b || '') + '|' + ym; const o = out.get(key) || out.set(key, {}).get(key); o[part] = (o[part] || 0) + v; };
+            for (const c of M.crops) {
+                const sp = rptCropSpend(c, M), dated = new Map();
+                for (const [key, parts] of sp.days || []) {
+                    const [b, d] = key.split('|'), mKey = b + '|' + d.slice(0, 7), o = dated.get(mKey) || dated.set(mKey, {}).get(mKey);
+                    for (const [part, v] of Object.entries(parts)) { o[part] = (o[part] || 0) + v; if (inRange(d, from, to)) add(b, d.slice(0, 7), part, v); }
+                }
+                for (const [key, parts] of sp) {
+                    const [b, ym] = key.split('|');
+                    let f = null;
+                    for (const [part, v] of Object.entries(parts)) {
+                        const rest = v - (dated.get(key)?.[part] || 0);
+                        if (!(rest > 1e-9)) continue;
+                        if (f == null) f = rptMonthShare(c, b, ym, from, to);
+                        add(b, ym, part, rest * f);
+                    }
+                }
+            }
+            if (wagesLoaded()) {
+                const months = new Set([...(M.otherAll || []).map(r => r.date.slice(0, 7)), ...Object.keys(rptFrozenOverhead())]);
+                for (const ym of months) {
+                    const [y, m] = ym.split('-').map(Number), a = `${ym}-01` > from ? `${ym}-01` : from, z = localDateStr(new Date(y, m, 0)) < to ? localDateStr(new Date(y, m, 0)) : to;
+                    if (a <= z) for (const [b, x] of rptOverheadBy(M, a, z)) add(b, ym, 'labour', x.cost);
+                }
+            }
+            for (const [b, days] of Object.entries((M.property || (M.property = rptPropertyModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) if (inRange(d, from, to)) add(b, d.slice(0, 7), 'property', v);
+            for (const [b, days] of Object.entries((M.power || (M.power = rptPowerModel(M.crops))).idleBy || {})) for (const [d, v] of Object.entries(days)) if (inRange(d, from, to)) add(b === '*' ? '' : b, d.slice(0, 7), 'power', v.cost || 0);
+            return (memo[mk] = out);
+        }
+        // The share of a lot's month in a building (costs known only by the month) that falls in [from, to]: its days in that
+        // building that month inside the period ÷ all its days there that month, up to today. A month wholly inside counts in
+        // full and one wholly outside not at all; with no days there that month (work on a task elsewhere), the month's days.
+        function rptMonthShare(c, b, ym, from, to) {
+            const [y, m] = ym.split('-').map(Number), today = rToday(), last = localDateStr(new Date(y, m, 0));
+            const m0 = `${ym}-01`, m1 = last < today ? last : today;
+            if (m1 < m0 || m1 < from || m0 > to) return 0;
+            if (m0 >= from && m1 <= to) return 1;
+            const lo = m0 > from ? m0 : from, hi = m1 < to ? m1 : to;
+            let all = 0, inside = 0;
+            for (const st of rptCropRoomDays(c)) {
+                if ((DB.data.rooms?.[st.roomId]?.buildingId || '') !== (b || '')) continue;
+                const f = st.from > m0 ? st.from : m0, t = st.to < m1 ? st.to : m1;
+                if (f > t) continue;
+                all += dDiff(f, t) + 1;
+                const fi = f > lo ? f : lo, ti = t < hi ? t : hi;
+                if (fi <= ti) inside += dDiff(fi, ti) + 1;
+            }
+            return all > 0 ? inside / all : (dDiff(lo, hi) + 1) / (dDiff(m0, m1) + 1);
         }
         // One crop's cost per part, in $ (labour = its direct labour cost, null without wages). A lot cut from a mother lot
         // carries its clones (at the mother's cost per clone) in each part; its own cutting is already in its own costs.
@@ -6234,7 +6308,7 @@
             const W = 640, H = 270, X0 = 62, X1 = 628, top0 = 26, base = 222, bw = (X1 - X0) / (steps.length + 1);
             const yn = rNice(0, total, 4), ys = rLin(0, yn.hi, base, top0);
             let s = rT(X0, 14, RPT_PER[per].money, 'rv-ax');
-            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rMoney(v, yn.step < 0.1 ? 2 : yn.step < 1 ? 1 : 0), 'rv-ax', 'end'); });
+            yn.t.forEach(v => { s += rHl(X0, X1, ys(v)) + rT(X0 - 6, ys(v) + 4, rMoneyTick(v, yn.step), 'rv-ax', 'end'); });
             let run = 0;
             steps.forEach((st, i) => {
                 const x0 = X0 + i * bw + 10, w = bw - 20;
@@ -6766,7 +6840,7 @@
                 const top = Math.max(...perCrop.map(x => rSum(Object.values(x.pg).filter(v => v != null))));
                 const yn = rNice(0, top * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(perCrop.length, 6);
                 let s2 = '';
-                yn.t.forEach(v => { s2 += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoney(v, v < 1 ? 2 : 0), 'rv-ax', 'end'); });
+                yn.t.forEach(v => { s2 += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoneyTick(v, yn.step), 'rv-ax', 'end'); });
                 perCrop.forEach((x, i) => {
                     const cx = CX0 + bw * i + bw * 0.15, w = bw * 0.7;
                     let y = Y0;
@@ -6960,7 +7034,7 @@
                 const H = 280, CX0 = 52, CX1 = 1080, Y0 = 232, Y1 = 22;
                 const yn = rNice(0, Math.max(...mPriced.map(x => allInOf(x.pr.perClone))) * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(mPriced.length, 6);
                 let sm = '';
-                yn.t.forEach(v => { sm += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoney(v, v < 10 ? 2 : 0), 'rv-ax', 'end'); });
+                yn.t.forEach(v => { sm += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoneyTick(v, yn.step), 'rv-ax', 'end'); });
                 mPriced.forEach((x, i) => {
                     const cx = CX0 + bw * i + bw * 0.15, w = bw * 0.7, pc = x.pr.perClone;
                     const tip = `Mother lot ${x.c.lotId} · ${x.c.strain} · ${rN(x.pr.clones)} clones cut\n` + RPT_COST_PARTS.filter(([k]) => pc[k] != null).map(([k, l]) => `${l} ${rMoney(pc[k], 3)}/clone`).join('\n');
@@ -6987,7 +7061,8 @@
             const bRows = [...groups].map(([bid, list]) => ({ bid, name: bid ? rptBuildingName(bid) : 'No building', x: rptCostAgg(M, M.per.from, M.per.to, list) }))
                 .sort((p, q) => p.name.localeCompare(q.name));
             if (bRows.length > 1) bRows.push({ bid: '*', name: 'All buildings', x: a, org: true });
-            const hBars = (rows, valueOf, partsOf, labelOf, subOf, tipOf) => {
+            // money: how the bar's total reads (a $/g with its cents, a building's spend in whole dollars)
+            const hBars = (rows, valueOf, partsOf, labelOf, subOf, tipOf, money) => {
                 const max = Math.max(0.01, ...rows.map(valueOf)), xs = rLin(0, max, X0 + 60, X1);
                 let out = '';
                 rows.forEach((row, i) => {
@@ -7001,17 +7076,20 @@
                         out += rRect(x, y, w, 30, `fill:${color[k]}`, rTip(tipOf(row, k, v)));
                         x += w;
                     }
-                    out += valueOf(row) > 0 ? rT(x + 8, y + 20, rMoney(valueOf(row), valueOf(row) < 1 ? 3 : 0), 'rv-val') : rT(X0 + 68, y + 20, 'nothing priced', 'rv-axs');
+                    out += valueOf(row) > 0 ? rT(x + 8, y + 20, money(valueOf(row)), 'rv-val') : rT(X0 + 68, y + 20, 'nothing priced', 'rv-axs');
                 });
                 return rSvg(W, 20 + rows.length * 46, out, 'By building');
             };
             const byBuilding = bRows.length ? hBars(bRows, r => r.x.costPG.allIn || 0, r => r.x.costPG, r => r.name, r => `${r.x.n} crop${r.x.n === 1 ? '' : 's'} · ${rN(r.x.flower / 1000, 1)} kg`,
-                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v, 3)} per gram`) : rEmpty('No crops shipped in this period.', 'A crop counts once its Weigh & Ship task is signed off done.');
+                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v, 3)} per gram`, v => rMoney(v, 3)) : rEmpty('No crops shipped in this period.', 'A crop counts once its Weigh & Ship task is signed off done.');
             const byBuildingTable = { cols: [{ h: 'Building' }, { h: 'Crops', n: 1 }, { h: 'Flower kg', n: 1 }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $/g`, n: 1 })), { h: 'All in $/g', n: 1 }],
                 rows: bRows.map(r => [r.name, r.x.n, rN(r.x.flower / 1000, 1), ...RPT_COST_PARTS.map(([k]) => r.x.costPG[k] != null ? rMoney(r.x.costPG[k], 3) : '—'), r.x.costPG.allIn != null ? rMoney(r.x.costPG.allIn, 3) : '—']) };
-            // What each building cost to run: every $ spent in it, by part (calendar months touching the period). The nursery shows here.
-            const spendAll = rptFacilitySpend(M), months = [];
+            // What each building cost to run: every $ spent in it in the period's own days, by part and calendar month (a month the
+            // period starts partway through counts only its days; user decision 2026-10-26). The nursery shows here.
+            const spendAll = rptFacilitySpendIn(M, M.per.from, M.per.to), months = [];
             for (let m = M.per.from.slice(0, 7); m <= M.per.to.slice(0, 7) && months.length < 40; m = dMonths(m + '-01', 1).slice(0, 7)) months.push(m);
+            const perMonths = (dDiff(M.per.from, M.per.to) + 1) / (365.25 / 12);   // the period's length in months, for "A month"
+            const monthName = ym => ctlsMonthName(ym) + (ym === M.per.from.slice(0, 7) && !M.per.from.endsWith('-01') ? ` (from ${dFmt(M.per.from)})` : '');
             const spentB = new Map(), byMonth = new Map();
             for (const [key, parts] of spendAll) {
                 const [bid, ym] = key.split('|');
@@ -7024,17 +7102,17 @@
             const sRows = [...spentB].map(([bid, o]) => ({ bid, name: bid ? rptBuildingName(bid) : 'No building / whole site', o })).sort((p, q) => p.name.localeCompare(q.name));
             if (sRows.length > 1) sRows.push({ bid: '*', name: 'All buildings', org: true, o: sRows.reduce((t, r) => { for (const [k, v] of Object.entries(r.o)) t[k] = (t[k] || 0) + v; return t; }, {}) });
             const nursery = sRows.filter(r => r.bid && r.bid !== '*' && !groups.has(r.bid));
-            const spendChart = sRows.length ? hBars(sRows, r => r.o.total || 0, r => r.o, r => r.name, r => r.org ? `${months.length} month${months.length === 1 ? '' : 's'}` : groups.has(r.bid) ? `${groups.get(r.bid).length} shipped` : 'shipped none',
-                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v)}`) : rEmpty('Nothing spent in this period yet.', '');
+            const spendChart = sRows.length ? hBars(sRows, r => r.o.total || 0, r => r.o, r => r.name, r => r.org ? (M.per.from.slice(0, 4) === M.per.to.slice(0, 4) ? `${dFmt(M.per.from)} – ${dFmt(M.per.to)}` : `${dFmtY(M.per.from)} – ${dFmtY(M.per.to)}`) : groups.has(r.bid) ? `${groups.get(r.bid).length} shipped` : 'shipped none',
+                (r, k, v) => `${r.name}: ${label[k]} ${rMoney(v)}`, v => rMoney(v, 0)) : rEmpty('Nothing spent in this period yet.', '');
             const spendTable = { cols: [{ h: 'Building' }, ...RPT_COST_PARTS.map(([, l]) => ({ h: `${l} $`, n: 1 })), { h: 'Total $', n: 1 }, { h: 'A month', n: 1 }],
-                rows: sRows.map(r => [r.name, ...RPT_COST_PARTS.map(([k]) => r.o[k] > 0 ? rMoney(r.o[k]) : '—'), rMoney(r.o.total || 0), rMoney((r.o.total || 0) / Math.max(1, months.length))]) };
+                rows: sRows.map(r => [r.name, ...RPT_COST_PARTS.map(([k]) => r.o[k] > 0 ? rMoney(r.o[k]) : '—'), rMoney(r.o.total || 0), rMoney((r.o.total || 0) / Math.max(1, perMonths))]) };
             const spendBuildings = sRows.filter(r => !r.org);
             const monthTable = spendBuildings.length ? `<div class="rpt-tbl">${rTable({ cols: [{ h: 'Month' }, ...spendBuildings.map(r => ({ h: r.name, n: 1 })), ...(spendBuildings.length > 1 ? [{ h: 'All', n: 1 }] : [])],
-                rows: months.filter(ym => byMonth.has(ym)).map(ym => [ctlsMonthName(ym), ...spendBuildings.map(r => byMonth.get(ym).get(r.bid) > 0 ? rMoney(byMonth.get(ym).get(r.bid)) : '—'),
+                rows: months.filter(ym => byMonth.has(ym)).map(ym => [monthName(ym), ...spendBuildings.map(r => byMonth.get(ym).get(r.bid) > 0 ? rMoney(byMonth.get(ym).get(r.bid)) : '—'),
                     ...(spendBuildings.length > 1 ? [rMoney(rSum([...byMonth.get(ym).values()]))] : [])]) })}</div>` : '';
             const nurseryNote = nursery.length ? `<p class="rpt-note">${nursery.map(r => `<b>${rEsc(r.name)}</b> shipped no flower this period: its ${rMoney(r.o.total)} reaches the grams through the lots that grew there (their nursery days), its mother lots’ clones (cost per clone) and, for its shared labour and idle days, every gram shipped.`).join(' ')}</p>` : '';
             const unpricedHours = wagesLoaded() ? rSum(a.crops, c => rptCropCost(c)?.missing || 0) : 0;
-            const spendNote = `${nurseryNote}<p class="rpt-note">Everything spent in each building: its lots’ labour, electricity, water, fertilizer, supplies and rent, its shared labour, and its idle days — by calendar month${wagesLoaded() ? '' : '; labour isn’t included without Wages.json'}${unpricedHours > 0 ? `; hours with no wage aren’t priced` : ''}. Not filtered by flower room or strain.</p>${monthTable}`;
+            const spendNote = `${nurseryNote}<p class="rpt-note">Everything spent in each building: its lots’ labour, electricity, water, fertilizer, supplies and rent, its shared labour, and its idle days — on the period’s own days, by calendar month (a month it starts partway through counts from that day; a closed-out lot’s locked month totals are shared out by its days in that month)${wagesLoaded() ? '' : '; labour isn’t included without Wages.json'}${unpricedHours > 0 ? `; hours with no wage aren’t priced` : ''}. Not filtered by flower room or strain.</p>${monthTable}`;
             // Each lot: what was spent on it in the building it ships from, in other buildings (its nursery days), and its clones
             const split = weighed.map(c => {
                 const sb = rptCropSpendByBuilding(c, M), own = rptCropBuilding(c) || '', g = c.weights.flower;
@@ -7049,7 +7127,7 @@
                 const top = Math.max(...split.map(x => (x.inOwn + x.other + x.clones) / x.g));
                 const yn = rNice(0, top * 1.1, 5), ys = rLin(yn.lo, yn.hi, Y0, Y1), bw = (CX1 - CX0) / Math.max(split.length, 6);
                 let sp = '';
-                yn.t.forEach(v => { sp += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoney(v, v < 1 ? 2 : 0), 'rv-ax', 'end'); });
+                yn.t.forEach(v => { sp += rHl(CX0, CX1, ys(v)) + rT(CX0 - 6, ys(v) + 4, rMoneyTick(v, yn.step), 'rv-ax', 'end'); });
                 split.forEach((x, i) => {
                     const cx = CX0 + bw * i + bw * 0.15, w = bw * 0.7;
                     const tip = `Lot ${x.c.lotId} · ships from ${rptBuildingName(x.own)}\n${rptBuildingName(x.own)}: ${rMoney(x.inOwn / x.g, 3)}/g` +

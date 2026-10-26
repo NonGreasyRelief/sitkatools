@@ -39,7 +39,7 @@ Every bloom lot runs the same 120 days (L101: 2026-01-23 → 2026-05-22):
 - **Labour:** 39 task days × 5 h = 195 h × $10 = **$1,950.00**.
 - **Supplies:** Clone cube × 1,000 plants at Cutting Clones = $1,000.00 · Coco block × 1,000 plants at Transplanting = $10,000.00 · Trellis net × 10 per crop = $100.00 → **$11,100.00**.
 - **Property:** each day, its building's rent for that day (monthly ÷ days in the month) × its plants ÷ all plants in the building that day. It changes lot by lot with who else is in the building.
-- **Water and fertilizer are counted once a day.** PaperWizard saves a phase or room change day on two pages (the "double entry"): Transplanting (room change) and Flip (phase change) are on two pages in this DB, as PaperWizard stores them. If the page shows 99,000 L of water for a lot instead of 97,000 L, it is adding both rows.
+- **Double entries:** PaperWizard saves a phase or room change day on two pages. Transplanting (room change) and Flip (phase change) are on two pages in this DB, as PaperWizard stores them: the old page's row has the day's water and fertilizer, the new page's row leaves them blank (the receiving side doesn't enter them). So each day's water counts once.
 
 ## The mothers and the cost per clone
 
@@ -98,6 +98,13 @@ Lots shipped (✅ Weigh & Ship signed off) in the period: 10 → 1,000,000 g of 
 | Building 1 (Nursery) | L101, L103, L105, L107, L109 | 500,000 | $0.0214 | $2.0398 | $0.0100 | $1.0037 | $0.1120 | $0.1648 | **$3.3516** |
 | Building 2 (Flower) | L102, L104, L106, L108, L110 | 500,000 | $0.0214 | $2.0468 | $0.0100 | $1.0037 | $0.1120 | $0.2070 | **$3.4009** |
 
+**🏢 What each building cost to run in the period** (only 2026-04-27 → 2026-10-26: 2026-04 counts from the 27th):
+
+| Building | Labour | Electricity | Water | Fertilizer | Supplies | Property | **Total** | 2026-04 only |
+|---|---|---|---|---|---|---|---|---|
+| Building 1 (Nursery) | $9,650.00 | $919,500.00 | $4,093.00 | $409,300.00 | $34,400.00 | $59,720.43 | **$1,436,663.43** | $48,587.33 |
+| Building 2 (Flower) | $7,200.00 | $362,700.00 | $2,760.00 | $276,000.00 | $30,000.00 | $59,720.43 | **$738,380.43** | $19,413.33 |
+
 ## 💲 Cost per gram — Period: Last 12 months (2025-10-27 → 2026-10-26)
 
 Lots shipped (✅ Weigh & Ship signed off) in the period: 10 → 1,000,000 g of flower.
@@ -122,9 +129,16 @@ Lots shipped (✅ Weigh & Ship signed off) in the period: 10 → 1,000,000 g of 
 | Building 1 (Nursery) | L101, L103, L105, L107, L109 | 500,000 | $0.0214 | $2.0398 | $0.0100 | $1.0037 | $0.1120 | $0.1648 | **$3.3516** |
 | Building 2 (Flower) | L102, L104, L106, L108, L110 | 500,000 | $0.0214 | $2.0682 | $0.0100 | $1.0037 | $0.1120 | $0.2781 | **$3.4934** |
 
+**🏢 What each building cost to run in the period** (only 2025-10-27 → 2026-10-26: 2025-10 counts from the 27th):
+
+| Building | Labour | Electricity | Water | Fertilizer | Supplies | Property | **Total** | 2025-10 only |
+|---|---|---|---|---|---|---|---|---|
+| Building 1 (Nursery) | $13,100.00 | $1,600,300.00 | $6,687.00 | $668,700.00 | $62,000.00 | $110,720.43 | **$2,461,507.43** | — |
+| Building 2 (Flower) | $8,250.00 | $453,700.00 | $3,350.00 | $335,000.00 | $50,000.00 | $110,720.43 | **$961,020.43** | — |
+
 ## 🏢 What each building costs to run, by month
 
-Every $ spent in the building, whoever carries it (lots, mothers, idle days). Rent is the building's whole $10,000 every full month. Note the page counts every calendar month that touches the period (the 6-month view includes all of its first month).
+Every $ spent in the building, whoever carries it (lots, mothers, idle days). Rent is the building's whole $10,000 every full month. These are whole months; the page counts only the period's days, so a month the period starts partway through shows only those days (see each period above).
 
 | Month | Building | Labour | Electricity | Water | Fertilizer | Supplies | Property | **Total** |
 |---|---|---|---|---|---|---|---|---|
@@ -158,4 +172,4 @@ Every $ spent in the building, whoever carries it (lots, mothers, idle days). Re
 - **Building 2 before its first crop:** the mothers start 2025-11-24 (the first day anything is costed), and Building 2 gets its first lot on 2026-03-11 (L102 transplanted to Grow 3). Those 107 days are idle: in the 12-month view they add Building 2's rent and dehumidifier to its grams; the 6-month view starts after them.
 - **Empty dry rooms:** on days no lot is drying, the dehumidifier's 10 kWh goes to the building's other lots by plants (the mothers included, in Building 1).
 - **Rent split by plants:** in Building 1 the mothers (100 plants) take 100 / (100 + 1,000 × lots there that day) of the day's rent; each bloom lot 1,000 / that. Switch ⚡ Power & Rates → Property to **Floor area** (every room 1,000 sq ft) to split it room by room instead.
-- **Double entries:** Transplanting and Flip days are saved on two grow-log pages (as PaperWizard does). The answer key counts each day once.
+- **Double entries:** Transplanting and Flip days are on two grow-log pages (as PaperWizard does); water and fertilizer are only on the old page's row.

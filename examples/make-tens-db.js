@@ -237,16 +237,19 @@ const dayRow = (roomName, phase, plants, d) => {
         q_fert: String(IN.fertMl * plants), q_light: String(IN.lightPct), q_notes: '', q_init: initialsOf(who) };
 };
 // A lot's grow log from its stays, paged as PaperWizard pages it: rolling 7-day pages; a phase or room change inside a
-// page saves that day on the old page too (the "double entry": the old page's row keeps the old room or phase, and the
-// old page is struck that day), then a fresh page starts on the change day. Plants to 0 strike the page that day.
+// page saves that day on the old page too (the "double entry": the old page's row keeps the old room or phase and holds the
+// day's water and fertilizer; the old page is struck that day), then a fresh page starts on the change day, where the
+// receiving side fills the row in again but leaves water and fertilizer blank (user, 2026-10-26: they don't enter them
+// on their side). Plants to 0 strike the page that day.
 function growLog(segments, plants, harvestDay) {
     const instances = {};
-    let open = null;
+    let open = null, secondEntry = null;
     for (const [s, seg] of segments.entries()) {
         for (let d = seg.from; d <= seg.to; d = dAdd(d, 1)) {
             if (!open || dDiff(open.key, d) >= 7) { open = { key: d, inst: page(seg.phase, seg.room) }; instances[d] = open.inst; }
             const harvest = d === harvestDay;
             const row = dayRow(seg.room, seg.phase, harvest ? 0 : plants, d);
+            if (d === secondEntry) Object.assign(row, { q_water: '', q_perplant: '', q_runoff: '', q_fert: '' });
             if (harvest) {
                 Object.assign(row, { q_water: '', q_perplant: '', q_runoff: '', q_fert: '', q_notes: `[Removed ${plants}: ${plants} harvested]`, _removed: { harvested: plants } });
                 open.inst.phaseChangeDate = d; open.inst.strikeInitials = initialsOf(FM);
@@ -261,7 +264,7 @@ function growLog(segments, plants, harvestDay) {
             row[changed] = changed === 'q_room' ? seg.room : seg.phase;
             open.inst.days[next.from] = row;
             open.inst.phaseChangeDate = next.from; open.inst.strikeInitials = initialsOf(FM);
-            open = null;
+            open = null; secondEntry = next.from;
         } else open = null;
     }
     return { instances };
@@ -312,8 +315,18 @@ const K = Object.fromEntries(LOTS.map(id => [id, { lightKwh: 0, equipKwh: 0, ren
 const idle = { B1: { rent: 0, kWh: 0, days: [] }, B2: { rent: 0, kWh: 0, days: [] } };
 const START = M0;
 // Where the money was spent: building → 'YYYY-MM' → part → $ (every $ in the building, whoever carries it)
-const SPEND = { B1: {}, B2: {} };
-const spend = (bid, d, part, v) => { const m = SPEND[bid][d.slice(0, 7)] || (SPEND[bid][d.slice(0, 7)] = { labour: 0, power: 0, water: 0, fert: 0, supplies: 0, property: 0 }); m[part] += v; };
+const SPEND = { B1: {}, B2: {} }, SPEND_DAYS = { B1: {}, B2: {} };
+const zero = () => ({ labour: 0, power: 0, water: 0, fert: 0, supplies: 0, property: 0 });
+const spend = (bid, d, part, v) => {
+    (SPEND[bid][d.slice(0, 7)] || (SPEND[bid][d.slice(0, 7)] = zero()))[part] += v;
+    (SPEND_DAYS[bid][d] || (SPEND_DAYS[bid][d] = zero()))[part] += v;
+};
+// A period's spend, only its own days: building → month → part
+const spendIn = from => Object.fromEntries(['B1', 'B2'].map(bid => {
+    const out = {};
+    for (const [d, parts] of Object.entries(SPEND_DAYS[bid])) if (d >= from && d <= TODAY) { const m = out[d.slice(0, 7)] || (out[d.slice(0, 7)] = zero()); for (const p of Object.keys(parts)) m[p] += parts[p]; }
+    return [bid, out];
+}));
 const lightKw = IN.lights * IN.watts / 1000, dehuKwh = IN.dehuWatts * IN.dehuHours / 1000;
 eachDay(START, TODAY, d => {
     const here = stays.filter(s => s.from <= d && d <= s.to);
@@ -434,7 +447,7 @@ L.push(`- **Fertilizer:** ${dDiff(b0.day0, b0.harvest)} days × ${n0(IN.fertMl *
 L.push(`- **Labour:** ${K[b0.id].taskDays} task days × ${IN.hoursPerTaskDay} h = ${K[b0.id].hours} h × $${IN.wage} = **${$(own(b0.id).labour)}**.`);
 L.push(`- **Supplies:** ${K[b0.id].supplyLines.map(([t, v]) => `${t} = ${$(v)}`).join(' · ')} → **${$(K[b0.id].supplies)}**.`);
 L.push(`- **Property:** each day, its building's rent for that day (monthly ÷ days in the month) × its plants ÷ all plants in the building that day. It changes lot by lot with who else is in the building.`);
-L.push(`- **Water and fertilizer are counted once a day.** PaperWizard saves a phase or room change day on two pages (the "double entry"): Transplanting (room change) and Flip (phase change) are on two pages in this DB, as PaperWizard stores them. If the page shows ${n0(K[b0.id].waterL + 2 * IN.waterL * IN.plants)} L of water for a lot instead of ${n0(K[b0.id].waterL)} L, it is adding both rows.`);
+L.push(`- **Double entries:** PaperWizard saves a phase or room change day on two pages. Transplanting (room change) and Flip (phase change) are on two pages in this DB, as PaperWizard stores them: the old page's row has the day's water and fertilizer, the new page's row leaves them blank (the receiving side doesn't enter them). So each day's water counts once.`);
 L.push('', '## The mothers and the cost per clone', '');
 L.push(`M100 has ${IN.mothers} plants from ${M0} to today (${dDiff(M0, TODAY) + 1} days). Ten lots × ${n0(IN.plants)} clones = **${n0(clonesCut)} clones** cut from it. Cost per clone = everything spent on the mothers so far ÷ ${n0(clonesCut)}.`, '');
 L.push('| Part | Mothers so far | How | Per clone | Per lot (× 1,000 clones) |', '|---|---|---|---|---|');
@@ -472,9 +485,18 @@ for (const P of [P6, P12]) {
         const x = P[bid];
         L.push(`| ${buildings[bid].name} | ${x.lots.join(', ') || '—'} | ${n0(x.grams)} | ${PARTS.map(p => $g(x.perGram[p])).join(' | ')} | **${$g(PARTS.reduce((t, p) => t + (x.perGram[p] || 0), 0))}** |`);
     }
+    const SI = spendIn(P.from), firstYm = P.from.slice(0, 7);
+    L.push('', `**🏢 What each building cost to run in the period** (only ${P.from} → ${TODAY}: ${firstYm} counts from the ${Number(P.from.slice(8))}th):`, '');
+    L.push('| Building | ' + PARTS.map(p => PART_NAMES[p]).join(' | ') + ` | **Total** | ${firstYm} only |`, '|---|' + PARTS.map(() => '---').join('|') + '|---|---|');
+    for (const bid of ['B1', 'B2']) {
+        const tot = zero();
+        for (const m of Object.values(SI[bid])) for (const p of PARTS) tot[p] += m[p];
+        const first = SI[bid][firstYm];
+        L.push(`| ${buildings[bid].name} | ${PARTS.map(p => $(tot[p])).join(' | ')} | **${$(PARTS.reduce((t, p) => t + tot[p], 0))}** | ${first ? $(PARTS.reduce((t, p) => t + first[p], 0)) : '—'} |`);
+    }
 }
 L.push('', '## 🏢 What each building costs to run, by month', '');
-L.push('Every $ spent in the building, whoever carries it (lots, mothers, idle days). Rent is the building\'s whole $10,000 every full month. Note the page counts every calendar month that touches the period (the 6-month view includes all of its first month).', '');
+L.push('Every $ spent in the building, whoever carries it (lots, mothers, idle days). Rent is the building\'s whole $10,000 every full month. These are whole months; the page counts only the period\'s days, so a month the period starts partway through shows only those days (see each period above).', '');
 L.push('| Month | Building | Labour | Electricity | Water | Fertilizer | Supplies | Property | **Total** |', '|---|---|---|---|---|---|---|---|---|');
 for (const ym of [...new Set([...Object.keys(SPEND.B1), ...Object.keys(SPEND.B2)])].sort()) for (const bid of ['B1', 'B2']) {
     const m = SPEND[bid][ym]; if (!m) continue;
@@ -484,12 +506,12 @@ L.push('', '## Days to watch', '');
 L.push(`- **Building 2 before its first crop:** the mothers start ${M0} (the first day anything is costed), and Building 2 gets its first lot on ${bloom[1].transplant} (L102 transplanted to Grow 3). Those ${idle.B2.days.length} days are idle: in the 12-month view they add Building 2's rent and dehumidifier to its grams; the 6-month view starts after them.`);
 L.push(`- **Empty dry rooms:** on days no lot is drying, the dehumidifier's ${dehuKwh} kWh goes to the building's other lots by plants (the mothers included, in Building 1).`);
 L.push(`- **Rent split by plants:** in Building 1 the mothers (${IN.mothers} plants) take ${IN.mothers} / (${IN.mothers} + ${n0(IN.plants)} × lots there that day) of the day's rent; each bloom lot ${n0(IN.plants)} / that. Switch ⚡ Power & Rates → Property to **Floor area** (every room 1,000 sq ft) to split it room by room instead.`);
-L.push(`- **Double entries:** Transplanting and Flip days are saved on two grow-log pages (as PaperWizard does). The answer key counts each day once.`);
+L.push(`- **Double entries:** Transplanting and Flip days are on two grow-log pages (as PaperWizard does); water and fertilizer are only on the old page's row.`);
 fs.writeFileSync(KEY_OUT, L.join('\n') + '\n');
 // The same numbers as data, for checking the page's figures by script
 const kwh = id => K[id].lightKwh + K[id].equipKwh;
 const periodData = P => ({ from: P.from, shipped: P.shipped.map(b => b.id), grams: P.grams, perGram: P.pg, allIn: P.allIn, idle: P.idleB,
-    byBuilding: { B1: P.B1.perGram, B2: P.B2.perGram } });
+    byBuilding: { B1: P.B1.perGram, B2: P.B2.perGram }, spendIn: spendIn(P.from) });
 fs.writeFileSync(KEY_OUT.replace(/\.md$/, '.json'), JSON.stringify({ today: TODAY, mother: { own: momOwn, kWh: kwh('M100'), perClone, clones: clonesCut },
     lots: Object.fromEntries(bloom.map(b => [b.id, { ...lotCost[b.id], kWh: kwh(b.id), waterL: K[b.id].waterL, fertMl: K[b.id].fertMl, hours: K[b.id].hours, ship: b.ship, building: b.building }])),
     periods: { '6m': periodData(P6), '12m': periodData(P12) }, spend: SPEND }, null, 1));
