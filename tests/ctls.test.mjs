@@ -140,6 +140,9 @@ export async function run(b, BASE) {
     check('…and September says it changed since it was filed', sepChecks.some(t => t.startsWith('Changed since it was filed')), sepChecks.join(' | '));
 
     // ---- Lots ready to close out: save their plant history ----
+    // (D400's last grow-log page is signed off first: close-out needs its summary saved as the lot is then)
+    await b.run(main, `DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt = '2026-08-26T00:00:00.000Z'; markUnsaved(); broadcastToSubtools();`);
+    await b.waitFor(ew, `return !!DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt;`);
     const ready = await b.run(ew, `return ctlsModel('2026-09').ready;`);
     check('lots with no plants and nothing hanging are offered for close-out, with their history not saved yet', JSON.stringify(ready.map(r => [r.lotId, r.state])) === JSON.stringify([['D400', 'none']]), JSON.stringify(ready));
     await b.run(ew, `document.querySelector('[data-ctls-keep="D400"]').click();`, { user: true });
@@ -148,13 +151,13 @@ export async function run(b, BASE) {
     check('💾 Save keeps the lot\'s plant and weight history with its crop summary', kept?.v === 4 && kept.ctls?.start === 40 && kept.ctls.moves.some(m => m.reason === 'harvested' && m.n === 40) && kept.ctls.dry[0]?.[1] === 700, JSON.stringify(kept));
     check('…and it shows as saved', (await b.run(ew, `return ctlsModel('2026-09').ready.find(r => r.lotId === 'D400')?.state;`)) === 'ok');
 
-    // ---- SitkaTools: close-out warns when the plant history isn't saved ----
+    // ---- SitkaTools: close-out is refused while the crop summary isn't saved (🔒 cost audit 2026-10-26) ----
     await b.run(main, `window.__msgs = []; window.confirm = m => { window.__msgs.push(m); return false; }; window.alert = m => window.__msgs.push('ALERT ' + m);
-        DB.data.lots.C300.plantCount = 0; DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt = '2026-08-26T00:00:00.000Z';
+        DB.data.lots.C300.plantCount = 0;
         document.getElementById('lotActionSelect').innerHTML = '<option value="C300">C300</option><option value="D400">D400</option>';`);
     await b.run(main, `document.getElementById('lotActionSelect').value = 'C300'; await LotActions.closeOut(); document.getElementById('lotActionSelect').value = 'D400'; await LotActions.closeOut();`);
     const msgs = await b.run(main, `return window.__msgs;`);
-    check('close-out warns when a lot\'s plant history isn\'t saved, and not when it is', msgs.length === 2 && msgs[0].includes('plant history isn\'t saved yet') && msgs[1].startsWith('Close out lot D400?'), msgs.map(m => m.slice(0, 80)).join(' | '));
+    check('close-out is refused while a lot\'s crop summary isn\'t saved, and goes ahead when it is', msgs.length === 2 && msgs[0].startsWith('ALERT Lot C300 can\'t be closed out yet') && msgs[0].includes('crop summary isn\'t saved') && msgs[1].startsWith('Close out lot D400?'), msgs.map(m => m.slice(0, 120)).join(' | '));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, main);
 

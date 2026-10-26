@@ -101,7 +101,9 @@ export async function run(b, BASE) {
     await b.sleep(600);
     check('a summary saved again without wages: the older frozen cost isn\'t used against its hours', (await lab())?.frozen === false, JSON.stringify(await lab()));
     p = await power('L100');
-    check('closed out, the bill added later is charged to it (shared with L200, which is in the building those days)', p.cost != null && p.cost > frozenBilled + 1 && p.cost < frozenBilled + 999 && !p.unbilledDays, JSON.stringify({ cost: p.cost, un: p.unbilledDays, before: frozenBilled }));
+    // 🔒 Costs are locked at close-out (cost audit 2026-10-26): SitkaTools now refuses to close a lot out while days have no
+    // bill; one frozen that way (before the lock) is never re-priced — its electricity stays missing
+    check('closed out with unbilled days, a bill added later doesn\'t re-price it: its electricity stays missing', p.cost == null && p.unbilledDays === 10, JSON.stringify({ cost: p.cost, un: p.unbilledDays }));
 
     // ---- C5: no made-up wage in the Tasks tab ----
     await b.run(main, `delete DB.data._EmployeeWizard.employees.Blair.wage;

@@ -392,3 +392,14 @@ export const dwTick = (b, dw, rowMatch) => b.run(dw, `
 export const dwTicked = (b, dw, rowMatch) => b.run(dw, `
     const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes(${JSON.stringify(rowMatch)}));
     return row ? row.querySelector('.task-check input')?.checked === true && row.classList.contains('done') : null;`);
+
+// 🔒 Close-out needs each lot's crop summary saved as the lot is now, with its labour cost (cost audit 2026-10-26): save
+// them from the Labour & Cost Wizard, the way 📊 Reports → ⚙️ Setup & data does, then close it. (It waits until the tool
+// has the lots: a tool that saves before its database arrives would send an empty one back.)
+export async function saveSummaries(b, sitka, lotIds) {
+    const ew = await openTool(b, sitka, 'EmployeeWizard', { ready: `return typeof DB !== "undefined" && ${JSON.stringify(lotIds)}.every(id => !!DB.data?.lots?.[id]);` });
+    await b.run(ew, `const M = rptModel(); rptSaveSummaries(M.crops.filter(c => ${JSON.stringify(lotIds)}.includes(c.lotId)));`);
+    await b.waitFor(sitka, `return ${JSON.stringify(lotIds)}.every(id => DB.data._EmployeeWizard?.crops?.[id]?.sourceHash === lotFingerprint(DB.data, id));`);
+    await leave(b, ew);
+    await b.send('browsingContext.close', { context: ew });
+}

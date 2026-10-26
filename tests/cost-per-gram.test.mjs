@@ -146,11 +146,11 @@ export async function run(b, BASE) {
     await b.sleep(600);
     r = await costs();
     check('a closed-out lot keeps its frozen costs after the rates change', near(r.k.power.cost, 4100) && near(r.k.water.cost, 2.5) && near(r.k.property.cost, Math.round(expProp * 100) / 100), JSON.stringify({ p: r.k.power.cost, w: r.k.water.cost, pr: r.k.property }));
-    // A summary frozen before property costs existed works its share out from the buildings
+    // 🔒 A summary frozen before property costs existed is never re-priced (cost audit 2026-10-26): its property is missing
     await b.run(main, `delete DB.data._EmployeeWizard.crops.L100.costs.property; markUnsaved(); await WorkCopy.flush();`);
     await b.sleep(600);
     r = await costs();
-    check('an older summary (no frozen property) gets its property from the buildings', near(r.k.property.cost, propFor(5000)) && r.k.property.days === 41, JSON.stringify(r.k.property));
+    check('an older summary (no frozen property) isn\'t re-priced from today\'s buildings: its property is missing', r.k.property.cost == null, JSON.stringify(r.k.property));
 
     // ---- Two crops in Building 1: shared by lights, or by plants (the default) ----
     // L300 is in Veg 1 (10 lights) on D20–D40 while L100 is in Grow 1 (20 lights), so L100 carries 2/3 of those days

@@ -3,7 +3,7 @@
 // device ignores what's left of the lot there, and each building drops it from its own file with its next save — unless
 // its file got something for the lot after the archive was made: that's kept, shown, and both sides are told. Closing
 // out needs every building's file open. A single-file DB just loses the lot, as before.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSplit, leave, today } from './lib/helpers.mjs';
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSplit, leave, today, saveSummaries } from './lib/helpers.mjs';
 
 export const title = 'close-out with split files: each building drops the lot from its own file';
 
@@ -52,6 +52,12 @@ export async function run(b, BASE) {
 
     // ---- The office closes L100 out ----
     check('office opened', await openSplit(b, main, BASE, 'office', files));
+    // 🔒 Its crop summary first (saved as it is now, its labour cost with Wages.json), saved into Main and Wages
+    await saveSummaries(b, main, ['L100']);
+    const sums = await saveSplit(b, main);
+    await b.run(main, `closeSavePopup();`);
+    check('the summary saves into Main.json and Wages.json (its labour cost)', Object.keys(sums).sort().join() === 'Main.json,Wages.json', Object.keys(sums).join());
+    Object.assign(files, sums);
     await closeOut('L100');
     let st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots?.L100 || null, page: !!DB.data._PaperWizard?.entries?.L100?.note, clean: !!DB.data._PaperWizard?.entries?.L100?.rcg };`);
     check('…its room clean stays (the next lot in Grow 1 points to it)', st.clean, JSON.stringify(st));
@@ -109,6 +115,7 @@ export async function run(b, BASE) {
     // ---- A single-file DB just loses the lot ----
     await openSitka(b, main, BASE);
     await loadSingle(b, main, closeDb());
+    await saveSummaries(b, main, ['L100']);
     await closeOut('L100');
     st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots || null, page: !!DB.data._PaperWizard?.entries?.L100?.note, clean: !!DB.data._PaperWizard?.entries?.L100?.rcg };`);
     check('single file: the lot and its paperwork are gone, no close-out notice — its room clean stays', !st.lot && !st.page && !st.notice && st.clean, JSON.stringify(st));

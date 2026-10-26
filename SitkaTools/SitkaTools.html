@@ -6264,8 +6264,8 @@
                 if (upcoming.length) msg = `⚠️ ${upcoming.length} of its tasks are still upcoming or not completed.\n\n` + msg;
                 // The monthly CTLS report counts a closed-out lot from the plant history saved with its crop summary
                 if (DbSplit.active) msg += `\n\nThe archive is made from the files as you opened them: anything a building saved since isn't in it, so reopen the files first if unsure. The building files aren't rewritten: each building drops the lot from its own file with its next save, keeping anything it saved after the archive was made.`;
-                if (!DB.data._EmployeeWizard?.crops?.[lotId]?.ctls) msg = `⚠️ Its plant history isn't saved yet, so the monthly CTLS report and the report trends won't count it. ` +
-                    `Save it first in the Labour & Cost Wizard (📊 Reports → 📋 CTLS month, "Lots ready to close out"), or import the archive file there later.\n\n` + msg;
+                // Its crop summary (checked above) keeps its costs, frozen, and its plant history for the monthly CTLS report
+                msg += `\n\nIts costs stay as its crop summary froze them: wage, price or bill changes after this don't change them.`;
                 if (!confirm(msg)) return;
 
                 const archive = {
@@ -7153,10 +7153,38 @@
                 .reduce((n, [, c]) => n + (Number(c.ctls.start) || 0), 0);
             return Math.max(0, moved - claimed - closedClaims);
         }
-        // Why a lot can't be closed out yet: plants still on record, an unfinished grow-log page, or days with no log
+        // 🔒 A lot's data as a fingerprint: its lot record, its crop tasks and its paperwork, as canonical JSON (keys sorted).
+        // The same snippet is in the Labour & Cost Wizard, which keeps it with a saved crop summary: close-out needs the summary
+        // to be of the lot as it is now (cost audit 2026-10-26: costs are locked at close-out). Keep the two copies identical.
+        function lotFingerprint(db, lotId) {
+            const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+                : v && typeof v === 'object' ? '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
+                : JSON.stringify(v === undefined ? null : v);
+            const events = (db?.calendarEvents || []).filter(e => e && e.lotId === lotId && e.sourceTool === 'CropLabourWizard').sort((a, b) => String(a.id).localeCompare(String(b.id)));
+            const text = canon({ lot: db?.lots?.[lotId] || null, events, paper: db?._PaperWizard?.entries?.[lotId] || {} });
+            let h = 2166136261;
+            for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+            return h.toString(16).padStart(8, '0') + ':' + text.length;
+        }
+        // Why a lot can't be closed out yet: plants still on record, an unfinished grow-log page, days with no log, or its costs
+        // not saved as they are now (a crop summary of the lot as it is, its labour priced with Wages.json, every power bill in)
         function closeOutBlockers(lotId) {
             const lot = DB.data?.lots?.[lotId], out = [];
             if (!lot) return out;
+            // 🔒 Its costs are frozen with its crop summary and never re-priced after close-out (cost audit 2026-10-26)
+            const ew = DB.data._EmployeeWizard || {}, sum = ew.crops?.[lotId];
+            const where = 'the Labour & Cost Wizard (📊 Reports → ⚙️ Setup & data, or 📋 CTLS month → "Lots ready to close out")';
+            if (!sum) out.push(`💾 Its crop summary isn't saved, so its costs and plant history aren't kept. Save it in ${where}, with Wages.json open.`);
+            else {
+                const savedDay = sum.savedAt ? localDate(new Date(sum.savedAt)) : null;
+                if (sum.sourceHash !== lotFingerprint(DB.data, lotId)) out.push(`💾 Its tasks, hours or paperwork changed since its crop summary was saved${savedDay ? ` (${savedDay})` : ''}. Save it again in ${where}.`);
+                const frozen = ew.cropCosts?.[lotId];
+                if (DbSplit.active && !DbSplit.haveWages) out.push('💰 Open Wages.json: its labour cost is kept there.');
+                else if (!frozen || frozen.savedAt !== sum.savedAt) out.push(`💰 Its labour cost isn't saved: save its crop summary with Wages.json open.`);
+                else if (Number(frozen.missingHours) > 0) out.push(`💰 ${frozen.missingHours} h of its labour have no wage. Set the wages (a temp's goes on their hours), then save its crop summary again.`);
+                const unbilled = Number(sum.costs?.power?.unbilledDays) || 0;
+                if (ew.costs?.electricity === 'bills' && unbilled > 0) out.push(`⚡ No power bill covers ${unbilled} of its days. Add the bills in ⚡ Power & Rates, then save its crop summary again.`);
+            }
             const n = Number(lot.plantCount) || 0;
             if (n > 0) out.push(`🌱 ${n} plant${n === 1 ? ' is' : 's are'} still on record. The grow log has to record ${n === 1 ? 'it' : 'them'} leaving (count down to 0) first.`);
             const fmt = ds => parseLocalDate(ds).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });

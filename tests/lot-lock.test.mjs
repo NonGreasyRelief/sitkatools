@@ -2,7 +2,7 @@
 // shows them read-only, won't delete the lot or remove its room, and closes it out only at 0 plants with finished
 // grow logs. A changed count needs a reason (split by reason; added to the day's comments). A split lot takes only
 // plants its parent's grow log recorded as moved. The harvest log records the phase and room after the grow log.
-import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, openTool, answerCountReasons, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, openTool, answerCountReasons, leave, saveSummaries } from './lib/helpers.mjs';
 
 export const title = 'lots locked to their grow log (plant count, phase and room from PaperWizard)';
 
@@ -186,7 +186,8 @@ export async function run(b, BASE) {
     await b.sleep(400);
     check('SitkaTools shows the lot in Dry 1, curing, 0 plants', (await lotRow('L100')).chips.join(' | ') === '🔒 Curing | 🔒 📍 Dry 1 | 🔒 🌱 0');
 
-    // ---- Close out: at 0 plants with finished grow logs ----
+    // ---- Close out: at 0 plants with finished grow logs (and its crop summary saved as it is now, 🔒) ----
+    await saveSummaries(b, main, ['L100']);
     co = await closeOut('L100');
     al = await alerts();
     check('now close-out goes ahead (the archive link is offered)', co.archive && !al.some(a => a.includes('can\'t be closed out')), al.join(' / '));

@@ -8,7 +8,7 @@
 // - E8: a room with projected lots isn't deleted; E9: closed-out split lots keep their claim;
 // - E10: events with no task type never cluster; E12: re-importing our own ICS adds nothing; E13: a lot stays locked
 //   to its grow log when the sheet is deleted.
-import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, saveSingle, openTool, leave } from './lib/helpers.mjs';
+import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, saveSingle, openTool, leave, saveSummaries } from './lib/helpers.mjs';
 
 export const title = 'SitkaTools review fixes: duplicate, delete, panel, drag, rooms, ICS';
 
@@ -101,7 +101,9 @@ export async function run(b, BASE) {
 
     // ---- E5: the archive stays on offer until the save ----
     await loadSingle(b, main, fixtureDb());
-    await run(`DB.data.lots.L200.plantCount = 0; LotActions.render(); document.getElementById('lotActionSelect').value = 'L200';`);
+    await run(`DB.data.lots.L200.plantCount = 0;`);
+    await saveSummaries(b, main, ['L200']);   // 🔒 close-out needs its crop summary saved as it is now
+    await run(`LotActions.render(); document.getElementById('lotActionSelect').value = 'L200';`);
     await alerts(`await LotActions.closeOut();`);
     const arch = await run(`const a = document.getElementById('archiveLink'); if (!a) return null; a.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); return a.dataset.file;`, { user: true });
     check('close-out offered the archive and removed the lot', !!arch && !(await run(`return DB.data.lots.L200 || null;`)), String(arch));

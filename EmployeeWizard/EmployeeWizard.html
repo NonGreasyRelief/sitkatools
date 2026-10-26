@@ -4442,11 +4442,13 @@
             if (frozen) return { cost: Number(frozen.cost), missing: Number(frozen.missingHours) || 0, people, frozen: true };
             // 📅 Every hour at the wage of the day it was worked (price by date), from its hours by building and day
             const B = c.labour?.byBuilding;
-            if (B && Object.keys(B).length) {
+            if (!c.closed && B && Object.keys(B).length) {
                 let cost = 0, missing = 0;
                 for (const byD of Object.values(B)) for (const [day, m] of Object.entries(byD)) { const x = rptPriceLabourSlot(m, day); cost += x.cost; missing += x.missing; }
                 return { cost, missing, people };
             }
+            // 🔒 A closed-out lot with no labour cost frozen with its summary is never priced at today's wages: missing
+            if (c.closed) return { cost: 0, missing: c.labour?.act || 0, people };
             // A summary saved before hours were kept by day: today's wages
             let cost = c.labour.tempCost || 0, missing = c.labour.tempNoWage || 0;
             for (const k of people) {
@@ -5217,10 +5219,13 @@
             // Summaries frozen before property costs existed have none: work theirs out from the buildings now. One frozen
             // while some of its days had no power bill froze its electricity as missing: it takes the bills as they are
             // now, so a bill added later reaches it (review C2)
-            if (!fresh && c.closed && c.costs) {
-                let k = c.costs.property !== undefined ? c.costs : { ...c.costs, property: rptCropProperty(c, M) };
-                if (k.power?.unbilledDays > 0 && rptCostConfig().source === 'bills') k = { ...k, power: rptCropInputCost(c, M, true).power };
-                return k;
+            // 🔒 A closed-out lot keeps the costs frozen with its summary and is never re-priced (user decision 2026-10-26): a part
+            // it froze without (a summary from before that part was kept, or days no bill covered) stays missing
+            if (!fresh && c.closed) {
+                const f = c.costs || {};
+                return { power: f.power || { kWh: 0, lights: 0, equip: 0, cost: null }, water: f.water || { L: null, cost: null },
+                    fert: f.fert || { byProduct: {}, unpriced: [], cost: null }, supplies: f.supplies || { items: [], unpriced: [], cost: null },
+                    property: f.property || { days: 0, cost: null }, ...(f.spend ? { spend: f.spend } : {}) };
             }
             const cfg = rptCostConfig();
             const pw = rptPowerFor(M, c) || { kWh: 0, lights: 0, equip: 0, cost: null, pctMissing: 0, unbilledDays: 0, noWatts: 0 };
@@ -7381,8 +7386,8 @@
                 body: C.checks.length ? `<ul class="rpt-attn">${C.checks.map(c => `<li><span class="rpt-sev ${c.sev === 'crit' ? 'crit' : c.sev === 'info' ? 'info' : ''}">${c.sev === 'crit' ? 'Error' : c.sev === 'info' ? 'Note' : 'Check'}</span><span>${rEsc(c.text)}</span>${c.go && !print ? `<button type="button" class="rpt-go" data-go="${c.go}">Open →</button>` : ''}</li>`).join('')}</ul>`
                     : `<p class="rpt-note rpt-ok">✓ Nothing found: every lot with plants has a grow-log count each day, every change has a reason, and every harvest has its wet weight.</p>`, source: '' });
             // Lots ready to close out
-            const readyCard = !print && C.ready.length ? rCard({ wide: true, title: 'Lots ready to close out — save their plant history first', sub: 'Close-out takes a lot out of the database. Its saved crop summary keeps its plant and weight history, so this report still counts it in the months it was here.',
-                body: T('<th>Lot</th><th>Strain</th><th>Plant history</th><th></th>', C.ready.map(r => `<tr><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${r.state === 'ok' ? '<span class="rpt-ok">✓ Saved</span>' : r.state === 'old' ? '<span class="rpt-warn">Saved — out of date</span>' : '<span class="rpt-warn">Not saved</span>'}</td><td>${r.state === 'ok' ? '' : `<button type="button" class="rpt-tbtn" data-ctls-keep="${rEsc(r.lotId)}">💾 ${r.state === 'old' ? 'Update' : 'Save'}</button>`}</td></tr>`).join('')),
+            const readyCard = !print && C.ready.length ? rCard({ wide: true, title: 'Lots ready to close out — save their plant history and costs first', sub: 'Close-out takes a lot out of the database. Its saved crop summary keeps its plant and weight history, so this report still counts it in the months it was here, and its costs, frozen (🔒: SitkaTools closes it out only once its summary is saved as it is now, with Wages.json open and every power bill in).',
+                body: T('<th>Lot</th><th>Strain</th><th>Plant history</th><th>Costs</th><th></th>', C.ready.map(r => { const why = rptCloseOutCostGap(r.lotId); return `<tr><td>${rEsc(r.lotId)}</td><td>${rEsc(r.strain)}</td><td>${r.state === 'ok' ? '<span class="rpt-ok">✓ Saved</span>' : r.state === 'old' ? '<span class="rpt-warn">Saved — out of date</span>' : '<span class="rpt-warn">Not saved</span>'}</td><td>${why ? `<span class="rpt-warn">${rEsc(why)}</span>` : '<span class="rpt-ok">🔒 Ready for close-out</span>'}</td><td>${r.state === 'ok' && !why ? '' : `<button type="button" class="rpt-tbtn" data-ctls-keep="${rEsc(r.lotId)}">💾 ${r.state === 'old' || why ? 'Update' : 'Save'}</button>`}</td></tr>`; }).join('')),
                 source: '_EmployeeWizard.crops[<lot>].ctls' }) : '';
             const kpi = (label, value, sub) => `<div class="rpt-kpi"><span class="rpt-kpi-label">${label}</span><div class="rpt-kpi-row"><span class="rpt-kpi-value">${value}</span></div><span class="rpt-kpi-sub">${sub}</span></div>`;
             const kpis = `<div class="rpt-kpis">${kpi('Plants at month end', rN(C.closing), `${rN(C.opening)} at the start · ${ctlsSigned(C.closing - C.opening)}`)}${kpi('Plants in', rN(t('received') + t('produced')), `${rN(t('received'))} received · ${rN(t('produced'))} clones cut`)}${kpi('Plants out', rN(-(t('destroyed') + t('culled') + t('sampled') + t('sold') + t('harvested') + t('other'))), `${rN(-(t('destroyed') + t('culled')))} destroyed · ${rN(-t('harvested'))} harvested · ${rN(-(t('sold') + t('sampled')))} sold or sampled`)}${kpi('Wet hanging at month end', ctlsKg(C.wet.closing), `${ctlsG(C.wet.closing)} · ${ctlsKg(C.wet.opening)} at the start`)}${kpi('Dry flower sent out', ctlsKg(C.dryTotal), ctlsG(C.dryTotal))}</div>`;
@@ -7443,7 +7448,38 @@ ${ctlsBody(C, true)}
             return s;
         }
         // Frozen costs move with rates and bills, so they don't make a summary "out of date"
-        const rptSameSummary = (a, b) => { const strip = o => { const { savedAt, closed, costs, ...rest } = o || {}; return JSON.stringify(rest); }; return strip(a) === strip(b); };
+        const rptSameSummary = (a, b) => { const strip = o => { const { savedAt, closed, costs, sourceHash, ...rest } = o || {}; return JSON.stringify(rest); }; return strip(a) === strip(b); };
+        // 🔒 A lot's data as a fingerprint: its lot record, its crop tasks and its paperwork, as canonical JSON (keys sorted).
+        // The same snippet is in SitkaTools, whose close-out needs the saved summary to be of the lot as it is now (cost audit
+        // 2026-10-26: costs are locked at close-out). Keep the two copies identical.
+        function lotFingerprint(db, lotId) {
+            const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+                : v && typeof v === 'object' ? '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
+                : JSON.stringify(v === undefined ? null : v);
+            const events = (db?.calendarEvents || []).filter(e => e && e.lotId === lotId && e.sourceTool === 'CropLabourWizard').sort((a, b) => String(a.id).localeCompare(String(b.id)));
+            const text = canon({ lot: db?.lots?.[lotId] || null, events, paper: db?._PaperWizard?.entries?.[lotId] || {} });
+            let h = 2166136261;
+            for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+            return h.toString(16).padStart(8, '0') + ':' + text.length;
+        }
+        // What keeps a lot's costs from being locked at close-out, in a few words ('' when ready) — SitkaTools refuses on the same
+        function rptCloseOutCostGap(lotId) {
+            const ew = DB.data._EmployeeWizard || {}, sum = ew.crops?.[lotId], f = ew.cropCosts?.[lotId];
+            if (!sum) return 'Summary not saved';
+            if (sum.sourceHash !== lotFingerprint(DB.data, lotId)) return 'Changed since it was saved';
+            if (!wagesLoaded()) return 'Open Wages.json';
+            if (!f || f.savedAt !== sum.savedAt) return 'Labour cost not saved — save with Wages.json open';
+            if (Number(f.missingHours) > 0) return `${f.missingHours} h with no wage`;
+            const unbilled = Number(sum.costs?.power?.unbilledDays) || 0;
+            if (ew.costs?.electricity === 'bills' && unbilled > 0) return `${unbilled} day${unbilled === 1 ? '' : 's'} with no power bill`;
+            return '';
+        }
+        // Can the lot be closed out as far as its costs go: saved as it is now, labour frozen with every hour priced, every bill in
+        function rptReadyToClose(lotId) {
+            const ew = DB.data._EmployeeWizard || {}, sum = ew.crops?.[lotId], f = ew.cropCosts?.[lotId];
+            return !!sum && DB.lots[lotId] && sum.sourceHash === lotFingerprint(DB.data, lotId) && !!f && f.savedAt === sum.savedAt && !(Number(f.missingHours) > 0)
+                && !(ew.costs?.electricity === 'bills' && Number(sum.costs?.power?.unbilledDays) > 0);
+        }
         function rptEnsureOwnKeys() {
             if (!DB.data._EmployeeWizard) DB.data._EmployeeWizard = { employees: {} };
             const ew = DB.data._EmployeeWizard;
@@ -7466,6 +7502,7 @@ ${ctlsBody(C, true)}
             if (pending.length) rptApplyChores([...M.crops.filter(x => !pending.some(p => p.lotId === x.lotId)), ...pending], rptChoreLabour(), pending);
             for (const c of list) {
                 ew.crops[c.lotId] = rptSummaryOf(c);
+                if (DB.lots[c.lotId]) ew.crops[c.lotId].sourceHash = lotFingerprint(DB.data, c.lotId);   // close-out checks it (🔒)
                 ew.crops[c.lotId].costs = rptFrozenCosts(c, M);   // electricity, water, fertilizer, supplies and property as they stood
                 // 🌿 Its clones at its mother lot's cost per clone, as it stood (labour $ goes with the wages, in Wages.json)
                 const ch = c.closed ? null : rptCloneCharge(c, M);
@@ -7494,11 +7531,12 @@ ${ctlsBody(C, true)}
                 const s = saved[c.lotId];
                 if (!s) return doneBy(c) && doneBy(c) < M.today ? '<span class="rpt-warn">Not saved</span>' : '<span class="rpt-muted">Not saved (crop still running)</span>';
                 const cost = !wagesLoaded() || !DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? '' : rptFrozenLabour(c.lotId) ? ' · cost saved' : ' · cost saved with an older summary — Update to save it again';
-                return rptSameSummary(s, rptSummaryOf(c)) ? `<span class="rpt-ok">Saved ${rEsc(rSavedDay(s.savedAt))}${cost}</span>` : `<span class="rpt-warn">Saved ${rEsc(rSavedDay(s.savedAt))}${cost} — out of date</span>`;
+                const same = rptSameSummary(s, rptSummaryOf(c)) && s.sourceHash === lotFingerprint(DB.data, c.lotId);
+                return same ? `<span class="rpt-ok">Saved ${rEsc(rSavedDay(s.savedAt))}${cost}${rptReadyToClose(c.lotId) ? ' · 🔒 ready for close-out' : ''}</span>` : `<span class="rpt-warn">Saved ${rEsc(rSavedDay(s.savedAt))}${cost} — out of date</span>`;
             };
             const fmtW = g => g != null ? rKg(g) : '—';
             const sumRows = live.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${c.mother ? `🌿 mothers · retire ${rEsc(c.dates.retire || '—')}` : rEsc(c.dates.harvestStart)}</td><td class="n">${fmtW(c.weights.flower)}</td><td class="n">${c.lab.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td>${status(c)}</td><td><button type="button" class="rpt-tbtn" data-save="${rEsc(c.lotId)}">${saved[c.lotId] ? 'Update' : 'Save'}</button></td></tr>`).join('')
-                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${!wagesLoaded() || !DB.data._EmployeeWizard?.cropCosts?.[c.lotId] ? '' : rptFrozenLabour(c.lotId) ? ' · cost saved' : ' · cost saved with an older summary, so labour uses today’s wages'}</span></td><td><button type="button" class="rpt-tbtn danger" data-unsave="${rEsc(c.lotId)}" title="Remove this summary">🗑</button></td></tr>`).join('');
+                + closed.map(c => `<tr><td>${rEsc(c.lotId)}</td><td>${rEsc(c.strain)}</td><td>${rEsc(c.dates?.harvestStart || '—')}</td><td class="n">${fmtW(c.weights?.flower)}</td><td class="n">${c.lab?.potency != null ? rN(c.lab.potency, 1) + ' %' : '—'}</td><td><span class="rpt-muted">🔒 Closed out · saved ${rEsc(rSavedDay(c.savedAt))}${!wagesLoaded() ? '' : rptFrozenLabour(c.lotId) ? ' · costs frozen' : ' · no labour cost frozen with it (labour left out)'}</span></td><td><span class="rpt-muted" title="A closed-out lot's summary is locked: it leaves after ${RPT_KEEP_MONTHS} months">locked</span></td></tr>`).join('');
             // Metric hook-up: which questions feed each metric, and how many answers they hold
             const tagged = {};
             for (const [wid, w] of Object.entries(DB.data._PaperWizard?.wizards || {})) for (const q of w?.questions || []) if (q?.metric && REPORT_METRICS[q.metric]) (tagged[q.metric] || (tagged[q.metric] = [])).push({ sheet: DB.data._PaperWizard?.sheets?.[w.sheetId]?.name || w.sheetId, label: q.label, unit: q.metricUnit, sheetId: w.sheetId, qid: q.id, wid });
@@ -7557,10 +7595,15 @@ ${ctlsBody(C, true)}
                 } catch (err) { bad.push(`${f.name}: ${err.message}`); }
             }
             if (got.length) {
-                const existing = got.filter(c => DB.data._EmployeeWizard?.crops?.[c.lotId]).map(c => c.lotId);
-                if (existing.length && !confirm(`Replace the saved summaries of lot ${existing.join(', ')} with the archive's numbers?`)) return;
-                const dropped = rptSaveSummaries(got);
-                showToast(`Imported ${got.length} archived lot${got.length > 1 ? 's' : ''}${dropped ? ` · ${dropped} summaries older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
+                // 🔒 A lot that already has a summary keeps its frozen costs and numbers: the archive only brings its plant
+                // history (📋 CTLS) up to date (user decision 2026-10-26). A lot closed without one is imported whole.
+                const crops = DB.data._EmployeeWizard?.crops || {};
+                const existing = got.filter(c => crops[c.lotId]), fresh = got.filter(c => !crops[c.lotId]);
+                if (existing.length && !confirm(`Lot ${existing.map(c => c.lotId).join(', ')} already ha${existing.length === 1 ? 's a' : 've'} saved summar${existing.length === 1 ? 'y' : 'ies'}: ${existing.length === 1 ? 'its' : 'their'} costs stay as they were frozen.\n\nUpdate ${existing.length === 1 ? 'its' : 'their'} plant history (📋 CTLS) from the archive?`)) return;
+                for (const c of existing) crops[c.lotId].ctls = c.ctls;
+                const dropped = fresh.length ? rptSaveSummaries(fresh) : 0;
+                if (!fresh.length) notifySitkaTools();
+                showToast(`${fresh.length ? `Imported ${fresh.length} archived lot${fresh.length > 1 ? 's' : ''}` : ''}${fresh.length && existing.length ? ' · ' : ''}${existing.length ? `plant history updated for ${existing.length} (costs kept)` : ''}${dropped ? ` · ${dropped} summaries older than ${RPT_KEEP_MONTHS} months dropped` : ''}`);
             }
             if (bad.length) alert(`These files couldn't be imported:\n\n${bad.join('\n')}`);
             renderReports();
@@ -7761,16 +7804,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 renderReports();
                 return;
             }
-            const unsave = t.closest('[data-unsave]');
-            if (unsave) {
-                const id = unsave.dataset.unsave;
-                if (!confirm(`Remove the saved summary of closed lot ${id}? Its numbers drop out of every chart. Importing its archive file brings it back.`)) return;
-                delete DB.data._EmployeeWizard.crops[id];
-                if (DB.data._EmployeeWizard.cropCosts) delete DB.data._EmployeeWizard.cropCosts[id];
-                notifySitkaTools();
-                showToast(`Summary of lot ${id} removed`);
-                renderReports();
-            }
+            // (A closed-out lot's summary is locked: there's no remove — it leaves after RPT_KEEP_MONTHS, cost audit 2026-10-26)
         });
         // One shared tooltip for every chart mark (data-tip)
         (function () {
