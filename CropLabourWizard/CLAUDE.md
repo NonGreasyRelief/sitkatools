@@ -76,21 +76,22 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
 
 `sourceTool: 'CropLabourWizard'`. The event contract (`roomPhase`, `estStaff`, `estMinutes`) is in root `CLAUDE.md`.
 
-- `date`; `endDate` only on multi-day tasks (Trim, multi-day Harvest, recipe `days` > 1); `lotId` always; `taskType` (reconciliation and carry-over key on it); `id`; `roomPhase` only when the recipe task has one; `estStaff` / `estMinutes` only when the task has an estimate (see "Labour Estimates").
+- `date`; `endDate` only on multi-day tasks (Trim, multi-day Harvest, recipe `days` > 1); `lotId` always; `taskType` (reconciliation and carry-over key on it); `id`; `roomPhase` on every real lot's task (`taskRoomPhase`, the rules below; user decision 2026-10-25), so every tool reads the room from the task; `estStaff` / `estMinutes` only when the task has an estimate (see "Labour Estimates").
 - **Title:** `<emoji> <Room>-<Strain>#<LotId>, <task name>` (e.g. `🌸 B66DG1-Purple Haze#LOT-001, Flip to Flower`); a repeat adds ` (3/11)` and carries `repeat`. A missing room or strain is dropped (`Room#Lot`, `Strain#Lot`, `Lot`). Projected lots use `<emoji> <lotId>, <task name>` (`buildEventTitle`).
-- **Room per task** (`getLotRoomCode`; room names on the lot are resolved to IDs by `rooms.<id>.name`). First match wins:
-  1. the recipe task's `roomPhase` (cloning → `lot.cloningRoom`, veg → `lot.vegRoom`, flower → flower room);
+- **Room per task** (`taskRoomPhase` → `getLotRoomCode`; room names on the lot are resolved to IDs by `rooms.<id>.name`). First match wins:
+  1. the recipe task's `roomPhase` (cloning → `lot.cloningRoom`, veg → `lot.vegRoom`, flower → flower room, dry → `lot.dryRoom`, trim → `lot.trimRoom`, else the dry room; either falls back to the flower room);
   2. `clone_cut_prep`, `clone_room_clean` → cloning room;
   3. `veg_room_clean` → veg room (it happens after transplant);
+  3a. `trim`, `trim_room_prep`, `machine_trim` → trim room; `dry_room_clean` → dry room (user decision 2026-10-25);
   4. `layout_coco_blocks`, `hydrate_coco_blocks`, `undercanopy_lights` → flower room (listed before transplant for display order only);
   5. any task before `transplant` in the array → veg room. The second veg IPM spray sits after transplant, so it resolves to the flower room;
   6. everything else → flower room: the room whose `assignedLots` holds the lot, else the room named `lot.destRoom` (`resolveFlowerRoom`).
 
 ### Schedule Reconciliation
 
-- **Generate** removes all of the lot's own events (`reconcileLotSchedule`: `sourceTool` + `lotId`; `CropProjection` for projected lots), inserts the new batch, saves the config (`setScheduleConfig`) and, for real lots only, appends to `_CropLabourWizard.generations[]`.
+- **Generate** removes all of the lot's own events (`reconcileLotSchedule`: `sourceTool` + `lotId`; `CropProjection` for projected lots) except copies made with SitkaTools' 📋 Duplicate (`copyOf`, kept as they are; user decision 2026-10-25), inserts the new batch, saves the config (`setScheduleConfig`) and, for real lots only, appends to `_CropLabourWizard.generations[]`.
 - **Annotations carry over** by `taskType` (`carryOverAnnotations`; fields listed in root `CLAUDE.md` → "Event Annotations Survive Regeneration").
-- A task with work records (`completed` or labour hours) that the new schedule no longer has (disabled, or not in a different recipe) triggers a blocking confirm listing them. Cancel = no changes.
+- A task with work records (`completed` or labour hours) that the new schedule no longer has (disabled, or not in a different recipe) triggers a blocking confirm listing them. Cancel = no changes. It counts the way carry-over matches — one previous event per new one, in order — so a second event of the same task (an older duplicate without `copyOf`) is asked about too (review G1).
 - **Clear Schedule** asks first when any of the lot's events hold work records; **✕ Delete Schedule**'s confirm says how many do. Both drop the lot's `generations[]` entries. Clearing a projected lot deletes only its `.config` (`clearScheduleConfig`), so it stays in the map as stale.
 
 ### Labour Estimates
@@ -128,7 +129,7 @@ The task list comes from **recipes**. The three built-ins stay in code. User rec
 | `isLocked` | optional: not user-editable (Cutting Clones at Day 0) |
 | `days` | optional length, 1–30 (see "Multi-Day Tasks") |
 | `every` | optional: repeat every N days, 1–365 (see "Repeating Tasks") |
-| `roomPhase` | optional `cloning` / `veg` / `flower`; written onto events, overrides the order-based room split |
+| `roomPhase` | optional `cloning` / `veg` / `flower` / `dry` / `trim`; overrides the rules below (every event gets a room phase either way) |
 | `minutes`, `staff` | optional labour estimate per day (see "Labour Estimates") |
 
 - **`inputs`** (recipe level, optional): supplies a crop uses — `[{ inputId, name, unit, qty, per: 'crop' | 'plant', at? }]`; `at` (per plant only) is one of the recipe's task types (see "🧪 Inputs").
@@ -145,7 +146,7 @@ The task list comes from **recipes**. The three built-ins stay in code. User rec
 - `defaultOffset` an integer (clamped first, see the table above).
 - `clone_cut` must reference `harvest` (bloom) or `retire` (vegetative).
 - `every`, when present, an integer 1–365, not on an anchor task, the transplant or a clone cut, and not less than the task's `days`.
-- `roomPhase`, when present, is `cloning` / `veg` / `flower`.
+- `roomPhase`, when present, is `cloning` / `veg` / `flower` / `dry` / `trim`.
 - `minutes` an integer ≥ 5, `staff` an integer ≥ 1, `days` an integer 1–30 (all optional).
 - `chain.cloneCutBeforeHarvest`, when present, a positive integer.
 - `inputs`, when present, an array; each entry has a name, a qty ≥ 0, and `per` of `crop` or `plant`; an `at` must be a task type of this recipe, on a per-plant entry.
@@ -266,7 +267,7 @@ User decision 2026-10-23 ("these still have the ability to do repeating crops").
 ### Reprojection
 
 - **Pending state (inferred, never stored):** `{roomId}-TBA-01` is absent and at least one of TBA-2…5 is present (`isPendingReprojection`). It comes from SitkaTools' deletion hook. While pending, TBA-2…5 show ⚠️ and count as stale (display only; their events still exist). A room with all 5 entries is never pending, even if some have no events (that's ordinary staleness, healed by Project Crop).
-- **Gate:** manual only. The room's **active real lot** (`activeRealLotId`: the *last* non-projected lot in `room.assignedLots` — SitkaTools appends new lots, so it's the crop that took TBA-1's slot) must have `CropLabourWizard` events. An older scheduled lot doesn't unblock it (the chain would shift onto an unscheduled crop). Until then the button is disabled with a tooltip naming the lot.
+- **Gate:** manual only. The room's **real lot** (`activeRealLotId`, the same lot as Project Crop's anchor: the newest by `createdDate`, `newestRealLotId`; review F3) must have `CropLabourWizard` events. An older scheduled lot doesn't unblock it (the chain would shift onto an unscheduled crop). Until then the button is disabled with a tooltip naming the lot.
 - **Algorithm** (`reprojectRoom`):
   1. **Plan first** (`computeReprojectionPushes`, see "Late-Arrival Push-Back"); confirm if any push; cancel = no changes.
   2. **Rename low → high** (i = 2…5): `{roomId}-TBA-{i}` → `TBA-{i−1}` on the map key, `entry.name`, every matching event's `lotId` **and the lot-ID token in its stored `title`**. Low-to-high is safe because each target slot is already free; high-to-low would clobber entries still to move.
@@ -308,7 +309,7 @@ Details:
 | `nextLotDay0(lotId, nextRecipe?)`, `effectiveIrrigationClean(lotId)` | pure reads (null without a schedule / anchor); both count from the harvest's last day |
 | `projectedSlotRecipe(roomId, index, chainRecipe?)` | the recipe a projected lot follows: its own config's, else the chain's, else the projection recipe |
 | `newestRealLotId(roomId)` | latest `createdDate` (ties → `assignedLots` order); Project Crop anchor |
-| `activeRealLotId(roomId)` | last non-projected lot in `assignedLots`; Reproject gate and real-lot overwrite |
+| `activeRealLotId(roomId)` | the same as `newestRealLotId` (one definition of "the room's real lot", review F3); Reproject gate and real-lot overwrite |
 | `clearAllProjectionsForRoom(roomId)` | deletes every `CropProjection` event with that `roomId` and every `{roomId}-TBA-*` entry (the confirm is in the button handler) |
 
 ### Stale Detection

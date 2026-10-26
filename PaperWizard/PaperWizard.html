@@ -3717,8 +3717,10 @@
         // chosen starting values, marks the days before as on paper, creates the first page.
         // A lot with a page on any daily log (grow, drying or trim log) is locked to its logs: its count, phase and room
         // change only through them, with reasons — so "Start on a chosen day" is only for its first daily log (review D5)
-        const lotHasDailyLog = lotId => Object.entries(pageStore(lotId) || {}).some(([sid, e]) =>
-            DB.paperWizard?.sheets?.[sid]?.cadence === 'daily-weekly' && Object.keys(e?.instances || {}).length > 0);
+        const lotHasDailyLog = lotId => Object.entries(pageStore(lotId) || {}).some(([sid, e]) => {
+            const sh = DB.paperWizard?.sheets?.[sid], insts = Object.values(e?.instances || {});
+            return insts.length > 0 && (sh ? sh.cadence === 'daily-weekly' : insts.some(i => i?.days && Object.keys(i.days).length));   // a deleted sheet keeps its pages
+        });
         function openStartLogModal(lotId, sheetId) {
             if (readOnlyHere(lotId)) return;
             const sheet = DB.paperWizard?.sheets?.[sheetId];

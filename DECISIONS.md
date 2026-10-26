@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-25 · 📋 Duplicate makes a clean crop-task copy (same task type, no hours, done mark or sign-off, marked copyOf) that CropLabourWizard keeps on Generate; an event with hours or a sign-off can't be deleted by hand (its lot's close-out archives it)
 - 2026-10-25 · signing a task off (DailyWizard's ✅ Mark done, the Tasks tab's Mark completed) takes the floor manager's drawn initials and PIN; only floor managers with a PIN are offered; reopening in the Tasks tab takes a PIN too, and an office reopen after the sign-off's day is kept on record
 - 2026-10-25 · review decisions on money: every $ figure is office only and never per person (replacing the hide-under-3-people rule); no made-up wage — a missing wage shows as missing; shared labour per gram is spread over every gram harvested
 - 2026-10-25 · review decisions: with split files only a building's own device writes its file — the office views building paperwork, daily lists and chore hours, and opens SitkaTools as the building to change them; a lot move is read from the lot (its room in one building, its pages in another's file), with no record until the receiver's device picks it up; close-out keeps a fingerprint per building file so a building never drops what it saved after the archive was made; the 🧹 clear button is gone

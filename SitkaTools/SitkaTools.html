@@ -2148,7 +2148,7 @@
             flex: 1;
         }
 
-        .save-link {
+        .save-link, .archive-again {
             color: var(--accent);
             font-size: 0.85rem;
             font-weight: 600;
@@ -2157,7 +2157,7 @@
             line-height: 1.4;
         }
 
-        .save-link:hover {
+        .save-link:hover, .archive-again:hover {
             text-decoration: underline;
             color: var(--accent-hover);
         }
@@ -3715,6 +3715,7 @@
                 markUnsaved();
                 showSyncToast('Saved — but changes made after the save started aren\'t in that file. Save again to include them.');
             } else clearUnsaved();
+            pendingArchives = [];   // the save records the close-outs
             updateIOStatusBar();
         }
         const dbSnapshot = () => JSON.stringify({ ...DB.data, _meta: undefined });
@@ -4132,6 +4133,15 @@
 
         // Matched like DeviceView.buildingOfRoomName (case and spaces ignored), so a lot is moved by the same rule
         // that decides where it shows (review B7)
+        // A room-clean form (PaperWizard's Document "room-clean-…", or an older clean sheet named so): the next lot in the
+        // room points to it as its pre-move-in clean, so a close-out keeps these pages (review E4)
+        function isRoomCleanSheet(db, sheetId) {
+            const sh = db?._PaperWizard?.sheets?.[sheetId];
+            if (!sh) return false;
+            if (typeof sh.document === 'string') return sh.document.startsWith('room-clean');
+            return sh.cadence === 'event' && /clean/i.test(String(sh.name || sheetId));
+        }
+
         function buildingOfRoomName(db, name) {
             const target = String(name || '').trim().toLowerCase();
             if (!target) return null;
@@ -4357,8 +4367,9 @@
                     const id = bf._building;
                     if (!id) continue;
                     for (const [lotId, sheets] of Object.entries(bf._PaperWizard?.entries || {})) {
-                        if (closed[lotId] && !this.closedLate(id, lotId, db)) continue;
+                        const closedHere = closed[lotId] && !this.closedLate(id, lotId, db);
                         for (const [sheetId, entry] of Object.entries(sheets)) {
+                            if (closedHere && !isRoomCleanSheet(db, sheetId)) continue;   // its room cleans stay (review E4)
                             if (!db._PaperWizard) db._PaperWizard = {};
                             if (!db._PaperWizard.entries) db._PaperWizard.entries = {};
                             const lotEntries = db._PaperWizard.entries[lotId] || (db._PaperWizard.entries[lotId] = {});
@@ -4653,9 +4664,9 @@
                 return out;
             },
             // A building file's part of a lot, as its file holds it: its pages, its lot updates and its updates to the lot's events
-            lotFingerprint(bid, lotId, eventIds) {
+            lotFingerprint(bid, lotId, eventIds, db = DB.data) {
                 const ov = this.diskOverlays[bid] || { lots: {}, events: {} };
-                return contentHash(JSON.stringify([this.diskPaper[bid]?.[lotId] || null, ov.lots?.[lotId] || null,
+                return contentHash(JSON.stringify([this.closedPaper(bid, lotId, db), ov.lots?.[lotId] || null,
                     (eventIds || []).map(id => ov.events?.[id] || null), Object.values(this.diskTransfers[bid] || {}).filter(t => t?.lotId === lotId)]));
             },
             // Is building `bid`'s part of closed-out lot `lotId` newer than the archive? (No fingerprint: a notice from
@@ -4663,12 +4674,19 @@
             closedLate(bid, lotId, db = DB.data) {
                 const rec = this.closedLots(db)[lotId];
                 const f = rec?.files?.[bid];
-                return !!f && f !== this.lotFingerprint(bid, lotId, rec.events);
+                return !!f && f !== this.lotFingerprint(bid, lotId, rec.events, db);
+            },
+            // A lot's pages in a building's file as on disk, its room cleans aside (they stay after a close-out), or null
+            closedPaper(bid, lotId, db = DB.data) {
+                const paper = this.diskPaper[bid]?.[lotId];
+                if (!paper) return null;
+                const kept = Object.fromEntries(Object.entries(paper).filter(([sid]) => !isRoomCleanSheet(db, sid)));
+                return Object.keys(kept).length ? kept : null;
             },
             // Closed-out lots a building's file (as on disk) still holds something of: `drop` (what the archive has) and `late`
             closedParts(bid, db = DB.data) {
                 const closed = this.closedLots(db), ids = new Set();
-                for (const id of Object.keys(this.diskPaper[bid] || {})) if (closed[id]) ids.add(id);
+                for (const id of Object.keys(this.diskPaper[bid] || {})) if (closed[id] && this.closedPaper(bid, id, db)) ids.add(id);
                 for (const t of Object.values(this.diskTransfers[bid] || {})) if (closed[t?.lotId]) ids.add(t.lotId);
                 for (const id of Object.keys(this.diskOverlays[bid]?.lots || {})) if (closed[id]) ids.add(id);
                 for (const id of Object.keys(closed)) {
@@ -4697,7 +4715,7 @@
             closeOutNotice(db, lotId, archive) {
                 const events = (db.calendarEvents || []).filter(e => e.lotId === lotId).map(e => e.id);
                 const files = {};
-                for (const bid of Object.keys(db.buildings || {})) if (this.loaded.has(buildingFileName(bid))) files[bid] = this.lotFingerprint(bid, lotId, events);
+                for (const bid of Object.keys(db.buildings || {})) if (this.loaded.has(buildingFileName(bid))) files[bid] = this.lotFingerprint(bid, lotId, events, db);
                 return { closedAt: new Date().toISOString(), archive, by: this.roleLabel(), files, events };
             },
             // May this save drop the closed-out lots from this building's file? Only its own building
@@ -5378,6 +5396,7 @@
                 // being reported (its own overlays keep their original times — see buildingOverlays).
                 if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
                 if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
+                if (plan.toSave.includes(SPLIT_MAIN)) pendingArchives = [];   // Main records the close-outs
                 else if (plan.cannot.length) SaveRequired.hide(); // saved all this device may save; the rest was reported
                 updateIOStatusBar();
                 updateSplitCard();
@@ -5483,6 +5502,7 @@
                     }
                     saveFileLinks.appendChild(a);
                 }
+                appendPendingArchives();
                 savePopup.classList.remove('hidden');
             },
 
@@ -5889,6 +5909,26 @@
             }
         }
 
+        // 📦 Close-out archives made since the last save (no folder): offered again in the save popup until the save that
+        // records the close-out, so an archive whose Save As was cancelled can still be saved (review E5)
+        let pendingArchives = [];
+        function appendPendingArchives() {
+            if (!pendingArchives.length) return;
+            const touch = window.matchMedia('(pointer: coarse)').matches;
+            for (const p of pendingArchives) {
+                const url = URL.createObjectURL(p.blob);
+                saveBlobUrls.push(url);
+                const a = document.createElement('a');
+                a.className = 'archive-again';   // not a .save-link: using it saves no DB file
+                a.dataset.archive = p.name;
+                a.href = url;
+                a.download = p.name;
+                a.textContent = `📦 ${p.name} — the closed-out lot's archive, if it isn't saved yet (${touch ? 'tap to save' : 'right-click → Save Link As…'}, into your Archive folder)`;
+                if (touch) a.addEventListener('click', (e) => { e.preventDefault(); shareFile(p.blob, p.name); });
+                saveFileLinks.appendChild(a);
+            }
+        }
+
         // Blob URLs behind the per-file save links
         const saveFolderAction = $('saveFolderAction');
         const saveFileLinks = $('saveFileLinks');
@@ -6075,7 +6115,12 @@
                 DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== lotId);
                 const clw = DB.data._CropLabourWizard;
                 if (clw?.generations) clw.generations = clw.generations.filter(g => g.lotId !== lotId);
-                if (DB.data._PaperWizard?.entries) delete DB.data._PaperWizard.entries[lotId];
+                // Its paperwork goes, except its room cleans: the next lot in the room points to them (review E4)
+                const pe = DB.data._PaperWizard?.entries;
+                if (pe?.[lotId]) {
+                    for (const sid of Object.keys(pe[lotId])) if (!isRoomCleanSheet(DB.data, sid)) delete pe[lotId][sid];
+                    if (!Object.keys(pe[lotId]).length) delete pe[lotId];
+                }
                 for (const [id, t] of Object.entries(DB.data._LotTransfers || {})) if (t.lotId === lotId) delete DB.data._LotTransfers[id];
                 markUnsaved();
                 refreshAllViews();
@@ -6155,6 +6200,7 @@
                     done = true;
                     a.classList.add('saved');
                     this.closedOut(lotId, name);
+                    pendingArchives.push({ name, blob });   // offered again with the save, in case Save As was cancelled
                     showSyncToast(`Lot ${lotId} archived and removed — now Save DB`);
                 };
                 if (isTouchDevice) a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name).then(ok => { if (ok) used(); }); });
@@ -6227,6 +6273,7 @@
                 saveLink.oncontextmenu = () => commitSave(save);
             }
 
+            appendPendingArchives();
             // Show popup
             savePopup.classList.remove('hidden');
         });
@@ -6381,6 +6428,7 @@
             // Group upcoming events by date
             const grouped = {};
             upcomingEvents.forEach(ev => {
+                if (ev.date < todayStr) return;   // started before today: filed on the days it's on, below (review E11)
                 const key = ev.date;
                 if (!grouped[key]) grouped[key] = [];
                 // Avoid duplicates for multi-day events on the same start date
@@ -6661,18 +6709,12 @@
             }
             if (!isUpdate) return;   // a known window checking its link: nothing to do
 
-            console.log('[SitkaTools] Received sitkaGit_db_update');
-            console.log('[SitkaTools] Incoming calendarEvents count:', e.data.payload.calendarEvents?.length || 0);
-            console.log('[SitkaTools] First 3 events:', e.data.payload.calendarEvents?.slice(0, 3));
-
             // Some subtools resync on open (EquipmentWizard); only a real change counts as unsaved
             keepOwnSaveStamp(e.data.payload);
             const changed = JSON.stringify(e.data.payload) !== JSON.stringify(DB.data);
             DB.data = e.data.payload;
             DB.ensureStructure();
             if (changed) markUnsaved();
-
-            console.log('[SitkaTools] After assign - calendarEvents count:', DB.data.calendarEvents?.length || 0);
 
             // Re-render all views with fresh data
             updateStatusBar();
@@ -6923,12 +6965,31 @@
             const pw = DB.data?._PaperWizard || {}, out = [];
             for (const [sheetId, entry] of Object.entries(pw.entries?.[lotId] || {})) {
                 const sheet = pw.sheets?.[sheetId];
-                if (sheet?.cadence !== 'daily-weekly') continue;
+                // A deleted sheet keeps its pages: a page with day rows is a daily page (review E13)
+                const daily = sheet ? sheet.cadence === 'daily-weekly' : Object.values(entry?.instances || {}).some(i => i?.days && Object.keys(i.days).length);
+                if (!daily) continue;
                 for (const [key, inst] of Object.entries(entry?.instances || {})) if (inst) out.push({ sheetId, sheet, key, inst, entry });
             }
             return out.sort((a, b) => a.key.localeCompare(b.key));
         }
         function lotLocked(lotId) { return lotDailyPages(lotId).length > 0; }
+        // An event holding hours or a floor manager's sign-off is the record of work done: it isn't deleted (user decision
+        // 2026-10-25, review Q4); its lot's close-out archives it. What it holds, or null.
+        function eventWorkRecord(ev) {
+            const hours = Object.values(ev?.labour_map || {}).reduce((t, list) => t + (Array.isArray(list) ? list.reduce((n, e) => n + (Number(e?.hours) || 0), 0) : 0), 0);
+            if (hours > 0) return `${Math.round(hours * 100) / 100} h of labour logged on it`;
+            if (ev?.completedBy) return `a sign-off by ${ev.completedBy.name || 'a floor manager'}`;
+            return null;
+        }
+        // Says why and returns true when the event may not be deleted. A closed-out lot's leftovers (its work is in the
+        // archive and the crop summary) may go.
+        function refuseEventDelete(ev) {
+            const why = eventWorkRecord(ev);
+            if (!why) return false;
+            if (ev.lotId && !DB.data.lots?.[ev.lotId] && (DB.data._closedLots?.[ev.lotId] || DB.data._EmployeeWizard?.crops?.[ev.lotId])) return false;
+            alert(`"${ev.title || 'This event'}" has ${why}, so it can't be deleted: it's the record of the work.\n\nRemove the hours first (DailyWizard's ⏱ or the Labour & Cost Wizard's Tasks tab, with a floor manager's PIN) or reopen the sign-off. Closing out its lot archives it.`);
+            return true;
+        }
         // Locked lots whose current room is this room
         function lockedLotsInRoom(roomName) {
             const name = String(roomName || '').trim().toLowerCase();
@@ -6954,7 +7015,10 @@
             }
             const claimed = Object.values(DB.data?.lots || {}).filter(l => l?.parentLotId === parentId && l.type === 'split-lot')
                 .reduce((n, l) => n + (Number(l.plantsTransferred) || 0), 0);
-            return Math.max(0, moved - claimed);
+            // …and split lots already closed out keep their claim (their crop summary holds what they started with; review E9)
+            const closedClaims = Object.entries(DB.data?._EmployeeWizard?.crops || {}).filter(([id, c]) => !DB.data.lots?.[id] && c?.ctls?.type === 'split-lot' && (c.ctls.parent || c.parentLotId) === parentId)
+                .reduce((n, [, c]) => n + (Number(c.ctls.start) || 0), 0);
+            return Math.max(0, moved - claimed - closedClaims);
         }
         // Why a lot can't be closed out yet: plants still on record, an unfinished grow-log page, or days with no log
         function closeOutBlockers(lotId) {
@@ -7135,16 +7199,19 @@
                     const lotId = btn.dataset.lotId;
                     const lotName = btn.dataset.lotName;
                     if (lotLocked(lotId)) { alert(`Lot ${lotId} has grow logs, so it can't be deleted. Close it out instead (Data & Files → 🌱 Lots) once its plant count is 0.`); return; }
-                    if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?\n\nThis action cannot be undone.`)) {
-                        delete DB.lots[lotId];
-                        // Drop the lot from every room's assignedLots so no stale "(deleted)" entry stays behind
-                        for (const room of Object.values(DB.data.rooms || {})) {
-                            if (Array.isArray(room.assignedLots)) room.assignedLots = room.assignedLots.filter(id => id !== lotId);
-                        }
-                        markUnsaved();
-                        updateStatusBar();
-                        renderLotList();
-                        RoomManager.renderRoomList();
+                    // A lot with paperwork or recorded work isn't deleted: its records would be left behind, and a new lot
+                    // with the same number would inherit them (review E3). Close it out instead, which archives them.
+                    const pages = Object.values(DB.data._PaperWizard?.entries?.[lotId] || {}).reduce((n, e) => n + Object.keys(e?.instances || {}).length, 0);
+                    const worked = DB.data.calendarEvents.filter(ev => ev.lotId === lotId && eventWorkRecord(ev)).length;
+                    if (pages || worked) {
+                        alert(`Lot ${lotId} has ${[pages ? `${pages} paperwork page${pages === 1 ? '' : 's'}` : '', worked ? `${worked} task${worked === 1 ? '' : 's'} with hours or a sign-off` : ''].filter(Boolean).join(' and ')}, so it can't be deleted. Close it out instead (Data & Files → 🌱 Lots), which archives them.`);
+                        return;
+                    }
+                    const nEv = DB.data.calendarEvents.filter(ev => ev.lotId === lotId).length;
+                    if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?${nEv ? `\n\nIts ${nEv} scheduled task${nEv === 1 ? '' : 's'} go${nEv === 1 ? 'es' : ''} with it.` : ''}\n\nThis action cannot be undone.`)) {
+                        // Everything that is only the lot's own goes with it: its events, schedule history, empty
+                        // paperwork record and transfer records (and its place in every room's assignedLots)
+                        LotActions.removeLot(lotId);
                         updateRoomStatusBar();
                     }
                 });
@@ -7928,6 +7995,10 @@
             deleteRoom(roomId) {
                 const room = this.rooms[roomId];
                 if (!room || refuseRoomChange(roomId, 'deleted')) return;
+                // Its projected lots belong to CropLabourWizard, which couldn't reach them once the room is gone (review E8)
+                const projected = Object.values(DB.data._CropLabourWizard?.projectedLots || {}).filter(p => p?.roomId === roomId).length
+                    + DB.data.calendarEvents.filter(ev => ev.sourceTool === 'CropProjection' && ev.roomId === roomId).length;
+                if (projected) { alert(`${room.name} has projected lots. Clear them first in CropLabourWizard (pick a lot in the room → 🧹 Clear Projections), then delete the room.`); return; }
                 // Clear any lot references to this room (assigned, veg, cloning, dry, trim, current)
                 Object.values(DB.lots).forEach(lot => {
                     if (!lot) return;
@@ -8307,18 +8378,18 @@
 
             // Emoji per task type for compact annual-view dots + legend.
             TASK_EMOJI: {
-                clone_cut_prep: '✂️', planting: '🌱', clone_room_clean: '🧽',
-                ipm_spray_veg_early: '💦', topping: '✂️', order_ipm: '📦',
-                layout_coco_blocks: '🧱', hydrate_coco_blocks: '💧',
-                undercanopy_lights: '💡', transplant: '🪴', ipm_spray_veg_second: '💦',
-                veg_room_clean: '🧽', deploy_ipm: '🐞', prune: '✂️', flip: '🌸',
-                ipm_spray_flower_start: '💦', trellis_layout: '🕸️',
-                ipm_spray_flower_week2: '💦', leafpick_early: '🍃', clone_cut: '✂️',
-                leafpick_late: '🍂', harvest: '🌾', room_clean: '🧽',
-                tank_irrigation_clean: '🚿', tote_prep: '📦', bucking: '🪵',
-                lab_sample: '🧪', trim_room_prep: '🔪', trim: '✂️',
-                machine_trim: '⚙️', dry_room_clean: '🧽', weigh_ship: '🚚',
-                equipment_maintenance: '🔧'
+                clone_cut_prep: '✂️', planting: '🌱', clone_room_clean: '🧼',
+                ipm_spray_veg_early: '🧴', topping: '✂️', order_ipm: '🐛',
+                layout_coco_blocks: '🥥', hydrate_coco_blocks: '💧',
+                undercanopy_lights: '💡', transplant: '🪴', ipm_spray_veg_second: '🧴',
+                veg_room_clean: '🧼', deploy_ipm: '🛡️', prune: '🔪', flip: '🌸',
+                ipm_spray_flower_start: '🧴', trellis_layout: '🕸️',
+                ipm_spray_flower_week2: '💦', leafpick_early: '🍃', clone_cut: '🌿',
+                leafpick_late: '🍂', harvest: '🌾', room_clean: '🧹',
+                tank_irrigation_clean: '🚿', tote_prep: '🧺', bucking: '📦',
+                lab_sample: '🔬', trim_room_prep: '🧽', trim: '✂️',
+                machine_trim: '⚙️', dry_room_clean: '🧼', weigh_ship: '⚖️',
+                equipment_maintenance: '🔧', mother_prune: '✂️', mother_topdress: '🧪', retire: '🍂'
             },
 
             // ---- Hover tooltip: show the full text of a truncated calendar entry ----
@@ -8607,11 +8678,30 @@
             // events count on every day they span. Returns a Map of dateStr ->
             // { taskType, count } — one entry per clustered day, count = number of
             // same-type events that day.
+            // The visible events on a day (multi-day ones on every day they span), indexed once per render instead of
+            // filtering every event for every day cell (review E14). Order as in the event list.
+            _eventsOnDay(dateStr) {
+                if (!this._byDay) {
+                    const map = new Map();
+                    (this._visibleEvents || this.events).forEach((e, i) => {
+                        if (!e?.date) return;
+                        const end = e.endDate && e.endDate > e.date ? e.endDate : e.date;
+                        for (const d = parseLocalDate(e.date); localDate(d) <= end; d.setDate(d.getDate() + 1)) {
+                            const k = localDate(d);
+                            (map.get(k) || map.set(k, []).get(k)).push(e);
+                        }
+                    });
+                    this._byDay = map;
+                }
+                return this._byDay.get(dateStr) || [];
+            },
+
             _annualClusters() {
                 // dateStr -> Map(taskType -> count of same-type events that day)
                 const counts = new Map();
                 for (const ev of this._visibleEvents || []) {
                     const tt = ev.taskType || null;
+                    if (!tt) continue;   // time off, general events: not a task type, so never a cluster (review E10)
                     const end = parseLocalDate(ev.endDate || ev.date);
                     // Step by calendar day, not 24 h: across a DST change 24 h lands on the same day or skips one
                     for (const d = parseLocalDate(ev.date); d <= end; d.setDate(d.getDate() + 1)) {
@@ -9144,7 +9234,8 @@
             },
             _taskTypeEmoji(tt) {
                 if (!tt) return null;
-                return this.TASK_EMOJI[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.emoji || null;
+                // The recipes' own emoji (CropLabourWizard's task-type registry) first, so the dots match the titles (review F2)
+                return DB.data?._CropLabourWizard?.taskTypes?.[tt]?.emoji || this.TASK_EMOJI[tt] || null;
             },
 
             // Task order used only for the pre/post-transplant room split (mirrors CLW's TASK_DEFS).
@@ -9215,6 +9306,10 @@
                         room = roomForName(lotRec.vegRoom);
                     } else if (!isProjected && ev.roomPhase === 'flower') {
                         room = flowerRoom;
+                    } else if (!isProjected && ev.roomPhase === 'dry') {
+                        room = roomForName(lotRec.dryRoom) || flowerRoom;
+                    } else if (!isProjected && ev.roomPhase === 'trim') {
+                        room = roomForName(lotRec.trimRoom) || roomForName(lotRec.dryRoom) || flowerRoom;
                     } else if (isProjected) {
                         room = ev.roomId || projected[ev.lotId]?.roomId || null;
                     } else if (tt === 'clone_cut_prep' || tt === 'clone_room_clean') {
@@ -9222,10 +9317,10 @@
                     } else if (tt === 'veg_room_clean') {
                         room = roomForName(lotRec.vegRoom);
                     } else if (tt === 'dry_room_clean') {
-                        room = roomForName(lotRec.dryRoom);
+                        room = roomForName(lotRec.dryRoom) || flowerRoom;
                     } else if (tt === 'trim_room_prep' || tt === 'trim' || tt === 'machine_trim') {
                         // Trim often happens in the dry room — fall back to it when no trim room is assigned
-                        room = roomForName(lotRec.trimRoom) || roomForName(lotRec.dryRoom);
+                        room = roomForName(lotRec.trimRoom) || roomForName(lotRec.dryRoom) || flowerRoom;
                     } else if (tt === 'undercanopy_lights' || tt === 'layout_coco_blocks' || tt === 'hydrate_coco_blocks') {
                         room = flowerRoom;
                     } else {
@@ -9509,10 +9604,7 @@
                 this._clusterMap = null; // invalidate cached cluster map for the new visible set
                 this._cutMismatch = null; // and the clone-cut warnings (the DB may have changed)
 
-                console.log('[Calendar] Rendering - events count:', this.events.length, 'visible:', this._visibleEvents.length);
-                if (this.events.length > 0) {
-                    console.log('[Calendar] First 3 events:', this.events.slice(0, 3));
-                }
+                this._byDay = null;   // the visible events by day, built once for this render (review E14)
                 this.updateTitle();
                 this.renderFilterTags();
                 if (this.viewMode === 'year') {
@@ -9550,6 +9642,7 @@
 
             renderGrid() {
                 const grid = $('calendarGrid');
+                this._byDay = null;   // re-indexed from the events as they are now (a drag may have moved one)
                 // Coming back from another view — restore the month grid, hide the others
                 if (grid.closest('.calendar-grid-wrapper')) {
                     grid.closest('.calendar-grid-wrapper').classList.remove('hidden');
@@ -9630,15 +9723,7 @@
 
                 // Events for this day — include multi-day events that span this date.
                 // Uses the filtered set so active tag filters hide non-matching events.
-                const dayEvents = (this._visibleEvents || this.events).filter(e => {
-                    const start = e.date;
-                    const end = e.endDate || e.date;
-                    const match = dateStr >= start && dateStr <= end;
-                    if (match) {
-                        console.log(`[Calendar] Event matches ${dateStr}:`, e.title, `(start=${start}, end=${end})`);
-                    }
-                    return match;
-                });
+                const dayEvents = this._eventsOnDay(dateStr);
                 if (dayEvents.length > 0) {
                     const eventsContainer = document.createElement('div');
                     eventsContainer.className = 'day-events';
@@ -9723,7 +9808,7 @@
                     cell.classList.remove('drag-over');
                     try {
                         const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-                        this.moveEvent(data.eventId, dateStr);
+                        this.moveEvent(data.eventId, dateStr, data.fromDate);
                     } catch {}
                 });
 
@@ -9739,12 +9824,19 @@
                 return cell;
             },
 
-            moveEvent(eventId, newDate) {
+            moveEvent(eventId, newDate, fromDate = null) {
                 if (DeviceView.building) return;
                 // Found by id in the current DB — gone (e.g. deleted by a tool mid-drag) → nothing to move
                 const event = this.eventById(eventId);
                 if (!event) return;
                 const oldDate = event.date;
+                // Dragged by one of its later days: the whole task moves by the distance dragged, not to the drop day (review E7)
+                if (fromDate && fromDate !== event.date && fromDate > event.date && fromDate <= (event.endDate || event.date)) {
+                    const shift = Math.round((parseLocalDate(newDate) - parseLocalDate(fromDate)) / 86400000);
+                    const d = parseLocalDate(event.date);
+                    d.setDate(d.getDate() + shift);
+                    newDate = localDate(d);
+                }
                 // Preserve duration when moving multi-day events — in whole days: a millisecond offset is an hour
                 // off across a DST change and lands the end on the wrong day
                 let endDateOffset = null;
@@ -9832,7 +9924,8 @@
                 // Determine which fields are modifiable. A building device can only mark the event completed —
                 // everything else about an event is office work it couldn't save.
                 const readOnly = !!DeviceView.building;
-                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'title', 'lotId', 'notes', 'status', 'assignedTo', 'estimatedHours'];
+                // The title and lot are the tool's (moving an event to another lot would move its hours with it; review E6)
+                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours'];
                 const HIDDEN_FIELDS = ['type', 'id', 'completedBy'];   // the sign-off shows in the Completed row
                 const READONLY_FIELDS = [];
 
@@ -9927,20 +10020,32 @@
                 const ev = this.selectedEvent;
                 const prevDates = { date: ev.date, endDate: ev.endDate };
                 let changed = false;
+                // Only fields that changed are written; a field left blank is removed, never written as '' (review E6)
+                let blankDate = false;
                 inputs.forEach(input => {
                     const field = input.dataset.field;
                     let value = input.value;
 
+                    if (field === 'date' && !value) { blankDate = true; return; }   // an event needs its start date
                     // Type coercion
                     if (field === 'estimatedHours' && value) {
                         value = parseFloat(value);
+                        if (!Number.isFinite(value)) return;
                     }
-
-                    if (this.selectedEvent[field] !== value) {
+                    const had = this.selectedEvent[field];
+                    if (value === '' || value === null) {
+                        if (had !== undefined && had !== '') { delete this.selectedEvent[field]; changed = true; }
+                        else if (had === '') delete this.selectedEvent[field];
+                        return;
+                    }
+                    if (had !== value) {
                         this.selectedEvent[field] = value;
                         changed = true;
                     }
                 });
+                if (blankDate) showSyncToast('An event needs a start date — the date was not changed');
+                // endDate is set only when it differs from date
+                if (ev.endDate && ev.endDate === ev.date) { delete ev.endDate; changed = true; }
 
                 // A start after the end would hide the event from every calendar view: undo the date edit
                 const datesEdited = ev.date !== prevDates.date || ev.endDate !== prevDates.endDate;
@@ -9961,10 +10066,15 @@
             duplicateEvent() {
                 if (!this.selectedEvent) return;
 
-                const copy = JSON.parse(JSON.stringify(this.selectedEvent));
-                // The copy is a new event: give it its own id
+                const orig = this.selectedEvent;
+                const copy = JSON.parse(JSON.stringify(orig));
+                // A clean copy of the task (user decision 2026-10-25, review Q2): the same task type, so hours can be logged
+                // on it, but no hours, sign-off or done mark (they'd count twice); marked as a copy (copyOf), so
+                // CropLabourWizard keeps it when it regenerates the schedule
                 delete copy.eventId;
+                for (const k of ['labour_map', 'completed', 'completedBy', 'status']) delete copy[k];
                 copy.id = newEventId();
+                copy.copyOf = orig.id || null;
                 copy.title = `${copy.title} (copy)`;
                 DB.data.calendarEvents.push(copy);
                 markUnsaved();
@@ -9975,6 +10085,7 @@
 
             deleteEvent() {
                 if (!this.selectedEvent || DeviceView.building) return;
+                if (refuseEventDelete(this.selectedEvent)) return;
 
                 if (!confirm(`Delete event "${this.selectedEvent.title}"?`)) return;
 
@@ -10132,6 +10243,7 @@
                         e.stopPropagation();
                         const event = this.eventById(btn.dataset.eventId);
                         if (!event) return;
+                        if (refuseEventDelete(event)) return;
                         if (!confirm(`Delete event "${event.title}"?`)) return;
                         const idx = DB.data.calendarEvents.indexOf(event);
                         if (idx >= 0) DB.data.calendarEvents.splice(idx, 1);
@@ -10330,6 +10442,7 @@
                     const SKIP_KEYS = ['date', 'startTime', 'endTime']; // already in DTSTART/DTEND
                     for (const [key, value] of Object.entries(event)) {
                         if (SKIP_KEYS.includes(key)) continue;
+                        if (value !== null && typeof value === 'object') continue;   // hours, sign-offs: not text (review E12)
                         const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
                         descLines.push(`${label}: ${value}`);
                     }
@@ -10400,6 +10513,11 @@
                         let added = 0;
 
                         imported.forEach(event => {
+                            // Our own export: the event is already here (moved or projected ones too) when its id is (review E12)
+                            const ownId = event._sitkaId;
+                            delete event._sitkaId;
+                            if (ownId && DB.data.calendarEvents.some(existing => existing.id === ownId)) return;
+                            if (ownId) event.title = String(event.title || '').replace(/ \(projected\)$/, '');
                             // Check for duplicates by SUMMARY + DTSTART (date and start time)
                             const exists = DB.data.calendarEvents.some(existing => {
                                 return existing.title === event.title && existing.date === event.date &&
@@ -10475,6 +10593,10 @@
                         end = this.parseICSDateTime(dtendMatch[1]);
                         continue;
                     }
+
+                    // UID: ours carries the event's id (sitka-<id>@sitkatools.local)
+                    const uidMatch = line.match(/^UID:(.*)/);
+                    if (uidMatch) { const m = /^sitka-(.+)@sitkatools\.local$/.exec(uidMatch[1].trim()); if (m) event._sitkaId = m[1]; continue; }
 
                     // SUMMARY:Event Title
                     const summaryMatch = line.match(/^SUMMARY:(.*)/);
@@ -11001,15 +11123,12 @@
             deleteBuilding(buildingId) {
                 const building = this.buildings[buildingId];
                 if (!building) return;
-                if ((building.assignedRooms || []).some(rid => refuseRoomChange(rid, 'taken out of its building'))) return;
+                // Its rooms by room.buildingId, the source of truth (assignedRooms only mirrors it; review E15)
+                const roomIds = Object.keys(RoomManager.rooms).filter(rid => RoomManager.rooms[rid]?.buildingId === buildingId);
+                if (roomIds.some(rid => refuseRoomChange(rid, 'taken out of its building'))) return;
 
                 // Unassign all of the building's rooms (room.buildingId → null)
-                (building.assignedRooms || []).forEach(rid => {
-                    const room = RoomManager.rooms[rid];
-                    if (room && room.buildingId === buildingId) {
-                        room.buildingId = null;
-                    }
-                });
+                roomIds.forEach(rid => { RoomManager.rooms[rid].buildingId = null; });
 
                 delete DB.data.buildings[buildingId];
                 markUnsaved();

@@ -1746,6 +1746,28 @@
         // CropLabourWizard taskType → lot room phase rules (for event attribution)
         const CLW_CLONE_ROOM_TYPES = ['clone_cut_prep', 'clone_room_clean'];
         const CLW_VEG_ROOM_TYPES = ['planting', 'ipm_spray_veg_early', 'topping', 'order_ipm', 'veg_room_clean'];
+        // Which of a lot's rooms a crop task happens in (user decision 2026-10-25, review Q3): the event's roomPhase, which
+        // CropLabourWizard writes on every task; for events generated before that, its rules — the clone and veg room
+        // types, trim / trim-room prep / machine trim in the trim room, the dry-room clean in the dry room, else the
+        // flower room. The dry room stands in for a missing trim room, the flower room for both.
+        const CLW_DRY_ROOM_TYPES = ['dry_room_clean'];
+        const CLW_TRIM_ROOM_TYPES = ['trim_room_prep', 'trim', 'machine_trim'];
+        function clwRoomPhase(ev) {
+            if (['cloning', 'veg', 'flower', 'dry', 'trim'].includes(ev?.roomPhase)) return ev.roomPhase;
+            const tt = ev?.taskType;
+            if (CLW_CLONE_ROOM_TYPES.includes(tt)) return 'cloning';
+            if (CLW_VEG_ROOM_TYPES.includes(tt)) return 'veg';
+            if (CLW_DRY_ROOM_TYPES.includes(tt)) return 'dry';
+            if (CLW_TRIM_ROOM_TYPES.includes(tt)) return 'trim';
+            return 'flower';
+        }
+        function clwPhaseRoomName(lot, phase) {
+            if (phase === 'cloning') return lot.cloningRoom;
+            if (phase === 'veg') return lot.vegRoom;
+            if (phase === 'dry') return lot.dryRoom || lot.destRoom;
+            if (phase === 'trim') return lot.trimRoom || lot.dryRoom || lot.destRoom;
+            return lot.destRoom;
+        }
 
         function buildingForEvent(ev) {
             const d = DB.ensureStructure();
@@ -1756,15 +1778,7 @@
             // 2. lotId → resolve the lot's physical room via CLW phase rules
             if (ev.lotId && d.lots[ev.lotId]) {
                 const lot = d.lots[ev.lotId];
-                let roomName = null;
-                // Explicit roomPhase (written by CropLabourWizard when the recipe task
-                // specifies one) wins over the known-type lists below.
-                if (ev.roomPhase === 'cloning') roomName = lot.cloningRoom;
-                else if (ev.roomPhase === 'veg') roomName = lot.vegRoom;
-                else if (ev.roomPhase === 'flower') roomName = lot.destRoom;
-                else if (CLW_CLONE_ROOM_TYPES.includes(ev.taskType)) roomName = lot.cloningRoom;
-                else if (CLW_VEG_ROOM_TYPES.includes(ev.taskType)) roomName = lot.vegRoom;
-                else roomName = lot.destRoom; // everything else, incl. transplant & post-transplant
+                const roomName = clwPhaseRoomName(lot, clwRoomPhase(ev));
                 for (const r of Object.values(d.rooms)) {
                     if (r && r.name === roomName) return r.buildingId || null;
                 }

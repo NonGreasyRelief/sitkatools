@@ -1686,8 +1686,8 @@
                     else if (Number.isInteger(t.days) && t.days > t.every) errors.push(`${label} ${who}: runs ${t.days} days but repeats every ${t.every} — the repeats would overlap`);
                 }
                 if (!Number.isInteger(t.defaultOffset)) errors.push(`${label} ${who}: defaultOffset must be an integer`);
-                if (t.roomPhase != null && !['cloning', 'veg', 'flower'].includes(t.roomPhase)) {
-                    errors.push(`${label} ${who}: roomPhase must be "cloning", "veg" or "flower"`);
+                if (t.roomPhase != null && !['cloning', 'veg', 'flower', 'dry', 'trim'].includes(t.roomPhase)) {
+                    errors.push(`${label} ${who}: roomPhase must be "cloning", "veg", "flower", "dry" or "trim"`);
                 }
                 if (t.taskType === 'clone_cut' && !veg && t.reference !== 'harvest') {
                     errors.push(`${label} ${who}: the clone cut counts back from harvest — reference must be "harvest"`);
@@ -2321,7 +2321,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const refOpts = recipeAnchorList(editorRecipe).map(a => `<option value="${a}" ${t.reference === a ? 'selected' : ''}>${a}</option>`).join('');
                 const canRepeat = !NO_REPEAT_TASKS.includes(t.taskType);
                 const curPhase = t.roomPhase || '';
-                const phaseOpts = [['', 'auto'], ['cloning', 'cloning'], ['veg', 'veg'], ['flower', 'flower']]
+                const phaseOpts = [['', 'auto'], ['cloning', 'cloning'], ['veg', 'veg'], ['flower', 'flower'], ['dry', 'dry'], ['trim', 'trim']]
                     .map(([v, label]) => `<option value="${v}" ${curPhase === v ? 'selected' : ''}>${label}</option>`).join('');
 
                 tr.innerHTML = `
@@ -3878,10 +3878,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         plantingDateInput.addEventListener('input', () => refreshPreview());
 
         // ---- Reconcile: Remove existing schedule events for a lot (sourceTool depends on lot type) ----
-        function reconcileLotSchedule(lotId) {
+        // keepCopies: tasks duplicated in SitkaTools (copyOf) are the user's, not the schedule's — Generate keeps them
+        // (user decision 2026-10-25, review Q2)
+        function reconcileLotSchedule(lotId, { keepCopies = false } = {}) {
             const tool = lotSourceTool(lotId);
             DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
-                if (ev.sourceTool === tool && ev.lotId === lotId) {
+                if (ev.sourceTool === tool && ev.lotId === lotId && !(keepCopies && ev.copyOf)) {
                     return false; // Remove stale events for this lot
                 }
                 return true;
@@ -3983,9 +3985,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (occ.repeat) event.repeat = occ.repeat;
                 if (projRoomId) event.roomId = projRoomId;
 
-                // Optional explicit room phase from the recipe task. SitkaTools/DailyWizard
-                // resolve it first; when absent their existing known-type/order rules apply.
-                if (def.roomPhase) event.roomPhase = def.roomPhase;
+                // The room phase on every real lot's task (user decision 2026-10-25, review Q3): every tool reads the room
+                // from it. Projected lots carry their roomId instead.
+                if (!isProjected) event.roomPhase = taskRoomPhase(lotId, def.taskType, recipe);
 
                 // Labour estimate from the recipe task (estStaff / estMinutes, per day)
                 applyEstimate(event, def);
@@ -4206,20 +4208,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return bestId;
         }
 
-        // The room's ACTIVE real lot — the LAST non-projected lot in assignedLots order, i.e. the
-        // crop that most recently came into the room and took TBA-1's slot (SitkaTools' deletion hook
-        // fires when a lot is created/moved/assigned in, which appends to assignedLots). This is the
-        // lot whose schedule gates Reprojection: until IT has a generated schedule, reprojecting
-        // would shift the chain down on top of an unscheduled crop. (An OLDER real lot still in the
-        // room already has a schedule — gating on it would let Reproject run too early.)
+        // The room's real lot for Reproject and overwrite push-backs: the same one Project Crop and the clone-cut ⚠️ use —
+        // the newest by created date (ties → assignedLots order), so the chain always follows one lot (review F3)
         function activeRealLotId(roomId) {
-            const room = (DB.data.rooms || {})[roomId];
-            if (!room) return null;
-            for (let i = (room.assignedLots || []).length - 1; i >= 0; i--) {
-                const lotId = room.assignedLots[i];
-                if (!isProjectedLot(lotId)) return lotId;
-            }
-            return null;
+            return newestRealLotId(roomId);
         }
 
         // Resolve the Lot-1 anchor + gate for a room's projection chain. Projections anchor off the
@@ -4664,55 +4656,48 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return roomCodeForName(getLotRecord(lotId).destRoom);
         }
 
-        function getLotRoomCode(lotId, taskType) {
-            // Projected lots have no veg/cloning rooms — every task happens in the flower room
-            if (isProjectedLot(lotId)) return getProjectedLots()[lotId].roomId;
-
+        // Which of the lot's rooms a task happens in: 'cloning' | 'veg' | 'flower' | 'dry' | 'trim'. Written on every
+        // real lot's events (roomPhase), so every tool reads the room from the task (user decision 2026-10-25, review Q3).
+        const DRY_ROOM_TASKS = ['dry_room_clean'];
+        const TRIM_ROOM_TASKS = ['trim_room_prep', 'trim', 'machine_trim'];   // the trim room (the dry room when there's none)
+        const ROOM_PHASES = ['cloning', 'veg', 'flower', 'dry', 'trim'];
+        function taskRoomPhase(lotId, taskType, recipe = activeRecipe) {
             const lot = DB.lots[lotId] || {};
-            const rooms = DB.data.rooms || {};
-
+            const tasks = recipe?.tasks || [];
             // Explicit roomPhase from the recipe task wins over all heuristics below
-            const def = activeRecipe.tasks.find(d => d.taskType === taskType);
-            if (def?.roomPhase === 'cloning') return roomCodeForName(lot.cloningRoom);
-            if (def?.roomPhase === 'veg') return roomCodeForName(lot.vegRoom);
-            if (def?.roomPhase === 'flower') return resolveFlowerRoom(lotId, rooms);
-
+            const def = tasks.find(d => d.taskType === taskType);
+            if (ROOM_PHASES.includes(def?.roomPhase)) return def.roomPhase;
             // Clone prep and clone-room clean happen in the cloning room
-            if (taskType === 'clone_cut_prep' || taskType === 'clone_room_clean') {
-                return roomCodeForName(lot.cloningRoom);
-            }
-
+            if (taskType === 'clone_cut_prep' || taskType === 'clone_room_clean') return 'cloning';
             // Veg-room clean happens in the veg room (after plants have moved out)
-            if (taskType === 'veg_room_clean') {
-                return roomCodeForName(lot.vegRoom);
-            }
-
-            // Undercanopy lights & air socks are installed in the flower room — prepped on
-            // transplant day so they're ready when plants arrive. It's listed before
-            // transplant in the recipe's task list for chronological display, but it's a flower-room task.
-            if (taskType === 'undercanopy_lights') {
-                return resolveFlowerRoom(lotId, rooms);
-            }
-
-            // Coco blocks are laid out/spiked (day before) and hydrated (transplant day) in the
-            // flower room so they're ready when plants arrive. Listed before
-            // transplant in the recipe's task list for chronological display, but they're flower-room tasks.
-            if (taskType === 'layout_coco_blocks' || taskType === 'hydrate_coco_blocks') {
-                return resolveFlowerRoom(lotId, rooms);
-            }
-
-            // Everything before transplanting to flower happens in the veg room.
-            // Order is read from the active recipe's task list (array order is load-bearing).
-            const tasks = activeRecipe.tasks;
+            if (taskType === 'veg_room_clean') return 'veg';
+            // Trim, its prep and machine trim in the trim room; the dry-room clean in the dry room
+            if (TRIM_ROOM_TASKS.includes(taskType)) return 'trim';
+            if (DRY_ROOM_TASKS.includes(taskType)) return 'dry';
+            // Undercanopy lights & air socks, and the coco blocks (laid out the day before, hydrated on transplant day),
+            // are flower-room tasks listed before transplant for chronological display
+            if (taskType === 'undercanopy_lights' || taskType === 'layout_coco_blocks' || taskType === 'hydrate_coco_blocks') return 'flower';
+            // Everything before transplanting to flower happens in the veg room (array order is load-bearing)
             const defIdx = tasks.findIndex(d => d.taskType === taskType);
             const transplantIdx = tasks.findIndex(d => d.taskType === 'transplant');
-            if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx) {
-                return roomCodeForName(lot.vegRoom);
-            }
-
+            if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx) return 'veg';
             // Transplant and everything after happens in the destination room: the flower room, or a mother lot's
             // Mother room. A mother lot with no destination room keeps its tasks in its veg room.
-            return resolveFlowerRoom(lotId, rooms) || (isVegRecipe(activeRecipe) ? roomCodeForName(lot.vegRoom) : null);
+            if (isVegRecipe(recipe) && !resolveFlowerRoom(lotId, DB.data.rooms || {}) && lot.vegRoom) return 'veg';
+            return 'flower';
+        }
+
+        function getLotRoomCode(lotId, taskType, recipe = activeRecipe) {
+            // Projected lots have no veg/cloning rooms — every task happens in the flower room
+            if (isProjectedLot(lotId)) return getProjectedLots()[lotId].roomId;
+            const lot = DB.lots[lotId] || {};
+            const rooms = DB.data.rooms || {};
+            const phase = taskRoomPhase(lotId, taskType, recipe);
+            if (phase === 'cloning') return roomCodeForName(lot.cloningRoom);
+            if (phase === 'veg') return roomCodeForName(lot.vegRoom);
+            if (phase === 'dry') return roomCodeForName(lot.dryRoom) || resolveFlowerRoom(lotId, rooms);
+            if (phase === 'trim') return roomCodeForName(lot.trimRoom) || roomCodeForName(lot.dryRoom) || resolveFlowerRoom(lotId, rooms);
+            return resolveFlowerRoom(lotId, rooms);
         }
 
         function buildEventTitle(def, lotId) {
@@ -4799,11 +4784,22 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // Regenerating keeps each task's id, completion and labour hours (matched by taskType).
             // Tasks dropped from the new schedule lose theirs — confirm first if any hold work records.
-            const previousEvents = eventsForLot(lotId);
-            // Matched by task type and repeat: a repeating task that now repeats fewer times drops its last repeats
-            const keptKeys = new Set(scheduleOccurrences(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays })
-                .map(o => `${o.def.taskType}#${o.repeat || 1}`));
-            const lostRecords = previousEvents.filter(ev => !keptKeys.has(annotationKey(ev)) && hasWorkRecords(ev));
+            // Copies made in SitkaTools are kept as they are (not regenerated, not matched)
+            const previousEvents = eventsForLot(lotId).filter(ev => !ev.copyOf);
+            // Matched by task type and repeat: a repeating task that now repeats fewer times drops its last repeats.
+            // Counted the way carry-over matches them — one previous event per new one, in order — so a second event of
+            // the same task (an older duplicate) that would find no replacement is asked about too (review G1)
+            const freshCount = new Map();
+            for (const o of scheduleOccurrences(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays })) {
+                const k = `${o.def.taskType}#${o.repeat || 1}`;
+                freshCount.set(k, (freshCount.get(k) || 0) + 1);
+            }
+            const seenKeys = new Map();
+            const lostRecords = previousEvents.filter(ev => {
+                const k = annotationKey(ev), n = (seenKeys.get(k) || 0) + 1;
+                seenKeys.set(k, n);
+                return n > (freshCount.get(k) || 0) && hasWorkRecords(ev);
+            });
             if (lostRecords.length > 0) {
                 let msg = `⚠️ ${lostRecords.length} task${lostRecords.length === 1 ? '' : 's'} with recorded work will be removed from ${lotId}'s schedule:\n\n`;
                 msg += lostRecords.map(ev => `• ${ev.title}${ev.labour_map ? ' (labour hours)' : ''}${ev.completed ? ' (completed)' : ''}`).join('\n');
@@ -4811,8 +4807,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (!confirm(msg)) return; // cancel → no changes at all
             }
 
-            // Reconcile: remove existing schedule for this lot
-            reconcileLotSchedule(lotId);
+            // Reconcile: remove existing schedule for this lot (copies made in SitkaTools stay)
+            reconcileLotSchedule(lotId, { keepCopies: true });
 
             // Build + persist events from current offsets (shared with projection generation)
             const { events: newEvents, config } = generateLotSchedule(lotId, plantingDate, taskOffsets, {

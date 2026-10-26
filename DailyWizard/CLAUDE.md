@@ -123,8 +123,8 @@ Events show on every day of `[date, endDate]`. `buildingForEvent(ev)` resolves a
 
 1. `ev.roomId` in `DB.rooms` → that room's `buildingId` (CropProjection and EquipmentWizard events).
 2. `ev.lotId` in `DB.lots` → the lot's room for this task, by name, then its `buildingId`:
-   - `ev.roomPhase` first: `cloning` → `cloningRoom`, `veg` → `vegRoom`, `flower` → `destRoom`;
-   - else `CLW_CLONE_ROOM_TYPES` (`clone_cut_prep`, `clone_room_clean`) → `cloningRoom`; `CLW_VEG_ROOM_TYPES` (`planting`, `ipm_spray_veg_early`, `topping`, `order_ipm`, `veg_room_clean`) → `vegRoom`; everything else (transplant onward, unknown types) → `destRoom`;
+   - `ev.roomPhase` first (`clwRoomPhase`; CropLabourWizard writes it on every task, user decision 2026-10-25): `cloning` → `cloningRoom`, `veg` → `vegRoom`, `flower` → `destRoom`, `dry` → `dryRoom`, `trim` → `trimRoom` (else `dryRoom`), either falling back to `destRoom` (`clwPhaseRoomName`);
+   - an event without one (generated before): `CLW_CLONE_ROOM_TYPES` (`clone_cut_prep`, `clone_room_clean`) → cloning; `CLW_VEG_ROOM_TYPES` (`planting`, `ipm_spray_veg_early`, `topping`, `order_ipm`, `veg_room_clean`) → veg; `trim`, `trim_room_prep`, `machine_trim` → trim; `dry_room_clean` → dry; everything else (transplant onward, unknown types) → flower;
    - if that room doesn't resolve but the lot has exactly one distinct room across the three fields, use it.
 3. A room-id prefix at the start of the title (`🧼 B66DG2-Strain#123, …`, `💡 B66DG2#123, …`), only if it is a real room in `DB.rooms` — covers events whose lot was deleted.
 4. Otherwise `null`.

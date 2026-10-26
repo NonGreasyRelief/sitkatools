@@ -42,7 +42,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 ```
 
 - A room's building is `room.buildingId` (the source of truth); `building.assignedRooms` mirrors it. A room is in at most one building.
-- Renaming or deleting a room nulls the room-name fields on the lots that use it. Deleting a building nulls `buildingId` on its rooms.
+- Deleting a room nulls the room-name fields on the lots that use it (rooms aren't renamed). Deleting a building nulls `buildingId` on every room that has it.
 - Dry rooms double as trim rooms: `dryRoom` and `trimRoom` may name the same room, but each has its own clean form.
 - **Ownership:** a tool reads lots, rooms and buildings, and writes only its own keys (`_tool_<Tool>` on a lot, or top-level `_<Tool>`). The exceptions:
   - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs / .ctls / .overheadCosts`.
@@ -60,7 +60,8 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 - New events get `newEventId()`: `ev_` + 10 characters from `CODE_ALPHABET` (`abcdefghjkmnpqrstuvwxyz23456789`).
 - An event without an `id` gets one hashed from `sourceTool|lotId|roomId|equipmentId|taskType|date|endDate|title` the first time `ensureStructure()` runs. Every device and tool derives the same id. A duplicate is re-keyed `-2`, `-3`….
 - Tools that create or match events (SitkaTools, GeneralEvent, CropLabourWizard, EquipmentWizard, EmployeeWizard) include `newEventId` / `contentHash` / `ensureEventIds` as function declarations (usable before any `const` initialises) and call `ensureEventIds(this.data.calendarEvents)` in `DB.ensureStructure()`.
-- A duplicated event or an imported ICS event gets a new id.
+- A duplicated event or an imported ICS event gets a new id. A duplicate is a clean copy (no hours, done mark or sign-off) marked `copyOf`, which CropLabourWizard keeps on Generate (user decision 2026-10-25). Re-importing our own ICS export adds nothing: its UID carries the event's id.
+- An event holding hours or a floor manager's sign-off isn't deleted by hand (user decision 2026-10-25); its lot's close-out archives it.
 
 ### Event Annotations Survive Regeneration
 
@@ -120,7 +121,7 @@ The DB can live in fixed-name files in the OneDrive-synced SharePoint folder (Sh
   - **On its way:** nothing records it — a lot is on its way when its current room is in one building while its paperwork is in another building's file (`DbSplit.movesOnTheWay`). That file keeps the lot's pages as they are; on that building the lot turns read-only.
   - **Picked up:** the receiving building's device picks it up by itself the next time it opens the files (`DbSplit.pickUpMoves`; "🚚 Lot … arrived from … — 💾 Save DB to pick it up"), recording the pickup in its own file (`_LotTransfers`). Only that building's device does; the office does it by opening the files as that building (`?device=<id>`). A lot with no paperwork needs no pickup.
 - **Lot hand-off:** a pickup takes over the lot's **unsigned** pages (the new blank page included) and its lot-level paperwork values: they're saved in the receiver's file from then on, and the receiver fills the new page from the move day. Signed pages stay where they are. Once the receiver's file holds the pickup, the sender drops its copy with its own next save; until then nothing is lost.
-- **Lot close-out** (office only in split mode) needs a plant count of 0 and, for a lot with grow logs, every daily page complete with no grow-log days missing (a harvest log isn't required: not every lot is harvested). Then the lot, its events with labour, its schedule history, its paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json`. The lot leaves the DB only once the archive is written or its link used. Its crop summary stays, so it stays in the report trends for 36 months.
+- **Lot close-out** (office only in split mode) needs a plant count of 0 and, for a lot with grow logs, every daily page complete with no grow-log days missing (a harvest log isn't required: not every lot is harvested). Then the lot, its events with labour, its schedule history, its paperwork from every building and its transfers go to `Archive/Lot-<id>-<date>.json`. Its room-clean pages stay in the DB too: the next lot in the room points to them as its pre-move-in clean. The lot leaves the DB only once the archive is written or its link used. Its crop summary stays, so it stays in the report trends for 36 months.
   - **With split files the office saves only Main.json**, which records the close-out (`_closedLots[<id>] = { closedAt, archive, by, files, events }`). Close-out needs every building's file open. Every device ignores what's left of the lot in the building files (pages, moves, floor updates), and each building drops it from its own file with its next save, after it sees the close-out ("🗄️ The office closed out lot …").
   - **Nothing saved after the archive is lost:** `files` keeps a fingerprint of what each building file held of the lot when the archive was made. A building file whose part changed since (a page, a signature or hours saved after the office opened the files) is **late**: it keeps that part, every device shows it (PaperWizard lists a closed-out lot's pages), the building is told, and the office's close-out panel says so. A closed-out lot's id isn't used again. A single-file DB just loses the lot, as before.
 
@@ -170,15 +171,15 @@ CropLabourWizard's tasks come from recipes: three built-ins in code (Sitka Stand
 
 - **🌿 Mother lots:** a recipe with `kind: 'vegetative'` schedules mother plants (no flip, harvest or trim; retired on a planned day). A lot scheduled with one is a mother lot, and its `_tool_CropLabourWizard.kind` is `'vegetative'`. Its destination room (`destRoom`) is its Mother room. Nothing else flags mothers.
 - **Repeating tasks:** a recipe task may repeat every N days; each repeat is its own event with `repeat: 1, 2, …`.
-- **`taskType` ids are stable** (32 built-in). SitkaTools and DailyWizard map labels and emoji from hard-coded maps first, then `_CropLabourWizard.taskTypes` (a registry merged on every recipe save and import), then the raw id. Calendar filters work on any `taskType`.
-- **Task order against `transplant` is load-bearing:** it decides the room a task happens in (before transplant → cloning or veg room, after → flower room) in CropLabourWizard and SitkaTools (`_CLW_TASK_ORDER`). An unknown type falls back to the flower room.
+- **`taskType` ids are stable** (32 built-in). SitkaTools takes a task's emoji from `_CropLabourWizard.taskTypes` (a registry merged on every recipe save and import) first, so its calendar dots match the titles, then from its built-in map (the built-in recipes' emoji); DailyWizard maps labels and emoji from hard-coded maps first, then the registry; both end with the raw id. Calendar filters work on any `taskType`.
+- **Task order against `transplant` is load-bearing:** it decides the room a task happens in (before transplant → cloning or veg room, after → flower room) in CropLabourWizard. Trim, trim-room prep and machine trim happen in the lot's trim room (its dry room when it has none) and Clean Dry Room in its dry room (user decision 2026-10-25). CropLabourWizard writes the result on every real lot's task (`roomPhase`), and SitkaTools, DailyWizard and the Labour & Cost Wizard read the room from it; older events without one follow the same rules. An unknown type falls back to the flower room.
 - Recipe files are `recipe-<id>.json`, imported only through a file picker; nothing is ever fetched.
 
 ### Event Contract
 
 CropLabourWizard events: `{ id, date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, repeat?, roomId?, roomPhase?, estStaff?, estMinutes? }`. `repeat` numbers a repeating task's events; annotations carry over by `taskType` + `repeat`.
 
-- `roomPhase` (`cloning` | `veg` | `flower`) is present only when the recipe task sets it, and overrides the order-based room choice.
+- `roomPhase` (`cloning` | `veg` | `flower` | `dry` | `trim`) is on every real lot's task: the recipe task's own, else CropLabourWizard's rules (see "Task Recipes"). Projected lots' events carry `roomId` instead.
 - `estStaff` / `estMinutes` are the recipe's labour estimate **per day**: estimated person-hours = `estStaff × estMinutes × days in [date, endDate] ÷ 60`. Shown by CropLabourWizard, DailyWizard, the SitkaTools tooltip and the Labour & Cost Wizard. Not carried over on regeneration (they come from the recipe). They're separate from the event panel's typed `estimatedHours`.
 
 ## Total Cost per Gram

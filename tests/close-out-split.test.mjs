@@ -12,9 +12,12 @@ function closeDb() {
     const T = today();
     db.lots.L100.plantCount = 0;   // close-out needs no plants on record
     db._PaperWizard = {
-        sheets: { note: { name: 'Lot note', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'event', document: 'ipm', fields: [], signature: null } },
+        sheets: { note: { name: 'Lot note', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'event', document: 'ipm', fields: [], signature: null },
+            rcg: { name: 'Grow room clean', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'event', document: 'room-clean-grow', fields: [], signature: null } },
         wizards: { wn01: { id: 'wn01', sheetId: 'note', name: 'Note', questions: [{ id: 'txt', label: 'Note', type: 'text', options: [], rowScoped: false, sameAsLast: false, mandatory: false, prefillFrom: null }] } },
-        entries: { L100: { note: { instances: { [T]: { phase: null, room: 'Grow 1', header: { txt: 'done' }, days: {}, snapshots: {}, signature: null, completedAt: null, printedAt: null } } } } }
+        entries: { L100: { note: { instances: { [T]: { phase: null, room: 'Grow 1', header: { txt: 'done' }, days: {}, snapshots: {}, signature: null, completedAt: null, printedAt: null } } },
+            // its post-usage clean of Grow 1: the next lot in the room points to it, so it stays after the close-out
+            rcg: { instances: { [T]: { phase: null, room: null, header: { txt: 'Grow 1 cleaned' }, days: {}, snapshots: {}, signature: null, completedAt: null, printedAt: null } } } } }
     };
     return db;
 }
@@ -31,7 +34,7 @@ export async function run(b, BASE) {
     files['Building-B1.json'] = JSON.stringify(b1, null, 2);
     check('Building 1\'s file holds L100\'s page, a move and a floor update', !!b1._PaperWizard.entries.L100);
 
-    const holds = (text) => { const p = JSON.parse(text); return { page: !!p._PaperWizard?.entries?.L100, move: Object.values(p._LotTransfers || {}).some(t => t.lotId === 'L100'), overlay: !!p._overlays?.lots?.L100 }; };
+    const holds = (text) => { const p = JSON.parse(text); return { page: !!p._PaperWizard?.entries?.L100?.note, clean: !!p._PaperWizard?.entries?.L100?.rcg, move: Object.values(p._LotTransfers || {}).some(t => t.lotId === 'L100'), overlay: !!p._overlays?.lots?.L100 }; };
     const plan = () => b.run(main, `const p = DbSplit.plan(); return { save: p.toSave, b1: JSON.stringify(p.parts['Building-B1.json']), main: p.parts['Main.json']._closedLots || null };`);
     const panel = () => b.run(main, `LotActions.render(); return { btn: !!document.getElementById('clearClosedBtn'), note: document.getElementById('closedNote').textContent };`);
     const closeOut = async (lotId) => {
@@ -50,7 +53,8 @@ export async function run(b, BASE) {
     // ---- The office closes L100 out ----
     check('office opened', await openSplit(b, main, BASE, 'office', files));
     await closeOut('L100');
-    let st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots?.L100 || null, page: !!DB.data._PaperWizard?.entries?.L100 };`);
+    let st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots?.L100 || null, page: !!DB.data._PaperWizard?.entries?.L100?.note, clean: !!DB.data._PaperWizard?.entries?.L100?.rcg };`);
+    check('…its room clean stays (the next lot in Grow 1 points to it)', st.clean, JSON.stringify(st));
     check('L100 is archived and removed; Main records the close-out, with a fingerprint per building file', !st.lot && !st.page && st.notice?.archive?.startsWith('Archive/Lot-L100-') && st.notice.by === 'Office'
         && typeof st.notice.files?.B1 === 'string' && typeof st.notice.files?.B2 === 'string', JSON.stringify(st));
     let p = await plan();
@@ -63,8 +67,9 @@ export async function run(b, BASE) {
 
     // ---- Reopened, the office ignores what's left of L100 in Building 1's file ----
     check('office reopened', await openSplit(b, main, BASE, 'office', f2));
-    st = await b.run(main, `return { page: !!DB.data._PaperWizard?.entries?.L100, move: Object.values(DB.data._LotTransfers || {}).some(t => t.lotId === 'L100'), unsaved: hasUnsavedChanges };`);
+    st = await b.run(main, `return { page: !!DB.data._PaperWizard?.entries?.L100?.note, clean: !!DB.data._PaperWizard?.entries?.L100?.rcg, move: Object.values(DB.data._LotTransfers || {}).some(t => t.lotId === 'L100'), unsaved: hasUnsavedChanges };`);
     check('office: L100\'s page and move don\'t come back, nothing to save', !st.page && !st.move && !st.unsaved, JSON.stringify(st));
+    check('office: its room clean is still there', st.clean, JSON.stringify(st));
     check('a closed-out lot\'s id isn\'t used again', await b.run(main, `let msg = ''; window.alert = (m) => { msg = m; };
         const v = (id, x) => { const el = document.getElementById(id); el.value = x; el.dispatchEvent(new Event('change', { bubbles: true })); };
         v('lotType', 'new-lot'); v('lotId', 'L100'); v('lotStrain', 'Again'); v('destRoom', 'Grow 1'); v('startRoom', 'flower');
@@ -72,12 +77,15 @@ export async function run(b, BASE) {
 
     // ---- Building 1 sees the close-out and drops L100 from its own file ----
     check('B1 opened', await openSplit(b, main, BASE, 'B1', f2));
-    st = await b.run(main, `return { toast: syncToastText.textContent, page: !!DB.data._PaperWizard?.entries?.L100 };`);
+    st = await b.run(main, `return { toast: syncToastText.textContent, page: !!DB.data._PaperWizard?.entries?.L100?.note };`);
     check('B1: told the office closed out L100; it isn\'t in the merged DB', st.toast.includes('🗄️ The office closed out lot L100') && !st.page, JSON.stringify(st));
     const s2 = await saveSplit(b, main);
     const h2 = holds(s2['Building-B1.json'] || '{}');
     check('B1: its next save drops L100\'s page, move and floor update from its own file — and writes nothing else',
         Object.keys(s2).join() === 'Building-B1.json' && !h2.page && !h2.move && !h2.overlay, JSON.stringify({ files: Object.keys(s2), h2 }));
+    check('B1: …keeping L100\'s room clean', h2.clean, JSON.stringify(h2));
+    check('B1 reopened after its save: nothing left to tidy, nothing to save', await openSplit(b, main, BASE, 'B1', { ...f2, ...s2 }) &&
+        await b.run(main, `return !hasUnsavedChanges && DbSplit.plan().toSave.length === 0 && !DbSplit.closedIn('B1').length;`));
     check('office reopened after B1 saved', await openSplit(b, main, BASE, 'office', { ...f2, ...s2 }));
     pn = await panel();
     check('office: nothing left in the building files', !pn.note.includes('L100'), JSON.stringify(pn));
@@ -102,8 +110,8 @@ export async function run(b, BASE) {
     await openSitka(b, main, BASE);
     await loadSingle(b, main, closeDb());
     await closeOut('L100');
-    st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots || null, page: !!DB.data._PaperWizard?.entries?.L100 };`);
-    check('single file: the lot and its paperwork are gone, no close-out notice', !st.lot && !st.page && !st.notice, JSON.stringify(st));
+    st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots || null, page: !!DB.data._PaperWizard?.entries?.L100?.note, clean: !!DB.data._PaperWizard?.entries?.L100?.rcg };`);
+    check('single file: the lot and its paperwork are gone, no close-out notice — its room clean stays', !st.lot && !st.page && !st.notice && st.clean, JSON.stringify(st));
 
     await leave(b, main);
     return results;
