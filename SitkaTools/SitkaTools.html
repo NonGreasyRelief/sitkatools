@@ -5833,6 +5833,29 @@
         // Not before the start check is done (review A8): a session left behind is restored or discarded first, and the
         // restore reads the copy as it is then. With no DB open, a tool tab's copy that carries its session (file name,
         // split files) is taken as that session; one without them can't be saved correctly, so it's left alone.
+        // 🛡️ Never let a tool's database replace ours wholesale (2026-10-26). Lots, rooms and buildings are only ever removed in
+        // SitkaTools, and a tool always sends the whole DB with its events.
+        // A database with none of our lots, rooms, buildings or events (an empty one, sent before it arrived): refused.
+        function toolUpdateWipes(payload) {
+            const has = (db, key) => db?.[key] && typeof db[key] === 'object' && Object.keys(db[key]).length > 0;
+            const oursHas = ['lots', 'rooms', 'buildings'].some(k => has(DB.data, k)) || (DB.data?.calendarEvents || []).length > 0;
+            const theirsHas = ['lots', 'rooms', 'buildings'].some(k => has(payload, k)) || (Array.isArray(payload?.calendarEvents) && payload.calendarEvents.length > 0);
+            return oursHas && (!theirsHas || !Array.isArray(payload?.calendarEvents));
+        }
+        // A lot, room or building of ours the tool's copy doesn't have (made here a moment before its change): kept. Returns
+        // how many were kept back, so the sender is sent the DB too.
+        function keepWhatToolHadntSeen(payload) {
+            let n = 0;
+            for (const key of ['lots', 'rooms', 'buildings']) {
+                const mine = DB.data?.[key] || {};
+                if (!payload[key] || typeof payload[key] !== 'object') payload[key] = {};
+                for (const [id, rec] of Object.entries(mine)) if (!(id in payload[key])) { payload[key][id] = JSON.parse(JSON.stringify(rec)); n++; }
+            }
+            if (n) console.info(`[SitkaTools] Kept ${n} lot/room/building record${n === 1 ? '' : 's'} a tool's update didn't have yet`);
+            return n;
+        }
+        // A tool's name from its page address (../EmployeeWizard/EmployeeWizard.html → EmployeeWizard)
+        const toolNameOfUrl = url => (String(url || '').match(/([A-Za-z]+)\.html/) || [])[1] || 'a tool';
         async function takeToolCopy(from) {
             if (!WorkCopy.ready) return;
             const copy = await WorkCopy.read();
@@ -5844,6 +5867,16 @@
             }
             keepOwnSaveStamp(copy.db);
             if (JSON.stringify(copy.db) === JSON.stringify(DB.data)) return;
+            // 🛡️ A copy with none of our lots, rooms, buildings or events came from a tool that didn't have the database: refused,
+            // and the shared copy is put back to ours so the tool tabs catch up. One that hadn't seen a record made here yet
+            // keeps it (cost audit 2026-10-26)
+            if (toolUpdateWipes(copy.db)) {
+                console.warn('[SitkaTools] Refused a shared-copy update with no lots, rooms, buildings or events');
+                showWarningToast(`An update from ${from} was ignored: it had none of the database's lots, rooms, buildings or events. It has the current database now; redo the change there.`);
+                WorkCopy.flush();
+                return;
+            }
+            const restored = keepWhatToolHadntSeen(copy.db);
             DB.data = copy.db;
             DB.ensureStructure();
             markUnsaved();
@@ -6812,6 +6845,7 @@
             const ackHandler = (e) => {
                 if (e.source === newWindow && e.data?.type === 'sitkaGit_ready') {
                     acknowledged = true;
+                    entry.ready = true;   // it has the database: its updates are taken from now on
                     window.removeEventListener('message', ackHandler);
                 }
             };
@@ -6840,6 +6874,20 @@
                 return;
             }
             if (!isUpdate) return;   // a known window checking its link: nothing to do
+            // 🛡️ Never take a database from a tool that doesn't have the current one (cost audit 2026-10-26): a window that
+            // hasn't said it got the database (sitkaGit_ready) has nothing of ours to send, and an update without some of
+            // our lots, rooms or buildings (tools never remove them) would wipe them. Ignored; the tool is sent the current DB.
+            const from = openSubtools.find(entry => (entry.win || entry) === e.source);
+            if (!from?.ready) { console.warn('[SitkaTools] Ignored sitkaGit_db_update from a tool window that has not received the database yet'); return; }
+            if (toolUpdateWipes(e.data.payload)) {
+                console.warn('[SitkaTools] Refused a tool update with no lots, rooms, buildings or events');
+                showWarningToast(`An update from ${toolDisplayName(toolNameOfUrl(from.url))} was ignored: it had none of the database's lots, rooms, buildings or events. It has the current database now; redo the change there.`);
+                try { e.source.postMessage({ type: 'sitkaGit_db_update', payload: DB.data, view: DeviceView.message() }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
+                return;
+            }
+            // A tool that hadn't seen a lot, room or building made here yet (its copy was a moment behind): its change is
+            // taken, and what it hadn't seen is kept — tools never remove those
+            const restored = keepWhatToolHadntSeen(e.data.payload);
 
             // Some subtools resync on open (EquipmentWizard); only a real change counts as unsaved
             keepOwnSaveStamp(e.data.payload);
@@ -6861,8 +6909,8 @@
             updateCalendarStatusBar();
             updateIOStatusBar();
 
-            // Other open tools get this change now; the sender already has it
-            broadcastToSubtools(e.source);
+            // Other open tools get this change now; the sender already has it (unless records it hadn't seen were kept)
+            broadcastToSubtools(restored ? null : e.source);
 
             showSyncToast('Subtool has updated data — views refreshed automatically');
         });

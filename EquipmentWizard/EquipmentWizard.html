@@ -1211,6 +1211,9 @@
 
         function notifySitkaTools() {
             if (typeof LinkLost !== 'undefined' && !LinkLost.canSend()) return;   // SitkaTools is gone (cover shown)
+            // Nothing goes back before this tool has its database (from SitkaTools, or the shared copy): an update sent before
+            // it arrived would replace SitkaTools' database with an empty one (cost audit 2026-10-26)
+            if (typeof WorkCopy === 'undefined' || (!WorkCopy.gotDb && !WorkCopy.inUse)) return;
             if (WorkCopy && WorkCopy.inUse) WorkCopy.write(DB.data);
             if (window.opener && !window.opener.closed) {
                 const message = {
