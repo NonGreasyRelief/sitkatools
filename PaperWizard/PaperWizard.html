@@ -1708,7 +1708,7 @@
                         el.onerror = () => rej(new Error(`Could not decode "${f.name}".`));
                         el.src = url;
                     });
-                    pages.push({ url, wPx: img.naturalWidth, hPx: img.naturalHeight });
+                    pages.push({ url, wPx: img.naturalWidth, hPx: img.naturalHeight, file: f });   // the File: the print popup makes its own links
                 } catch (err) {
                     URL.revokeObjectURL(url);
                     throw err;
@@ -3167,7 +3167,9 @@
                 for (const ds of Object.keys(bInst.days || {}).sort()) {
                     if (!dayOnFile(bInst, ds, sheetId)) continue;
                     let aKey = aInst?.days?.[ds] ? bKey : null;
-                    if (!aKey) aKey = Object.keys(aInsts).find(k => !bInsts[k] && aInsts[k]?.days?.[ds]) || null;   // re-paged
+                    // Re-paged onto a new page, or taken back onto the page before it: follow the day to the page that
+                    // holds it now (review D7), so it isn't recorded as removed
+                    if (!aKey) aKey = Object.keys(aInsts).find(k => aInsts[k]?.days?.[ds] && !bInsts[k]?.days?.[ds]) || null;
                     if (!aKey) {
                         const home = aInst ? bKey : (aInsts[edited.key] ? edited.key : Object.keys(aInsts)[0]);
                         if (home) out.push({ key: home, day: ds, kind: 'removed', label: `Day ${fmtShort(ds)}`, from: summary(dayQs, bInst.days[ds]), to: '' });
@@ -3180,6 +3182,21 @@
                     }
                 }
                 if (!aInst) continue;
+                // Added to a page the master grower had already signed: on record like a correction, so the page shows
+                // "changed after signing" (review D12)
+                if (bInst.signature) {
+                    for (const ds of Object.keys(aInst.days || {}).sort()) {
+                        if (bInst.days?.[ds]) continue;
+                        if (Object.values(bInsts).some(x => x !== bInst && x?.days?.[ds])) continue;   // moved here, not added
+                        out.push({ key: bKey, day: ds, kind: 'added', label: `Day ${fmtShort(ds)}`, from: '', to: summary(dayQs, aInst.days[ds]) });
+                    }
+                    const had = new Set((Array.isArray(bInst.rows) ? bInst.rows : []).map(r => r?.id));
+                    for (const aRow of Array.isArray(aInst.rows) ? aInst.rows : []) {
+                        if (!aRow?.id || had.has(aRow.id) || aRow.void) continue;
+                        const place = entryPlace(sheet, wiz, aInst.rows, aRow);
+                        out.push({ key: bKey, row: aRow.id, entry: place.entry, where: place.where, kind: 'added', label: `Entry ${place.entry ?? '?'}`, from: '', to: summary(repQs, aRow) });
+                    }
+                }
                 // The page's own answers
                 if (headerOnFile(bInst, sheetId)) {
                     for (const q of headQs) {
@@ -3243,6 +3260,7 @@
             const b = v => v ? escapeHtml(v) : '<i>blank</i>';
             if (c.kind === 'void') return `Entry ${c.entry ?? '?'}${c.where ? ' · ' + escapeHtml(c.where) : ''} deleted: <s>${b(c.from)}</s>`;
             if (c.kind === 'removed') return `${escapeHtml(c.label || 'Entry')} removed: <s>${b(c.from)}</s>`;
+            if (c.kind === 'added') return `${escapeHtml(c.label || 'Entry')} added after the page was signed${c.to ? `: ${b(c.to)}` : ''}`;
             if (c.kind === 'signature') return `${escapeHtml(c.label || 'Signature')}: <s>${b(c.from)}</s> → ${b(c.to)}`;
             const via = c.kind === 'carried' ? ` <span class="chg-note">(carried forward${c.via ? ' from ' + fmtShort(c.via) : ''})</span>` : '';
             return `${escapeHtml(c.label || '')}: <s>${b(c.from)}</s> → ${b(c.to)}${via}`;
@@ -3263,7 +3281,7 @@
                 const ov = document.createElement('div');
                 ov.className = 'strike-overlay';
                 ov.id = 'corrOverlay';
-                const lines = pending.map(p => `<div>${p.kind === 'void' || p.kind === 'removed' ? '' : `${escapeHtml(changeWhere(p))} · `}${changeWhatHtml(p)}</div>`).join('');
+                const lines = pending.map(p => `<div>${p.kind === 'void' || p.kind === 'removed' || p.kind === 'added' ? '' : `${escapeHtml(changeWhere(p))} · `}${changeWhatHtml(p)}</div>`).join('');
                 ov.innerHTML = `
                     <div class="strike-card corr-card">
                         <div class="strike-title">✏️ Correction — ${pending.length} change${pending.length === 1 ? '' : 's'} to paperwork on file</div>
@@ -3550,7 +3568,7 @@
             const notes = [];
 
             // Plant count: shift later recorded counts by the same difference
-            let shift = null, delta = 0;
+            let shift = null, delta = 0, nextReasons = null;
             if (pcQ && hasValue(ctx.draft[pcQ.id])) {
                 const newCount = Number(String(ctx.draft[pcQ.id]).trim());
                 const before = backup.day?.[pcQ.id];
@@ -3567,6 +3585,20 @@
                             `${laterTxt}.\n\nOK — apply the ${delta > 0 ? '+' : ''}${delta} change to them.\nCancel — save this day only.`;
                         if (plan.signedDays.length) msg += `\n\n${plan.signedDays.length} day(s) in logs the master grower has signed stay as they are.`;
                         if (confirm(msg)) shift = plan;
+                        else if (plan.affected.length) {
+                            // This day only: the next recorded day now counts from the new number, so its reasons are asked
+                            // again — else the CTLS "Out" wouldn't match the counts (review D6)
+                            const nx = plan.affected[0], rec = nx.inst.days[nx.ds] || {}, d2 = nx.value - newCount;
+                            if (d2 < 0 && !(rec._removed && removalTotal(rec._removed) === -d2)) {
+                                const got = await openCountReasons('removed', -d2, nx.ds, rec._removed, null, rec._removedTo || {});
+                                if (!got) return null;
+                                nextReasons = { at: nx, removed: got.counts, to: got.to, added: null };
+                            } else if (d2 > 0 && !(rec._added && rec._added.n === d2)) {
+                                const got = await openCountReasons('added', d2, nx.ds, rec._added, newCount);
+                                if (!got) return null;
+                                nextReasons = { at: nx, removed: null, to: null, added: got };
+                            } else if (d2 === 0 && (rec._removed || rec._added)) nextReasons = { at: nx, removed: null, to: null, added: null };
+                        }
                     } else if (plan.signedDays.length) {
                         notes.push(`${plan.signedDays.length} signed day(s) after it keep the old count`);
                     }
@@ -3631,6 +3663,15 @@
             }
 
             // Apply — no more prompts from here on
+            if (nextReasons) {
+                const { at, removed, added, to } = nextReasons, rec = at.inst.days[at.ds];
+                if (removed) rec._removed = removed; else delete rec._removed;
+                if (removed && to && Object.keys(to).length) rec._removedTo = to; else delete rec._removedTo;
+                if (added) rec._added = added; else delete rec._added;
+                const cq = reasonsQuestion(sheetId);
+                if (cq) rec[cq.id] = withReasonNote(rec[cq.id], removed, added, to);
+                notes.push(`the reasons for ${fmtShort(at.ds)}'s count were asked again`);
+            }
             if (shift) {
                 const touched = new Set(shift.pages);
                 for (const a of shift.affected) {
@@ -3654,10 +3695,12 @@
                     : `re-paged from ${fmtShort(day)} (${r.newKeys.length} page${r.newKeys.length === 1 ? '' : 's'})`);
                 if (r.reprint.length) notes.push(`reprint ${r.reprint.map(fmtShort).join(', ')}`);
                 // The lot's live phase/room follows the change only when nothing later overrides it
+                // …and while the lot is still where that day said: once something later moved it on (the harvest log), a
+                // late fix to an old day doesn't set it back (review D4)
                 if (!repage.stop && DB.lots[lotId]) {
                     for (const ch of changes) {
-                        if (ch.field === 'phase') DB.lots[lotId].stage = stageFromForm(ch.newValue);
-                        else DB.lots[lotId].currentRoom = ch.newValue;
+                        if (ch.field === 'phase') { if (sameTracked('phase', currentLotPhase(lotId), ch.oldValue)) DB.lots[lotId].stage = stageFromForm(ch.newValue); }
+                        else if (sameTracked('room', currentLotRoom(lotId), ch.oldValue)) DB.lots[lotId].currentRoom = ch.newValue;
                     }
                 }
             }
@@ -3672,11 +3715,16 @@
         // "Start grow log on a chosen day" — for a lot with no daily log of this sheet yet (its
         // earlier paperwork is on paper). Sets the lot's live phase / room / plant count to the
         // chosen starting values, marks the days before as on paper, creates the first page.
+        // A lot with a page on any daily log (grow, drying or trim log) is locked to its logs: its count, phase and room
+        // change only through them, with reasons — so "Start on a chosen day" is only for its first daily log (review D5)
+        const lotHasDailyLog = lotId => Object.entries(pageStore(lotId) || {}).some(([sid, e]) =>
+            DB.paperWizard?.sheets?.[sid]?.cadence === 'daily-weekly' && Object.keys(e?.instances || {}).length > 0);
         function openStartLogModal(lotId, sheetId) {
             if (readOnlyHere(lotId)) return;
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             const lot = DB.lots[lotId];
             if (!sheet || !lot) return;
+            if (lotHasDailyLog(lotId)) { showToast('This lot already has a daily log — start this one with “📅 Start new week”, from where the lot is now'); return; }
             const today = todayStr();
             // The log usually starts when the lot did: the date the lot was created (today if that's
             // missing or still ahead)
@@ -3687,7 +3735,8 @@
             const rooms = pickableRoomNames(curRoom).sort((a, b) => a.localeCompare(b));
             // A stage outside the form's phase list (drying / curing) is offered too, preselected —
             // otherwise the first option would be picked and overwrite the lot's stage.
-            const phases = curPhase && !PHASE_OPTIONS.includes(curPhase) ? [...PHASE_OPTIONS, curPhase] : PHASE_OPTIONS;
+            const base = phaseOptionsFor(sheetId);
+            const phases = curPhase && !base.includes(curPhase) ? [...base, curPhase] : base;
             const ov = document.createElement('div');
             ov.className = 'wiz-overlay';
             ov.id = 'startLogOverlay';
@@ -3728,13 +3777,12 @@
                 const room = $('startLogRoom').value || null;
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) { showToast('Pick a start date on or before today'); return; }
                 if (countRaw !== '' && !(Number.isInteger(Number(countRaw)) && Number(countRaw) >= 0)) { showToast('Plant count must be a whole number'); return; }
-                if (dailyChain(lotId, sheetId).length) { showToast('This lot already has a log — use Fill instead'); ov.remove(); return; }
+                if (dailyChain(lotId, sheetId).length || lotHasDailyLog(lotId)) { showToast('This lot already has a log — use Fill instead'); ov.remove(); return; }
                 // Live lot values (PaperWizard's write-back permission: stage / currentRoom / plantCount).
                 // The stage is only written when the pick differs from the lot's current one.
                 if (phase !== curPhase) lot.stage = stageFromForm(phase);
                 lot.currentRoom = room;
                 if (countRaw !== '') lot.plantCount = Number(countRaw);
-                const pw = DB.paperWizard;
                 const pstore = pageStore(lotId, true);
                 if (!pstore[sheetId]) pstore[sheetId] = { instances: {} };
                 const sheetData = pstore[sheetId];
@@ -3776,7 +3824,6 @@
             if (!value) return null;
             const today = moveDay || todayStr();
             const oldInst = ctx.inst;
-            const pw = DB.paperWizard;
             const pstore = pageStore(ctx.lotId, true);
             if (!pstore[ctx.sheetId]) pstore[ctx.sheetId] = { instances: {} };
             const sheetData = pstore[ctx.sheetId];
@@ -3806,7 +3853,7 @@
                     if (q?.rowScoped) row[q.id] = value;
                     prev.days[today] = row;
                     delete sheetData.instances[ctx.key];
-                    if (writeBack) cfg.writeBackFn(value);
+                    if (writeBack) cfg.writeBackFn(value, ctx);
                     captureSnapshots(ctx.sheetId, ctx.lotId, backTo, prev);
                     evaluateCompletion(ctx.sheetId, backTo, prev);
                     return { inst: prev, newKey: backTo, value, reused: true, merged: true };
@@ -3828,7 +3875,7 @@
                     if (!oldInst.days[today]) oldInst.days[today] = {};
                     oldInst.days[today][q.id] = value;
                 }
-                if (writeBack) cfg.writeBackFn(value);
+                if (writeBack) cfg.writeBackFn(value, ctx);
                 captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
                 evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
                 return { inst: oldInst, newKey: ctx.key, value, reused: true };
@@ -3872,7 +3919,7 @@
             sheetData.instances[newKey] = newInst;
             // 3) Write-back: the wizard-recorded change updates the main DB (PaperWizard's
             //    special permission). Reverse-direction rollovers skip this.
-            if (writeBack) cfg.writeBackFn(value);
+            if (writeBack) cfg.writeBackFn(value, ctx);
             captureSnapshots(ctx.sheetId, ctx.lotId, ctx.key, oldInst);
             evaluateCompletion(ctx.sheetId, ctx.key, oldInst);
             captureSnapshots(ctx.sheetId, ctx.lotId, newKey, newInst);
@@ -3894,7 +3941,7 @@
                 label: () => String(runnerCtx.draft[phaseQ.id] ?? '').trim(),
                 actionLabel: 'Record phase change',
                 cancelMsg: 'Phase change cancelled',
-                writeBackFn: v => { if (DB.lots[runnerCtx.lotId]) DB.lots[runnerCtx.lotId].stage = stageFromForm(v); } // 'Bloom' → 'flower'
+                writeBackFn: (v, c) => { if (DB.lots[c.lotId]) DB.lots[c.lotId].stage = stageFromForm(v); } // 'Bloom' → 'flower'
             }, prevValue);
         }
 
@@ -3911,7 +3958,7 @@
                 label: () => String(runnerCtx.draft[roomQ.id] ?? '').trim(),
                 actionLabel: 'Record room change',
                 cancelMsg: 'Room change cancelled',
-                writeBackFn: v => { if (DB.lots[runnerCtx.lotId]) DB.lots[runnerCtx.lotId].currentRoom = v; }
+                writeBackFn: (v, c) => { if (DB.lots[c.lotId]) DB.lots[c.lotId].currentRoom = v; }
             }, prevValue);
         }
 
@@ -3924,7 +3971,6 @@
             const ctx = runnerCtx;
             if (!ctx) return null;
             const oldInst = ctx.inst;
-            const pw = DB.paperWizard;
             const pstore = pageStore(ctx.lotId, true);
             if (!pstore[ctx.sheetId]) pstore[ctx.sheetId] = { instances: {} };
             const sheetData = pstore[ctx.sheetId];
@@ -4571,6 +4617,11 @@
                 // the room it was actually kept in).
                 if (b === 'day.date' || b === 'day.plantsRemoved' || b === 'signature.date' || PRINT_ONLY_BINDINGS.includes(b)
                     || b === 'lot.roomDesignation' || b === 'lot.roomBuilding' || b === 'lot.currentRoom') continue;
+                // A page is a record of when it was made (review D1): each value is taken once, the first time it's
+                // known, so a later save never re-reads today's lot into an older page (a struck-out Veg page keeps
+                // "Veg", a propagation sheet its starting count). A log's phase is its own page's.
+                if (b === 'instance.phase' || (b === 'lot.stage' && inst.phase)) { inst.snapshots[b] = inst.phase || null; continue; }
+                if (inst.snapshots[b] != null && inst.snapshots[b] !== '') continue;
                 inst.snapshots[b] = resolveBinding(b, { lotId, sheetId, key, inst });
             }
         }
@@ -5080,7 +5131,6 @@
         function refreshRunnerPrefillsNow(ctx) {
             const wiz = wizardForSheet(ctx.sheetId);
             if (!wiz) return;
-            const cids = new Set(constantQuestionIds(ctx.sheetId));
             const steps = runnerSteps(ctx.sheetId); // must match renderRunner
             const shown = steps[ctx.idx];
             const backfill = !!ctx.day && isBackfillDay(ctx.lotId, ctx.sheetId, ctx.key, ctx.day);
@@ -5169,7 +5219,6 @@
         }
 
         function runnerGo(delta) {
-            const wiz = wizardForSheet(runnerCtx.sheetId);
             // Steps = the wizard's questions minus the constant ones (set via Initialize). The
             // master grower's signature is NOT a wizard step — it is captured only via the
             // cabinet leaf's ✍️ Sign button. Must match renderRunner.
@@ -5247,7 +5296,14 @@
             renderRunner();
         }
 
+        // One save at a time (Enter twice while the correction pad is up would stack a second one; review D8)
         async function saveInitConstants() {
+            const ctx = runnerCtx;
+            if (!ctx || ctx.saving) return;
+            ctx.saving = true;
+            try { await saveInitConstantsNow(); } finally { ctx.saving = false; }
+        }
+        async function saveInitConstantsNow() {
             const ctx = runnerCtx;
             if (readOnlyHere(ctx.lotId)) return; // a live update may have made the lot read-only here
             // Mandatory questions must be answered before the quiz can save — same rule as
@@ -5273,6 +5329,9 @@
             }
             for (const s of ctx.steps) {
                 let v = ctx.draft[s.q.id];
+                // Initials constants on file stay as they were drawn (review D12)
+                const kept = s.q.type === 'initials' ? lotConstants(ctx.lotId, s.sheetId)?.[s.q.id] : null;
+                if (kept?.strokes?.length) v = kept;
                 if (s.q.type === 'initials') {
                     // Same storage shape as the daily runner: {name, strokes} or null when empty.
                     v = (v && Array.isArray(v.strokes) && v.strokes.length)
@@ -5630,7 +5689,9 @@
             // A building adding to a facility form: an answer already saved stays as it is, whether or not its day is
             // complete (the office's merge only fills blanks, so a change there would quietly be lost — review A11); a
             // blank one can be filled
-            const initLocked = (filed || (!isInit && ctx.appendOnly && answerOnFile(ctx, q))) && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0;
+            // A 📌 initials constant on file is locked the same way: it isn't redrawn in the Initialize quiz (review D12)
+            const constInitOnFile = isInit && q.type === 'initials' && (lotConstants(ctx.lotId, ctx.steps[ctx.idx]?.sheetId)?.[q.id]?.strokes || []).length > 0;
+            const initLocked = constInitOnFile || ((filed || (!isInit && ctx.appendOnly && answerOnFile(ctx, q))) && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0);
             const appendLocked = !isInit && ctx.appendOnly && q.type !== 'initials' && answerOnFile(ctx, q);
             let onFileHtml = '';
             if (!isInit && q.type === 'entries') {
@@ -5649,11 +5710,11 @@
             if (q.type === 'entries') {
                 bodyInner = entriesStepHtml(ctx, sheet, q.table);
             } else if (initLocked) {
-                const d = ctx.draft[q.id];
+                const d = ctx.draft[q.id] || (constInitOnFile ? lotConstants(ctx.lotId, ctx.steps[ctx.idx]?.sheetId)?.[q.id] : null) || { name: '', strokes: [] };
                 bodyInner = `
                 <div class="wiz-q-label">✍️ ${escapeHtml(q.label)}</div>
                 ${corrInitialsSvg(d, 'ini-view')}
-                <div class="wiz-hint" style="margin-bottom:10px;">🔒 ${escapeHtml(d.name || 'Initialled')} — drawn when this ${q.rowScoped ? 'day' : 'page'} was filled in. They stay as they are; a correction is initialled when you save it.</div>`;
+                <div class="wiz-hint" style="margin-bottom:10px;">🔒 ${escapeHtml(d?.name || 'Initialled')} — drawn when this ${constInitOnFile ? 'paperwork was initialized' : q.rowScoped ? 'day' : 'page'}. They stay as they are; a correction is initialled when you save it.</div>`;
             } else if (q.type === 'initials') {
                 const d = ctx.draft[q.id] || { name: '', strokes: [] };
                 bodyInner = `
@@ -5881,12 +5942,16 @@
             // 🌱 A changed plant count needs its reason before anything is saved
             if (!(await askCountReasons(ctx))) { showToast('Nothing was saved — the change in plant count needs a reason'); return; }
             if (runnerCtx !== ctx || readOnlyHere(ctx.lotId)) return;   // closed, or made read-only, while it asked
-            const pw = DB.paperWizard;
+            // The DB this save works on: a live update replaces DB.data, and a Cancel then must not write the old pages
+            // into the new one (review D10, H7)
+            const dbAtStart = DB.data;
             // The sheet's pages as they were before this save: what was on file, and what Cancel at the
             // correction pad puts back (see confirmCorrections below)
             const sdBefore = JSON.parse(JSON.stringify(pageStore(ctx.lotId)?.[ctx.sheetId] || null));
             const ctxInstBefore = JSON.stringify(ctx.inst || null);
+            const storeWasThere = !!pageStore(ctx.lotId);
             const pstore = pageStore(ctx.lotId, true);
+            const sheetWasThere = !!pstore[ctx.sheetId];
             if (!pstore[ctx.sheetId]) pstore[ctx.sheetId] = { instances: {} };
             const sheetData = pstore[ctx.sheetId];
             if (!sheetData.instances) sheetData.instances = {};
@@ -5924,7 +5989,17 @@
             const restoreBackup = () => {
                 // Lot write-backs first — a brand-new page has them too ("Cancel = no write-backs")
                 if (backup.lot && lotRec) Object.assign(lotRec, backup.lot);
-                if (instIsNew) { delete sheetData.instances[ctx.key]; return; } // nothing persisted yet
+                if (instIsNew) {
+                    // nothing persisted yet — and no empty record of the sheet (or the store) left behind (review D10)
+                    delete sheetData.instances[ctx.key];
+                    if (!sheetWasThere && !Object.keys(sheetData.instances).length && Object.keys(sheetData).length === 1) {
+                        delete pstore[ctx.sheetId];
+                        if (!storeWasThere && !Object.keys(pstore).length) {
+                            if (isScopedId(ctx.lotId)) pruneStore(ctx.lotId); else if (DB.data === dbAtStart) delete DB.paperWizard.entries?.[ctx.lotId];
+                        }
+                    }
+                    return;
+                }
                 if (backup.day) inst.days[ctx.day] = backup.day; else delete inst.days?.[ctx.day];
                 inst.header = backup.header;
                 if (backup.rows === undefined) delete inst.rows; else inst.rows = backup.rows;
@@ -5944,6 +6019,13 @@
                 const drawn = ctx.appendOnly ? null : await captureCorrection(pending);
                 if (!drawn) {
                     if (backup.lot && lotRec) Object.assign(lotRec, backup.lot);
+                    // A live update replaced the DB while the pad was open: this save's changes went into the old one,
+                    // so there's nothing to put back — and the new DB (with what was just merged in) is left alone
+                    if (DB.data !== dbAtStart) {
+                        ctx.inst = pageStore(ctx.lotId)?.[ctx.sheetId]?.instances?.[ctx.key] || JSON.parse(ctxInstBefore) || ctx.inst;
+                        showToast('The database was updated while this was open — nothing was saved. Check the page and save again.');
+                        return null;
+                    }
                     if (sdBefore) pageStore(ctx.lotId, true)[ctx.sheetId] = sdBefore;
                     else { delete pageStore(ctx.lotId, true)[ctx.sheetId]; pruneStore(ctx.lotId); }
                     ctx.inst = pageStore(ctx.lotId)?.[ctx.sheetId]?.instances?.[ctx.key] || JSON.parse(ctxInstBefore) || ctx.inst;
@@ -6047,14 +6129,20 @@
             // The harvest log records the phase and room after the grow log has ended (user decision 2026-10-22): its
             // pages are filled at harvest, after trimming and at close-out, so the last phase / room question answered
             // is where the lot is now. A different answer writes the lot's stage / room; no strike-out (no day rows).
+            // Only an answer this save changed moves the lot: re-saving a harvest page (to add dry weights) leaves the lot where it
+            // is now, even if it moved on since (review D2)
             if (sheetSection(ctx.sheetId) === 'harvest' && DB.lots[ctx.lotId]) {
-                const lastAnswer = type => (wiz.questions || []).filter(q => q.type === type).map(q => String(ctx.draft[q.id] ?? '').trim()).filter(Boolean).pop() || '';
-                const hPhase = lastAnswer('phase'), hRoom = lastAnswer('room');
-                if (hPhase && normalizeStage(prevPhase) !== normalizeStage(hPhase)) DB.lots[ctx.lotId].stage = stageFromForm(hPhase);
-                if (hRoom && String(prevRoom || '').trim().toLowerCase() !== hRoom.toLowerCase()) DB.lots[ctx.lotId].currentRoom = hRoom;
+                const was = sdBefore?.instances?.[ctx.key]?.header || {};
+                const lastAnswer = (src, type) => (wiz.questions || []).filter(q => q.type === type).map(q => String(src[q.id] ?? '').trim()).filter(Boolean).pop() || '';
+                const hPhase = lastAnswer(ctx.draft, 'phase'), hRoom = lastAnswer(ctx.draft, 'room');
+                const wasPhase = lastAnswer(was, 'phase'), wasRoom = lastAnswer(was, 'room');
+                if (hPhase && !sameTracked('phase', wasPhase, hPhase) && !sameTracked('phase', prevPhase, hPhase)) DB.lots[ctx.lotId].stage = stageFromForm(hPhase);
+                if (hRoom && !sameTracked('room', wasRoom, hRoom) && !sameTracked('room', prevRoom, hRoom)) DB.lots[ctx.lotId].currentRoom = hRoom;
             }
+            // Only daily logs write the lot's plant count: there the change is asked its reasons, and the lot is locked to
+            // them. A plant count on another sheet (propagation, harvest) is just recorded (review D3).
             let plantZero = false;
-            for (const q of pcQs) {
+            for (const q of sheet.cadence === 'daily-weekly' ? pcQs : []) {
                 const v = String(ctx.draft[q.id] ?? '').trim();
                 if (v === '') continue;
                 const n = Number(v);
@@ -6469,7 +6557,7 @@
                 for (let c = 0; c < times; c++) {
                     printed++;
                     out += `<section class="pp-page" style="width:${W}in;height:${H}in;">
-                    <img src="${pg.url}" alt="" draggable="false">
+                    <img src="${pg.url}" data-pg="${i}" alt="" draggable="false">
                     ${overlayFor(n, c, { number: printed, count: pageCount })}
                 </section>`;
                 }
@@ -6544,6 +6632,17 @@
             win.document.open();
             win.document.write(html);
             win.document.close();
+            // The popup's own links to the page images (made in its window, so they last as long as it does): loading
+            // another document or closing PaperWizard revokes PaperWizard's links, not these (review D11)
+            try {
+                const own = new Map();
+                win.document.querySelectorAll('img[data-pg]').forEach(img => {
+                    const f = printDoc.pages[Number(img.dataset.pg)]?.file;
+                    if (!f) return;
+                    if (!own.has(img.dataset.pg)) own.set(img.dataset.pg, win.URL.createObjectURL(f));
+                    img.src = own.get(img.dataset.pg);
+                });
+            } catch (_) { /* keep PaperWizard's links */ }
             // Informational: record that this instance was rendered for print (re-print always allowed).
             // Not for a lot this building device doesn't fill — its page is in a file this device can't save.
             if ((isScopedId(lotId) || DeviceView.lotVisible(lotId)) && !lotElsewhere(lotId)) {
@@ -6678,7 +6777,7 @@
                 // coverage leaves, so they always keep it).
                 // No log yet (earlier paperwork on paper): start the first one on a chosen day,
                 // with a chosen starting phase / plant count / room.
-                if (keys.length === 0 && lot) {
+                if (keys.length === 0 && lot && !lotHasDailyLog(activeLotId)) {
                     pushGrow(sec, { key: 'start', sort: '', html: `<div class="cab-leaf" data-startlog="1" data-sheet="${escapeHtml(sheetId)}">
                         <span class="cab-label">📅 Start on a chosen day… · ${escapeHtml(sheet.name || sheetId)}</span>
                         <button type="button" class="cab-fill">Start…</button>
@@ -7690,6 +7789,61 @@
             }
         }
 
+        // An imported sheet configuration is checked before it's used (review D13): ids, positions, sizes and choices go
+        // into the page's HTML and styles and the print popup, so only plain ids, numbers in range and known choices
+        // get in. Returns { sheet, wizards } (cleaned copies) or { error }.
+        const IMPORT_ID = /^[A-Za-z0-9_-]{1,40}$/;
+        const IMPORT_Q_TYPES = ['text', 'number', 'select', 'initials', 'plant-count', 'phase', 'room'];
+        function cleanSheetImport(sheetId, sheet, wizards) {
+            if (!/^[\w .()-]{1,80}$/.test(sheetId)) return { error: `The sheet id "${sheetId}" has characters a page-image name can't have.` };
+            const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+            const str = v => typeof v === 'string' ? v : '';
+            const out = JSON.parse(JSON.stringify(sheet));
+            if (!['one-shot', 'daily-weekly', 'event'].includes(out.cadence)) return { error: `The sheet's cadence "${out.cadence}" isn't one PaperWizard knows.` };
+            out.orientation = out.orientation === 'landscape' ? 'landscape' : 'portrait';
+            out.pageWidthIn = num(out.pageWidthIn, 1, 30, out.orientation === 'landscape' ? 11 : 8.5);
+            out.pageHeightIn = num(out.pageHeightIn, 1, 30, out.orientation === 'landscape' ? 8.5 : 11);
+            if (out.document != null && !/^[a-z-]{1,40}$/.test(String(out.document))) out.document = null;
+            const ids = new Set();
+            for (const f of out.fields) {
+                if (!f || typeof f !== 'object' || !IMPORT_ID.test(String(f.id ?? '')) || ids.has(f.id)) return { error: `A box in the file has a missing, repeated or unusual id ("${String(f?.id ?? '')}").` };
+                ids.add(f.id);
+                for (const k of ['x', 'y', 'w', 'h']) f[k] = num(f[k], 0, 1, 0);
+                f.fontSize = num(f.fontSize, 4, 72, 10);
+                f.align = ['left', 'center', 'right'].includes(f.align) ? f.align : 'left';
+                if (f.page != null) f.page = Math.round(num(f.page, 1, 20, 1));
+                if (f.day != null) f.day = Math.round(num(f.day, 1, 400, 1));
+                for (const k of ['dayGroup', 'questionId']) if (f[k] != null && !IMPORT_ID.test(String(f[k]))) return { error: `Box "${f.id}" has an unusual ${k} ("${String(f[k])}").` };
+                for (const k of ['label', 'source', 'checkValue', 'name']) if (f[k] != null) f[k] = str(f[k]);
+                for (const k of ['repeat', 'constant', 'checkbox', 'row']) if (f[k] != null) f[k] = !!f[k];
+            }
+            if (out.signature != null) {
+                if (typeof out.signature !== 'object') out.signature = null;
+                else { for (const k of ['x', 'y', 'w', 'h']) out.signature[k] = num(out.signature[k], 0, 1, 0); if (out.signature.label != null) out.signature.label = str(out.signature.label); }
+            }
+            if (out.rowGrid != null && typeof out.rowGrid === 'object') out.rowGrid.pitch = num(out.rowGrid.pitch, 0, 1, 0);
+            const wz = {};
+            for (const [id, w] of Object.entries(wizards)) {
+                if (!IMPORT_ID.test(id)) return { error: `The wizard id "${id}" is unusual.` };
+                const c = JSON.parse(JSON.stringify(w));
+                c.name = str(c.name) || sheetId;
+                if (!Array.isArray(c.questions)) c.questions = [];
+                const qids = new Set();
+                for (const q of c.questions) {
+                    if (!q || typeof q !== 'object' || !IMPORT_ID.test(String(q.id ?? '')) || qids.has(q.id)) return { error: `A question in the file has a missing, repeated or unusual id ("${String(q?.id ?? '')}").` };
+                    qids.add(q.id);
+                    if (!IMPORT_Q_TYPES.includes(q.type)) return { error: `Question "${str(q.label) || q.id}" has a type PaperWizard doesn't know ("${String(q.type)}").` };
+                    q.label = str(q.label);
+                    q.options = Array.isArray(q.options) ? q.options.filter(o => typeof o === 'string') : [];
+                    for (const k of ['rowScoped', 'repeating', 'mandatory', 'sameAsLast']) if (q[k] != null) q[k] = !!q[k];
+                    for (const k of ['prefillFrom', 'metric', 'metricUnit', 'reasonsTo']) if (q[k] != null) q[k] = str(q[k]) || null;
+                    if (q.metricProduct != null && (typeof q.metricProduct !== 'object' || !(typeof q.metricProduct.name === 'string' || IMPORT_ID.test(String(q.metricProduct.from ?? ''))))) delete q.metricProduct;
+                }
+                wz[id] = c;
+            }
+            return { sheet: out, wizards: wz };
+        }
+
         function handleSheetImport(e) {
             const file = e.target.files?.[0];
             e.target.value = ''; // allow re-picking the same file
@@ -7721,15 +7875,17 @@
                         return;
                     }
                 }
+                const clean = cleanSheetImport(sheetId, sheet, wizards);
+                if (clean.error) { alert(`"${file.name}" can't be imported: ${clean.error}`); return; }
                 const pw = DB.ensureStructure()._PaperWizard;
                 if (pw.sheets[sheetId] && !confirm(`Sheet "${sheetId}" already exists. Replace it with the imported configuration?`)) return;
                 // Normalize the layout the same way the editor does.
-                sheet.name = (typeof sheet.name === 'string' && sheet.name.trim()) ? sheet.name.trim() : sheetId;
-                sheet.pageCount = Math.max(1, Math.min(20, Number(sheet.pageCount) || 1));
+                clean.sheet.name = (typeof clean.sheet.name === 'string' && clean.sheet.name.trim()) ? clean.sheet.name.trim() : sheetId;
+                clean.sheet.pageCount = Math.max(1, Math.min(20, Number(clean.sheet.pageCount) || 1));
                 // Replace any existing wizards for this sheet, then install the bundle.
                 Object.keys(pw.wizards).forEach(id => { if (pw.wizards[id].sheetId === sheetId) delete pw.wizards[id]; });
-                pw.sheets[sheetId] = JSON.parse(JSON.stringify(sheet));
-                Object.entries(wizards).forEach(([id, w]) => { pw.wizards[id] = JSON.parse(JSON.stringify(w)); });
+                pw.sheets[sheetId] = clean.sheet;
+                Object.entries(clean.wizards).forEach(([id, w]) => { pw.wizards[id] = w; });
                 notifySitkaTools();
                 renderAll();
                 openSavedSheet(sheetId); // opens it in the editor (page images still need a just-in-time load)

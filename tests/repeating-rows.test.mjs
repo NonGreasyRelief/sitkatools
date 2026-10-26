@@ -239,6 +239,13 @@ export async function run(b, BASE) {
     check('wet page holds entries 1–5, its copy 6–8, numbered on', ['T1', '11', 'T5', '1', '5'].every(t => w1.text.includes(t)) && ['T6', 'T8', '9', '6', '8'].every(t => w2.text.includes(t)) && !w2.text.includes('T1'), `${w1.text} / ${w2.text}`);
     check('unused rows print blank', w2.text.filter(t => t === '').length >= 2 * 3 && !w2.text.includes('N/A') && d2.text.filter(t => t === '').length >= 2 * 3, w2.text.join('|'));
     check('page number / count follow the printout (4 of 5, 5 of 5)', w1.text[0] === '4' && w1.text[1] === '5' && w2.text[0] === '5' && w2.text[1] === '5', `${w1.text.slice(0, 2)} / ${w2.text.slice(0, 2)}`);
+    // The popup has its own links to the page images, so loading another document or closing PaperWizard (which
+    // revokes PaperWizard's links) doesn't break an open print (review D11)
+    const pwUrls = await b.run(pw, `return printDoc.pages.map(p => p.url);`);
+    const own = pop ? await b.run(pop, `const srcs = [...document.querySelectorAll('img[data-pg]')].map(i => i.src);
+        const ok = await Promise.all(srcs.map(u => fetch(u).then(r => r.ok, () => false)));
+        return { srcs, ok: ok.every(Boolean) };`) : null;
+    check('the print popup uses its own image links', own && own.srcs.length === 5 && own.srcs.every(u => u.startsWith('blob:') && !pwUrls.includes(u)) && own.ok, JSON.stringify(own));
     if (pop) await b.send('browsingContext.close', { context: pop });
 
     // ---- Closing with unsaved entries asks first ----
