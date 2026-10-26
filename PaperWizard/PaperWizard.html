@@ -4149,11 +4149,11 @@
             return [...names];
         }
 
-        // Room names offered when recording where a lot is. A building device offers only its own building's
-        // rooms (lots move between buildings with SitkaTools' Send / Accept), plus the values already in play.
-        // `keep[0]` is the lot's current room. With split files open the office gets the rooms of that room's building
-        // too (user decision 2026-10-22): a move to another building goes through SitkaTools' Send / Accept, which the
-        // grow log then follows. A single-file DB has no Send / Accept, so the office sees every room there.
+        // Room names offered by Start on a chosen day (and by Room questions that don't move the lot). A building device
+        // offers only its own building's rooms, plus the values already in play. `keep[0]` is the lot's current room.
+        // With split files open the office gets the rooms of that room's building too. A single-file DB has one file, so
+        // the office sees every room there. The 🏠 Room question of a daily log adds the other buildings' rooms
+        // (roomChoiceGroups): that's how a lot moves to another building.
         function pickableRoomNames(...keep) {
             const bid = DeviceView.building || (DeviceView.split ? DeviceView.buildingOfRoomName(keep[0]) : null);
             if (!bid) return knownRoomNames();
@@ -4165,9 +4165,9 @@
 
         // 🚚 A lot moves between buildings by its own paperwork (user decision 2026-10-25): with split files, the 🏠 Room
         // question of a sheet whose room answer moves the lot (daily logs, the harvest log) lists the lot's building's
-        // rooms, then every other building's rooms. Picking one of those moves the lot there: SitkaTools records the move
-        // (the lot's building keeps its pages until then) and that building's device picks it up when it next opens the
-        // files. Groups: [{ label (null = the lot's building), names }].
+        // rooms, then every other building's rooms. Picking one of those moves the lot there: the lot's building keeps its
+        // pages until that building's device picks it up, the next time it opens the files (SitkaTools → DbSplit
+        // pickUpMoves). Groups: [{ label (null = the lot's building), names }].
         const roomMovesLot = sheetId => DB.paperWizard?.sheets?.[sheetId]?.cadence === 'daily-weekly' || sheetSection(sheetId) === 'harvest';
         function roomChoiceGroups(sheetId, ...keep) {
             const bid = DeviceView.building || (DeviceView.split ? DeviceView.buildingOfRoomName(keep[0]) : null);
@@ -4185,22 +4185,47 @@
             return groups;
         }
         // The runner's answer moves the lot to another building: { room, to, from } (null when it doesn't). Daily logs read
-        // their (first) Room question; the harvest log its last Room answer, as its save does.
+        // their (first) Room question; the harvest log its last Room answer, as its save does. The answer is compared
+        // with what this record said before (that day's saved answer, or the page's), else with the lot's live room — so
+        // correcting a day from before an earlier move isn't a move (review B1).
         function buildingMoveOf(ctx) {
             if (!DeviceView.split || !roomMovesLot(ctx.sheetId)) return null;
-            const answers = (wizardForSheet(ctx.sheetId)?.questions || []).filter(q => q.type === 'room').map(q => String(ctx.draft[q.id] ?? '').trim());
-            const room = sheetSection(ctx.sheetId) === 'harvest' ? answers.filter(Boolean).pop() : answers[0];
-            const to = DeviceView.buildingOfRoomName(room), from = DeviceView.buildingOfRoomName(currentLotRoom(ctx.lotId));
+            const qs = (wizardForSheet(ctx.sheetId)?.questions || []).filter(q => q.type === 'room');
+            const answer = q => String(ctx.draft[q.id] ?? '').trim();
+            const q = sheetSection(ctx.sheetId) === 'harvest' ? qs.filter(answer).pop() : qs[0];
+            if (!q) return null;
+            const room = answer(q);
+            const saved = String((q.rowScoped ? ctx.inst?.days?.[ctx.day]?.[q.id] : ctx.inst?.header?.[q.id]) ?? '').trim();
+            const to = DeviceView.buildingOfRoomName(room), from = DeviceView.buildingOfRoomName(saved || currentLotRoom(ctx.lotId));
             return to && from && to !== from ? { room, to, from } : null;
         }
 
-        // Building device: lots it lists but can't fill — view and print only. Returns { banner, toast }, or null
-        // when this device may fill the lot's paperwork.
-        // - Sent and not yet accepted: its paperwork is frozen; its unsigned pages go to the receiving building's
-        //   file when that building accepts it (SitkaTools → DbSplit lot hand-off).
-        // - In another building right now (listed because its flower room is here): its pages are saved there.
+        // Paperwork this device may only view and print. Returns { banner, toast }, or null when it may fill it.
+        // - The office with building files (user decision 2026-10-25: only a building's own device writes its file):
+        //   every lot's pages and every building form are kept in a building file, so the office views and prints them
+        //   (open SitkaTools as that building to change them); the facility forms, kept in Main, it fills as before.
+        // - A building device: another building's forms, and a lot whose current room is in another building (its pages
+        //   are filled there; this building's file keeps them until that building's device picks the lot up).
         function lotElsewhere(lotId) {
-            if (!DeviceView.building) return null;
+            const name = id => DB.buildings?.[id]?.name || id;
+            if (!DeviceView.building) {
+                if (!DeviceView.split) return null;
+                if (isScopedId(lotId)) {
+                    const sc = scopeOf(lotId);
+                    if (sc?.kind !== 'building') return null;   // facility forms: kept in Main
+                    return {
+                        banner: `🔒 Read only on the office — ${name(sc.id)}'s forms are kept in its own file, which only its device saves. Open SitkaTools as ${name(sc.id)} to fill them. You can view and print them here.`,
+                        toast: `Read only on the office — open SitkaTools as ${name(sc.id)} to fill its forms`
+                    };
+                }
+                const lot = DB.lots[lotId];
+                const b = DeviceView.buildingOfRoomName(lot?.currentRoom) || DeviceView.buildingOfRoomName(lot?.destRoom);
+                const where = b ? name(b) : 'its building';
+                return {
+                    banner: `🔒 Read only on the office — with building files, ${lotId}'s paperwork is filled, signed and corrected on ${where}'s device, which alone saves its file. Open SitkaTools as ${where} to change it. You can view and print it here.`,
+                    toast: `Read only on the office — open SitkaTools as ${where} to fill ${lotId}'s paperwork`
+                };
+            }
             // Facility & building paperwork: a building device fills its own building's forms, and adds to the facility
             // forms (appendOnlyHere); another building's forms it can view and print
             if (isScopedId(lotId)) {
@@ -4211,21 +4236,14 @@
                 };
                 return null;
             }
-            const name = id => DB.buildings?.[id]?.name || id;
-            const sent = Object.values(DB.data?._LotTransfers || {}).find(t => t && t.lotId === lotId && !t.acceptedAt);
-            if (sent && sent.to === DeviceView.building) return {
-                banner: `🚚 ${lotId} is on its way here from ${name(sent.from)} — reopen the files in SitkaTools to pick it up, then fill its paperwork here. You can view and print it now.`,
-                toast: `${lotId} isn't picked up yet — reopen the files in SitkaTools`
-            };
-            if (sent) return {
-                banner: `🚚 Read only on this device — ${lotId} moved to ${sent.room ? `${sent.room} (${name(sent.to)})` : name(sent.to)}. ${name(sent.from)} keeps its paperwork until ${name(sent.to)} picks it up (its device does when it next opens the files); its unsigned pages go with it. You can view and print it here.`,
-                toast: `Read only here — ${lotId} moved to ${name(sent.to)}`
-            };
             const room = DB.lots[lotId]?.currentRoom;
             const b = DeviceView.buildingOfRoomName(room);
             if (!b || b === DeviceView.building) return null;
+            // Not picked up there yet: this building's file still keeps its pages
+            const picked = Object.values(DB.data?._LotTransfers || {}).some(t => t?.lotId === lotId && t.acceptedAt && t.to === b);
             return {
-                banner: `🔒 Read only on this device — ${lotId} is in ${room} (${name(b)}), so its paperwork is filled and saved there. You can view and print it here.`,
+                banner: `🔒 Read only on this device — ${lotId} is in ${room} (${name(b)}), so its paperwork is filled and saved there.` +
+                    (picked ? '' : ` This building's file keeps its pages until ${name(b)}'s device picks it up, the next time it opens the files.`) + ' You can view and print it here.',
                 toast: `Read only here — ${lotId} is in ${room} (${name(b)}), where its paperwork is filled`
             };
         }
@@ -5609,9 +5627,11 @@
             // On file: a change is a correction (the old value stays on the page, struck out). Drawn
             // initials on file are shown, not redrawn.
             const filed = !isInit && q.type !== 'entries' && runnerScopeOnFile(ctx, q);
-            const initLocked = filed && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0;
-            // A building adding to a facility form: an answer on file stays as it is (a blank one can be filled)
-            const appendLocked = !isInit && ctx.appendOnly && filed && q.type !== 'initials' && answerOnFile(ctx, q);
+            // A building adding to a facility form: an answer already saved stays as it is, whether or not its day is
+            // complete (the office's merge only fills blanks, so a change there would quietly be lost — review A11); a
+            // blank one can be filled
+            const initLocked = (filed || (!isInit && ctx.appendOnly && answerOnFile(ctx, q))) && q.type === 'initials' && (ctx.draft[q.id]?.strokes || []).length > 0;
+            const appendLocked = !isInit && ctx.appendOnly && q.type !== 'initials' && answerOnFile(ctx, q);
             let onFileHtml = '';
             if (!isInit && q.type === 'entries') {
                 if (ctx.repFiled?.size) onFileHtml = ctx.appendOnly
@@ -7754,7 +7774,7 @@
         var DeviceView = {
             OFFICE_ONLY: false,   // true: this whole tool is office work a building device couldn't save
             building: null,
-            split: false,        // split files are open (Main + building files): moves between buildings go through Send / Accept
+            split: false,        // split files are open (Main + building files): only a building's own device saves its file
             // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
             take(msg) {
                 if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) { this.building = msg.view?.building || null; this.split = !!msg.view?.split; }

@@ -21,19 +21,27 @@ export async function run(b, BASE) {
     const T = today(), Y = today(-1);
     const office = await fresh(b);
     const files = await splitFiles(b, office, BASE, withFloorManager(fixtureDb()));   // Casey approves removals with her PIN
-    await openSplit(b, office, BASE, 'office', files);
-
-    // Hours on both buildings, and an office removal of an older entry (kept on record)
-    const dw = await openTool(b, office, 'DailyWizard');
-    await dwBuilding(b, dw, 'B1');
+    // Chore hours on each building's own device (only a building's device writes its file), with Building 1's removal
+    // of an older entry (kept on record); then a crop task's hours on the office (they're the event's, in Main)
+    await openSplit(b, office, BASE, 'B1', files);
+    let dw = await openTool(b, office, 'DailyWizard');
     await logHours(b, dw, 'Water plants', 'Alex', 1, 0);
-    await logHours(b, dw, 'Leaf Pick', 'Casey', 2, 0);
-    await dwBuilding(b, dw, 'B2');
-    await logHours(b, dw, 'Water Grow A', 'Blair', 0, 30);
-    await dwBuilding(b, dw, 'B1');
     await dwDate(b, dw, Y);
     const rm = await removeHoursOf(b, dw, 'Scout rooms', 'Blair');
-    check('office removed yesterday\'s entry (kept on record)', rm.includes('kept on record'), rm);
+    check('Building 1 removed yesterday\'s entry (kept on record)', rm.includes('kept on record'), rm);
+    await b.sleep(300);
+    await b.send('browsingContext.close', { context: dw });
+    const s1 = await saveSplit(b, office);
+    await openSplit(b, office, BASE, 'B2', { ...files, ...s1 });
+    dw = await openTool(b, office, 'DailyWizard');
+    await logHours(b, dw, 'Water Grow A', 'Blair', 0, 30);
+    await b.sleep(300);
+    await b.send('browsingContext.close', { context: dw });
+    const f12 = { ...files, ...s1, ...(await saveSplit(b, office)) };
+    await openSplit(b, office, BASE, 'office', f12);
+    dw = await openTool(b, office, 'DailyWizard');
+    await dwBuilding(b, dw, 'B1');
+    await logHours(b, dw, 'Leaf Pick', 'Casey', 2, 0);
     await b.sleep(300);
 
     const ew = await openTool(b, office, 'EmployeeWizard');
@@ -45,7 +53,7 @@ export async function run(b, BASE) {
     check('office: drawn initials shown for every signed entry', rows.filter(r => r.sig).length === 5);
     const row = m => rows.find(r => r.text.includes(m.who) && r.text.includes(m.what));
     check('entry typed in the Tasks tab is flagged "not signed"', row({ who: 'Drew', what: 'Room Tidy' })?.flags.some(f => f.includes('not signed')));
-    check('entry removed by the office is struck through and says so', (() => { const r = row({ who: 'Blair', what: 'Scout rooms' }); return r?.removed && r.flags.some(f => f.startsWith('🗑️ removed by the office')); })());
+    check('entry removed on Building 1\'s device is struck through and says so', (() => { const r = row({ who: 'Blair', what: 'Scout rooms' }); return r?.removed && r.flags.some(f => f.startsWith('🗑️ removed by the Building 1 device')); })(), JSON.stringify(row({ who: 'Blair', what: 'Scout rooms' })?.flags));
     check('entry logged a day late is flagged', row({ who: 'Alex', what: 'Water plants' }) && rows.filter(r => r.text.includes('Alex')).some(r => r.flags.includes('⏰ logged 1 day later')));
     check('task day over its estimate is flagged', row({ who: 'Casey', what: 'Leaf Pick' })?.flags.some(f => f.startsWith('📈 2h on this task this day — estimate 1h')));
     check('each row says where (building) and when it was logged, on which device', row({ who: 'Blair', what: 'Water Grow A' })?.text.includes('Building 2') && row({ who: 'Casey', what: 'Leaf Pick' })?.text.includes('on the office'));
@@ -96,7 +104,7 @@ export async function run(b, BASE) {
     await b.send('browsingContext.close', { context: dw });
 
     // ---- Building 1's device: only its own building's work ----
-    await openSplit(b, office, BASE, 'B1', { ...files, ...saved });
+    await openSplit(b, office, BASE, 'B1', { ...f12, ...saved });
     const ewB = await openTool(b, office, 'EmployeeWizard');
     const tabs = await b.run(ewB, `return ['tabEmployees', 'tabTasks', 'tabLog', 'tabReports'].filter(id => document.getElementById(id).style.display !== 'none');`);
     check('building device: Tasks and Labour Log tabs only', tabs.join() === 'tabTasks,tabLog', tabs.join());

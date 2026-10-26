@@ -3235,7 +3235,6 @@
                     </div>
                     <div class="io-actions">
                         <button class="btn btn-secondary office-only" id="closeOutLotBtn">📦 Close out lot</button>
-                        <button class="btn btn-secondary office-only hidden" id="clearClosedBtn" title="Only when you know the building tablets aren't in use">🧹 Clear closed-out lots from building files</button>
                     </div>
                     <div class="split-lot-where office-only hidden" id="closedNote"></div>
                     <div class="split-transfers" id="incomingTransfers"></div>
@@ -3641,10 +3640,15 @@
         });
 
         // ---- Helper: share or download a file (fixes iOS Safari blob URL issue) ----
+        // Resolves true once the file was handed over: the share sheet completed, or (no share sheet) the download started.
+        // A dismissed or failed share resolves false, so the save isn't counted as done (review A6).
         function shareFile(blob, filename) {
             const file = new File([blob], filename, { type: 'application/json' });
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({ files: [file], title: filename }).catch(() => {});
+                return navigator.share({ files: [file], title: filename }).then(() => true, () => {
+                    showSyncToast(`${filename} was not saved — the share was cancelled. Tap its link again to save it.`);
+                    return false;
+                });
             } else {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -3656,6 +3660,7 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+                return Promise.resolve(true);
             }
         }
 
@@ -3698,14 +3703,21 @@
                 parentSaveId: prev.saveId || null
             };
             const json = JSON.stringify({ ...DB.data, _meta: meta }, null, 2);
-            return { meta, json, filename: todayDbFileName() };
+            return { meta, json, filename: todayDbFileName(), snapshot: dbSnapshot() };
         }
 
+        // The file saved holds the DB as it was when the save was prepared. Changes made since (a tool's update while the
+        // popup was open, or during a folder save's checks) aren't in it: the DB stays marked unsaved (review A7), as
+        // split saves already do.
         function commitSave(save) {
             DB.data._meta = save.meta;
-            clearUnsaved();
+            if (save.snapshot && dbSnapshot() !== save.snapshot) {
+                markUnsaved();
+                showSyncToast('Saved — but changes made after the save started aren\'t in that file. Save again to include them.');
+            } else clearUnsaved();
             updateIOStatusBar();
         }
+        const dbSnapshot = () => JSON.stringify({ ...DB.data, _meta: undefined });
 
         // The save popup's right-click "Save Link As…" link is the save path on every browser: it lets
         // Edge users pick custom names, and it still works on PCs that block normal downloads.
@@ -4118,10 +4130,13 @@
             else obj[field] = value;
         }
 
+        // Matched like DeviceView.buildingOfRoomName (case and spaces ignored), so a lot is moved by the same rule
+        // that decides where it shows (review B7)
         function buildingOfRoomName(db, name) {
-            if (!name) return null;
+            const target = String(name || '').trim().toLowerCase();
+            if (!target) return null;
             for (const room of Object.values(db.rooms || {})) {
-                if (room.name === name && room.buildingId && db.buildings?.[room.buildingId]) return room.buildingId;
+                if (room && String(room.name || '').trim().toLowerCase() === target && room.buildingId && db.buildings?.[room.buildingId]) return room.buildingId;
             }
             return null;
         }
@@ -4193,10 +4208,10 @@
             sheetHome: {},        // 'lot|sheet' → building whose file holds that sheet's lot-level data (constants)
             diskPaper: {},        // building id → _PaperWizard.entries as that file holds it (opened / last saved)
             diskTransfers: {},    // building id → _LotTransfers as that file holds it (opened / last saved)
+            diskOverlays: {},     // building id → _overlays as that file holds it (opened / last saved) — close-out fingerprints
             facilityQueues: {},   // building id → its facility queue (_PaperWizard.facilityQueue) as that file holds it / this device last saved
             mainFacility: {},     // Main's _PaperWizard.facilityEntries as opened / last saved — what a building's queue is released against
             facilityPickups: [],  // office: [{ id, n }] facility pages with additions taken in from building queues on open (not in Main yet)
-            clearClosed: false,   // office: 🧹 clear closed-out lots from the building files with this save (tablets out of hours)
             pending: null,        // manual (link) save in progress
 
             roleLabel(role = this.role, db = DB.data) {
@@ -4220,11 +4235,11 @@
                 this.facilityQueues = {};
                 this.mainFacility = {};
                 this.facilityPickups = [];
-                this.clearClosed = false;
                 this.paperHome = {};
                 this.sheetHome = {};
                 this.diskPaper = {};
                 this.diskTransfers = {};
+                this.diskOverlays = {};
                 this.pending = null;
             },
 
@@ -4283,7 +4298,9 @@
                 this.overlays = {};
                 this.diskPaper = {};
                 this.diskTransfers = {};
-                // Lots the office closed out: what's left of them in building files is ignored (each building drops it)
+                this.diskOverlays = {};
+                // Lots the office closed out: what's left of them in building files is ignored (each building drops it),
+                // unless that file holds something saved after the archive was made (closedLate) — that is kept and shown
                 const closed = this.closedLots(db);
 
                 if (wages && db._EmployeeWizard?.employees) {
@@ -4306,6 +4323,7 @@
                     // What this file holds on disk — the base for lot hand-offs
                     this.diskPaper[id] = JSON.parse(JSON.stringify(bf._PaperWizard?.entries || {}));
                     this.diskTransfers[id] = JSON.parse(JSON.stringify(bf._LotTransfers || {}));
+                    this.diskOverlays[id] = JSON.parse(JSON.stringify({ lots: bf._overlays?.lots || {}, events: bf._overlays?.events || {} }));
                     const daily = bf._DailyWizard?.buildings;
                     if (daily && Object.keys(daily).length) {
                         if (!db._DailyWizard) db._DailyWizard = {};
@@ -4323,7 +4341,7 @@
                     // What it added to the facility forms, queued until the office brings it into Main
                     this.facilityQueues[id] = JSON.parse(JSON.stringify(bf._PaperWizard?.facilityQueue || {}));
                     for (const [tid, rec] of Object.entries(bf._LotTransfers || {})) {
-                        if (closed[rec?.lotId]) continue;
+                        if (closed[rec?.lotId] && !this.closedLate(id, rec.lotId, db)) continue;
                         if (!db._LotTransfers) db._LotTransfers = {};
                         const existing = db._LotTransfers[tid];
                         if (!existing || (rec.acceptedAt && !existing.acceptedAt)) db._LotTransfers[tid] = rec;
@@ -4339,7 +4357,7 @@
                     const id = bf._building;
                     if (!id) continue;
                     for (const [lotId, sheets] of Object.entries(bf._PaperWizard?.entries || {})) {
-                        if (closed[lotId]) continue;
+                        if (closed[lotId] && !this.closedLate(id, lotId, db)) continue;
                         for (const [sheetId, entry] of Object.entries(sheets)) {
                             if (!db._PaperWizard) db._PaperWizard = {};
                             if (!db._PaperWizard.entries) db._PaperWizard.entries = {};
@@ -4475,7 +4493,10 @@
                     const hit = cur.get(id);
                     if (!hit || officeRemoved[id] || sameValue(hit, main.get(id)) || (officeAt[id] || 0) >= entries[id]) delete entries[id];
                 }
-                for (const id of Object.keys(removed)) if (!main.has(id)) delete removed[id];
+                // A removal is dropped only when Main doesn't hold the entry AND this building never published it. Main as this
+                // device knows it may be stale (a tablet open for days): the office may have saved an entry this building
+                // published into Main since, and dropping the removal then would bring it back (review A1).
+                for (const id of Object.keys(removed)) if (!main.has(id) && !(old?.entries && id in old.entries) && !base.has(id)) delete removed[id];
                 if (!Object.keys(entries).length && !Object.keys(removed).length) return null;
                 const value = curMap ? JSON.parse(JSON.stringify(curMap)) : null;
                 ensureLabourMapIds(evId, value);
@@ -4617,31 +4638,71 @@
                 return this.role === id && this.mayWrite(id);
             },
 
-            // ---- Close-out (user decision 2026-10-25) ----
-            // Closing out a lot with split files leaves a notice in Main (_closedLots: lotId → { closedAt, archive, by })
-            // instead of rewriting the building files. Every device then ignores what's left of the lot in building files,
-            // and each building drops it from its own file with its next save. When the office knows the tablets are out
-            // of hours it can 🧹 clear it from the building files itself (clearClosed). Single-file DBs don't use this.
+            // ---- Close-out (user decisions 2026-10-25) ----
+            // Closing out a lot with split files leaves a notice in Main (_closedLots: lotId → { closedAt, archive, by,
+            // files, events }) instead of rewriting the building files (the office never writes a building's file). Each
+            // building drops what it still holds of the lot from its own file with its next save — but only what the
+            // archive has: the notice keeps a fingerprint of each building's part of the lot as the office archived it
+            // (`files`: building id → hash; `events`: the lot's event ids). A building file whose part changed since (a
+            // page, a signature or hours saved after the office opened the files) is "late": that file keeps it, every
+            // device shows it (PaperWizard lists a closed-out lot's pages), and both sides are told. Single-file DBs
+            // don't use any of this.
             closedLots(db) {
                 const out = {};
                 for (const [id, rec] of Object.entries(db?._closedLots || {})) if (rec && !db.lots?.[id]) out[id] = rec;
                 return out;
             },
-            // Closed-out lots a building's file (as on disk) still holds something of
-            closedIn(bid, db = DB.data) {
+            // A building file's part of a lot, as its file holds it: its pages, its lot updates and its updates to the lot's events
+            lotFingerprint(bid, lotId, eventIds) {
+                const ov = this.diskOverlays[bid] || { lots: {}, events: {} };
+                return contentHash(JSON.stringify([this.diskPaper[bid]?.[lotId] || null, ov.lots?.[lotId] || null,
+                    (eventIds || []).map(id => ov.events?.[id] || null), Object.values(this.diskTransfers[bid] || {}).filter(t => t?.lotId === lotId)]));
+            },
+            // Is building `bid`'s part of closed-out lot `lotId` newer than the archive? (No fingerprint: a notice from
+            // before 2026-10-25, dropped as it was.)
+            closedLate(bid, lotId, db = DB.data) {
+                const rec = this.closedLots(db)[lotId];
+                const f = rec?.files?.[bid];
+                return !!f && f !== this.lotFingerprint(bid, lotId, rec.events);
+            },
+            // Closed-out lots a building's file (as on disk) still holds something of: `drop` (what the archive has) and `late`
+            closedParts(bid, db = DB.data) {
                 const closed = this.closedLots(db), ids = new Set();
                 for (const id of Object.keys(this.diskPaper[bid] || {})) if (closed[id]) ids.add(id);
                 for (const t of Object.values(this.diskTransfers[bid] || {})) if (closed[t?.lotId]) ids.add(t.lotId);
-                for (const id of Object.keys(this.overlays[bid]?.lots || {})) if (closed[id]) ids.add(id);
-                return [...ids];
+                for (const id of Object.keys(this.diskOverlays[bid]?.lots || {})) if (closed[id]) ids.add(id);
+                for (const id of Object.keys(closed)) {
+                    const evs = new Set(closed[id].events || []);
+                    if (Object.keys(this.diskOverlays[bid]?.events || {}).some(e => evs.has(e))) ids.add(id);
+                }
+                const drop = [], late = [];
+                for (const id of ids) (this.closedLate(bid, id, db) ? late : drop).push(id);
+                return { drop, late };
             },
-            // Office: the opened building files that still hold closed-out lots
+            closedIn(bid, db = DB.data) { return this.closedParts(bid, db).drop; },
+            // Event ids of the closed-out lots a building's file is late on (their updates stay in that file)
+            lateEvents(bid, db = DB.data) {
+                const closed = this.closedLots(db), ids = new Set();
+                for (const id of this.closedParts(bid, db).late) for (const e of closed[id].events || []) ids.add(e);
+                return ids;
+            },
+            // Office: the opened building files that still hold closed-out lots, and those late on one
             filesHoldingClosed(db = DB.data) {
                 return Object.keys(db?.buildings || {}).filter(bid => this.loaded.has(buildingFileName(bid)) && this.closedIn(bid, db).length);
             },
-            // May this save drop the closed-out lots from this building's file? Its own building always; the office when clearing
+            filesLateOnClosed(db = DB.data) {
+                return Object.keys(db?.buildings || {}).map(bid => ({ bid, lots: this.closedParts(bid, db).late })).filter(x => x.lots.length);
+            },
+            // The notice for a lot being closed out: what each opened building file holds of it, as archived
+            closeOutNotice(db, lotId, archive) {
+                const events = (db.calendarEvents || []).filter(e => e.lotId === lotId).map(e => e.id);
+                const files = {};
+                for (const bid of Object.keys(db.buildings || {})) if (this.loaded.has(buildingFileName(bid))) files[bid] = this.lotFingerprint(bid, lotId, events);
+                return { closedAt: new Date().toISOString(), archive, by: this.roleLabel(), files, events };
+            },
+            // May this save drop the closed-out lots from this building's file? Only its own building
             clearsClosed(id) {
-                return this.mayTidy(id) || (this.clearClosed && this.role === 'office' && this.mayWrite(id));
+                return this.mayTidy(id);
             },
 
             // What a lot takes along when a building accepts it: its unsigned pages ('sheet|key') and the sheets
@@ -4692,75 +4753,61 @@
                 return this.homeFor(sticky, db, roomName, lotId);
             },
 
-            // ---- Lot moves between buildings (user decision 2026-10-25) ----
-            // A lot moves when its current room is set to a room in another building: by its grow log (PaperWizard's
-            // 🏠 Room question lists every building's rooms) or, for a lot with no grow log, in the Lot Manager. There's
-            // no Send or Accept. The device that made the change records the move as on its way (`_LotTransfers`, kept in
-            // the sending building's file, which keeps the lot's pages as they are), and the receiving building's device
-            // picks it up by itself the next time it opens the files: the lot's unsigned pages and lot-level values are
-            // saved in its file from then on (the hand-off above). Once its file holds the pickup, the sending building
-            // drops its copy with its own next save, so until then nothing is lost if the pickup is never saved.
-            // Stored as before: `acceptedAt` / `acceptedBy` = picked up, by which device.
+            // ---- Lot moves between buildings (user decisions 2026-10-25) ----
+            // A lot moves when its current room is set to a room in another building: by its grow log (PaperWizard's 🏠
+            // Room question lists every building's rooms) or, for a lot with no grow log, in the Lot Manager. Nothing is
+            // recorded on the way: a move is read from the lot itself. A lot whose current room is in one building while
+            // its paperwork is in another building's file (`paperBuilding`) is on its way there, and that file keeps the
+            // lot's pages as they are. The receiving building's device picks it up by itself the next time it opens the
+            // files (`pickUpMoves`): its file records the pickup (`_LotTransfers`, with the list of the lot's unsigned
+            // pages it takes over), and from then on those pages are saved in its file (the hand-off above). Once its
+            // file holds the pickup, the sending building drops its copy with its own next save, so nothing is lost on
+            // the way. Only the receiving building's own device picks up; the office does it by opening the files as
+            // that building. Records keep the old names: `acceptedAt` / `acceptedBy` = picked up, by which device.
+            // A record still waiting from the old Send button (no `acceptedAt`) is ignored and dropped by its
+            // building's next save.
 
-            // Each lot's current room, and the moves, as the files were opened / last saved
-            baseMoves() {
-                if (this._baseMovesOf !== this.baseline) {
-                    const base = this.baseline ? JSON.parse(this.baseline) : {};
-                    this._baseRooms = Object.fromEntries(Object.entries(base.lots || {}).map(([id, l]) => [id, l?.currentRoom || null]));
-                    this._baseTransfers = base._LotTransfers || {};
-                    this._baseMovesOf = this.baseline;
-                }
-                return { rooms: this._baseRooms, transfers: this._baseTransfers };
-            },
-            // Record this session's moves: a lot whose current room is now in another building than when the files were
-            // opened is on its way there. A lot moved back drops its record. Returns whether anything changed.
-            detectMoves(db = DB.data) {
-                if (!this.active || !this.baseline || !db) return false;
-                const { rooms, transfers } = this.baseMoves();
-                const all = db._LotTransfers || {};
-                let changed = false;
-                for (const [lotId, lot] of Object.entries(db.lots || {})) {
-                    const from = buildingOfRoomName(db, rooms[lotId]), to = buildingOfRoomName(db, lot?.currentRoom);
-                    const mine = Object.keys(all).filter(tid => all[tid]?.lotId === lotId && !all[tid].acceptedAt && !transfers[tid]);
-                    if (from && to && from !== to) {
-                        const tid = mine.shift();
-                        if (!tid) {
-                            const sentAt = new Date().toISOString();
-                            all[`${lotId}@${sentAt}`] = { lotId, from, to, room: lot.currentRoom, sentAt, sentBy: this.roleLabel() };
-                            changed = true;
-                        } else if (all[tid].from !== from || all[tid].to !== to || all[tid].room !== lot.currentRoom) {
-                            Object.assign(all[tid], { from, to, room: lot.currentRoom });
-                            changed = true;
-                        }
+            // The building whose file holds a lot's paperwork now: where its latest pickup took it, else the file holding
+            // its newest unsigned page, else its lot-level values. Null for a lot with no paperwork in a building file.
+            paperBuilding(db, lotId, hand = this.handoffs(db)) {
+                if (hand[lotId]?.target) return hand[lotId].target;
+                const entries = db?._PaperWizard?.entries?.[lotId] || {};
+                let best = null, bestKey = null;
+                for (const [sheetId, entry] of Object.entries(entries)) {
+                    for (const [key, inst] of Object.entries(entry?.instances || {})) {
+                        const home = this.paperHome[`${lotId}|${sheetId}|${key}`];
+                        if (!home || inst?.signature) continue;
+                        if (bestKey === null || key > bestKey) { best = home; bestKey = key; }
                     }
-                    for (const tid of mine) { delete all[tid]; changed = true; }   // moved back (or a spare record)
                 }
-                if (Object.keys(all).length) db._LotTransfers = all; else delete db._LotTransfers;
-                return changed;
+                if (best) return best;
+                for (const sheetId of Object.keys(entries)) { const home = this.sheetHome[`${lotId}|${sheetId}`]; if (home) return home; }
+                return null;
             },
-            // A move made out of date by a later move of the same lot (moved on before it was picked up)
-            supersededMove(db, t) {
-                return Object.values(db._LotTransfers || {}).some(o => o && o !== t && o.lotId === t.lotId && String(o.sentAt) > String(t.sentAt));
-            },
-            // Moves on their way, not picked up yet (and not overtaken by a later move)
+            // Lots on their way to another building: [{ lotId, from, to, room }]
             movesOnTheWay(db = DB.data) {
-                return Object.entries(db?._LotTransfers || {}).filter(([, t]) => t && !t.acceptedAt && db.lots?.[t.lotId] && !this.supersededMove(db, t))
-                    .map(([id, t]) => ({ id, ...t }));
+                if (!this.active || !db) return [];
+                const hand = this.handoffs(db), out = [];
+                for (const [lotId, lot] of Object.entries(db.lots || {})) {
+                    const to = buildingOfRoomName(db, lot?.currentRoom);
+                    if (!to) continue;
+                    const from = this.paperBuilding(db, lotId, hand);
+                    if (from && from !== to) out.push({ lotId, from, to, room: lot.currentRoom });
+                }
+                return out;
             },
-            // The receiving building's device picks up the lots moved to it, when it opens the files. Picked up = its
-            // file holds the move (with the list of the lot's unsigned pages it takes over) once it's saved.
+            // The receiving building's device picks up the lots on their way to it, when it opens the files
             pickUpMoves(db) {
                 if (!this.role || this.role === 'office') return [];
                 const got = [];
-                for (const t of Object.values(db._LotTransfers || {})) {
-                    if (!t || t.acceptedAt || t.to !== this.role || !db.lots?.[t.lotId] || this.supersededMove(db, t)) continue;
-                    const lot = db.lots[t.lotId];
-                    if (buildingOfRoomName(db, lot.currentRoom) !== this.role) continue;   // moved on since
-                    t.acceptedAt = new Date().toISOString();
-                    t.acceptedBy = this.roleLabel();
-                    t.room = lot.currentRoom;
-                    t.paperwork = this.handoffManifest(db, t.lotId);
-                    got.push(t);
+                for (const m of this.movesOnTheWay(db)) {
+                    if (m.to !== this.role) continue;
+                    const at = new Date().toISOString();
+                    const rec = { lotId: m.lotId, from: m.from, to: m.to, room: m.room, sentAt: at, acceptedAt: at, acceptedBy: this.roleLabel(),
+                        paperwork: this.handoffManifest(db, m.lotId) };
+                    if (!db._LotTransfers) db._LotTransfers = {};
+                    db._LotTransfers[`${m.lotId}@${at}`] = rec;
+                    got.push(rec);
                 }
                 return got;
             },
@@ -4772,8 +4819,8 @@
                 setTimeout(() => showSyncToast(`🚚 Lot${got.length === 1 ? '' : 's'} ${ids} arrived from ${froms} (${rooms}) — 💾 Save DB to pick ${got.length === 1 ? 'it' : 'them'} up`), 0);
             },
 
-            // This building's own file, when it still holds hand-off leftovers (saved with its next save): copies of a
-            // moved lot's pages, a move the receiver has picked up (or that a later move overtook), closed-out lots
+            // This building's own file, when it still holds something it should drop with its next save: copies of a
+            // moved lot's pages another building has picked up, a record from the old Send button, closed-out lots
             tidyFiles(db) {
                 const hand = this.handoffs(db);
                 const names = [];
@@ -4787,9 +4834,8 @@
                 }
                 for (const bid of Object.keys(db.buildings || {})) {
                     if (!this.mayTidy(bid) || names.includes(buildingFileName(bid))) continue;
-                    const sentOn = Object.entries(this.diskTransfers[bid] || {}).some(([tid, t]) => t && !t.acceptedAt &&
-                        (db._LotTransfers?.[tid]?.acceptedAt || this.supersededMove(db, db._LotTransfers?.[tid] || t)));
-                    if (sentOn || this.closedIn(bid, db).length) names.push(buildingFileName(bid));
+                    const oldSend = Object.values(this.diskTransfers[bid] || {}).some(t => t && !t.acceptedAt);
+                    if (oldSend || this.closedIn(bid, db).length) names.push(buildingFileName(bid));
                 }
                 return names;
             },
@@ -4907,49 +4953,43 @@
                         }
                     }
                 }
+                // Pickups are kept in the receiving building's file; a record still waiting from the old Send button goes
                 for (const [tid, rec] of Object.entries(db._LotTransfers || {})) {
-                    if (!db.lots?.[rec.lotId]) continue;
-                    const home = rec.acceptedAt ? rec.to : rec.from;
-                    // A move overtaken by a later one (the lot moved on before it was picked up): its building drops it
-                    if (!rec.acceptedAt && this.mayTidy(home) && this.supersededMove(db, rec)) continue;
-                    if (bparts[home]) bparts[home]._LotTransfers[tid] = rec;
+                    if (!db.lots?.[rec?.lotId] || !rec.acceptedAt) continue;
+                    if (bparts[rec.to]) bparts[rec.to]._LotTransfers[tid] = rec;
                 }
-                // Another building's file keeps its move records as on disk (a pickup moves the record to the receiver's
-                // file; the sender's copy goes when the sender saves). The office adds only the moves it made itself this
-                // session (a lot it moved in the Lot Manager or a grow log), in the sending building's file.
-                const baseTransfers = this.baseline ? (JSON.parse(this.baseline)._LotTransfers || {}) : {};
+                // Another building's file keeps its records exactly as on disk: only that building rewrites it
                 for (const [bid, recs] of Object.entries(this.diskTransfers)) {
                     if (!bparts[bid] || this.mayTidy(bid)) continue;
-                    const keep = JSON.parse(JSON.stringify(recs));
-                    if (this.mayWrite(bid)) {
-                        for (const [tid, rec] of Object.entries(db._LotTransfers || {})) {
-                            if (!db.lots?.[rec.lotId] || sameValue(rec, baseTransfers[tid])) continue;
-                            if ((rec.acceptedAt ? rec.to : rec.from) === bid) keep[tid] = rec;
-                        }
-                    }
-                    bparts[bid]._LotTransfers = keep;
+                    bparts[bid]._LotTransfers = JSON.parse(JSON.stringify(recs));
                 }
-                // A closed-out lot stays in a building's file as on disk until that building (or the office clearing it)
-                // drops it: its pages and transfer records
+                // A closed-out lot stays in a building's file as on disk until that building drops it; its own file drops
+                // what the archive has and keeps what's late (saved after the archive was made)
                 const closedNow = this.closedLots(db);
+                const copyOf = v => JSON.parse(JSON.stringify(v));
                 for (const bid of Object.keys(bparts)) {
                     if (this.clearsClosed(bid)) {
-                        for (const [tid, rec] of Object.entries(bparts[bid]._LotTransfers)) if (closedNow[rec?.lotId]) delete bparts[bid]._LotTransfers[tid];
+                        const late = new Set(this.closedParts(bid, db).late);
+                        for (const [tid, rec] of Object.entries(bparts[bid]._LotTransfers)) if (closedNow[rec?.lotId] && !late.has(rec.lotId)) delete bparts[bid]._LotTransfers[tid];
+                        for (const [tid, rec] of Object.entries(this.diskTransfers[bid] || {})) if (late.has(rec?.lotId)) bparts[bid]._LotTransfers[tid] = copyOf(rec);
+                        for (const lotId of late) {
+                            if (this.diskPaper[bid]?.[lotId] && !bparts[bid]._PaperWizard.entries[lotId]) bparts[bid]._PaperWizard.entries[lotId] = copyOf(this.diskPaper[bid][lotId]);
+                        }
                         continue;
                     }
                     for (const [lotId, sheets] of Object.entries(this.diskPaper[bid] || {})) {
-                        if (closedNow[lotId]) bparts[bid]._PaperWizard.entries[lotId] = JSON.parse(JSON.stringify(sheets));
+                        if (closedNow[lotId]) bparts[bid]._PaperWizard.entries[lotId] = copyOf(sheets);
                     }
                 }
-                // Overlays are the building's own: another device writes them as that file holds them (the office drops a
-                // closed-out lot's only when clearing)
+                // Overlays are the building's own: another device writes them as that file holds them
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
                 for (const [id, ov] of Object.entries(this.overlays)) {
                     if (!bparts[id]) continue;
-                    if (!this.clearsClosed(id)) { bparts[id]._overlays = JSON.parse(JSON.stringify({ lots: ov.lots || {}, events: ov.events || {} })); continue; }
+                    if (!this.clearsClosed(id)) { bparts[id]._overlays = copyOf({ lots: ov.lots || {}, events: ov.events || {} }); continue; }
+                    const lateLots = new Set(this.closedParts(id, db).late), lateEv = this.lateEvents(id, db);
                     const copy = { lots: {}, events: {} };
-                    for (const [rid, f] of Object.entries(ov.lots || {})) if (db.lots?.[rid]) copy.lots[rid] = JSON.parse(JSON.stringify(f));
-                    for (const [rid, f] of Object.entries(ov.events || {})) if (liveEvents.has(rid)) copy.events[rid] = JSON.parse(JSON.stringify(f));
+                    for (const [rid, f] of Object.entries(ov.lots || {})) if (db.lots?.[rid] || lateLots.has(rid)) copy.lots[rid] = copyOf(f);
+                    for (const [rid, f] of Object.entries(ov.events || {})) if (liveEvents.has(rid) || lateEv.has(rid)) copy.events[rid] = copyOf(f);
                     bparts[id]._overlays = copy;
                 }
                 for (const [id, p] of Object.entries(bparts)) parts[buildingFileName(id)] = p;
@@ -5032,9 +5072,11 @@
                 // Drop overlays for records that are gone, or that a later office edit has superseded
                 // (labour updates were tidied above, entry by entry)
                 const liveEvents = new Set((db.calendarEvents || []).map(e => e.id));
+                // A closed-out lot this file is late on (saved after the archive) keeps its updates here
+                const lateLots = new Set(this.closedParts(id, db).late), lateEv = this.lateEvents(id, db);
                 for (const kind of ['lots', 'events']) {
                     for (const [rid, fields] of Object.entries(ov[kind])) {
-                        const exists = kind === 'lots' ? !!db.lots?.[rid] : liveEvents.has(rid);
+                        const exists = kind === 'lots' ? (!!db.lots?.[rid] || lateLots.has(rid)) : (liveEvents.has(rid) || lateEv.has(rid));
                         for (const [f, u] of Object.entries(fields)) {
                             if (!exists || (!(kind === 'events' && f === 'labour_map') && (this.stamps[kind][rid]?.[f] || 0) >= u.at)) delete fields[f];
                         }
@@ -5103,6 +5145,7 @@
                     this.overlays[id] = JSON.parse(JSON.stringify(part._overlays || { lots: {}, events: {} }));
                     this.diskPaper[id] = JSON.parse(JSON.stringify(part._PaperWizard?.entries || {}));
                     this.diskTransfers[id] = JSON.parse(JSON.stringify(part._LotTransfers || {}));
+                    this.diskOverlays[id] = JSON.parse(JSON.stringify(part._overlays || { lots: {}, events: {} }));
                     this.facilityQueues[id] = JSON.parse(JSON.stringify(part._PaperWizard?.facilityQueue || {}));
                     if (homes) {
                         for (const [k, home] of Object.entries(homes.paper)) if (home === id) this.paperHome[k] = id;
@@ -5176,7 +5219,9 @@
                 const tidy = this.tidyFiles(DB.data);
                 for (const name of tidy) this.baseParts[name] = '';
                 // A building that sees the office's close-out notice drops those lots from its own file with its next save
-                const closedHere = this.role !== 'office' && this.closedIn(this.role).length ? this.closedIn(this.role) : [];
+                const closedHere = this.role !== 'office' ? this.closedIn(this.role) : [];
+                // …and keeps what it saved for one after the archive was made (late)
+                const lateHere = this.role !== 'office' ? this.closedParts(this.role).late : [];
                 // Lots moved to this building are picked up now: its file holds them from its next save
                 const arrived = this.pickUpMoves(DB.data);
                 // Facility pages taken in from building queues: Main is saved even with no other change
@@ -5189,6 +5234,7 @@
                 if (pickups) this.promptFacility();
                 if (arrived.length) this.promptPickups(arrived);
                 if (closedHere.length) setTimeout(() => showSyncToast(`🗄️ The office closed out lot${closedHere.length === 1 ? '' : 's'} ${closedHere.join(', ')} — ${closedHere.length === 1 ? 'it leaves' : 'they leave'} this building's file with your next save`), 0);
+                if (lateHere.length) setTimeout(() => alert(`🗄️ The office closed out lot${lateHere.length === 1 ? '' : 's'} ${lateHere.join(', ')}, but this building's file has paperwork or hours for ${lateHere.length === 1 ? 'it' : 'them'} saved after the office made the archive.\n\nThey're kept in this building's file, so nothing is lost. Tell the office, so the archive can be completed.`), 0);
                 if (skipped.length) {
                     alert(`Heads up: these files were not opened:\n\n• ${skipped.join('\n• ')}\n\n` +
                         `They are copies of building files that were opened (for example a OneDrive conflict copy). ` +
@@ -5282,7 +5328,6 @@
             plan() {
                 const now = Date.now();
                 const db = DB.data;
-                this.detectMoves(db);   // a lot now in another building's room is on its way there
                 if (this.role === 'office') this.stampOfficeChanges(db, now);
                 else {
                     this.overlays[this.role] = this.buildingOverlays(db, this.role, now);
@@ -5296,6 +5341,8 @@
                 if (this.role === 'office') {
                     for (const name of changed) {
                         if (name === SPLIT_WAGES && !this.haveWages) cannot.push('wages (open Wages.json to save wage changes)');
+                        // Only a building's own device writes its file (user decision 2026-10-25): the office never does
+                        else if (SPLIT_BUILDING_RE.test(name)) cannot.push(`${name} (only that building's device saves its file — open SitkaTools as that building to change its data)`);
                         else if (!this.loaded.has(name) && !DbFolder.active) cannot.push(`${name} (not opened on this device)`);
                         else toSave.push(name);
                     }
@@ -5332,7 +5379,6 @@
                 if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
                 if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
                 else if (plan.cannot.length) SaveRequired.hide(); // saved all this device may save; the rest was reported
-                if (this.clearClosed && !this.filesHoldingClosed().length) this.clearClosed = false;   // 🧹 done
                 updateIOStatusBar();
                 updateSplitCard();
             },
@@ -5430,7 +5476,7 @@
                         if (remaining.size === 0) this.finish(plan);
                     };
                     if (isTouchDevice) {
-                        a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name); used(); });
+                        a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name).then(ok => { if (ok) used(); }); });
                     } else {
                         a.addEventListener('click', used);
                         a.addEventListener('contextmenu', used);
@@ -5446,9 +5492,8 @@
                     role: this.role, loaded: [...this.loaded], haveWages: this.haveWages, baseParts: this.baseParts,
                     metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
                     overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome,
-                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, mainLabour: this.mainLabour,
-                    facilityQueues: this.facilityQueues, mainFacility: this.mainFacility, facilityPickups: this.facilityPickups,
-                    clearClosed: this.clearClosed
+                    diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, diskOverlays: this.diskOverlays, mainLabour: this.mainLabour,
+                    facilityQueues: this.facilityQueues, mainFacility: this.mainFacility, facilityPickups: this.facilityPickups
                 };
             },
             importState(state) {
@@ -5461,6 +5506,9 @@
                 this.facilityQueues = state.facilityQueues || {};
                 this.mainFacility = state.mainFacility || {};
                 this.facilityPickups = state.facilityPickups || [];
+                // …and no copy of each building file's own updates (close-out fingerprints): its overlays as saved
+                this.diskOverlays = state.diskOverlays || JSON.parse(JSON.stringify(state.overlays || {}));
+                delete this.clearClosed;
                 this.active = true;
             },
 
@@ -5645,9 +5693,18 @@
         // A tool's name as people see it (EmployeeWizard is shown as the Labour & Cost Wizard)
         const toolDisplayName = id => ({ EmployeeWizard: 'Labour & Cost Wizard' })[id] || id;
 
+        // Not before the start check is done (review A8): a session left behind is restored or discarded first, and the
+        // restore reads the copy as it is then. With no DB open, a tool tab's copy that carries its session (file name,
+        // split files) is taken as that session; one without them can't be saved correctly, so it's left alone.
         async function takeToolCopy(from) {
+            if (!WorkCopy.ready) return;
             const copy = await WorkCopy.read();
             if (!copy?.db) return;
+            if (!DB.data) {
+                if (copy.unsaved && (copy.split || copy.fileName)) restoreWorkCopy(copy);
+                else showSyncToast(`${from} changed a database that isn't open here — open it with 📂 Load DB first`);
+                return;
+            }
             keepOwnSaveStamp(copy.db);
             if (JSON.stringify(copy.db) === JSON.stringify(DB.data)) return;
             DB.data = copy.db;
@@ -5701,6 +5758,7 @@
                 if (type === 'sitka-alive?') { if (WorkCopy.wrote) WorkCopy.channel.postMessage({ type: 'sitka-alive' }); return; }
                 if (type === 'sitka-alive') { RestoreCard.elsewhere(); return; }   // another tab restored it meanwhile
                 if ((type !== 'db-updated' && type !== 'save-request') || e.data.from === 'SitkaTools') return;
+                if (!WorkCopy.ready) return;   // the start check (restore or discard) comes first
                 await takeToolCopy(toolDisplayName(e.data.from));
                 if (type !== 'save-request') return;
                 if (hasUnsavedChanges) SaveRequired.show(toolDisplayName(e.data.from));
@@ -5823,7 +5881,8 @@
                 if (DB.fileName || hasUnsavedChanges) return;   // a database was opened meanwhile
                 if (!copy.unsaved) { await WorkCopy.clear(); return; }
                 const choice = await RestoreCard.ask(copy);
-                if (choice === 'restore') restoreWorkCopy(copy);
+                // A tool tab may have written the copy while the card was up: restore what's there now
+                if (choice === 'restore') restoreWorkCopy((await WorkCopy.read()) || copy);
                 else if (choice === 'discard') await WorkCopy.clear();
             } finally {
                 WorkCopy.ready = true;
@@ -5914,11 +5973,10 @@
 
         // =====================================================
         // SitkaTools — Lot moves & close-out (ROADMAP Phase 1)
-        // Moves (user decision 2026-10-25): no Send or Accept. A lot whose current room is set to a room in another
-        // building (by its grow log, or in the Lot Manager) is on its way there (DbSplit.detectMoves), and the receiving
-        // building's device picks it up when it opens the files (DbSplit.pickUpMoves). This card lists the moves still
-        // on their way. Records live in DB.data._LotTransfers (on their way: in the sending building's file; picked up:
-        // in the receiver's).
+        // Moves (user decisions 2026-10-25): no Send or Accept. A lot whose current room is in another building than its
+        // paperwork is on its way there (DbSplit.movesOnTheWay), and the receiving building's device picks it up when it
+        // opens the files (DbSplit.pickUpMoves). This card lists the moves still on their way. Pickups are kept in
+        // DB.data._LotTransfers, in the receiving building's file.
         // Close-out: everything about a finished lot goes to Archive/Lot-<id>-<date>.json, then the lot is
         // removed from the database (office only when the DB is split).
         // =====================================================
@@ -5930,13 +5988,10 @@
                 return Object.entries(DB.data?._LotTransfers || {}).map(([id, t]) => ({ id, ...t }));
             },
             pendingFor(lotId) {
-                return this.transfers().find(t => t.lotId === lotId && !t.acceptedAt) || null;
+                return DbSplit.movesOnTheWay(DB.data).find(m => m.lotId === lotId) || null;
             },
             buildingName(id) {
                 return DB.buildings[id]?.name || id || '?';
-            },
-            canActFor(buildingId) {
-                return !DbSplit.active || DbSplit.role === 'office' || DbSplit.role === buildingId;
             },
 
             render() {
@@ -5965,17 +6020,17 @@
                 const from = this.buildingOfLot(lot);
                 const pending = lot ? this.pendingFor(lotId) : null;
                 where.textContent = !lot ? '' : pending
-                    ? `🚚 On its way to ${this.buildingName(pending.to)} (${pending.room || 'no room'}) since ${new Date(pending.sentAt).toLocaleDateString()} — picked up when ${this.buildingName(pending.to)} next opens the files`
+                    ? `🚚 On its way from ${this.buildingName(pending.from)} to ${this.buildingName(pending.to)} (${pending.room}) — picked up when ${this.buildingName(pending.to)}'s device next opens the files`
                     : `Now in ${lot.currentRoom || 'no room set'}${from ? ` · ${this.buildingName(from)}` : ''}`;
-                // 🗄️ Closed-out lots still in building files: each building drops them with its next save; the office can
-                // clear them itself when the tablets are out of hours
+                // 🗄️ Closed-out lots still in building files: each building drops them with its next save. A building whose
+                // file got something for one after the archive was made keeps it, and the office is told.
                 const holding = DbSplit.active && DbSplit.role === 'office' ? DbSplit.filesHoldingClosed() : [];
-                $('clearClosedBtn').classList.toggle('hidden', !holding.length);
-                $('closedNote').classList.toggle('hidden', !holding.length);
-                $('closedNote').textContent = holding.length
-                    ? (DbSplit.clearClosed ? `🧹 Save DB to clear them from ${holding.map(buildingFileName).join(', ')}.`
-                        : `🗄️ Closed-out lots still in ${holding.map(id => `${this.buildingName(id)} (${DbSplit.closedIn(id).join(', ')})`).join(', ')} — each building drops them with its next save.`)
-                    : '';
+                const late = DbSplit.active && DbSplit.role === 'office' ? DbSplit.filesLateOnClosed() : [];
+                const notes = [];
+                if (holding.length) notes.push(`🗄️ Closed-out lots still in ${holding.map(id => `${this.buildingName(id)} (${DbSplit.closedIn(id).join(', ')})`).join(', ')} — each building drops them with its next save.`);
+                for (const x of late) notes.push(`⚠️ ${this.buildingName(x.bid)} has paperwork or hours for closed-out lot${x.lots.length === 1 ? '' : 's'} ${x.lots.join(', ')} saved after the archive was made. They're kept in its file and shown in PaperWizard; the archive doesn't have them.`);
+                $('closedNote').classList.toggle('hidden', !notes.length);
+                $('closedNote').textContent = notes.join(' ');
                 $('closeOutLotBtn').disabled = !lot || (DbSplit.active && DbSplit.role !== 'office');
                 $('closeOutLotBtn').title = DbSplit.active && DbSplit.role !== 'office' ? 'Only the office device can close out lots' : '';
 
@@ -5983,18 +6038,18 @@
                 // the receiving building's device picks a lot up by itself when it next opens the files.
                 const b = DeviceView.building;
                 const shown = DbSplit.movesOnTheWay(DB.data).filter(t => !b || t.to === b || t.from === b);
-                const listKey = JSON.stringify(shown.map(t => [t.id, t.from, t.to, t.room, t.sentAt, t.sentBy, this.buildingName(t.from), this.buildingName(t.to)]));
+                const listKey = JSON.stringify(shown.map(t => [t.lotId, t.from, t.to, t.room, this.buildingName(t.from), this.buildingName(t.to)]));
                 if (list.dataset.key === listKey) return;
                 list.dataset.key = listKey;
                 list.innerHTML = '';
                 for (const t of shown) {
                     const row = document.createElement('div');
                     row.className = 'split-transfer pending';
-                    row.dataset.transfer = t.id;
+                    row.dataset.lot = t.lotId;
                     const label = document.createElement('span');
-                    label.textContent = `🚚 Lot ${t.lotId}: ${this.buildingName(t.from)} → ${this.buildingName(t.to)}${t.room ? ` (${t.room})` : ''} · since ${new Date(t.sentAt).toLocaleString()}, by ${t.sentBy}`;
+                    label.textContent = `🚚 Lot ${t.lotId}: ${this.buildingName(t.from)} → ${this.buildingName(t.to)} (${t.room})`;
                     const note = document.createElement('span');
-                    note.textContent = `— waiting for ${this.buildingName(t.to)} to pick it up (its device does when it next opens the files)`;
+                    note.textContent = ` — waiting for ${this.buildingName(t.to)} to pick it up (its device does when it next opens the files); ${this.buildingName(t.from)}'s file keeps its pages until then`;
                     row.append(label, note);
                     list.appendChild(row);
                 }
@@ -6005,22 +6060,10 @@
             closedOut(lotId, archiveName) {
                 if (DbSplit.active) {
                     if (!DB.data._closedLots) DB.data._closedLots = {};
-                    DB.data._closedLots[lotId] = { closedAt: new Date().toISOString(), archive: `Archive/${archiveName}`, by: DbSplit.roleLabel() };
+                    // What each building file holds of the lot as archived: a building drops only that (DbSplit.closedLate)
+                    DB.data._closedLots[lotId] = DbSplit.closeOutNotice(DB.data, lotId, `Archive/${archiveName}`);
                 }
                 this.removeLot(lotId);
-            },
-
-            // 🧹 Office, tablets out of hours: drop the closed-out lots from the building files with this save
-            clearClosed() {
-                const holding = DbSplit.filesHoldingClosed();
-                if (!holding.length) return;
-                const names = holding.map(buildingFileName);
-                if (!confirm(`Clear the closed-out lots from ${names.join(', ')} now?\n\nOnly do this when you know the building tablets aren't in use: the office rewrites ${holding.length === 1 ? 'that file' : 'those files'}, and a tablet saving ${holding.length === 1 ? 'it' : 'one'} meanwhile would lose one of the two saves.\n\nOtherwise leave it: each building drops them with its own next save.`)) return;
-                DbSplit.clearClosed = true;
-                for (const n of names) DbSplit.baseParts[n] = '';
-                markUnsaved();
-                this.render();
-                showSyncToast(`🧹 Save DB to clear them from ${names.join(', ')}`);
             },
 
             // Remove a lot and everything that belongs only to it
@@ -6043,6 +6086,9 @@
                 const lot = DB.data?.lots?.[lotId];
                 if (!lot) return;
                 if (DbSplit.active && DbSplit.role !== 'office') { alert('Only the office device can close out lots.'); return; }
+                // The archive is made from the files as opened: every building's file has to be open
+                const missing = DbSplit.active ? Object.keys(DB.buildings).filter(bid => !DbSplit.loaded.has(buildingFileName(bid))).map(buildingFileName) : [];
+                if (missing.length) { alert(`Open every building's file before closing out a lot — not open: ${missing.join(', ')}.\n\nThe archive is made from the files as you opened them.`); return; }
                 // 🔒 Nothing is closed out while it still has plants on record, or its grow logs aren't finished
                 const blockers = closeOutBlockers(lotId);
                 if (blockers.length) { alert(`Lot ${lotId} can't be closed out yet:\n\n• ${blockers.join('\n• ')}`); return; }
@@ -6054,7 +6100,7 @@
                     `paperwork and transfer history are saved to ${name}, then removed from the database.`;
                 if (upcoming.length) msg = `⚠️ ${upcoming.length} of its tasks are still upcoming or not completed.\n\n` + msg;
                 // The monthly CTLS report counts a closed-out lot from the plant history saved with its crop summary
-                if (DbSplit.active) msg += `\n\nThe building files aren't rewritten: each building drops the lot from its own file with its next save, after it sees the close-out (or use 🧹 Clear closed-out lots when the tablets are out of hours).`;
+                if (DbSplit.active) msg += `\n\nThe archive is made from the files as you opened them: anything a building saved since isn't in it, so reopen the files first if unsure. The building files aren't rewritten: each building drops the lot from its own file with its next save, keeping anything it saved after the archive was made.`;
                 if (!DB.data._EmployeeWizard?.crops?.[lotId]?.ctls) msg = `⚠️ Its plant history isn't saved yet, so the monthly CTLS report and the report trends won't count it. ` +
                     `Save it first in the Labour & Cost Wizard (📊 Reports → 📋 CTLS month, "Lots ready to close out"), or import the archive file there later.\n\n` + msg;
                 if (!confirm(msg)) return;
@@ -6111,7 +6157,7 @@
                     this.closedOut(lotId, name);
                     showSyncToast(`Lot ${lotId} archived and removed — now Save DB`);
                 };
-                if (isTouchDevice) a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name); used(); });
+                if (isTouchDevice) a.addEventListener('click', (e) => { e.preventDefault(); shareFile(blob, name).then(ok => { if (ok) used(); }); });
                 else { a.addEventListener('click', used); a.addEventListener('contextmenu', used); }
                 saveFileLinks.appendChild(a);
                 savePopup.classList.remove('hidden');
@@ -6121,7 +6167,6 @@
         $('lotActionSelect').addEventListener('change', () => LotActions.render());
         // stopPropagation: the archive link opens in the save popup, which a document click would close
         $('closeOutLotBtn').addEventListener('click', (e) => { e.stopPropagation(); LotActions.closeOut(); });
-        $('clearClosedBtn').addEventListener('click', () => LotActions.clearClosed());
 
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
@@ -6170,10 +6215,7 @@
                 saveLink.textContent = `📄 ${filename} — Tap to save`;
                 saveLink.onclick = (e) => {
                     e.preventDefault();
-                    if (currentBlobRef) {
-                        shareFile(currentBlobRef, filename);
-                        commitSave(save);
-                    }
+                    if (currentBlobRef) shareFile(currentBlobRef, filename).then(ok => { if (ok) commitSave(save); });
                 };
                 saveLink.oncontextmenu = null;
             } else {
@@ -6571,11 +6613,12 @@
                 }
             }, 1000);
 
-            // Send DB via postMessage with retry mechanism
+            // Send DB via postMessage with retry mechanism: every 200 ms for up to 5 s, so a slow PC's popup gets it
+            // before it gives up waiting (1.5 s after its script starts) and runs on the shared copy (review A13)
             let attempts = 0, acknowledged = false;
 
             function trySend() {
-                if (acknowledged || newWindow.closed || attempts >= 5) return;
+                if (acknowledged || newWindow.closed || attempts >= 25) return;
                 attempts++;
                 // The DB as it is now (it may have changed since the window opened); note what the window was
                 // sent, so broadcastToSubtools doesn't send the same again
@@ -6597,7 +6640,7 @@
             // Initial send + retry at 200ms intervals
             trySend();
             const retryTimer = setInterval(() => {
-                if (acknowledged || newWindow.closed) clearInterval(retryTimer);
+                if (acknowledged || newWindow.closed || attempts >= 25) clearInterval(retryTimer);
                 else trySend();
             }, 200);
         }
@@ -6627,9 +6670,6 @@
             const changed = JSON.stringify(e.data.payload) !== JSON.stringify(DB.data);
             DB.data = e.data.payload;
             DB.ensureStructure();
-            // A lot moved to another building's room (its grow log): the move is recorded here, and the tool that made
-            // the change gets it back too, so it shows the lot as on its way
-            const moved = DbSplit.active && DbSplit.detectMoves(DB.data);
             if (changed) markUnsaved();
 
             console.log('[SitkaTools] After assign - calendarEvents count:', DB.data.calendarEvents?.length || 0);
@@ -6648,7 +6688,7 @@
             updateIOStatusBar();
 
             // Other open tools get this change now; the sender already has it
-            broadcastToSubtools(moved ? null : e.source);
+            broadcastToSubtools(e.source);
 
             showSyncToast('Subtool has updated data — views refreshed automatically');
         });
@@ -7209,8 +7249,6 @@
 
         function markUnsaved() {
             hasUnsavedChanges = true;
-            // Split files: a lot whose room is now in another building is on its way there (DbSplit.detectMoves)
-            if (DbSplit.active && DbSplit.detectMoves(DB.data) && typeof LotActions !== 'undefined') LotActions.render();
             exportBtn.classList.add('unsaved');
             updateFolderUi();
             WorkCopy.schedule();

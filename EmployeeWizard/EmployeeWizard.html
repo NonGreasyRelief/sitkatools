@@ -1373,7 +1373,7 @@
                                     </div>
                                     <div class="form-group">
                                         <label for="lfTempWage">Wage $/hr</label>
-                                        <input type="number" id="lfTempWage" min="0" step="0.5" value="20">
+                                        <input type="number" id="lfTempWage" min="0" step="0.5" placeholder="not set">
                                     </div>
                                     <div class="form-group">
                                         <label for="lfTempHours">Hrs</label>
@@ -1678,7 +1678,7 @@
         var DeviceView = {
             OFFICE_ONLY: false,   // true: this whole tool is office work a building device couldn't save
             building: null,
-            split: false,        // split files are open (Main + building files): moves between buildings go through Send / Accept
+            split: false,        // split files are open (Main + building files): only a building's own device saves its file
             // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
             take(msg) {
                 if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) { this.building = msg.view?.building || null; this.split = !!msg.view?.split; }
@@ -2728,22 +2728,34 @@
 
         // Wage for a labour entry — roster wage for employees (resolved at report
         // time), recorded wage for temps. Deleted employees fall back to the default.
+        // The entry's wage, or null when it has none (review C5: never a made-up wage)
         function entryWage(entry) {
-            if (entry.temp != null) return Number(entry.wage) || 0;
-            const emp = getEmployees()[entry.employee];
-            return emp?.wage ?? 20;
+            const w = entry.temp != null ? entry.wage : getEmployees()[entry.employee]?.wage;
+            return w != null && w !== '' && Number.isFinite(Number(w)) ? Number(w) : null;
         }
 
         function dayHours(ev, dateStr) {
             return dayEntries(ev, dateStr).reduce((s, e) => s + (Number(e.hours) || 0), 0);
         }
 
+        // null when anyone with hours that day has no wage: the $ would be short
         function dayCost(ev, dateStr) {
-            return dayEntries(ev, dateStr).reduce((s, e) => s + (Number(e.hours) || 0) * entryWage(e), 0);
+            let sum = 0;
+            for (const e of dayEntries(ev, dateStr)) {
+                const h = Number(e.hours) || 0, w = entryWage(e);
+                if (!h) continue;
+                if (w == null) return null;
+                sum += h * w;
+            }
+            return sum;
         }
 
         function taskHours(ev) { return taskDays(ev).reduce((s, d) => s + dayHours(ev, d), 0); }
-        function taskCost(ev) { return taskDays(ev).reduce((s, d) => s + dayCost(ev, d), 0); }
+        function taskCost(ev) {
+            let sum = 0;
+            for (const d of taskDays(ev)) { const c = dayCost(ev, d); if (c == null) return null; sum += c; }
+            return sum;
+        }
 
         // ---- Labour estimate on a task ----
         // CropLabourWizard writes estStaff / estMinutes (per day) on each crop task from its recipe. The task's
@@ -2767,7 +2779,7 @@
         }
 
         // Wages live in Wages.json, which only the office opens (root CLAUDE.md → split DB). On a building device,
-        // or with no roster wages loaded, a $ total would be a made-up $20/h — show hours only.
+        // or with no roster wages loaded, show hours only. A total with someone's wage missing shows hours only too.
         function wagesLoaded() {
             return !DeviceView.building && Object.values(getEmployees()).some(emp => emp?.wage != null);
         }
@@ -2967,10 +2979,11 @@
             }
 
             const showMoney = wagesLoaded();
+            const money = c => !showMoney ? '' : c == null ? ' · $ — a wage is missing' : ` · ${fmtMoney(c)}`;
             $('teDayTotal').textContent =
-                `Day total: ${fmtHours(dayHours(ev, TASK.editDate))}` + (showMoney ? ` · ${fmtMoney(dayCost(ev, TASK.editDate))}` : '');
+                `Day total: ${fmtHours(dayHours(ev, TASK.editDate))}` + money(dayCost(ev, TASK.editDate));
             $('teTaskTotal').textContent =
-                `Task total: ${fmtHours(taskHours(ev))}` + (showMoney ? ` · ${fmtMoney(taskCost(ev))}` : '') +
+                `Task total: ${fmtHours(taskHours(ev))}` + money(taskCost(ev)) +
                 (est ? ` · estimated ${fmtHours(est.hours)}` : '');
 
             // Employee dropdown (roster names)
@@ -3392,8 +3405,10 @@
                 showToast(`"${name}" is on the roster — use the employee selector above`);
                 return;
             }
-            const wage = parseFloat($('lfTempWage').value);
-            if (isNaN(wage) || wage < 0) { showToast('Enter a valid temp wage ($/hr)'); return; }
+            // Blank = no wage (the hours count, their $ shows as missing); never a made-up one (review C5)
+            const wageText = $('lfTempWage').value.trim();
+            const wage = wageText === '' ? null : parseFloat(wageText);
+            if (wage !== null && (isNaN(wage) || wage < 0)) { showToast('Enter a valid temp wage ($/hr), or leave it blank'); return; }
             const hours = parseHm($('lfTempHours'), $('lfTempMinutes'));
             if (hours == null) return;
             const day = TASK.editDate;
@@ -3409,15 +3424,15 @@
             if (idx >= 0) {
                 noteEdit(entries[idx], sign);
                 entries[idx].hours = hours;
-                entries[idx].wage = wage;
+                if (wage === null) delete entries[idx].wage; else entries[idx].wage = wage;
                 showToast(`Updated temp ${name} — ${fmtHours(hours)} · approved by ${sign.name}`);
             } else {
-                entries.push({ id: newLabourId(), temp: name, wage, hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
+                entries.push({ id: newLabourId(), temp: name, ...(wage === null ? {} : { wage }), hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
                 showToast(`Added temp ${name} — ${fmtHours(hours)} · signed by ${sign.name}`);
             }
 
             $('lfTempName').value = '';
-            $('lfTempWage').value = '20';
+            $('lfTempWage').value = '';
             $('lfTempHours').value = '';
             $('lfTempMinutes').value = '';
             notifySitkaTools();

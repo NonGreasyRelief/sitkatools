@@ -1,7 +1,8 @@
 // Closing out a lot with split files: the office archives the lot and saves only Main.json, which records the
-// close-out. It doesn't rewrite the building files. Every device ignores what's left of the lot there, and each building
-// drops it from its own file with its next save, after it sees the close-out. When the tablets are out of hours the
-// office can 🧹 clear it from the building files itself. A single-file DB just loses the lot, as before.
+// close-out with a fingerprint of what each building file held of the lot. It never rewrites a building's file. Every
+// device ignores what's left of the lot there, and each building drops it from its own file with its next save — unless
+// its file got something for the lot after the archive was made: that's kept, shown, and both sides are told. Closing
+// out needs every building's file open. A single-file DB just loses the lot, as before.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSplit, leave, today } from './lib/helpers.mjs';
 
 export const title = 'close-out with split files: each building drops the lot from its own file';
@@ -32,22 +33,30 @@ export async function run(b, BASE) {
 
     const holds = (text) => { const p = JSON.parse(text); return { page: !!p._PaperWizard?.entries?.L100, move: Object.values(p._LotTransfers || {}).some(t => t.lotId === 'L100'), overlay: !!p._overlays?.lots?.L100 }; };
     const plan = () => b.run(main, `const p = DbSplit.plan(); return { save: p.toSave, b1: JSON.stringify(p.parts['Building-B1.json']), main: p.parts['Main.json']._closedLots || null };`);
-    const panel = () => b.run(main, `LotActions.render(); return { btn: !document.getElementById('clearClosedBtn').classList.contains('hidden'), note: document.getElementById('closedNote').textContent };`);
+    const panel = () => b.run(main, `LotActions.render(); return { btn: !!document.getElementById('clearClosedBtn'), note: document.getElementById('closedNote').textContent };`);
     const closeOut = async (lotId) => {
         await b.run(main, `window.confirm = () => true; window.alert = () => {}; LotActions.render(); document.getElementById('lotActionSelect').value = '${lotId}'; await LotActions.closeOut();`, { user: true });
         await b.run(main, `document.getElementById('archiveLink')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); document.getElementById('savePopup')?.classList.add('hidden');`);
         await b.sleep(200);
     };
 
+    // ---- Close-out needs every building's file open ----
+    const noB1 = Object.fromEntries(Object.entries(files).filter(([n]) => n !== 'Building-B1.json'));
+    check('office opened without Building 1\'s file', await openSplit(b, main, BASE, 'office', noB1));
+    const refused = await b.run(main, `let m = ''; window.alert = x => { m = x; }; window.confirm = () => true; LotActions.render(); document.getElementById('lotActionSelect').value = 'L100';
+        await LotActions.closeOut(); return { m, lot: !!DB.data.lots.L100 };`, { user: true });
+    check('close-out is refused while a building\'s file isn\'t open', refused.lot && refused.m.includes('Open every building') && refused.m.includes('Building-B1.json'), JSON.stringify(refused));
+
     // ---- The office closes L100 out ----
     check('office opened', await openSplit(b, main, BASE, 'office', files));
     await closeOut('L100');
     let st = await b.run(main, `return { lot: !!DB.data.lots.L100, notice: DB.data._closedLots?.L100 || null, page: !!DB.data._PaperWizard?.entries?.L100 };`);
-    check('L100 is archived and removed; Main records the close-out', !st.lot && !st.page && st.notice?.archive?.startsWith('Archive/Lot-L100-') && st.notice.by === 'Office', JSON.stringify(st));
+    check('L100 is archived and removed; Main records the close-out, with a fingerprint per building file', !st.lot && !st.page && st.notice?.archive?.startsWith('Archive/Lot-L100-') && st.notice.by === 'Office'
+        && typeof st.notice.files?.B1 === 'string' && typeof st.notice.files?.B2 === 'string', JSON.stringify(st));
     let p = await plan();
     check('the office saves Main.json only — Building 1\'s file is left as it is', p.save.join() === 'Main.json' && !!p.main?.L100 && holds(p.b1).page && holds(p.b1).move && holds(p.b1).overlay, JSON.stringify({ save: p.save, b1: holds(p.b1) }));
     let pn = await panel();
-    check('the close-out panel says Building 1 still holds it, and offers 🧹', pn.btn && pn.note.includes('Building 1 (L100)') && pn.note.includes('next save'), JSON.stringify(pn));
+    check('the close-out panel says Building 1 still holds it (no 🧹: the office never writes a building\'s file)', !pn.btn && pn.note.includes('Building 1 (L100)') && pn.note.includes('next save'), JSON.stringify(pn));
     const s1 = await saveSplit(b, main);
     check('saved: Main.json only', Object.keys(s1).join() === 'Main.json', Object.keys(s1).join());
     const f2 = { ...files, ...s1 };
@@ -71,15 +80,22 @@ export async function run(b, BASE) {
         Object.keys(s2).join() === 'Building-B1.json' && !h2.page && !h2.move && !h2.overlay, JSON.stringify({ files: Object.keys(s2), h2 }));
     check('office reopened after B1 saved', await openSplit(b, main, BASE, 'office', { ...f2, ...s2 }));
     pn = await panel();
-    check('office: nothing left to clear, no 🧹', !pn.btn, JSON.stringify(pn));
+    check('office: nothing left in the building files', !pn.note.includes('L100'), JSON.stringify(pn));
 
-    // ---- 🧹 The office clears it itself (the tablets are out of hours) ----
-    check('office reopened with Building 1\'s old file', await openSplit(b, main, BASE, 'office', f2));
-    await b.run(main, `window.confirm = () => true; document.getElementById('clearClosedBtn').click();`, { user: true });
-    p = await plan();
-    check('🧹: the office saves Building-B1.json without L100', p.save.join() === 'Building-B1.json' && !holds(p.b1).page && !holds(p.b1).move && !holds(p.b1).overlay, JSON.stringify({ save: p.save, b1: holds(p.b1) }));
-    const s3 = await saveSplit(b, main);
-    check('…and once it\'s saved, nothing is left to clear', Object.keys(s3).join() === 'Building-B1.json' && !(await panel()).btn && (await b.run(main, `return DbSplit.clearClosed;`)) === false);
+    // ---- Building 1 saved something for L100 after the office opened the files: it's kept, not dropped ----
+    const late = JSON.parse(files['Building-B1.json']);
+    const lateKey = Object.keys(late._PaperWizard.entries.L100.note.instances)[0];
+    late._PaperWizard.entries.L100.note.instances[lateKey].header.txt = 'signed off late';
+    const f3 = { ...f2, 'Building-B1.json': JSON.stringify(late, null, 2) };
+    check('B1 opened with a page changed after the archive was made', await openSplit(b, main, BASE, 'B1', { ...f3 }));
+    st = await b.run(main, `return { late: DbSplit.closedParts('B1').late, drop: DbSplit.closedIn('B1'), page: DB.data._PaperWizard?.entries?.L100?.note?.instances?.['${lateKey}']?.header?.txt || null };`);
+    check('B1: L100 is "late" there — not dropped, and its page shows in the merged DB', st.late.join() === 'L100' && !st.drop.length && st.page === 'signed off late', JSON.stringify(st));
+    const s4 = await saveSplit(b, main);
+    const keep = s4['Building-B1.json'] ? holds(s4['Building-B1.json']) : holds(f3['Building-B1.json']);
+    check('B1: its saves keep the late page', keep.page, JSON.stringify({ files: Object.keys(s4), keep }));
+    check('office reopened', await openSplit(b, main, BASE, 'office', f3));
+    pn = await panel();
+    check('office: told Building 1 has paperwork for closed-out L100 saved after the archive', pn.note.includes('Building 1 has paperwork or hours for closed-out lot L100'), JSON.stringify(pn));
     await leave(b, main);
 
     // ---- A single-file DB just loses the lot ----

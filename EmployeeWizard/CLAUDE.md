@@ -27,7 +27,7 @@ Header: tool name on the left, **Active Lot** dropdown on the right (Tasks is lo
 - **List (terminal style):** `calendarEvents` with `lotId === Active Lot` and `sourceTool` in `LABOUR_TOOLS` (currently `CropLabourWizard`). It starts at today. Completed/old tasks are hidden until "show old/completed tasks" is ticked; the list still anchors at today, with older tasks above.
 - Tasks are identified by the event `id` (`taskKey`), so a selection survives date or title changes made elsewhere.
 - **Editor:**
-  - A day selector across the event's days (today when in range). Per day, add a roster employee with hours + minutes, or a **Temp employee** (name + wage, below the employee picker). Previous days stay editable.
+  - A day selector across the event's days (today when in range). Per day, add a roster employee with hours + minutes, or a **Temp employee** (name + wage, below the employee picker; the wage may be left blank, never filled in for you). Previous days stay editable.
   - **Adding or changing hours needs a floor manager's sign-off** (user decision 2026-10-22): hours are meant to be logged on the floor in DailyWizard, so hours typed here ask for a floor manager's name, PIN and drawn initials (the shared `FloorPin` dialog with `{ initials: true }`), for adds and changes alike, on every device. Cancel, no initials or a wrong PIN changes nothing; the same hours again ask nothing. With no floor manager PIN set, hours can't be added here. The entry keeps `enteredBy`, `at` and `by`; a change keeps `editedSignoff` (see "Task labour map").
   - **+ Add day:** a calendar popover adds a work day as a `labour_map` key. The event's `date`/`endDate` are not changed, and the task keeps its due state until completed. An added day shows ✕ while it has no entries.
   - Day and task totals (see "Man-Hour Tracking").
@@ -159,7 +159,7 @@ The tool writes `labour_map` and `completed` directly onto Labour-wizard events 
 ## Man-Hour Tracking
 
 - **Cost per task-day** = Σ (hours × wage): the roster wage for employees, the entry's own wage for temps.
-- **No wages → hours only:** on a building device, or when no roster employee has a `wage`, day and task totals show hours only — never a $ figure built on a made-up wage.
+- **No wages → hours only:** on a building device, or when no roster employee has a `wage`, day and task totals show hours only — never a $ figure built on a made-up wage. A total where someone with hours has no wage (a roster employee without one, a temp left blank) shows "$ — a wage is missing" (`entryWage` returns null; review C5).
 - **Per plant:** total hours ÷ the lot's `plantCount` (`lots.<id>.plantCount`). A lot without one gets totals only.
 
 ## Relationship to SitkaTools

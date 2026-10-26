@@ -45,6 +45,7 @@ export async function run(b, BASE) {
     main = await fresh(b);
     await openSitka(b, main, BASE);
     await loadSingle(b, main, fixtureDb());
+    await b.waitFor(main, 'return WorkCopy.ready;');   // the start check first (see checkoffs)
     await b.run(main, 'await WorkCopy.flush();');
     const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
     await b.waitFor(tab, 'return typeof DB !== "undefined" && !!DB.data && Object.keys(DB.data.lots || {}).length > 0;');

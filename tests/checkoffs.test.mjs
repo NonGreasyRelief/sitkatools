@@ -68,6 +68,9 @@ export async function run(b, BASE) {
     // Tablet tab: ticks reach SitkaTools through the shared working copy
     await openSitka(b, main, BASE);
     await loadSingle(b, main, fixtureDb());
+    // SitkaTools' start check (≈400 ms with a session left behind) comes first: a tab opened before it would load
+    // the old session's copy, which SitkaTools rightly ignores
+    await b.waitFor(main, 'return WorkCopy.ready;');
     await b.run(main, 'await WorkCopy.flush();');
     const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
     await b.waitFor(tab, 'return typeof DB !== "undefined" && !!DB.data && Object.keys(DB.data.lots || {}).length > 0;');

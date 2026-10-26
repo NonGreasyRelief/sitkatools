@@ -423,7 +423,8 @@ Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessag
 **🚚 Moving a lot to another building** (user decision 2026-10-25; root `CLAUDE.md` → "Lot move"): the Room answer on a daily log (or the harvest log) names a room in another building (`buildingMoveOf`).
 - **Only on the newest day of the log:** on an earlier day with later entries the save is refused ("A move to <building> goes on the newest day of the log — … Nothing was saved").
 - The save is a room change like any other ("Phase & Room Change"): the page is struck that day with drawn initials and the next page starts blank on the move day in the new room, but it isn't offered for filling here. The toast says "🚚 moved to <room> (<building>) — save in SitkaTools; <building> picks it up when it next opens the files".
-- SitkaTools records the move. The lot is then read-only here, and its pages stay in this building's file until the receiving building picks it up; the pickup takes the unsigned pages (the blank one included) and lot-level values into its file, and its device fills the new page from the move day.
+- Nothing else records the move: the lot is now in another building's room while its pages are in this building's file, so it's read-only here and its pages stay put until the receiving building's device picks it up (when it next opens the files); the pickup takes the unsigned pages (the blank one included) and lot-level values into its file, and its device fills the new page from the move day.
+- **A move is a change from what the record said before** (that day's saved Room answer, or the page's), else from the lot's live room (`buildingMoveOf`), so correcting a day from before an earlier move is not a move.
 - Moves recorded before 2026-10-25 by Send / Accept left the grow log on its old page; the first open in the new room still asks "Lot is now in <room> — close this log?" (`checkRoomMismatch`).
 
 **On a building device** (root `CLAUDE.md` → "Building Device View"):
@@ -431,10 +432,8 @@ Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessag
 - The lot selector lists only the building's lots (current room or flower room in it), plus 🏭 Facility and its own 🏢 building. On facility forms it adds, and can't change what's on file ("Facility & Building Paperwork" → Who fills).
 - **Configure Sheets** is hidden — sheets and wizards live in Main.json.
 - **Start on a chosen day** offers only the building's rooms (`pickableRoomNames`), plus any value already in use. The 🏠 Room question offers those first, then every other building's (a move, see above). With split files open (`DeviceView.split`) the office gets the same, from the lot's current building. A single-file DB lists every room, ungrouped: it has one file, so nothing is handed over.
-- **Read-only lots:** `lotElsewhere` returns `{ banner, toast }` for a lot this device may only view and print:
-  - **moved** and not picked up yet: "🚚 … moved to <room> (<building>). <this building> keeps its paperwork until <building> picks it up" (frozen so the receiver takes over exactly what was saved);
-  - **on its way here** (only until this device reopens the files, which picks it up): "🚚 … is on its way here from <building> — reopen the files in SitkaTools to pick it up";
-  - **in another building now**, even if its flower room is here: "🔒 … is in <room> (<building>)".
+- **Read-only lots:** `lotElsewhere` returns `{ banner, toast }` for a lot this device may only view and print: a lot **in another building now**, even if its flower room is here — "🔒 … is in <room> (<building>), so its paperwork is filled and saved there", plus, until that building has picked it up, "This building's file keeps its pages until <building>'s device picks it up".
+- **On the office with split files** (user decision 2026-10-25: only a building's own device writes its file) every lot's paperwork and every building form is read-only — "🔒 Read only on the office — … filled, signed and corrected on <building>'s device … Open SitkaTools as <building> to change it" — and the facility forms, kept in Main, fill as before.
 
   The cabinet shows the banner and drops Fill, Start, Sign and Initialize paperwork. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, for these lots and any lot this device doesn't list.
 

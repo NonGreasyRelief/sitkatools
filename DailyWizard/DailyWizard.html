@@ -1260,7 +1260,18 @@
         // A building device changes only its own building: its task list, ticks, hours and sign-offs (they save in
         // its own file). Other buildings, and All Buildings apart from its own rows, are there to look at only.
         // The office (or a single-file DB) changes everything.
-        function canEditBuilding(bid) { return !DeviceView.building || bid === DeviceView.building; }
+        // Who may change a building's own data — its daily list, ticks, chore hours and timers (all in its file): its own
+        // device. With building files the office only views them (user decision 2026-10-25: only a building's own device
+        // saves its file — open SitkaTools as that building to change them). A single-file DB has one file, so the office
+        // edits every building there.
+        function canEditBuilding(bid) { return DeviceView.building ? bid === DeviceView.building : !DeviceView.split; }
+        // Who may log hours on, remove hours from and sign off a crop or equipment task: these live on the calendar event,
+        // which is the office's (Main.json), so the office may on every building; a building device on its own.
+        function canWorkEvents(bid) { return DeviceView.building ? bid === DeviceView.building : true; }
+        // The rule for an hours row: a chore's hours are the building's; a task's are the event's
+        const canLogOn = ctx => ctx.kind === 'event' ? canWorkEvents(ctx.buildingId) : canEditBuilding(ctx.buildingId);
+        // "👀 view only" in the building list: on the office only the daily list is view only
+        const viewOnlyTag = () => DeviceView.building ? T('👀 view only') : T('👀 daily list view only');
 
         // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
         DB.ensureStructure();
@@ -1274,7 +1285,7 @@
         var DeviceView = {
             OFFICE_ONLY: false,   // true: this whole tool is office work a building device couldn't save
             building: null,
-            split: false,        // split files are open (Main + building files): moves between buildings go through Send / Accept
+            split: false,        // split files are open (Main + building files): only a building's own device saves its file
             // Take the view sent with a DB message. True when this tool is office-only and this is a building device.
             take(msg) {
                 if (msg && Object.prototype.hasOwnProperty.call(msg, 'view')) { this.building = msg.view?.building || null; this.split = !!msg.view?.split; }
@@ -1620,7 +1631,7 @@
             for (const [id, b] of Object.entries(buildings)) {
                 const opt = document.createElement('option');
                 opt.value = id;
-                opt.textContent = `${id} — ${b?.name || T('Unnamed')}` + (DeviceView.building && id !== DeviceView.building ? ` · ${T('👀 view only')}` : '');
+                opt.textContent = `${id} — ${b?.name || T('Unnamed')}` + (!canEditBuilding(id) ? ` · ${viewOnlyTag()}` : '');
                 sel.appendChild(opt);
             }
 
@@ -3345,7 +3356,7 @@
         function makeHoursButton(ctx) {
             const h = liveHours(ctxEntries(ctx));
             const future = ctx.date > todayStr();
-            const viewOnly = !canEditBuilding(ctx.buildingId);   // another building's: shows its hours, logs none
+            const viewOnly = !canLogOn(ctx);   // another building's: shows its hours, logs none
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'hours-btn' + (h > 0 ? ' logged' : '');
@@ -3357,7 +3368,7 @@
         }
 
         function openHours(ctx) {
-            if (ctx.date > todayStr() || !canEditBuilding(ctx.buildingId) || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
+            if (ctx.date > todayStr() || !canLogOn(ctx) || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
             hoursCtx = { ...ctx };
             const who = $('hoursWho');
             who.innerHTML = '';
@@ -3591,7 +3602,7 @@
             if (!hoursCtx) return;
             const ctx = hoursCtx;
             const e = ctxEntries(ctx)[index];
-            if (!e || !canRemoveEntry(e) || !canEditBuilding(ctx.buildingId)) return;
+            if (!e || !canRemoveEntry(e) || !canLogOn(ctx)) return;
             const ok = await FloorPin.ask(T('Remove {h} logged by {name} on {date}', { h: fmtHoursShort(Number(e.hours) || 0), name: e.employee || e.temp || '?', date: shortDate(ctx.date) }));
             if (!ok || hoursCtx !== ctx) return;
             // The list may have been redrawn from a live update meanwhile: find the entry again by its id
@@ -3875,14 +3886,14 @@
             btn.textContent = done ? T('✅ Done') : T('✍️ Mark done');
             btn.title = done ? (sign?.name ? (sign.at ? T('Signed off by {name}, {when}', { name: sign.name, when: doneStamp(sign.at) }) : T('Signed off by {name}', { name: sign.name })) : T('Marked done in SitkaTools or the Labour & Cost Wizard (not signed)'))
                 : T('Floor manager: sign this task off as done');
-            btn.disabled = (!done && selectedDateStr() > todayStr()) || !canEditBuilding(buildingId);
-            if (!canEditBuilding(buildingId) && !done) btn.title = T('View only — signed off in that building');
+            btn.disabled = (!done && selectedDateStr() > todayStr()) || !canWorkEvents(buildingId);
+            if (!canWorkEvents(buildingId) && !done) btn.title = T('View only — signed off in that building');
             btn.addEventListener('click', (e) => { e.stopPropagation(); openDone(ev.id, buildingId); });
             return btn;
         }
 
         function openDone(eventId, buildingId) {
-            if (!canEditBuilding(buildingId) || !DB.calendarEvents.some(e => e.id === eventId)) return;
+            if (!canWorkEvents(buildingId) || !DB.calendarEvents.some(e => e.id === eventId)) return;
             doneCtx = { eventId, buildingId };
             doneStrokes = [];
             const fm = floorManagers();
@@ -3974,9 +3985,10 @@
             ev.completed = false;
             delete ev.completedBy;
             if (!sameDay) {
-                // A later office correction stays on record (with the building, in its own file)
-                const buildings = DB.ensureStructure()._DailyWizard.buildings;
-                const b = buildings[doneCtx.buildingId] || (buildings[doneCtx.buildingId] = { tasks: [] });
+                // A later correction stays on record: a building device's in its own file; the office's in Main (the
+                // top-level adjustments), since the office never writes a building's file and the sign-off is the event's
+                const daily = DB.ensureStructure()._DailyWizard;
+                const b = !DeviceView.building ? daily : (daily.buildings[doneCtx.buildingId] || (daily.buildings[doneCtx.buildingId] = { tasks: [] }));
                 (b.adjustments || (b.adjustments = [])).push({
                     at: new Date().toISOString(), by: DeviceView.building || 'office', date: sign?.day || selectedDateStr(),
                     eventId: ev.id, title: ev.title || '', reopened: sign || null
@@ -4000,8 +4012,9 @@
             const events = eventsOnDate(dateStr).filter(ev => buildingForEvent(ev) === buildingId);
 
             if (!canEditBuilding(buildingId)) {
-                // A building device looking at another building
-                container.appendChild(viewOnlyNote(T('👀 Viewing {building} — view only', { building: b?.name || buildingId })));
+                // A building device looking at another building, or the office with building files
+                container.appendChild(viewOnlyNote(DeviceView.building ? T('👀 Viewing {building} — view only', { building: b?.name || buildingId })
+                    : T('👀 {building}’s daily list is view only on the office — open SitkaTools as {building} to change it. Hours and sign-offs on crop and equipment tasks still work here.', { building: b?.name || buildingId })));
             } else {
                 // ✏️ Edit tasks (floor manager PIN) → + Add Task and ✅ Done editing (single-building mode only)
                 const addBar = document.createElement('div');
@@ -4057,6 +4070,7 @@
             span.textContent = text;
             div.appendChild(span);
             const own = DeviceView.building;
+            if (!own) return div;   // the office has no building of its own to go back to
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'btn btn-secondary';
@@ -4071,6 +4085,8 @@
             const own = DeviceView.building;
             if (own && DB.buildings[own]) {
                 container.appendChild(viewOnlyNote(T('👀 All buildings — only {building} can be changed here', { building: DB.buildings[own]?.name || own })));
+            } else if (!own && DeviceView.split) {
+                container.appendChild(viewOnlyNote(T('👀 All buildings — view only on the office: each building changes its own list on its device')));
             }
 
             for (const [bid, b] of Object.entries(DB.buildings)) {
@@ -4085,7 +4101,7 @@
                 const header = document.createElement('div');
                 header.className = 'building-section-header';
                 const label = document.createElement('span');
-                label.textContent = `🏢 ${b?.name || bid}` + (canEditBuilding(bid) ? '' : ` · ${T('👀 view only')}`);
+                label.textContent = `🏢 ${b?.name || bid}` + (canEditBuilding(bid) ? '' : ` · ${viewOnlyTag()}`);
                 const chip = document.createElement('span');
                 chip.className = 'chip';
                 chip.textContent = `✅ ${done}/${tasks.length}`;
@@ -4298,6 +4314,9 @@
             "👀 view only": { fr: "👀 consultation seule", es: "👀 solo lectura", vi: "👀 chỉ xem", zh: "👀 仅查看" },
             "👀 Viewing {building} — view only": { fr: "👀 Vous consultez {building} — consultation seule", es: "👀 Viendo {building} — solo lectura", vi: "👀 Đang xem {building} — chỉ xem", zh: "👀 正在查看 {building} — 仅查看" },
             "👀 All buildings — only {building} can be changed here": { fr: "👀 Tous les bâtiments — seul {building} peut être modifié ici", es: "👀 Todos los edificios — aquí solo se puede cambiar {building}", vi: "👀 Tất cả tòa nhà — ở đây chỉ có thể thay đổi {building}", zh: "👀 所有建筑 — 这里只能更改 {building}" },
+            "👀 {building}’s daily list is view only on the office — open SitkaTools as {building} to change it. Hours and sign-offs on crop and equipment tasks still work here.": { fr: "👀 La liste quotidienne de {building} est en lecture seule au bureau — ouvrez SitkaTools en tant que {building} pour la modifier. Les heures et validations des tâches de culture et d’équipement restent possibles ici.", es: "👀 La lista diaria de {building} es solo lectura en la oficina — abra SitkaTools como {building} para cambiarla. Las horas y firmas de tareas de cultivo y equipos siguen funcionando aquí.", vi: "👀 Danh sách hằng ngày của {building} chỉ xem tại văn phòng — mở SitkaTools với tư cách {building} để thay đổi. Giờ công và ký xác nhận cho việc trồng trọt và thiết bị vẫn làm được ở đây.", zh: "👀 {building} 的每日清单在办公室只能查看 — 以 {building} 身份打开 SitkaTools 才能更改。作物和设备任务的工时和签核仍可在这里进行。" },
+            "👀 All buildings — view only on the office: each building changes its own list on its device": { fr: "👀 Tous les bâtiments — lecture seule au bureau : chaque bâtiment modifie sa liste sur son appareil", es: "👀 Todos los edificios — solo lectura en la oficina: cada edificio cambia su lista en su dispositivo", vi: "👀 Tất cả tòa nhà — chỉ xem tại văn phòng: mỗi tòa nhà thay đổi danh sách trên thiết bị của mình", zh: "👀 所有建筑 — 办公室只能查看：各建筑在自己的设备上更改清单" },
+            "👀 daily list view only": { fr: "👀 liste quotidienne en lecture seule", es: "👀 lista diaria solo lectura", vi: "👀 danh sách hằng ngày chỉ xem", zh: "👀 每日清单仅查看" },
             "Back to {building}": { fr: "Retour à {building}", es: "Volver a {building}", vi: "Quay lại {building}", zh: "返回 {building}" },
             "View only — another building’s list": { fr: "Consultation seule — la liste d’un autre bâtiment", es: "Solo lectura — la lista de otro edificio", vi: "Chỉ xem — danh sách của tòa nhà khác", zh: "仅查看 — 其他建筑的清单" },
             "View only — hours are logged in that building": { fr: "Consultation seule — les heures se saisissent dans ce bâtiment", es: "Solo lectura — las horas se registran en ese edificio", vi: "Chỉ xem — giờ được ghi tại tòa nhà đó", zh: "仅查看 — 工时在该建筑登记" },

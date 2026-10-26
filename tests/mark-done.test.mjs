@@ -69,8 +69,9 @@ export async function run(b, BASE) {
     await b.run(dw, `[...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes('Top Dress')).querySelector('.done-btn').click();`, { user: true });
     await b.run(dw, `document.getElementById('doneReopenBtn').click();`, { user: true });
     await b.run(dw, 'closeDone();');
-    const adj = await b.run(main, `return DB.data._DailyWizard.buildings.B1.adjustments || [];`);
-    check('office reopened an older sign-off: kept on record', adj.length === 1 && adj[0].eventId === 'ev_doneb1' && adj[0].reopened?.name === 'Drew' && !adj[0].entry, JSON.stringify(adj));
+    const adj = await b.run(main, `return DB.data._DailyWizard.adjustments || [];`);
+    check('office reopened an older sign-off: kept on record in Main (the office never writes a building\'s file)', adj.length === 1 && adj[0].eventId === 'ev_doneb1' && adj[0].reopened?.name === 'Drew' && !adj[0].entry
+        && !(await b.run(main, `return (DB.data._DailyWizard.buildings.B1.adjustments || []).length;`)), JSON.stringify(adj));
     await dwDate(b, dw, T);
     open = await dwStillOpen(b, dw);
     check('…and the reopened task is back in Still open', open.some(t => t.includes('Top Dress')), JSON.stringify(open));

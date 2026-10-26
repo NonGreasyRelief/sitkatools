@@ -10,6 +10,9 @@ export async function run(b, BASE) {
     const db = fixtureDb();
     db.buildings.B3 = { name: 'Building 3', description: null, createdDate: '2026-01-01', assignedRooms: ['R3DR'] };
     db.rooms.R3DR = { name: 'Dry 3', description: null, createdDate: '2026-01-01', assignedLots: [], isFlowering: false, buildingId: 'B3' };
+    // L200 has a page in Building 2's file, so moving it elsewhere puts it on its way there
+    db._PaperWizard = { sheets: { prop: { name: 'Propagation', orientation: 'portrait', pageWidthIn: 8.5, pageHeightIn: 11, pageCount: 1, cadence: 'one-shot', document: 'propagation', fields: [], signature: null } },
+        wizards: {}, entries: { L200: { prop: { instances: { single: { phase: null, room: 'Grow A', header: {}, days: {}, snapshots: {}, signature: null, completedAt: null, printedAt: null } } } } } };
     const main = await fresh(b);
     const files = await splitFiles(b, main, BASE, db);
     await openSplit(b, main, BASE, 'office', files);
@@ -35,18 +38,17 @@ export async function run(b, BASE) {
     // L200 (no grow log) is set to Building 3's Dry 3 in the Lot Manager: that's the move
     await b.run(main, `DB.data.lots.L200.dryRoom = 'Dry 3'; renderLotList();
         const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L200"]'); sel.value = 'Dry 3'; sel.dispatchEvent(new Event('change', { bubbles: true }));
-        window.__tid = Object.keys(DB.data._LotTransfers || {}).find(k => DB.data._LotTransfers[k].lotId === 'L200');
-        window.__row = document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]');`, { user: true });
+        window.__row = document.querySelector('.split-transfer[data-lot="L200"]');`, { user: true });
     let row = await b.run(main, `const r = window.__row; return r ? { text: r.textContent, buttons: r.querySelectorAll('button, input, select').length } : null;`);
     check('the move on its way is listed: lot, from → to (room), waiting for the receiver to pick it up — nothing to click',
         row?.text.includes('Lot L200: Building 2 → Building 3 (Dry 3)') && row.text.includes('waiting for Building 3 to pick it up') && row.buttons === 0, JSON.stringify(row));
     await b.run(main, `const st = document.querySelector('.lot-stage-select[data-lot-id="L300"]'); st.value = 'flower'; st.dispatchEvent(new Event('change'));`);
-    check('another change doesn\'t rebuild the row', await b.run(main, `return document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]') === window.__row;`));
+    check('another change doesn\'t rebuild the row', await b.run(main, `return document.querySelector('.split-transfer[data-lot="L200"]') === window.__row;`));
     await b.run(main, `DB.data.buildings.B3.name = 'Building Three'; BuildingManager.renderBuildingList();`);
-    row = await b.run(main, `return document.querySelector('.split-transfer[data-transfer="' + window.__tid + '"]')?.textContent || '';`);
+    row = await b.run(main, `return document.querySelector('.split-transfer[data-lot="L200"]')?.textContent || '';`);
     check('a renamed building shows its new name', row.includes('Building 2 → Building Three'), row);
-    await b.run(main, `DB.data._LotTransfers[window.__tid].acceptedAt = new Date().toISOString(); LotActions.render();`);
-    check('the row goes once the lot is picked up', await b.run(main, `return !document.querySelector('.split-transfer');`));
+    await b.run(main, `const sel = document.querySelector('.lot-currentroom-select[data-lot-id="L200"]'); sel.value = 'Grow A'; sel.dispatchEvent(new Event('change', { bubbles: true })); LotActions.render();`, { user: true });
+    check('the row goes when the lot is back in the building that has its pages', await b.run(main, `return !document.querySelector('.split-transfer');`));
 
     await leave(b, main);
     return results;

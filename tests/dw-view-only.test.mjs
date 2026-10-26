@@ -95,13 +95,17 @@ export async function run(b, BASE) {
     check('saving writes only Building-B1.json, with no "can\'t be saved" warning', Object.keys(saved).join() === 'Building-B1.json' && !b.logs.some(l => l.includes("can't be saved")), Object.keys(saved).join(', '));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
 
-    // ---- The office: everything works, All Buildings shows every Still open ----
+    // ---- The office with building files: the daily lists are view only (only a building's own device saves its file),
+    // crop and equipment tasks still take hours and sign-offs (they're the events', in Main); All Buildings shows every Still open ----
     await openSplit(b, main, BASE, 'office', files);
     const ow = await openTool(b, main, 'DailyWizard');
     await dwBuilding(b, ow, 'ALL');
-    const off = await b.run(ow, `return { note: !!document.querySelector('#listContainer .view-only-note'), marked: [...document.getElementById('buildingSelect').options].some(o => o.textContent.includes('👀')),
-        checks: [...document.querySelectorAll('#listContainer .task-check input')].map(i => i.disabled), text: document.getElementById('listContainer').innerText };`);
-    check('office: no view-only note or 👀, every tick works', !off.note && !off.marked && off.checks.every(x => !x), JSON.stringify(off.checks));
+    const off = await b.run(ow, `return { note: document.querySelector('#listContainer .view-only-note')?.textContent || '', marked: [...document.getElementById('buildingSelect').options].filter(o => o.textContent.includes('👀 daily list view only')).length,
+        checks: [...document.querySelectorAll('#listContainer .task-check input')].map(i => i.disabled), done: [...document.querySelectorAll('#listContainer .done-btn')].map(x => x.disabled),
+        hours: [...document.querySelectorAll('#listContainer .task-row')].filter(r => r.querySelector('.done-btn')).map(r => r.querySelector('.hours-btn')?.disabled), text: document.getElementById('listContainer').innerText };`);
+    check('office: the daily lists are view only — a note, both buildings marked, their ticks off (only the general event\'s tick, kept in the page, works)',
+        off.note.includes('view only on the office') && off.marked === 2 && off.checks.slice(0, -1).every(x => x) && off.checks[off.checks.length - 1] === false, JSON.stringify(off));
+    check('office: crop and equipment tasks still take hours and ✍️ Mark done', off.done.length > 0 && off.done.every(x => !x) && off.hours.every(x => !x), JSON.stringify({ done: off.done, hours: off.hours }));
     check('office: All Buildings shows Still open for both buildings', off.text.includes('Room Tidy') && off.text.includes('Strip Fans'));
     await leave(b, ow); await b.send('browsingContext.close', { context: ow });
     await leave(b, main);
