@@ -64,8 +64,18 @@ export async function run(b, BASE) {
     await b.run(dw, `const el = document.getElementById('dateInput'); el.value = '${today(-3)}'; el.dispatchEvent(new Event('change'));`);
     await b.run(dw, setClock(0, 3, 'focus', true));
     check('a date picked by hand stays put', (await dwDate()).date === today(-3));
-
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
+    // A tick made just past midnight, before the once-a-minute check ran, doesn't land on yesterday (review H3)
+    const dw2 = await openTool(b, main, 'DailyWizard');
+    await b.run(dw2, `const s = document.getElementById('buildingSelect'); s.value = 'B1'; s.dispatchEvent(new Event('change'));`);
+    const newDay = await b.run(dw2, setClock(0, 1, 'x-no-check', true));
+    check('past midnight, before the check: yesterday\'s list is still up', (await b.run(dw2, `return document.getElementById('dateInput').value;`)) === today());
+    await b.run(dw2, `const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes('Water plants')); row.querySelector('input[type=checkbox]').click();`, { user: true });
+    await b.sleep(200);
+    const h3 = await b.run(dw2, `return { date: document.getElementById('dateInput').value, toast: document.getElementById('toast').textContent,
+        old: !!DB.data._DailyWizard.buildings.B1?.checks?.['${today()}']?.wat1 };`);
+    check('…a tick then rolls the list over to the new day instead of ticking yesterday', h3.date === newDay && h3.toast.includes("new day") && !h3.old, JSON.stringify(h3));
+    await leave(b, dw2); await b.send('browsingContext.close', { context: dw2 });
 
     // ---- PaperWizard: a grow-log page whose 7 days end today; tomorrow the cabinet offers the next week ----
     const db = fixtureDb();

@@ -1212,6 +1212,7 @@
                 // CropLabourWizard top-level state — additive backfill so old DB files load unchanged.
                 // (BUILTIN_RECIPE is defined below; the first ensureStructure() call happens after it.)
                 if (!this.data._CropLabourWizard) this.data._CropLabourWizard = { generations: [] };
+                if (!Array.isArray(this.data._CropLabourWizard.generations)) this.data._CropLabourWizard.generations = [];   // review G11
                 if (!this.data._CropLabourWizard.recipes) this.data._CropLabourWizard.recipes = {};
                 for (const r of Object.values(this.data._CropLabourWizard.recipes)) normalizeCloneCut(r);
                 if (!this.data._CropLabourWizard.taskTypes) {
@@ -1383,7 +1384,16 @@
         // Recipes saved before the clone cut was an ordinary task kept it in chain.cloneCutBeforeHarvest,
         // and their clone_cut task showed a flip offset that was ignored. Convert one to harvest −N, so
         // every date stays where it was. Idempotent; runs on load, import and save.
+        // The anchors are worked out from fixed references (computeAnchors): planting from cloning, flip from planting,
+        // harvest from flip, trim from harvest, retire from planting. A recipe that says otherwise (an edit, an
+        // import) is pinned back, so dates never creep and no task counts from itself (review G2).
+        const ANCHOR_REFS = { planting: 'cloning', flip: 'planting', harvest: 'flip', trim: 'harvest', retire: 'planting' };
+        function pinAnchorRefs(recipe) {
+            for (const t of Array.isArray(recipe?.tasks) ? recipe.tasks : []) if (t && ANCHOR_REFS[t.taskType]) t.reference = ANCHOR_REFS[t.taskType];
+            return recipe;
+        }
         function normalizeCloneCut(recipe) {
+            pinAnchorRefs(recipe);
             if (isVegRecipe(recipe)) return recipe;   // a mother recipe's clone cut counts back from Retire Mothers
             const t = Array.isArray(recipe?.tasks) ? recipe.tasks.find(x => x?.taskType === 'clone_cut') : null;
             if (!t || t.reference === 'harvest') return recipe;
@@ -1675,6 +1685,8 @@
                 }
                 if (typeof t.name !== 'string' || !t.name.trim()) errors.push(`${label} ${who}: name is required`);
                 if (typeof t.emoji !== 'string' || !t.emoji) errors.push(`${label} ${who}: emoji is required`);
+                // An emoji, not markup: a shared recipe file can't put HTML into the page (review I3)
+                else if (t.emoji.length > 8 || /[<>&"'`]/.test(t.emoji)) errors.push(`${label} ${who}: emoji must be a short emoji (up to 8 characters, no < > & or quotes)`);
                 if (!anchors.includes(t.reference)) {
                     errors.push(`${label} ${who}: reference must be one of ${anchors.join(' / ')}${veg ? ' (a vegetative recipe has no flip, harvest or trim)' : ''}`);
                 }
@@ -1952,7 +1964,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // ---- Recipe Manager (Stage 4) — create / edit / duplicate / delete recipes in-UI ----
         const RECIPE_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-        const MANDATORY_RECIPE_TASKS = ['planting', 'flip', 'harvest', 'retire'];   // per recipe kind: mandatoryTasks()
         let editorRecipe = null; // working deep-copy while editing
 
         function cloneRecipeData(recipe) { return JSON.parse(JSON.stringify(recipe)); }
@@ -2328,7 +2339,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <td class="t-emoji"><input type="text" class="t-emoji" maxlength="4" value="${escapeHtml(t.emoji || '')}" title="Emoji"></td>
                     <td><input type="text" class="t-name" value="${escapeHtml(t.name || '')}" placeholder="Task name" title="Name"></td>
                     <td class="t-type"><input type="text" class="t-type" value="${escapeHtml(t.taskType || '')}" placeholder="snake_case" title="Task type (event tag)"></td>
-                    <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? `disabled title="${isVegRecipe(editorRecipe) ? 'Counted back from Retire Mothers — it starts the next mother lot' : 'Counted back from harvest — it starts the next lot'}"` : 'title="Reference anchor"'}>${refOpts}</select></td>
+                    <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? `disabled title="${isVegRecipe(editorRecipe) ? 'Counted back from Retire Mothers — it starts the next mother lot' : 'Counted back from harvest — it starts the next lot'}"` : ANCHOR_REFS[t.taskType] ? `disabled title="An anchor: always counted from ${ANCHOR_REFS[t.taskType]}"` : 'title="Reference anchor"'}>${refOpts}</select></td>
                     <td class="t-offset"><input type="number" class="t-offset" step="1" min="${recipeOffsetRange(t).min}" max="${recipeOffsetRange(t).max}" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
                     <td class="t-life"></td>
                     <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
@@ -3118,7 +3129,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const addDays = (dateStr, days) => {
                 const d = new Date(dateStr + 'T00:00:00');
                 d.setDate(d.getDate() + days);
-                return d.toISOString().split('T')[0];
+                return localDateStr(d);   // local, never UTC (review G7)
             };
 
             const cloningDate = topDate;
@@ -3137,7 +3148,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function computeTaskDate(anchorDateStr, offset) {
             const d = new Date(anchorDateStr + 'T00:00:00');
             d.setDate(d.getDate() + offset);
-            return d.toISOString().split('T')[0];
+            return localDateStr(d);   // local, never UTC (review G7)
         }
 
         // Resolve the anchor date a task's offset is measured from.
@@ -3145,9 +3156,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         //   harvest finishes; identical to start when single-day)
         // - 'trim' reference → re-based: post-trim offsets are defined assuming a
         //   7-day trim, so shift the anchor by (actual length − 7)
-        function resolveTaskAnchor(anchors, ref) {
+        // tDays: the schedule's own trim length (the preview's for the form; a projection passes its own — review G3)
+        function resolveTaskAnchor(anchors, ref, tDays = trimDays) {
             if (ref === 'harvest') return anchors.harvestEnd;
-            if (ref === 'trim') return computeTaskDate(anchors.trim, trimDays - DEFAULT_TRIM_DAYS);
+            if (ref === 'trim') return computeTaskDate(anchors.trim, tDays - DEFAULT_TRIM_DAYS);
             return anchors[ref];
         }
 
@@ -3296,7 +3308,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const title = holiday.nominalDate
                 ? `${holiday.name} — BC civic holiday (observed ${holiday.date}; nominal date ${holiday.nominalDate} falls on a weekend)`
                 : `${holiday.name} — BC civic holiday (${holiday.rule})`;
-            return `<span class="holiday-flag" title="${title}">🏛️ Holiday</span>`;
+            return `<span class="holiday-flag" title="${escapeHtml(title)}">🏛️ Holiday</span>`;
         }
 
         // =====================================================
@@ -3647,7 +3659,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
                 item.innerHTML = `
                     ${checkboxHtml}
-                    <span class="preview-task-emoji">${def.emoji}</span>
+                    <span class="preview-task-emoji">${escapeHtml(def.emoji)}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
                         <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel} · <span class="preview-task-life" title="Day 1 is the day the clones are cut (the planting day with clones off); the plants' life ends with the harvest's last day">${lifeDayText(lifeDay)}</span>${estHtml}${repeatHtml}</div>
@@ -3716,7 +3728,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (holidayConflicts.length > 0) {
                 banner.className = 'holiday-conflict-banner';
                 const items = holidayConflicts.map(c =>
-                    `<li>${c.emoji} ${escapeHtml(c.name)} — <strong>${c.date}</strong> falls on ${escapeHtml(c.holiday.name)}${c.holiday.nominalDate ? ` (observed; nominal date ${c.holiday.nominalDate})` : ''}</li>`
+                    `<li>${escapeHtml(c.emoji)} ${escapeHtml(c.name)} — <strong>${escapeHtml(c.date)}</strong> falls on ${escapeHtml(c.holiday.name)}${c.holiday.nominalDate ? ` (observed; nominal date ${c.holiday.nominalDate})` : ''}</li>`
                 ).join('');
                 banner.innerHTML = `<strong>⚠️ ${holidayConflicts.length} task${holidayConflicts.length > 1 ? 's' : ''} fall${holidayConflicts.length > 1 ? '' : 's'} on a BC civic holiday</strong><ul>${items}</ul>`;
             } else {
@@ -3938,7 +3950,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const def = entry.def;
                 let anchorRef = def.reference, effectiveOffset = entry.offset;
                 if (def.taskType === 'planting' && !clonesEnabled) { anchorRef = 'planting'; effectiveOffset = 0; }
-                const start = computeTaskDate(resolveTaskAnchor(anchors, anchorRef), effectiveOffset);
+                const start = computeTaskDate(resolveTaskAnchor(anchors, anchorRef, d.trimDays ?? DEFAULT_TRIM_DAYS), effectiveOffset);
                 const endOf = st => {
                     if (def.taskType === 'trim' && d.trimDays > 1) return computeTaskDate(st, d.trimDays - 1);
                     if (def.taskType === 'harvest' && d.harvestMultiDay && d.harvestDays > 1) return computeTaskDate(st, d.harvestDays - 1);
@@ -4736,6 +4748,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             DB.ensureStructure();
 
+            // A mother lot stays a mother lot: regenerating it with a bloom recipe (its 🌿 recipe deleted, or another one
+            // picked) would give it a flip and a harvest. Refused, saying what to do (review G8).
+            const prevCfg = isProjectedLot(lotId) ? null : getScheduleConfig(lotId);
+            if (prevCfg?.kind === 'vegetative' && !isVegRecipe(activeRecipe)) {
+                alert(`${lotId} is a mother lot (scheduled with a 🌿 mother recipe). "${activeRecipe.name}" is a bloom recipe — pick a 🌿 mother recipe to regenerate it. Nothing was changed.`);
+                return;
+            }
+
             // Forward push plan (room-readiness gate) — computed BEFORE mutating anything, so a
             // cancelled warning leaves the chain completely untouched (same guarantee as
             // reprojection). The gate is room readiness only — later lots are pushed forward solely
@@ -4789,14 +4809,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Matched by task type and repeat: a repeating task that now repeats fewer times drops its last repeats.
             // Counted the way carry-over matches them — one previous event per new one, in order — so a second event of
             // the same task (an older duplicate) that would find no replacement is asked about too (review G1)
+            // Repeats are matched by their number while the task's interval is unchanged (the schedule shifted as a whole),
+            // and by date once the interval changed — else their done marks and hours would move to other dates (review G4)
+            const newEvery = {};
+            for (const e of taskOffsets) newEvery[e.def.taskType] = taskRepeatEvery(e.def);
+            const oldGap = tt => {
+                const evs = previousEvents.filter(e => e.taskType === tt && e.repeat).sort((a, b) => a.repeat - b.repeat);
+                return evs.length > 1 ? daysBetween(evs[0].date, evs[1].date) : null;
+            };
+            const byDate = new Set(Object.keys(newEvery).filter(tt => newEvery[tt] && oldGap(tt) != null && oldGap(tt) !== newEvery[tt]));
+            const keyOf = ev => byDate.has(ev.taskType) && ev.repeat ? `${ev.taskType}@${ev.date}` : annotationKey(ev);
             const freshCount = new Map();
             for (const o of scheduleOccurrences(plantingDate, taskOffsets, { trimDays, harvestMultiDay, harvestDays })) {
-                const k = `${o.def.taskType}#${o.repeat || 1}`;
+                const k = byDate.has(o.def.taskType) && o.repeat ? `${o.def.taskType}@${o.start}` : `${o.def.taskType}#${o.repeat || 1}`;
                 freshCount.set(k, (freshCount.get(k) || 0) + 1);
             }
             const seenKeys = new Map();
             const lostRecords = previousEvents.filter(ev => {
-                const k = annotationKey(ev), n = (seenKeys.get(k) || 0) + 1;
+                const k = keyOf(ev), n = (seenKeys.get(k) || 0) + 1;
                 seenKeys.set(k, n);
                 return n > (freshCount.get(k) || 0) && hasWorkRecords(ev);
             });
@@ -4814,7 +4844,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const { events: newEvents, config } = generateLotSchedule(lotId, plantingDate, taskOffsets, {
                 trimDays, harvestMultiDay, harvestDays
             });
-            carryOverAnnotations(previousEvents, newEvents, annotationKey);
+            carryOverAnnotations(previousEvents, newEvents, keyOf);
 
             // Log generation for real lots (projected lots are tracked in the map instead)
             if (!isProjectedLot(lotId)) {
@@ -5110,7 +5140,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     : '';
 
                 item.innerHTML = `
-                    <span class="task-emoji">${emoji}</span>
+                    <span class="task-emoji">${escapeHtml(emoji)}</span>
                     <div class="task-info">
                         <div class="task-name">${escapeHtml(nameWithoutEmoji)}</div>
                         <span class="task-type-badge">${escapeHtml(ev.taskType || '')}</span>
@@ -5274,7 +5304,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             DatePicker.init();
 
             // Set default planting date to today
-            plantingDateInput.value = new Date().toISOString().split('T')[0];
+            plantingDateInput.value = localDateStr(new Date());   // today here, not in UTC (review G7)
 
             buildDefaultOffsets();
             populateLotSelector();

@@ -248,7 +248,7 @@ Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **�
 
 - `📋 DailyWizard`, then **🌐 Language**, **Building**, and the date.
 - **Building:** `— All Buildings —`, then every `DB.data.buildings` entry (`{id} — {name}`), then orphans with ⚠️. On a building device see "Other Buildings on a Building Device".
-- **Date** (`<input type="date">`): defaults to today and follows today while it still shows the date it set itself, so a tablet left overnight moves on (checked on focus, when the tab is shown, and each minute — `rollToToday`). A hand-picked date is left alone.
+- **Date** (`<input type="date">`): defaults to today and follows today while it still shows the date it set itself, so a tablet left overnight moves on (checked on focus, when the tab is shown, and each minute — `rollToToday`). A hand-picked date is left alone. A tick, ⏱ Log or ✍️ Mark done made past midnight before that check ran rolls the list over first ("It's a new day — here's today's list", `newDayPending`), so nothing lands on yesterday (review H3). A step being typed is saved to the step that still says what it said, even if a live update reordered the steps (review H4); saving a task deleted elsewhere says so and saves nothing (review H5).
 
 ### Status Bar
 

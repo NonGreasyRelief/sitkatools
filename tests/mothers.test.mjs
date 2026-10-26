@@ -99,6 +99,26 @@ export async function run(b, BASE) {
     const asked = await b.run(clw, 'return window.__asked;');
     check('retiring the mothers sooner asks before dropping a later repeat that holds work', asked.includes('with recorded work will be removed') && asked.includes(`Prune Mothers (${prunes.length}/${prunes.length})`), asked.slice(0, 200));
 
+    // A changed interval: repeats are matched by date, so the done marks and hours stay on their days (review G4)
+    const setEvery = n => b.run(main, `DB.data._CropLabourWizard.recipes['${rid}'].tasks.find(t => t.taskType === 'mother_prune').every = ${n}; markUnsaved(); broadcastToSubtools();`)
+        .then(() => b.waitFor(clw, `return DB.data._CropLabourWizard.recipes['${rid}'].tasks.find(t => t.taskType === 'mother_prune').every === ${n};`));
+    await setEvery(7);
+    await b.run(clw, `const l = document.getElementById('activeLot'); l.value = 'M100'; l.dispatchEvent(new Event('change'));
+        window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    const g4 = await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === 'M100' && e.taskType === 'mother_prune' && e.completed).map(e => [e.date, e.repeat, e.labour_map ? 1 : 0]);`);
+    check('pruning every 7 days instead of 14: the done prune keeps its day and hours (now repeat 3), not moved to repeat 2\'s new day',
+        g4.some(x => x[0] === prunes[1] && x[1] === 3 && x[2] === 1) && !g4.some(x => x[1] === 2), JSON.stringify(g4));
+    await setEvery(14);
+
+    // A mother lot isn't regenerated with a bloom recipe (review G8)
+    const g8 = await b.run(clw, `let m = ''; window.alert = x => { m = x; }; const before = JSON.stringify(DB.data.calendarEvents.filter(e => e.lotId === 'M100').map(e => e.id));
+        const r = document.getElementById('recipeSelect'); r.value = 'sitka-9week'; r.dispatchEvent(new Event('change')); document.getElementById('generateBtn').click();
+        const same = JSON.stringify(DB.data.calendarEvents.filter(e => e.lotId === 'M100').map(e => e.id)) === before;
+        r.value = '${rid}'; r.dispatchEvent(new Event('change'));
+        return { m, same, kind: DB.lots.M100._tool_CropLabourWizard.kind };`, { user: true });
+    check('a mother lot isn\'t regenerated with a bloom recipe: it says to pick a 🌿 recipe, nothing changes', g8.m.includes('is a mother lot') && g8.same && g8.kind === 'vegetative', JSON.stringify(g8));
+
     // ---- 🔮 Project Crop in a Mother room: the next mother lots, each from the previous one's replacement cut ----
     await b.run(clw, `window.confirm = () => { window.__pushAsked = true; return true; }; window.__pushAsked = false;
         const l = document.getElementById('activeLot'); l.value = 'M100'; l.dispatchEvent(new Event('change')); updateProjectBtnState();`);

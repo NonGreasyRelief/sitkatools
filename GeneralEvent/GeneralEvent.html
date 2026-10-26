@@ -807,6 +807,8 @@
             DB.ensureStructure();
 
             const calendarEvents = DB.data.calendarEvents || [];
+            // A row keeps the time it was first logged: the rebuild on every DB arrival doesn't re-stamp it (review H8)
+            const firstLogged = new Map((DB.data._GeneralEvent?.events || []).filter(e => e?.id).map(e => [e.id, e.createdAt]));
             const rebuilt = [];
             const seenIds = new Set();
 
@@ -836,7 +838,7 @@
                             startTime: ev.startTime || null,
                             endTime: ev.endTime || null,
                             emoji: emoji,
-                            createdAt: new Date().toISOString()
+                            createdAt: firstLogged.get(id) || new Date().toISOString()
                         });
                         seenIds.add(id);
                     }
@@ -967,7 +969,9 @@
         // Auto-clear end time if start time changes
         eventStartTimeInput.addEventListener('change', () => {
             // Reset end time if it's now before start time
-            if (eventEndTimeInput.value && eventEndTimeInput.value <= eventStartTimeInput.value) {
+            // …on a one-day event only: on a multi-day one the end time is on another day (review H8)
+            const multiDay = eventEndDateInput.value && eventEndDateInput.value > eventDateInput.value;
+            if (!multiDay && eventEndTimeInput.value && eventEndTimeInput.value <= eventStartTimeInput.value) {
                 eventEndTimeInput.value = '';
             }
         });
@@ -993,7 +997,7 @@
             eventListEl.innerHTML = '';
 
             // Sort by date, then creation order. The log follows calendarEvents, which tools only append to, so
-            // its position is the creation order (createdAt is re-stamped whenever the log is rebuilt).
+            // its position is the creation order (createdAt is the time a row was first logged).
             const sorted = log.map((entry, i) => ({ entry, i }))
                 .sort((a, b) => String(a.entry.date || '').localeCompare(String(b.entry.date || '')) || a.i - b.i)
                 .map(x => x.entry);
@@ -1023,7 +1027,7 @@
                 }
 
                 item.innerHTML = `
-                    <span class="event-date-badge">${displayDate}${timeDisplay ? '<br>' + timeDisplay : ''}</span>
+                    <span class="event-date-badge">${escapeHtml(displayDate)}${timeDisplay ? '<br>' + escapeHtml(timeDisplay) : ''}</span>
                     <span class="event-text">${escapeHtml(entry.emoji + ' ' + entry.text)}</span>
                     <button class="event-delete-btn" title="Remove event">✕</button>
                 `;

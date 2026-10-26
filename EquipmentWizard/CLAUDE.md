@@ -61,6 +61,7 @@ For each task, `computeEquipmentEvents` starts at `startDate` and adds the inter
 
 - **Months:** occurrence *k* is always `startDate + k × interval` months, clamped to the last day of the month. It is never chained from the previous occurrence. So Jan 31 monthly gives Jan 31, Feb 28 (or 29), Mar 31, Apr 30…
 - **Days:** plain day addition.
+- An interval below 1 (only from a hand-edited file) gives one visit, never an endless loop (review G10).
 - **Local dates only**, including "today". Never UTC.
 - **Retroactive start:** a `startDate` in the past back-fills occurrences up to today, then continues 12 months ahead. This keeps the real maintenance cadence when tracking starts late.
 
@@ -79,6 +80,7 @@ A resync deletes the room's EquipmentWizard events (`sourceTool === 'EquipmentWi
   - Events are matched on `equipmentId + taskId + date` (`equipmentEventKey`), so renaming a task or changing its emoji keeps its history.
   - Events without `taskId` fall back to `equipmentId + title + date`. The first resync gives each matched event its `taskId`.
 - **Unmatched old events are dropped.** The exception (`retainedHistory`): a completed or labour-tracked event (`hasWorkRecords`) whose equipment and room still exist stays on the calendar as maintenance history, e.g. after an interval change.
+  - Such a visit **covers its period** (`dropCoveredOccurrences`, review G9): the occurrence whose period (from it to the task's next one) holds the visit's date isn't generated again, so a start or interval edit doesn't leave a second, overdue visit.
 - **Gotcha:** a date moved on the SitkaTools calendar no longer matches, so it is regenerated at its computed date (ROADMAP 0.6).
 
 **Editing:**

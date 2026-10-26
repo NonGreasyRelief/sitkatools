@@ -6309,7 +6309,7 @@
             } else {
                 statusBar.className = 'status-bar loaded';
                 statusBar.innerHTML = `
-                    <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                    <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName || '')}</strong></span>
                     <span class="lot-count">${count} lot${count !== 1 ? 's' : ''}</span>
                 `;
             }
@@ -6478,16 +6478,16 @@
                         : ` ${fmt(ev.startTime)}`;
                 }
                 const multiDay = ev.endDate && ev.endDate !== ev.date
-                    ? ` (${ev.date} to ${ev.endDate})`
+                    ? ` (${escapeHtml(ev.date)} to ${escapeHtml(ev.endDate)})`
                     : '';
                 // Only show the bracketed lot tag if the title doesn't already contain the lot ID
-                const lotTag = ev.lotId && !(ev.title || '').includes(ev.lotId) ? ` [${ev.lotId}]` : '';
+                const lotTag = ev.lotId && !(ev.title || '').includes(ev.lotId) ? ` [${escapeHtml(ev.lotId)}]` : '';
                 const cleanTitle = escapeHtml(stripEmoji(ev.title));
 
                 return `<tr>
                         <td class="date-col">${dayLabel}${isToday ? ' (Today)' : ''}</td>
                         <td>${cleanTitle}${lotTag}${multiDay}</td>
-                        <td class="time-col">${timeStr}</td>
+                        <td class="time-col">${escapeHtml(timeStr)}</td>
                         <td class="check-col"><input type="checkbox"></td>
                     </tr>`;
             };
@@ -7066,13 +7066,14 @@
 
             sorted.forEach(key => {
                 const lot = lots[key];
+                const k = escapeHtml(key);   // ids, strains and room names are typed: escaped into the page (review I1)
                 const item = document.createElement('div');
                 item.className = 'lot-item';
 
-                const badgeClass = `badge-${lot.type}`;
+                const badgeClass = `badge-${escapeHtml(lot.type || '')}`;
                 const typeLabel = lot.type === 'new-lot' ? 'New' : lot.type === 'sub-lot' ? 'Sub-Lot' : 'Split';
 
-                const parentInfo = lot.parentLotId ? ` ← ${lot.parentLotId}` : '';
+                const parentInfo = lot.parentLotId ? ` ← ${escapeHtml(lot.parentLotId)}` : '';
                 const roomParts = [
                     lot.cloningRoom ? `Clone: ${lot.cloningRoom}` : '',
                     lot.vegRoom ? `Veg: ${lot.vegRoom}` : '',
@@ -7089,7 +7090,7 @@
                 const lockChip = (text) => `<span class="lot-locked-chip" title="${lockTip}">🔒 ${escapeHtml(text)}</span>`;
 
                 // Build stage selector dropdown
-                const stageSelectId = `stage_${key}`;
+                const stageSelectId = `stage_${k}`;
                 const stages = ['cloning', 'veg', 'mother', 'flower', 'harvest', 'drying', 'curing'];
                 const stageOptions = stages.map(s => {
                     const label = s === 'cloning' ? 'Cloning' : s === 'veg' ? 'Vegetative' : s === 'mother' ? 'Mother' : s === 'flower' ? 'Flower' :
@@ -7100,7 +7101,7 @@
                 const stageLabel = { cloning: 'Cloning', veg: 'Vegetative', mother: 'Mother', flower: 'Flower', harvest: 'Harvest', drying: 'Drying', curing: 'Curing' }[lot.stage] || lot.stage || 'No stage';
                 const stageHtml = locked ? lockChip(stageLabel) : `
                     <div class="lot-stage-editor">
-                        <select class="lot-stage-select" id="${stageSelectId}" data-lot-id="${key}" title="Change stage">
+                        <select class="lot-stage-select" id="${stageSelectId}" data-lot-id="${k}" title="Change stage">
                             ${stageOptions}
                         </select>
                     </div>
@@ -7109,7 +7110,7 @@
                 // Build current-room dropdown — where the lot physically is now. Only offers the
                 // rooms this lot is designated to (clone / veg / flower / dry / trim), so a room
                 // can't be set as "current" unless it's one of the lot's assigned rooms.
-                const currentRoomSelectId = `currentRoom_${key}`;
+                const currentRoomSelectId = `currentRoom_${k}`;
                 const designatedRooms = [lot.cloningRoom, lot.vegRoom, lot.destRoom, lot.dryRoom, lot.trimRoom]
                     .filter(Boolean)
                     .filter((v, i, a) => a.indexOf(v) === i); // de-dupe (dry room often == trim room)
@@ -7118,7 +7119,7 @@
                     .join('');
                 const currentRoomHtml = locked ? lockChip(`📍 ${lot.currentRoom || 'no room'}`) : `
                     <div class="lot-stage-editor">
-                        <select class="lot-currentroom-select" id="${currentRoomSelectId}" data-lot-id="${key}" title="Current room (where the lot is now)">
+                        <select class="lot-currentroom-select" id="${currentRoomSelectId}" data-lot-id="${k}" title="Current room (where the lot is now)">
                             ${currentRoomOptions}
                         </select>
                     </div>
@@ -7126,13 +7127,13 @@
 
                 // Build plant count spinbox — always visible
                 const currentCount = lot.plantCount !== null && lot.plantCount !== undefined ? lot.plantCount : 0;
-                const inputId = `plantCount_${key}`;
+                const inputId = `plantCount_${k}`;
                 const plantCountHtml = locked ? lockChip(`🌱 ${currentCount}`) : `
                     <div class="plant-count-editor">
                         <span class="plant-count-emoji">🌱</span>
                         <div class="spinbox-group">
                             <button type="button" class="spinbox-btn minus" data-target="${inputId}" title="Decrease by 1">−</button>
-                            <input type="number" class="plant-count-input" id="${inputId}" data-lot-id="${key}"
+                            <input type="number" class="plant-count-input" id="${inputId}" data-lot-id="${k}"
                                    min="0" max="10000" step="any" value="${currentCount}" title="Plant count">
                             <button type="button" class="spinbox-btn plus" data-target="${inputId}" title="Increase by 1">+</button>
                         </div>
@@ -7152,7 +7153,7 @@
                 const roomEditorHtml = (field, emoji, label) => `
                     <div class="lot-room-editor">
                         <span title="${label}">${emoji}</span>
-                        <select class="lot-room-select" data-lot-id="${key}" data-room-field="${field}" title="${label} room">
+                        <select class="lot-room-select" data-lot-id="${k}" data-room-field="${field}" title="${label} room">
                             ${roomOptionsHtml(lot[field])}
                         </select>
                     </div>
@@ -7167,7 +7168,7 @@
                         ${lot.type === 'new-lot' || lot.receivedFrom ? `
                         <div class="lot-room-editor">
                             <span title="Received from">📦</span>
-                            <input type="text" class="lot-from-input" data-lot-id="${key}" maxlength="80" value="${escapeHtml(lot.receivedFrom || '')}" placeholder="Received from" title="Who the plants came from (nursery or licence holder)">
+                            <input type="text" class="lot-from-input" data-lot-id="${k}" maxlength="80" value="${escapeHtml(lot.receivedFrom || '')}" placeholder="Received from" title="Who the plants came from (nursery or licence holder)">
                         </div>` : ''}
                     </div>
                 `;
@@ -7176,14 +7177,14 @@
                     <div class="lot-row-top">
                         <div class="lot-info">
                             <span class="lot-name">${escapeHtml(lot.name)}${roomInfo ? ' <span style="color: var(--text-secondary); font-weight: 400;">' + escapeHtml(roomInfo) + '</span>' : ''}</span>
-                            <span class="lot-meta">${key}${parentInfo} · ${lot.strain || 'No strain'} · ${lot.createdDate}</span>
+                            <span class="lot-meta">${k}${parentInfo} · ${escapeHtml(lot.strain || 'No strain')} · ${escapeHtml(lot.createdDate || '')}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                             ${stageHtml}
                             ${currentRoomHtml}
                             ${plantCountHtml}
                             <span class="lot-type-badge ${badgeClass}">${typeLabel}</span>
-                            <button class="lot-delete-btn" data-lot-id="${key}" data-lot-name="${escapeHtml(lot.name)}" ${locked ? 'disabled title="This lot has grow logs: it can\'t be deleted. Close it out (Data &amp; Files → 🌱 Lots) once its plant count is 0."' : 'title="Delete lot"'}>✕</button>
+                            <button class="lot-delete-btn" data-lot-id="${k}" data-lot-name="${escapeHtml(lot.name)}" ${locked ? 'disabled title="This lot has grow logs: it can\'t be deleted. Close it out (Data &amp; Files → 🌱 Lots) once its plant count is 0."' : 'title="Delete lot"'}>✕</button>
                         </div>
                     </div>
                     ${roomEditorsHtml}
@@ -7655,16 +7656,16 @@
                         <div class="room-header">
                             <div class="lot-info">
                                 <span class="lot-name">${escapeHtml(room.name)}</span>
-                                <span class="lot-meta">${key}${room.description ? ' · ' + escapeHtml(room.description) : ''} · ${lotCount} lot${lotCount !== 1 ? 's' : ''} assigned</span>
+                                <span class="lot-meta">${escapeHtml(key)}${room.description ? ' · ' + escapeHtml(room.description) : ''} · ${lotCount} lot${lotCount !== 1 ? 's' : ''} assigned</span>
                             </div>
                             <div class="room-header-actions">
                                 ${room.buildingId && DB.data.buildings[room.buildingId] ? `<span class="building-badge" title="Building: ${escapeHtml(DB.data.buildings[room.buildingId].name)}">🏢 ${escapeHtml(DB.data.buildings[room.buildingId].name)}</span>` : ''}
                                 <span class="room-badge">Room</span>
-                                <button class="room-expand-btn" data-room-id="${key}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
-                                <button class="lot-delete-btn" data-room-id="${key}" data-room-name="${escapeHtml(room.name)}" title="Delete room" style="opacity: 1;">✕</button>
+                                <button class="room-expand-btn" data-room-id="${escapeHtml(key)}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
+                                <button class="lot-delete-btn" data-room-id="${escapeHtml(key)}" data-room-name="${escapeHtml(room.name)}" title="Delete room" style="opacity: 1;">✕</button>
                             </div>
                         </div>
-                        <div class="room-body ${isExpanded ? 'expanded' : ''}" id="room-body-${key}">
+                        <div class="room-body ${isExpanded ? 'expanded' : ''}" id="room-body-${escapeHtml(key)}">
                             ${this.renderRoomBody(key, room)}
                         </div>
                     `;
@@ -7696,33 +7697,33 @@
                         </div>` : ''}
                         <div class="room-detail-row">
                             <span class="detail-label">Created:</span>
-                            <span>${room.createdDate || 'N/A'}</span>
+                            <span>${escapeHtml(room.createdDate || 'N/A')}</span>
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Flowering:</span>
                             <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                                <input type="checkbox" class="room-is-flowering" data-room-id="${roomId}" ${room.isFlowering ? 'checked' : ''} style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
+                                <input type="checkbox" class="room-is-flowering" data-room-id="${escapeHtml(roomId)}" ${room.isFlowering ? 'checked' : ''} style="accent-color: var(--accent); width:16px; height:16px; cursor:pointer;">
                                 Flowering room (Crop Projection)
                             </label>
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Lights:</span>
-                            <input type="number" class="room-light-count" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.lightCount > 0 ? room.lightCount : ''}" placeholder="not set" title="Number of lights in the room — the Labour & Cost Wizard's Reports use it for “Per light” and the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="room-light-count" data-room-id="${escapeHtml(roomId)}" min="0" step="1" inputmode="numeric" value="${room.lightCount > 0 ? room.lightCount : ''}" placeholder="not set" title="Number of lights in the room — the Labour & Cost Wizard's Reports use it for “Per light” and the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Watts per light:</span>
-                            <input type="number" class="room-light-watts" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.lightWattage > 0 ? room.lightWattage : ''}" placeholder="not set" title="Power draw of one light at 100 % — for the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="room-light-watts" data-room-id="${escapeHtml(roomId)}" min="0" step="1" inputmode="numeric" value="${room.lightWattage > 0 ? room.lightWattage : ''}" placeholder="not set" title="Power draw of one light at 100 % — for the lighting power estimate" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Canopy (sq ft):</span>
-                            <input type="number" class="room-canopy" data-room-id="${roomId}" min="0" step="1" inputmode="numeric" value="${room.canopySqFt > 0 ? room.canopySqFt : ''}" placeholder="not set" title="Canopy square footage — the Labour & Cost Wizard's Reports use it for “Per sq ft”" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="room-canopy" data-room-id="${escapeHtml(roomId)}" min="0" step="1" inputmode="numeric" value="${room.canopySqFt > 0 ? room.canopySqFt : ''}" placeholder="not set" title="Canopy square footage — the Labour & Cost Wizard's Reports use it for “Per sq ft”" style="width:96px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Light cycle:</span>
                             <label style="display:flex; align-items:center; gap:6px;">Veg
-                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${roomId}" data-field="vegLightHours" title="Hours of light a day in veg">${lightCycleOptions(room.vegLightHours || DEFAULT_VEG_LIGHT_HOURS)}</select></label>
+                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${escapeHtml(roomId)}" data-field="vegLightHours" title="Hours of light a day in veg">${lightCycleOptions(room.vegLightHours || DEFAULT_VEG_LIGHT_HOURS)}</select></label>
                             <label style="display:flex; align-items:center; gap:6px;">Bloom
-                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${roomId}" data-field="bloomLightHours" title="Hours of light a day in bloom (from flip)">${lightCycleOptions(room.bloomLightHours || DEFAULT_BLOOM_LIGHT_HOURS)}</select></label>
+                                <select class="room-light-hours" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${escapeHtml(roomId)}" data-field="bloomLightHours" title="Hours of light a day in bloom (from flip)">${lightCycleOptions(room.bloomLightHours || DEFAULT_BLOOM_LIGHT_HOURS)}</select></label>
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Building:</span>
@@ -7730,7 +7731,7 @@
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Designation:</span>
-                            <select class="room-designation" data-room-id="${roomId}">
+                            <select class="room-designation" data-room-id="${escapeHtml(roomId)}">
                                 <option value="">— None —</option>
                                 ${ROOM_DESIGNATIONS.map(d => `<option value="${d}"${room.designation === d ? ' selected' : ''}>${d}</option>`).join('')}
                             </select>
@@ -7741,21 +7742,21 @@
                 // Assigned lots section
                 html += `<div class="assigned-lots-section">`;
                 html += `<h3>Assigned Lots</h3>`;
-                html += `<div class="assigned-lot-list" id="assigned-lot-list-${roomId}">`;
+                html += `<div class="assigned-lot-list" id="assigned-lot-list-${escapeHtml(roomId)}">`;
 
                 const unassignedLots = Object.keys(lots).filter(lid => !assignedLots.includes(lid));
 
                 if (assignedLots.length === 0) {
                     html += `
-                        <div class="no-lots-row" id="no-lots-row-${roomId}">
+                        <div class="no-lots-row" id="no-lots-row-${escapeHtml(roomId)}">
                             <span class="no-lots-message">No lots assigned to this room.</span>
                             ${unassignedLots.length > 0 ? `
-                                <button class="btn-assign-plus" data-room-id="${roomId}" title="Assign a lot">+</button>
-                                <select class="assign-lot-select hidden" id="quick-assign-${roomId}">
+                                <button class="btn-assign-plus" data-room-id="${escapeHtml(roomId)}" title="Assign a lot">+</button>
+                                <select class="assign-lot-select hidden" id="quick-assign-${escapeHtml(roomId)}">
                                     <option value="">Select a lot…</option>
                                     ${unassignedLots.map(lid => {
                                         const lot = lots[lid];
-                                        return `<option value="${lid}">${escapeHtml(lot.name || lid)} (${lid})</option>`;
+                                        return `<option value="${escapeHtml(lid)}">${escapeHtml(lot.name || lid)} (${escapeHtml(lid)})</option>`;
                                     }).join('')}
                                 </select>
                             ` : ''}
@@ -7766,32 +7767,32 @@
                         const lot = lots[lotId];
                         if (lot) {
                             html += `
-                                <div class="assigned-lot-item" data-lot-id="${lotId}">
+                                <div class="assigned-lot-item" data-lot-id="${escapeHtml(lotId)}">
                                     <div class="assigned-lot-info">
                                         <span class="assigned-lot-name">${escapeHtml(lot.name || lotId)}</span>
-                                        <span class="assigned-lot-meta">${lotId} · ${lot.strain || 'No strain'} · ${lot.stage}</span>
+                                        <span class="assigned-lot-meta">${escapeHtml(lotId)} · ${escapeHtml(lot.strain || 'No strain')} · ${escapeHtml(lot.stage || '')}</span>
                                     </div>
                                     <div class="assigned-lot-actions">
-                                        <select class="move-lot-select" data-lot-id="${lotId}" data-from-room="${roomId}">
+                                        <select class="move-lot-select" data-lot-id="${escapeHtml(lotId)}" data-from-room="${escapeHtml(roomId)}">
                                             <option value="">Move to…</option>
                                             ${allRoomIds.filter(r => r !== roomId).map(r =>
-                                                `<option value="${r}">${escapeHtml(this.rooms[r].name)}</option>`
+                                                `<option value="${escapeHtml(r)}">${escapeHtml(this.rooms[r].name)}</option>`
                                             ).join('')}
                                         </select>
-                                        <button class="btn-move-lot" data-lot-id="${lotId}" data-from-room="${roomId}">Move</button>
-                                        <button class="btn-remove-x" data-lot-id="${lotId}" data-from-room="${roomId}" title="Remove assignment">✕</button>
+                                        <button class="btn-move-lot" data-lot-id="${escapeHtml(lotId)}" data-from-room="${escapeHtml(roomId)}">Move</button>
+                                        <button class="btn-remove-x" data-lot-id="${escapeHtml(lotId)}" data-from-room="${escapeHtml(roomId)}" title="Remove assignment">✕</button>
                                     </div>
                                 </div>
                             `;
                         } else {
                             html += `
-                                <div class="assigned-lot-item" data-lot-id="${lotId}">
+                                <div class="assigned-lot-item" data-lot-id="${escapeHtml(lotId)}">
                                     <div class="assigned-lot-info">
                                         <span class="assigned-lot-name">${escapeHtml(lotId)} <em>(deleted)</em></span>
                                         <span class="assigned-lot-meta">Lot no longer exists in database</span>
                                     </div>
                                     <div class="assigned-lot-actions">
-                                        <button class="btn-remove-x" data-lot-id="${lotId}" data-from-room="${roomId}" title="Remove assignment">✕</button>
+                                        <button class="btn-remove-x" data-lot-id="${escapeHtml(lotId)}" data-from-room="${escapeHtml(roomId)}" title="Remove assignment">✕</button>
                                     </div>
                                 </div>
                             `;
@@ -7805,14 +7806,14 @@
                 if (unassignedLots.length > 0) {
                     html += `
                         <div class="assign-lot-row">
-                            <select class="unassigned-lot-select" id="unassigned-select-${roomId}">
+                            <select class="unassigned-lot-select" id="unassigned-select-${escapeHtml(roomId)}">
                                 <option value="">Assign a lot…</option>
                                 ${unassignedLots.map(lid => {
                                     const lot = lots[lid];
-                                    return `<option value="${lid}">${escapeHtml(lot.name || lid)} (${lid})</option>`;
+                                    return `<option value="${escapeHtml(lid)}">${escapeHtml(lot.name || lid)} (${escapeHtml(lid)})</option>`;
                                 }).join('')}
                             </select>
-                            <button class="btn btn-primary btn-sm" id="assign-lot-btn-${roomId}" data-room-id="${roomId}">Assign</button>
+                            <button class="btn btn-primary btn-sm" id="assign-lot-btn-${escapeHtml(roomId)}" data-room-id="${escapeHtml(roomId)}">Assign</button>
                         </div>
                     `;
                 }
@@ -8118,7 +8119,7 @@
             } else {
                 bar.className = 'status-bar loaded';
                 bar.innerHTML = `
-                    <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                    <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName || '')}</strong></span>
                     <span class="lot-count">${count} room${count !== 1 ? 's' : ''}${buildingCount ? ` · ${buildingCount} building${buildingCount !== 1 ? 's' : ''}` : ''}</span>
                 `;
             }
@@ -9959,13 +9960,13 @@
 
                     if (isModifiable) {
                         if (key === 'date' || key === 'endDate') {
-                            html += `<input type="date" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                            html += `<input type="date" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else if (key === 'startTime' || key === 'endTime') {
-                            html += `<input type="time" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                            html += `<input type="time" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else if (key === 'estimatedHours') {
-                            html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                            html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else {
-                            html += `<input type="text" class="event-detail-input" data-field="${key}" value="${escapeHtml(String(event[key] || ''))}">`;
+                            html += `<input type="text" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         }
                     } else {
                         html += `<div class="event-detail-value">${escapeHtml(String(event[key] || '—'))}</div>`;
@@ -10367,7 +10368,7 @@
                 const ref = `data-event-id="${escapeHtml(event.id || '')}"`;
                 return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" ${ref}>
                     <span class="${checkClass}" ${ref} title="${isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
-                    <span class="terminal-date">${displayDate}${timeDisplay}</span>
+                    <span class="terminal-date">${escapeHtml(displayDate || '')}${escapeHtml(timeDisplay)}</span>
                     <span class="terminal-title">${title}${lotInfo}</span>
                     ${showReschedule ? `<button class="terminal-complete-btn" ${ref} title="Mark complete">✓</button><button class="terminal-reschedule-btn" ${ref} title="Reschedule">↻ Reschedule</button>` : ''}
                     <button class="terminal-delete-btn" ${ref} title="Delete event">✕</button>
@@ -10388,7 +10389,7 @@
             const eventCount = Calendar.shownEvents.length;
             bar.className = 'status-bar loaded';
             bar.innerHTML = `
-                <span class="status-text">Database loaded: <strong>${DB.fileName}</strong></span>
+                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName || '')}</strong></span>
                 <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
             `;
         }
@@ -10849,15 +10850,15 @@
                         <div class="room-header">
                             <div class="lot-info">
                                 <span class="lot-name">🏢 ${escapeHtml(building.name)}</span>
-                                <span class="lot-meta">${key}${building.description ? ' · ' + escapeHtml(building.description) : ''} · ${roomCount} room${roomCount !== 1 ? 's' : ''} assigned${building.monthlyPropertyCost > 0 ? ' · 🏠 ' + fmtMonthly(building.monthlyPropertyCost) : ''}</span>
+                                <span class="lot-meta">${escapeHtml(key)}${building.description ? ' · ' + escapeHtml(building.description) : ''} · ${roomCount} room${roomCount !== 1 ? 's' : ''} assigned${building.monthlyPropertyCost > 0 ? ' · 🏠 ' + fmtMonthly(building.monthlyPropertyCost) : ''}</span>
                             </div>
                             <div class="room-header-actions">
                                 <span class="building-badge">Building</span>
-                                <button class="room-expand-btn" data-building-id="${key}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
-                                <button class="lot-delete-btn" data-building-id="${key}" data-building-name="${escapeHtml(building.name)}" title="Delete building" style="opacity: 1;">✕</button>
+                                <button class="room-expand-btn" data-building-id="${escapeHtml(key)}" title="Expand/Collapse">${isExpanded ? '▲' : '▼'}</button>
+                                <button class="lot-delete-btn" data-building-id="${escapeHtml(key)}" data-building-name="${escapeHtml(building.name)}" title="Delete building" style="opacity: 1;">✕</button>
                             </div>
                         </div>
-                        <div class="room-body ${isExpanded ? 'expanded' : ''}" id="building-body-${key}">
+                        <div class="room-body ${isExpanded ? 'expanded' : ''}" id="building-body-${escapeHtml(key)}">
                             ${this.renderBuildingBody(key, building)}
                         </div>
                     `;
@@ -10888,7 +10889,7 @@
                         </div>` : ''}
                         <div class="room-detail-row">
                             <span class="detail-label">Created:</span>
-                            <span>${building.createdDate || 'N/A'}</span>
+                            <span>${escapeHtml(building.createdDate || 'N/A')}</span>
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Property cost / month:</span>
@@ -10900,22 +10901,22 @@
                 // Assigned rooms section
                 html += `<div class="assigned-lots-section">`;
                 html += `<h3>Assigned Rooms</h3>`;
-                html += `<div class="assigned-lot-list" id="assigned-room-list-${buildingId}">`;
+                html += `<div class="assigned-lot-list" id="assigned-room-list-${escapeHtml(buildingId)}">`;
 
                 // Only rooms not already in ANY building are assignable (room.buildingId is the source of truth)
                 const unassignedRooms = Object.keys(rooms).filter(rid => !rooms[rid].buildingId);
 
                 if (assignedRooms.length === 0) {
                     html += `
-                        <div class="no-lots-row" id="no-rooms-row-${buildingId}">
+                        <div class="no-lots-row" id="no-rooms-row-${escapeHtml(buildingId)}">
                             <span class="no-lots-message">No rooms assigned to this building.</span>
                             ${unassignedRooms.length > 0 ? `
-                                <button class="btn-assign-plus" data-building-id="${buildingId}" title="Assign a room">+</button>
-                                <select class="assign-lot-select hidden" id="quick-assign-room-${buildingId}">
+                                <button class="btn-assign-plus" data-building-id="${escapeHtml(buildingId)}" title="Assign a room">+</button>
+                                <select class="assign-lot-select hidden" id="quick-assign-room-${escapeHtml(buildingId)}">
                                     <option value="">Select a room…</option>
                                     ${unassignedRooms.map(rid => {
                                         const r = rooms[rid];
-                                        return `<option value="${rid}">${escapeHtml(r.name)} (${rid})</option>`;
+                                        return `<option value="${escapeHtml(rid)}">${escapeHtml(r.name)} (${escapeHtml(rid)})</option>`;
                                     }).join('')}
                                 </select>
                             ` : ''}
@@ -10926,25 +10927,25 @@
                         const room = rooms[rid];
                         if (room) {
                             html += `
-                                <div class="assigned-lot-item" data-room-id="${rid}">
+                                <div class="assigned-lot-item" data-room-id="${escapeHtml(rid)}">
                                     <div class="assigned-lot-info">
                                         <span class="assigned-lot-name">${escapeHtml(room.name)}</span>
-                                        <span class="assigned-lot-meta">${rid}${room.isFlowering ? ' · 🌸 flowering' : ''}</span>
+                                        <span class="assigned-lot-meta">${escapeHtml(rid)}${room.isFlowering ? ' · 🌸 flowering' : ''}</span>
                                     </div>
                                     <div class="assigned-lot-actions">
-                                        <button class="btn-remove-x" data-room-id="${rid}" data-building-id="${buildingId}" title="Remove from building">✕</button>
+                                        <button class="btn-remove-x" data-room-id="${escapeHtml(rid)}" data-building-id="${escapeHtml(buildingId)}" title="Remove from building">✕</button>
                                     </div>
                                 </div>
                             `;
                         } else {
                             html += `
-                                <div class="assigned-lot-item" data-room-id="${rid}">
+                                <div class="assigned-lot-item" data-room-id="${escapeHtml(rid)}">
                                     <div class="assigned-lot-info">
                                         <span class="assigned-lot-name">${escapeHtml(rid)} <em>(deleted)</em></span>
                                         <span class="assigned-lot-meta">Room no longer exists in database</span>
                                     </div>
                                     <div class="assigned-lot-actions">
-                                        <button class="btn-remove-x" data-room-id="${rid}" data-building-id="${buildingId}" title="Remove from building">✕</button>
+                                        <button class="btn-remove-x" data-room-id="${escapeHtml(rid)}" data-building-id="${escapeHtml(buildingId)}" title="Remove from building">✕</button>
                                     </div>
                                 </div>
                             `;
@@ -10958,14 +10959,14 @@
                 if (unassignedRooms.length > 0) {
                     html += `
                         <div class="assign-lot-row">
-                            <select class="unassigned-lot-select" id="unassigned-room-select-${buildingId}">
+                            <select class="unassigned-lot-select" id="unassigned-room-select-${escapeHtml(buildingId)}">
                                 <option value="">Assign a room…</option>
                                 ${unassignedRooms.map(rid => {
                                     const r = rooms[rid];
-                                    return `<option value="${rid}">${escapeHtml(r.name)} (${rid})</option>`;
+                                    return `<option value="${escapeHtml(rid)}">${escapeHtml(r.name)} (${escapeHtml(rid)})</option>`;
                                 }).join('')}
                             </select>
-                            <button class="btn btn-primary btn-sm" id="assign-room-btn-${buildingId}" data-building-id="${buildingId}">Assign</button>
+                            <button class="btn btn-primary btn-sm" id="assign-room-btn-${escapeHtml(buildingId)}" data-building-id="${escapeHtml(buildingId)}">Assign</button>
                         </div>
                     `;
                 }

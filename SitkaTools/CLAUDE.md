@@ -110,7 +110,7 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
 - **⚠️ Session closed without saving** (`checkWorkCopyOnStart`, `RestoreCard`): on start, a copy holding unsaved work is offered back however old, on a card over the start screen.
   - The card has a yellow triangle with a black "!" (inline SVG, not the emoji, so it looks the same everywhere) and the text "Session closed without saving on MM/DD at HH:MM. Restore session?" (local time, 24-hour).
   - The line under it shows the file name, or for split files the device and files ("Building 1 · Main + 2 building files"). If the page's `?device=` link names another device it adds "This page's link is for …; restoring keeps it as …": a restore keeps the session's own role, whose files it saves.
-  - The time is the copy's `at`: the close itself (`pagehide` writes it), or after a flat battery the last change.
+  - The time is the copy's `at`: usually the last change written (the write `pagehide` starts as the page closes often doesn't finish, review J4), or the close itself when it did.
   - **Restore session:** the DB, file name and split bookkeeping (`DbSplit.importState`) come back, marked unsaved. A restored session saves with the save links (folder mode isn't reconnected).
   - **Discard** asks first ("Discard the session from … ? Its unsaved changes can't be brought back."), then deletes the copy.
   - Leaving without answering keeps the session for the next start.

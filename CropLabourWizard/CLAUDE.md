@@ -26,6 +26,7 @@ User decision 2026-10-23. A recipe with `kind: 'vegetative'` is for mother plant
 - **Set up like a bloom recipe** (anchors and day offsets), with no flip, harvest or trim. The anchors are `cloning` (Day 0), `planting` and `retire`.
 - **Retire Mothers** (`retire`, mandatory) is the planned end of the mothers' life, from planting (default 180 days; up to 1,095). Repeats stop there.
 - **Cut Clones to Replace Mothers** (`clone_cut`, optional) counts back from `retire` and is the next mother lot's Day 0. Mothers can also come from another lot's extra clones, created in the Lot Manager as a sub-lot, with no task.
+- **Stays a mother lot:** Generate refuses to regenerate a mother lot with a bloom recipe (its 🌿 recipe deleted, or another picked) and says to pick a 🌿 recipe (review G8).
 - **Rooms:** as for a bloom crop: before Transplanting in the cloning / veg room, Transplanting and after in the lot's **destination room**, which for a mother lot is its Mother room (`destRoom`). A mother lot with no destination room keeps those tasks in its veg room.
 - **No room-ready rule:** new mothers move in without a room clean, so Generate never pushes anything back for a mother lot, and the recipe editor shows a 🌿 Mothers readout instead of the room turnaround.
 - **🌿 New Mother Recipe** (recipe manager) starts from a template: Cutting Clones, Planting, Clean Clone Room, Transplanting to Mother Room, Prune Mothers (every 14 days), Top-dress Mothers (every 28), Cut Clones to Replace Mothers (retire −28), Retire Mothers (planting +180). The type is fixed at creation; Duplicate keeps it.
@@ -38,7 +39,7 @@ User decision 2026-10-23. Any recipe task may repeat every N days (`every`, 1–
 - Each repeat is its own event, `repeat: 1, 2, …`, titled "Prune Mothers (3/11)", so hours and sign-off are per repeat. There is always at least one.
 - Anchor tasks, the transplant and the clone cuts never repeat (`NO_REPEAT_TASKS`). A task's `days` can't exceed its `every`.
 - **Preview:** "↻ every 14 days · 11× to 2027-02-22"; the estimated labour counts every repeat. Reopening a lot reads the task's offset from its first repeat.
-- **Regenerating** matches annotations by task type **and** repeat (`annotationKey`), and asks before dropping a repeat that holds work (a shorter life, a longer interval).
+- **Regenerating** matches annotations by task type **and** repeat (`annotationKey`) while the task's interval is unchanged (the schedule shifted as a whole), and by task type and **date** once the interval changed, so done marks and hours stay on their days (review G4). It asks before dropping a repeat that holds work (a shorter life, a longer interval).
 - One builder (`scheduleOccurrences`) gives every dated occurrence; Generate, the lost-work check and the preview all use it.
 
 ### Multi-Day Tasks
@@ -123,7 +124,7 @@ The task list comes from **recipes**. The three built-ins stay in code. User rec
 |---|---|
 | `taskType` | unique `snake_case` id; other tools key on it |
 | `name`, `emoji` | label and icon |
-| `reference` | bloom: `cloning` / `planting` / `flip` / `harvest` / `trim`; vegetative: `cloning` / `planting` / `retire`. The anchor task must exist (`cloning` is always Day 0) |
+| `reference` | bloom: `cloning` / `planting` / `flip` / `harvest` / `trim`; vegetative: `cloning` / `planting` / `retire`. The anchor task must exist (`cloning` is always Day 0). The anchors themselves count from fixed references (planting ← cloning, flip ← planting, harvest ← flip, trim ← harvest, retire ← planting): the editor doesn't offer a choice, and a recipe saying otherwise is pinned back on load and import (`pinAnchorRefs`, review G2) |
 | `defaultOffset` | integer days from the reference; import and save clamp it to −30…+365 (the clone cut −200…+365) and say so in the toast (`clampRecipeOffsets`) |
 | `hasToggle`, `defaultEnabled` | optional: can be switched off in the preview; initial state |
 | `isLocked` | optional: not user-editable (Cutting Clones at Day 0) |
@@ -339,6 +340,7 @@ When a real lot is created in, or moved/assigned into, a flowering room, SitkaTo
 
 ## Dates in the UI
 
+- **Local dates throughout:** day arithmetic (`computeTaskDate`, `computeAnchors`) and today's default use local dates, never UTC (review G7); a schedule's post-trim days use its own trim length, not the preview's (review G3).
 - **Weekdays:** every computed date shows its weekday, from local `Date.getDay()` (never UTC): `2026-09-15 · Tue`, or `2026-12-17 (Thu) → 2026-12-23 (Wed)` for a range. Used in the preview, saved schedule list and the config summary's anchor date.
 - **Date picker:** each editable task's date badge in the preview opens one shared popup (`#datePickerPopup`), anchored to the badge (flips above near the bottom edge). Month grid with ‹/› and Today; marks the task's date, today, and BC holidays (amber dot + tooltip). Picking a day changes the task's **offset by the delta**, with the same cascade and range as the spinbox. For Trim, the picked day is the new trim start. Closes on outside click or Escape.
 - Locked tasks (Cutting Clones; Planting when clones are off) and disabled tasks get a plain, non-clickable badge.

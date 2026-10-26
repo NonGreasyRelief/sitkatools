@@ -112,6 +112,20 @@ export async function run(b, BASE) {
     const after = await run(`document.getElementById('exportBtn').click(); const n = document.querySelectorAll('#saveFileLinks a.archive-again').length; document.getElementById('saveCloseBtn').click(); return n;`, { user: true });
     check('…until the save that records the close-out', after === 0, after);
 
+    // ---- I1: typed text is shown as text, never run as HTML ----
+    const bad = '<img src=x onerror="window.__xss=1">';
+    const x = fixtureDb();
+    x.lots['L<9>'] = { name: 'L9', strain: bad, stage: 'veg', createdDate: today(), destRoom: 'Grow 1', currentRoom: 'Grow 1', plantCount: 5, parentLotId: bad };
+    x.rooms['R<x>'] = { name: 'Odd room', description: bad, createdDate: today(), assignedLots: ['L<9>'], isFlowering: true, buildingId: 'B1' };
+    x.buildings.B1.assignedRooms.push('R<x>');
+    await loadSingle(b, main, x);
+    await run(`document.querySelector('.tab[data-tab="room-manager"]')?.click(); renderLotList(); RoomManager.renderRoomList(); BuildingManager.renderBuildingList();
+        document.querySelector('.room-expand-btn[data-room-id="R<x>"]')?.click();`);
+    await b.sleep(300);
+    const xs = await run(`return { ran: !!window.__xss, imgs: document.querySelectorAll('#lotList img, #roomList img, .lot-item img, .room-item img').length,
+        shown: document.body.textContent.includes('<img src=x') };`);
+    check('a strain, parent lot, room id and description typed as HTML show as text and don\'t run', !xs.ran && xs.imgs === 0 && xs.shown, JSON.stringify(xs));
+
     // ---- Q3 / F1: trim happens in the dry / trim room, in every tool ----
     const f1 = fixtureDb();
     f1.lots.L100.dryRoom = 'Grow A';   // its dry room is in Building 2

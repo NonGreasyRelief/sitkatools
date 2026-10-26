@@ -836,11 +836,14 @@
                 if (!this.data._EquipmentWizard) {
                     this.data._EquipmentWizard = { rooms: {} };
                 }
+                if (!this.data._EquipmentWizard.rooms || typeof this.data._EquipmentWizard.rooms !== 'object') this.data._EquipmentWizard.rooms = {};   // review G11
                 return this.data;
             }
         };
 
         const $ = id => document.getElementById(id);
+        // Names, serials, titles and dates are typed or come from the shared file: escaped into the page (review I2)
+        const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
         // ---- Utility: unique ID generator ----
         function uid() {
@@ -1145,7 +1148,6 @@
                     type: 'sitkaGit_db_update',
                     payload: DB.data
                 };
-                console.log('[EquipmentWizard] Sending postMessage with calendarEvents count:', DB.data.calendarEvents?.length || 0);
                 window.opener.postMessage(message, SITKA_MSG_ORIGIN);
             } else {
                 console.warn('[EquipmentWizard] Could not notify SitkaTools - opener closed or unavailable');
@@ -1257,6 +1259,24 @@
                 (DB.data._EquipmentWizard?.rooms?.[ev.roomId]?.equipment || []).some(eq => eq.id === ev.equipmentId));
         }
 
+        // A done visit kept as history (its date no longer matches, after a start or interval edit) covers its period: the
+        // occurrence that period now has isn't regenerated as a second, overdue visit (review G9). A period runs from
+        // one occurrence of the task to the next.
+        function dropCoveredOccurrences(fresh, history) {
+            const byTask = new Map();
+            for (const ev of fresh) { const k = `${ev.equipmentId}|${ev.taskId}`; (byTask.get(k) || byTask.set(k, []).get(k)).push(ev); }
+            for (const list of byTask.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+            const drop = new Set();
+            for (const h of history) {
+                const list = h.taskId ? byTask.get(`${h.equipmentId}|${h.taskId}`) || [] : [];
+                for (let i = 0; i < list.length; i++) {
+                    const next = list[i + 1]?.date || '9999-12-31';
+                    if (list[i].date <= h.date && h.date < next) { if (!hasWorkRecords(list[i])) drop.add(list[i]); break; }
+                }
+            }
+            return fresh.filter(ev => !drop.has(ev));
+        }
+
         // ---- Sync ALL rooms: purge every EquipmentWizard event, regenerate from all rooms ----
         function syncAllRooms() {
             // Purge ALL existing EquipmentWizard events across every room
@@ -1271,7 +1291,7 @@
                 totalEvents += events.length;
             }
             const history = retainedHistory(carryOverAnnotations(previous, fresh, equipmentEventKey(fresh)));
-            DB.data.calendarEvents.push(...fresh, ...history);
+            DB.data.calendarEvents.push(...dropCoveredOccurrences(fresh, history), ...history);
 
             // Update preview for active room
             const activeRoom = getActiveRoomId();
@@ -1280,7 +1300,6 @@
             }
 
             notifySitkaTools();
-            console.log(`[EquipmentWizard] Synced all rooms — ${totalEvents} total events`);
         }
 
         // ---- Auto-sync: purge old room events, regenerate, update preview, notify ----
@@ -1295,7 +1314,7 @@
             // Compute and append fresh events, keeping ids / completion / labour from the previous ones
             const events = computeCalendarEvents(roomId);
             const history = retainedHistory(carryOverAnnotations(previous, events, equipmentEventKey(events)));
-            DB.data.calendarEvents.push(...events, ...history);
+            DB.data.calendarEvents.push(...dropCoveredOccurrences(events, history), ...history);
 
             // Update preview
             renderPreview(events);
@@ -1324,9 +1343,9 @@
                 const equipBadge = parts[1] || '';
 
                 item.innerHTML = `
-                    <span class="event-preview-date">${ev.date}</span>
-                    <span class="event-preview-text">${ev.title}</span>
-                    <span class="event-preview-equipment">${equipBadge}</span>
+                    <span class="event-preview-date">${escapeHtml(ev.date)}</span>
+                    <span class="event-preview-text">${escapeHtml(ev.title)}</span>
+                    <span class="event-preview-equipment">${escapeHtml(equipBadge)}</span>
                 `;
                 previewListEl.appendChild(item);
             });
@@ -1375,16 +1394,16 @@
                     if (eq.serialNumber) parts.push(`SN: ${eq.serialNumber}`);
                     if (eq.filterSize) parts.push(`Filter: ${eq.filterSize}`);
                     if (parts.length > 0) {
-                        dehumDetails = `<div class="equipment-details">${parts.join(' · ')}</div>`;
+                        dehumDetails = `<div class="equipment-details">${escapeHtml(parts.join(' · '))}</div>`;
                     }
                 }
 
                 item.innerHTML = `
                     <div class="equipment-header" data-idx="${idx}">
-                        <span class="equipment-emoji">${emoji}</span>
+                        <span class="equipment-emoji">${escapeHtml(emoji)}</span>
                         <div class="equipment-info">
-                            <div class="equipment-name">${eq.name}</div>
-                            ${eq.type ? `<span class="equipment-type-badge">${eq.type}</span>` : ''}
+                            <div class="equipment-name">${escapeHtml(eq.name)}</div>
+                            ${eq.type ? `<span class="equipment-type-badge">${escapeHtml(eq.type)}</span>` : ''}
                             ${dehumDetails}
                             <div class="equipment-details equipment-power" id="eqPower_${idx}">${powerSummary(eq.power)}</div>
                         </div>
@@ -1394,9 +1413,9 @@
                     <div class="equipment-body" id="eqBody_${idx}">
                         <div class="tracker-title">⚡ Power use — for the electricity estimate</div>
                         <div class="form-row power-edit" data-idx="${idx}">
-                            <div class="form-group"><label>Watts per unit</label><input type="number" class="eq-watts" min="0" step="1" inputmode="numeric" value="${eq.power?.watts ?? ''}" placeholder="not set"></div>
-                            <div class="form-group"><label>Units</label><input type="number" class="eq-units" min="1" step="1" inputmode="numeric" value="${eq.power?.units ?? 1}"></div>
-                            <div class="form-group"><label>Hours a day</label><input type="number" class="eq-hours" min="0" max="24" step="0.5" inputmode="decimal" value="${eq.power?.hoursPerDay ?? 12}"></div>
+                            <div class="form-group"><label>Watts per unit</label><input type="number" class="eq-watts" min="0" step="1" inputmode="numeric" value="${escapeHtml(eq.power?.watts ?? '')}" placeholder="not set"></div>
+                            <div class="form-group"><label>Units</label><input type="number" class="eq-units" min="1" step="1" inputmode="numeric" value="${escapeHtml(eq.power?.units ?? 1)}"></div>
+                            <div class="form-group"><label>Hours a day</label><input type="number" class="eq-hours" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeHtml(eq.power?.hoursPerDay ?? 12)}"></div>
                         </div>
                         <div class="subtask-list" id="subtaskList_${idx}"></div>
 
@@ -1485,12 +1504,12 @@
                         const taskEl = document.createElement('div');
                         taskEl.className = 'subtask-item';
                         taskEl.innerHTML = `
-                            <span class="subtask-emoji">${task.emoji || '🔧'}</span>
+                            <span class="subtask-emoji">${escapeHtml(task.emoji || '🔧')}</span>
                             <div class="subtask-info">
-                                <div class="subtask-name">${task.name}</div>
-                                <div class="subtask-interval">Every ${task.intervalValue} ${task.intervalUnit}</div>
+                                <div class="subtask-name">${escapeHtml(task.name)}</div>
+                                <div class="subtask-interval">Every ${escapeHtml(task.intervalValue)} ${escapeHtml(task.intervalUnit)}</div>
                             </div>
-                            <span class="subtask-start">Start: ${task.startDate}</span>
+                            <span class="subtask-start">Start: ${escapeHtml(task.startDate)}</span>
                             <button class="subtask-edit-btn" data-eq-idx="${idx}" data-task-idx="${tIdx}" title="Edit task">✎</button>
                             <button class="subtask-delete-btn" data-eq-idx="${idx}" data-task-idx="${tIdx}" title="Remove task">✕</button>
                         `;
@@ -1506,9 +1525,9 @@
                         const entryEl = document.createElement('div');
                         entryEl.className = 'tracker-item';
                         entryEl.innerHTML = `
-                            <span class="tracker-date">${entry.date}</span>
-                            <span class="tracker-name">${entry.name}</span>
-                            <button class="tracker-delete-btn" data-eq-idx="${idx}" data-tracker-id="${entry.id}" title="Remove entry">✕</button>
+                            <span class="tracker-date">${escapeHtml(entry.date)}</span>
+                            <span class="tracker-name">${escapeHtml(entry.name)}</span>
+                            <button class="tracker-delete-btn" data-eq-idx="${idx}" data-tracker-id="${escapeHtml(entry.id)}" title="Remove entry">✕</button>
                         `;
                         trackerList.appendChild(entryEl);
                     });
@@ -1901,6 +1920,9 @@
             for (const task of eq.tasks) {
                 let current = task.startDate;
                 let k = 0;
+                // An interval below 1 (only from a hand-edited file) would never move on: one visit, no repeats (review G10)
+                const stepOk = Number.isFinite(Number(task.intervalValue)) && Number(task.intervalValue) >= 1;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(String(current || ''))) continue;
 
                 while (current <= endDate) {
                     events.push({
@@ -1917,6 +1939,7 @@
                     // Months: occurrence k is always start + k × interval (clamped to month end), never
                     // chained from the previous date — a clamped Feb 28 must not pull later months to the 28th.
                     k++;
+                    if (!stepOk) break;
                     if (task.intervalUnit === 'months') {
                         current = addMonths(task.startDate, k * task.intervalValue);
                     } else {
@@ -1945,16 +1968,6 @@
         function reconcileRoomSchedule(roomId) {
             DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
                 if (ev.sourceTool === 'EquipmentWizard' && ev.roomId === roomId) {
-                    return false;
-                }
-                return true;
-            });
-        }
-
-        // ---- Purge calendar events for a specific equipment item ----
-        function purgeEquipmentEvents(equipmentId) {
-            DB.data.calendarEvents = DB.data.calendarEvents.filter(ev => {
-                if (ev.sourceTool === 'EquipmentWizard' && ev.equipmentId === equipmentId) {
                     return false;
                 }
                 return true;

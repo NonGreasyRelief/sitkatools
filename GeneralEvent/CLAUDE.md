@@ -8,7 +8,7 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
 ## The Form
 
 - **Fields:** event text, date (today's local date by default) and an opening emoji (📌 by default). End date and start / end time are optional.
-- The end date must be on or after the start date. `endDate` is written only when it differs from `date`.
+- The end date must be on or after the start date. `endDate` is written only when it differs from `date`. Changing the start time clears an end time before it only on a one-day event (review H8).
 
 ## Calendar Events
 
@@ -24,7 +24,7 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
 - **Rows:** one per GeneralEvent calendar event, `{ id, text, date, endDate, startTime, endTime, emoji, createdAt }`. A row's `id` is its calendar event's `id`.
 - **Rebuild:** `reconcileLog()` rebuilds the whole log from `calendarEvents` every time a DB arrives, both on open and on live updates. It splits the emoji and text back out of each title.
   - The rebuild replaces the log; it never merges. Old rows keyed `date|text` disappear.
-  - Known gap: the rebuild re-stamps `createdAt` (ROADMAP 0.6).
+  - A row keeps the `createdAt` it was first logged with; the rebuild doesn't re-stamp it (review H8).
 - **✕ Delete** asks first, then removes exactly that one event by id. Another event with the same text on the same day stays.
 
 ## Messages from SitkaTools

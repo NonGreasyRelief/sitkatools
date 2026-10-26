@@ -1186,6 +1186,14 @@
         // The date shown follows today while it is still the one set automatically: a tablet left
         // open overnight moves to the new day. A hand-picked date is left alone.
         let autoDate = null; // the date last set automatically
+        // Past midnight with yesterday's list still up (the once-a-minute check hasn't run yet): a tick, an hours entry or a
+        // sign-off made on "today" would land on yesterday. The day rolls over first and says so (review H3).
+        function newDayPending(dateStr) {
+            if (!autoDate || dateStr !== autoDate || todayStr() === autoDate || $('dateInput').value !== autoDate) return false;
+            rollToToday();
+            showToast(T("It's a new day — here's today's list"));
+            return true;
+        }
         function rollToToday() {
             const today = todayStr();
             if (!autoDate || today === autoDate || $('dateInput').value !== autoDate) return;
@@ -1869,6 +1877,7 @@
                 wrap.title = T('View only — another building’s list');
             }
             cb.addEventListener('change', () => {
+                if (newDayPending(dateStr)) return;   // past midnight: today's list first (review H3)
                 setChecked(spot, dateStr, cb.checked);   // saved in the building's file (see "Check-offs")
                 renderAll();
             });
@@ -2475,6 +2484,12 @@
 
             if (wasEdit) {
                 const task = tasks.find(t => t.code === editorTaskCode);
+                if (!task) {   // deleted elsewhere while the editor was open (review H5)
+                    closeTaskEditor();
+                    renderAll();
+                    showToast(T('That task was deleted elsewhere — nothing was saved'));
+                    return;
+                }
                 if (task) {
                     task.emoji = editorEmoji;
                     task.name = name;
@@ -2852,14 +2867,17 @@
             input.placeholder = lang === 'en' ? T('Step instruction…') : T('Step in {language}…', { language: langInfo(lang).name });
 
             const bid = detailBuildingId, code = task.code;
+            const was = JSON.stringify(task.steps[index] || null);   // the step as it was when the edit began
             let done = false;
             const finish = (commit) => {
                 if (done) return;
                 done = true;
                 if (commit) {
                     const v = input.value.trim();
-                    // Look the task up again: a live DB update while typing replaced the `task` captured above
-                    const step = (DB.dailyBuildings[bid]?.tasks || []).find(t => t.code === code)?.steps?.[index];
+                    // Look the task up again: a live DB update while typing replaced the `task` captured above. The step is
+                    // the one that still says what it said — at its place, or where a reorder elsewhere moved it (review H4)
+                    const steps = (DB.dailyBuildings[bid]?.tasks || []).find(t => t.code === code)?.steps || [];
+                    const step = JSON.stringify(steps[index] || null) === was ? steps[index] : steps.find(st => JSON.stringify(st) === was) || null;
                     if (!step) showToast(T('Step not saved — the task was changed elsewhere'));
                     else if (lang !== 'en') {
                         if (v !== (step.translations?.[lang] || '')) {
@@ -3386,6 +3404,7 @@
         }
 
         function openHours(ctx) {
+            if (newDayPending(ctx.date)) return;
             if (ctx.date > todayStr() || !canLogOn(ctx) || !(ctx.kind === 'chore' ? ctxTask(ctx) : ctxEvent(ctx))) return;
             hoursCtx = { ...ctx };
             const who = $('hoursWho');
@@ -3911,6 +3930,7 @@
         }
 
         function openDone(eventId, buildingId) {
+            if (newDayPending(selectedDateStr())) return;
             if (!canWorkEvents(buildingId) || !DB.calendarEvents.some(e => e.id === eventId)) return;
             doneCtx = { eventId, buildingId };
             doneStrokes = [];
@@ -4302,6 +4322,8 @@
             "Estimated time must be at least 5 minutes": { fr: "Le temps estimé doit être d’au moins 5 minutes", es: "El tiempo estimado debe ser de al menos 5 minutos", vi: "Thời gian ước tính phải ít nhất 5 phút", zh: "预计时间至少为 5 分钟" },
             "Staff required must be at least 1": { fr: "Il faut au moins 1 personne", es: "Se necesita al menos 1 persona", vi: "Cần ít nhất 1 người", zh: "所需人数至少为 1" },
             "Pick at least one weekday or one day-of-month": { fr: "Choisissez au moins un jour de la semaine ou un jour du mois", es: "Elija al menos un día de la semana o un día del mes", vi: "Chọn ít nhất một ngày trong tuần hoặc một ngày trong tháng", zh: "请至少选择一个星期几或每月的某一天" },
+            "It's a new day — here's today's list": { fr: "C’est un nouveau jour — voici la liste d’aujourd’hui", es: "Es un nuevo día — esta es la lista de hoy", vi: "Đã sang ngày mới — đây là danh sách hôm nay", zh: "已经是新的一天——这是今天的清单" },
+            "That task was deleted elsewhere — nothing was saved": { fr: "Cette tâche a été supprimée ailleurs — rien n’a été enregistré", es: "Esa tarea se eliminó en otro lugar — no se guardó nada", vi: "Công việc này đã bị xóa ở nơi khác — không có gì được lưu", zh: "该任务已在别处删除——未保存任何内容" },
             "Task updated": { fr: "Tâche mise à jour", es: "Tarea actualizada", vi: "Đã cập nhật công việc", zh: "任务已更新" },
             "Task added": { fr: "Tâche ajoutée", es: "Tarea añadida", vi: "Đã thêm công việc", zh: "任务已添加" },
             "Steps": { fr: "Étapes", es: "Pasos", vi: "Các bước", zh: "步骤" },
