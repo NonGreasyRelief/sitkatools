@@ -114,8 +114,10 @@ export async function run(b, BASE) {
     await openSitka(b, main, BASE);
     await loadSingle(b, main, costDb());
     const rent = await b.run(main, `BuildingManager.renderBuildingList();
-        const set = v => { const inp = document.querySelector('.building-property-cost[data-building-id="B1"]'); inp.value = v; inp.dispatchEvent(new Event('change')); return DB.data.buildings.B1.monthlyPropertyCost; };
-        return { zero: set('0'), blank: set(''), some: set('2500') };`);
+        // (a change to a cost already set asks which day it applies from: today)
+        const set = async v => { BuildingManager.renderBuildingList(); const inp = document.querySelector('.building-property-cost[data-building-id="B1"]'); inp.value = v; inp.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 100)); document.querySelector('#appliesFromOverlay [data-act="ok"]')?.click(); await new Promise(r => setTimeout(r, 100)); return DB.data.buildings.B1.monthlyPropertyCost; };
+        return { zero: await set('0'), blank: await set(''), some: await set('2500') };`, { user: true });
     check('SitkaTools keeps a $0 property cost, and blank as not set', rent.zero === 0 && rent.blank === null && rent.some === 2500, JSON.stringify(rent));
 
     // ---- A crop left out of labour $ is named ----

@@ -198,6 +198,14 @@
         }
 
         /* ---- Toast notification ---- */
+        /* 📅 Applies from — changed prices */
+        .applies-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 5000; padding: 16px; }
+        .applies-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-width: 460px; width: 100%; box-shadow: var(--shadow); }
+        .applies-title { font-weight: 700; margin-bottom: 12px; line-height: 1.4; }
+        .applies-label { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .applies-date { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 1rem; }
+        .applies-note { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 14px; }
+        .applies-actions { display: flex; justify-content: flex-end; gap: 10px; }
         .toast {
             position: fixed;
             bottom: 80px;
@@ -2162,7 +2170,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <td><input type="text" class="in-name" value="${escapeHtml(x.name || '')}" placeholder="e.g., Coco block"></td>
                     <td><select class="in-kind">${INPUT_KINDS.map(([v, l]) => `<option value="${v}"${x.kind === v ? ' selected' : ''}>${l}</option>`).join('')}</select></td>
                     <td><input type="text" class="in-unit" value="${escapeHtml(fert ? 'L' : (x.unit || ''))}" placeholder="bag, puck, ft…" ${fert ? 'disabled title="Fertilizers are priced per litre"' : ''}></td>
-                    <td><input type="number" class="in-price" min="0" step="0.01" inputmode="decimal" value="${x.price != null ? x.price : ''}" placeholder="$"></td>
+                    <td><input type="number" class="in-price" min="0" step="0.01" inputmode="decimal" value="${x.price != null ? x.price : ''}" placeholder="$"${Array.isArray(x.priceHistory) && x.priceHistory.length > 1 ? ` title="${escapeHtml('📅 ' + x.priceHistory.map(h => `${h.price == null ? 'no price' : money(h.price)} ${h.from ? 'from ' + h.from : 'from the start'}`).join(' · '))}"` : ''}></td>
                     <td class="in-used">${inputUsedText(id, x)}</td>
                     <td class="t-del"><button type="button" class="danger" data-act="del-input" title="Delete from the price list">✕</button></td>`;
                 cat.appendChild(tr);
@@ -2416,7 +2424,33 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             });
         }
 
-        function saveRecipeFromEditor() {
+        // 📅 "Applies from which day?" for changed prices (price by date, cost audit 2026-10-26): resolves the day (today by
+        // default, never later), or null when cancelled
+        function askAppliesFrom(what, note) {
+            return new Promise(resolve => {
+                const today = localDateStr(new Date());
+                const wrap = document.createElement('div');
+                wrap.className = 'applies-overlay';
+                wrap.innerHTML = `<div class="applies-card" role="dialog" aria-modal="true">
+                    <div class="applies-title">📅 ${escapeHtml(what)}</div>
+                    <label class="applies-label">Applies from <input type="date" class="applies-date" max="${today}" value="${today}"></label>
+                    <div class="applies-note">${escapeHtml(note)}</div>
+                    <div class="applies-actions"><button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button><button type="button" class="btn" data-act="ok">Save</button></div></div>`;
+                const done = v => { wrap.remove(); resolve(v); };
+                wrap.addEventListener('click', e => {
+                    const act = e.target.closest('[data-act]')?.dataset.act;
+                    if (act === 'cancel') done(null);
+                    else if (act === 'ok') {
+                        const d = wrap.querySelector('.applies-date').value;
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > today) { showToast('Pick a day on or before today'); return; }
+                        done(d);
+                    }
+                });
+                document.body.appendChild(wrap);
+                wrap.querySelector('.applies-date').focus();
+            });
+        }
+        async function saveRecipeFromEditor() {
             if (!editorRecipe) return;
             editorRecipe.name = $('recipeNameInput').value.trim();
             if ($('recipeTasksTab').style.display !== 'none') editorRecipe.tasks = readTaskTable();   // the tab shown holds the latest edits
@@ -2451,6 +2485,19 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     `If you save it anyway, Project Crop, schedule overwrites and Reproject will push the next lots back ${short} day${short === 1 ? '' : 's'} each, so the room cycle runs longer than this recipe says.\n\n` +
                     `Save anyway?`;
                 if (!confirm(msg)) return;
+            }
+            // 📅 Changed prices apply from a day (today by default): what crops used before it keeps the old price (price by date)
+            const was = catalogInputs();
+            const changed = Object.entries(editorInputs).filter(([id, x]) => was[id] && was[id].price != null && x.price !== was[id].price);
+            if (changed.length) {
+                const list = changed.map(([id, x]) => `${x.name}: ${money(was[id].price)} → ${x.price == null ? 'no price' : money(x.price)}`).join(' · ');
+                const from = await askAppliesFrom(`New price${changed.length === 1 ? '' : 's'}: ${list}`, 'Fertilizer used and supplies charged before then keep the old price. Closed-out lots keep the costs saved with them.');
+                if (!from || !editorRecipe) return;   // cancelled: nothing saved
+                for (const [id, x] of changed) {
+                    const old = was[id], hist = Array.isArray(old.priceHistory) && old.priceHistory.length ? old.priceHistory.filter(h => (h.from || '') !== from) : [{ from: '', price: old.price }];
+                    hist.push({ from, price: x.price });
+                    x.priceHistory = hist.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+                }
             }
             DB.ensureStructure();
             if (!DB.data._CropLabourWizard.recipes) DB.data._CropLabourWizard.recipes = {};

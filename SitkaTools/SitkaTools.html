@@ -3570,8 +3570,8 @@
         }
 
         // The Labour & Cost Wizard's money that lives in Wages.json beside the wages: labour cost frozen with crop summaries
-        // (by lot) and overhead frozen by month
-        const WAGES_MONEY_KEYS = ['cropCosts', 'overheadCosts'];
+        // (by lot), overhead frozen by month, and each employee's wage history (price by date, cost audit 2026-10-26)
+        const WAGES_MONEY_KEYS = ['cropCosts', 'overheadCosts', 'wageHistory'];
         // Is this the text of a wages file (Wages.json, whatever it's called now)? { wages: {…}, cropCosts?, overheadCosts? } and none
         // of a database's own keys
         function isWagesFile(text) {
@@ -7577,6 +7577,35 @@
         const DEFAULT_VEG_LIGHT_HOURS = 18, DEFAULT_BLOOM_LIGHT_HOURS = 12;
         const lightCycleOptions = (selected) => LIGHT_CYCLE_HOURS.map(h => `<option value="${h}"${h === selected ? ' selected' : ''}>${h}/${24 - h}</option>`).join('');
         const positiveOrNull = (v) => { const n = parseFloat(v); return n > 0 ? n : null; };
+        // 📅 "Applies from which day?" for a changed property cost (price by date, cost audit 2026-10-26): resolves the day — today,
+        // or the 1st of this month (`start: 'month'`), never later than today — or null when cancelled
+        function askAppliesFrom(what, note, start = 'today') {
+            return new Promise(resolve => {
+                const now = new Date(), today = localDate(now), first = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+                const wrap = document.createElement('div');
+                wrap.className = 'db-overlay';
+                wrap.id = 'appliesFromOverlay';
+                wrap.innerHTML = `<div class="db-overlay-card" role="dialog" aria-modal="true">
+                    <div class="db-overlay-icon">📅</div>
+                    <div class="db-overlay-title">${escapeHtml(what)}</div>
+                    <label style="display:flex; gap:10px; align-items:center; justify-content:center; margin:8px 0;">Applies from
+                        <input type="date" id="appliesFromDate" max="${today}" value="${start === 'month' ? first : today}" style="padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);"></label>
+                    <div class="db-overlay-desc">${escapeHtml(note)}</div>
+                    <div class="db-overlay-actions"><button type="button" class="btn-cancel-db" data-act="cancel">Cancel</button><button type="button" class="btn-load-db" data-act="ok">Save</button></div></div>`;
+                const done = v => { wrap.remove(); resolve(v); };
+                wrap.addEventListener('click', e => {
+                    const act = e.target.closest('[data-act]')?.dataset.act;
+                    if (act === 'cancel') done(null);
+                    else if (act === 'ok') {
+                        const d = wrap.querySelector('#appliesFromDate').value;
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > today) { alert('Pick a day on or before today.'); return; }
+                        done(d);
+                    }
+                });
+                document.body.appendChild(wrap);
+                wrap.querySelector('#appliesFromDate').focus();
+            });
+        }
         // A building's property cost: $0 is a figure (a building with no rent); blank is "not set" (cost audit 2026-10-26)
         const zeroOrMoreOrNull = (v) => { if (String(v ?? '').trim() === '') return null; const n = parseFloat(v); return Number.isFinite(n) && n >= 0 ? n : null; };
         // A building's property cost, e.g. "$12,500.00 / month"
@@ -11007,7 +11036,7 @@
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Property cost / month:</span>
-                            <input type="number" class="building-property-cost" data-building-id="${escapeHtml(buildingId)}" min="0" step="0.01" inputmode="decimal" value="${building.monthlyPropertyCost != null ? building.monthlyPropertyCost : ''}" placeholder="not set" title="Rent and property fees for the building, $ per month ($0 for a building with no rent) — the Labour & Cost Wizard's cost per gram shares it between the crops in the building" style="width:120px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
+                            <input type="number" class="building-property-cost" data-building-id="${escapeHtml(buildingId)}" min="0" step="0.01" inputmode="decimal" value="${building.monthlyPropertyCost != null ? building.monthlyPropertyCost : ''}" placeholder="not set" title="Rent and property fees for the building, $ per month ($0 for a building with no rent) — the Labour & Cost Wizard's cost per gram shares it between the crops in the building${Array.isArray(building.propertyCostHistory) && building.propertyCostHistory.length > 1 ? escapeHtml(' · 📅 ' + building.propertyCostHistory.map(h => `${h.cost == null ? 'not set' : fmtMonthly(h.cost)} ${h.from ? 'from ' + h.from : 'from the start'}`).join(' · ')) : ''}" style="width:120px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);">
                         </div>
                     </div>
                 `;
@@ -11124,10 +11153,22 @@
 
                 // Property cost a month (rent + property fees) — the cost per gram reports use it
                 document.querySelectorAll('.building-property-cost').forEach(inp => {
-                    inp.addEventListener('change', () => {
+                    inp.addEventListener('change', async () => {
                         const building = this.buildings[inp.dataset.buildingId];
                         if (!building) return;
-                        building.monthlyPropertyCost = zeroOrMoreOrNull(inp.value);
+                        const before = building.monthlyPropertyCost ?? null, now = zeroOrMoreOrNull(inp.value);
+                        if (before === now) return;
+                        // 📅 A changed property cost applies from a day (price by date): days before it keep the old cost
+                        if (before != null) {
+                            const from = await askAppliesFrom(`${building.name || inp.dataset.buildingId}: ${fmtMonthly(before)} → ${now == null ? 'not set' : fmtMonthly(now)}`,
+                                'Days before then keep the old cost. Closed-out lots keep the costs saved with them.', 'month');
+                            if (!from) { inp.value = before; return; }
+                            const hist = Array.isArray(building.propertyCostHistory) && building.propertyCostHistory.length
+                                ? building.propertyCostHistory.filter(h => (h.from || '') !== from) : [{ from: '', cost: before }];
+                            hist.push({ from, cost: now });
+                            building.propertyCostHistory = hist.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+                        }
+                        building.monthlyPropertyCost = now;
                         markUnsaved();
                         this.renderBuildingList();
                     });

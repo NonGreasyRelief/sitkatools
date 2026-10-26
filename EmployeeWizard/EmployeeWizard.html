@@ -964,6 +964,15 @@
         }
 
         .status-bar.loaded { border-color: var(--accent); }
+        /* 📅 Applies from — a changed wage, rate or price */
+        .applies-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 5000; padding: 16px; }
+        .applies-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-width: 440px; width: 100%; box-shadow: var(--shadow); }
+        .applies-title { font-weight: 700; margin-bottom: 12px; line-height: 1.4; }
+        .applies-label { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .applies-date { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 1rem; }
+        .applies-note { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 14px; }
+        .applies-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .emp-wage-history { color: var(--text-secondary); font-size: 0.85rem; margin: -4px 0 10px; }
 
         .placeholder-card {
             background: var(--bg-secondary);
@@ -1229,6 +1238,7 @@
                                     <label for="empWageInput">Wage ($/hr)</label>
                                     <input type="number" id="empWageInput" min="0" step="0.5" placeholder="not set">
                                 </div>
+                                <div class="emp-wage-history" id="empWageHistory" hidden title="A changed wage applies from the day picked: hours before it keep the old wage"></div>
                                 <label class="report-chk emp-fm" title="Floor managers sign crop and equipment tasks off as done in DailyWizard"><input type="checkbox" id="empFloorManager"> Floor manager — signs tasks off as done in DailyWizard</label>
                                 <!-- 🔒 Each floor manager's own PIN: DailyWizard's edit mode and deletions, deletions in the Tasks tab -->
                                 <div class="emp-pin" id="empPinRow" hidden>
@@ -2214,6 +2224,62 @@
             return null;
         }
         const formerNameOf = name => Object.entries(getEmployees()).find(([n, e]) => n !== name && Array.isArray(e?.formerNames) && e.formerNames.includes(name))?.[0] || null;
+
+        // ---- 📅 Every cost at the figure in force on its day (cost audit 2026-10-26: price by date) ----
+        // A dated history [{ from: '' (from the start) | 'YYYY-MM-DD', <key>: value }] keeps every change of a wage, rate, price or
+        // rent; a day takes the latest entry from on or before it (before the first dated one: the earliest). No history: the
+        // current figure. A change never applies later than today, so the current figure is always today's.
+        function figureOnDay(history, key, current, day) {
+            if (!Array.isArray(history) || !history.length || !/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return current;
+            const sorted = history.slice().sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+            let at = sorted[0];
+            for (const h of sorted) if ((h.from || '') <= day) at = h;
+            return at[key];
+        }
+        // A change from `from`: the history with it (the old figure kept from the start the first time), one entry per day
+        function recordChange(history, key, oldValue, newValue, from) {
+            const list = Array.isArray(history) && history.length ? history.filter(h => (h.from || '') !== from) : (oldValue != null ? [{ from: '', [key]: oldValue }] : []);
+            list.push({ from, [key]: newValue });
+            return list.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+        }
+        // "$20 from the start · $22 from 2026-10-01"
+        const historyText = (list, key, fmt) => (list || []).map(h => `${h[key] == null ? 'none' : fmt(h[key])} ${h.from ? 'from ' + h.from : 'from the start'}`).join(' · ');
+        // An employee's wage on a day (their wage history in Wages.json, else their wage); null when there's none
+        function wageOn(name, day) {
+            const emps = DB.data?._EmployeeWizard?.employees || {};
+            if (name == null) return null;
+            const key = emps[name] ? name : Object.keys(emps).find(k => Array.isArray(emps[k]?.formerNames) && emps[k].formerNames.includes(name));
+            const emp = key ? emps[key] : null;
+            if (!emp) return null;
+            const w = figureOnDay(DB.data._EmployeeWizard?.wageHistory?.[key], 'wage', emp.wage, day);
+            return w != null && w !== '' && Number.isFinite(Number(w)) ? Number(w) : null;
+        }
+        // 📅 "Applies from which day?" for a changed wage, rate or price: resolves the day (today by default, never later),
+        // or null when cancelled
+        function askAppliesFrom(what, note) {
+            return new Promise(resolve => {
+                const today = localDateStr(new Date());
+                const wrap = document.createElement('div');
+                wrap.className = 'applies-overlay';
+                wrap.innerHTML = `<div class="applies-card" role="dialog" aria-modal="true">
+                    <div class="applies-title">📅 ${escapeHtml(what)}</div>
+                    <label class="applies-label">Applies from <input type="date" class="applies-date" max="${today}" value="${today}"></label>
+                    <div class="applies-note">${escapeHtml(note)}</div>
+                    <div class="applies-actions"><button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button><button type="button" class="btn" data-act="ok">Save</button></div></div>`;
+                const done = v => { wrap.remove(); resolve(v); };
+                wrap.addEventListener('click', e => {
+                    const act = e.target.closest('[data-act]')?.dataset.act;
+                    if (act === 'cancel') done(null);
+                    else if (act === 'ok') {
+                        const d = wrap.querySelector('.applies-date').value;
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > today) { showToast('Pick a day on or before today'); return; }
+                        done(d);
+                    }
+                });
+                document.body.appendChild(wrap);
+                wrap.querySelector('.applies-date').focus();
+            });
+        }
         // Hours logged under a name: task labour maps and DailyWizard's chore hours (not removed ones)
         function hoursLoggedAs(name) {
             let h = 0;
@@ -2253,6 +2319,13 @@
             }
         }
 
+        // 📅 The employee's wage history under the wage box (price by date)
+        function showWageHistory(name) {
+            const wh = $('empWageHistory'), hist = DB.data?._EmployeeWizard?.wageHistory?.[name];
+            if (!wh) return;
+            wh.textContent = Array.isArray(hist) && hist.length > 1 ? `📅 ${historyText(hist, 'wage', v => `$${v}/h`)}` : '';
+            wh.hidden = !wh.textContent;
+        }
         function selectEmployee(name) {
             // Clicking the already-selected employee deselects them → back to the work-week calendar
             if (EMP.selectedName === name) {
@@ -2266,6 +2339,7 @@
             EMP.editorDays = [...(e?.workDays || [])];
             $('empNameInput').value = name;
             $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
+            showWageHistory(name);
             $('empFloorManager').checked = e?.floorManager === true;
             showPinRow(e);
             setViewMode('editor');
@@ -2291,6 +2365,7 @@
                 (ev.sourceTool === 'EmployeeWizard' && ev.title === `🏖️ Time Off — ${name}`)));
 
             delete emps[name];
+            if (DB.data._EmployeeWizard?.wageHistory) delete DB.data._EmployeeWizard.wageHistory[name];
 
             if (EMP.selectedName === name) { EMP.selectedName = null; setViewMode('workweek'); }
 
@@ -2423,6 +2498,15 @@
             if ($('empWageInput').validity?.badInput || (wageRaw !== null && (isNaN(wageRaw) || wageRaw < 0))) {
                 showToast('Enter a valid wage ($/hr), or leave it blank'); return;
             }
+            // 📅 A changed wage applies from a day (today by default): hours worked before it keep the old wage (price by date).
+            // A first wage (none before) covers all their hours.
+            const prevWage = emps[oldName].wage != null && emps[oldName].wage !== '' && Number.isFinite(Number(emps[oldName].wage)) ? Number(emps[oldName].wage) : null;
+            let wageFrom = null;
+            if (prevWage != null && wageRaw !== prevWage) {
+                wageFrom = await askAppliesFrom(`${oldName}'s wage: $${prevWage}/h → ${wageRaw == null ? 'no wage' : `$${wageRaw}/h`}`, 'Hours worked before then keep the old wage. Closed-out lots keep the cost saved with them.');
+                if (!wageFrom) return;   // cancelled: nothing saved
+                if (getEmployees() !== emps || !emps[oldName] || EMP.selectedName !== oldName) { showToast('That employee changed elsewhere — nothing was saved'); return; }
+            }
 
             const emp = emps[oldName];
             if (newName !== oldName) {
@@ -2453,6 +2537,9 @@
                 }
             }
 
+            const ew = DB.data._EmployeeWizard, WH = ew.wageHistory;
+            if (newName !== oldName && WH?.[oldName]) { WH[newName] = WH[oldName]; delete WH[oldName]; }   // the history follows a rename
+            if (wageFrom) (ew.wageHistory || (ew.wageHistory = {}))[newName] = recordChange(ew.wageHistory?.[newName], 'wage', prevWage, wageRaw, wageFrom);
             if (wageRaw === null) delete emp.wage;
             else emp.wage = wageRaw;
             if ($('empFloorManager').checked) {
@@ -2465,6 +2552,7 @@
             emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
 
             EMP.selectedName = newName;
+            showWageHistory(newName);
             showPinRow(emp);
             renderEmpList();
             renderWorkweek();
@@ -2829,8 +2917,8 @@
         // Wage for a labour entry — roster wage for employees (resolved at report
         // time), recorded wage for temps. Deleted employees fall back to the default.
         // The entry's wage, or null when it has none (review C5: never a made-up wage)
-        function entryWage(entry) {
-            const w = entry.temp != null ? entry.wage : employeeByName(entry.employee)?.wage;
+        function entryWage(entry, day) {
+            const w = entry.temp != null ? entry.wage : wageOn(entry.employee, day);   // the wage on the day worked (price by date)
             return w != null && w !== '' && Number.isFinite(Number(w)) ? Number(w) : null;
         }
 
@@ -2842,7 +2930,7 @@
         function dayCost(ev, dateStr) {
             let sum = 0;
             for (const e of dayEntries(ev, dateStr)) {
-                const h = Number(e.hours) || 0, w = entryWage(e);
+                const h = Number(e.hours) || 0, w = entryWage(e, dateStr);
                 if (!h) continue;
                 if (w == null) return null;
                 sum += h * w;
@@ -4236,6 +4324,8 @@
                             const people = t.people || (t.people = {});
                             const key = e.temp != null ? 'temp:' + e.temp : e.employee;
                             if (key) people[key] = (people[key] || 0) + h;
+                            const pd = t.peopleDays || (t.peopleDays = {}), onDay = pd[d] || (pd[d] = {});   // by day, for the day's wage
+                            if (key) onDay[key] = (onDay[key] || 0) + h;
                             if (e.temp != null) { if (Number(e.wage) > 0) t.tempCost = (t.tempCost || 0) + h * Number(e.wage); else t.tempNoWage = (t.tempNoWage || 0) + h; }
                         }
                         if (e.temp != null) {
@@ -4350,11 +4440,19 @@
             // doesn't restate it. Live lots always use today's wages.
             const frozen = c.closed ? rptFrozenLabour(c.lotId) : null;
             if (frozen) return { cost: Number(frozen.cost), missing: Number(frozen.missingHours) || 0, people, frozen: true };
+            // 📅 Every hour at the wage of the day it was worked (price by date), from its hours by building and day
+            const B = c.labour?.byBuilding;
+            if (B && Object.keys(B).length) {
+                let cost = 0, missing = 0;
+                for (const byD of Object.values(B)) for (const [day, m] of Object.entries(byD)) { const x = rptPriceLabourSlot(m, day); cost += x.cost; missing += x.missing; }
+                return { cost, missing, people };
+            }
+            // A summary saved before hours were kept by day: today's wages
             let cost = c.labour.tempCost || 0, missing = c.labour.tempNoWage || 0;
             for (const k of people) {
                 if (k.startsWith('temp:')) continue;
-                const raw = employeeByName(k)?.wage, w = Number(raw);
-                if (raw == null || !Number.isFinite(w)) missing += c.labour.byPerson[k];
+                const w = wageOn(k, rToday());
+                if (w == null) missing += c.labour.byPerson[k];
                 else cost += c.labour.byPerson[k] * w;
             }
             return { cost, missing, people };
@@ -4485,18 +4583,18 @@
         // A crop's hours by the building they were worked in and the month, by person — hours only, never wages (saved with
         // the summary): for "where was each lot's money spent" (cost audit 2026-10-26). Temps' $ as their entries carry it.
         function rptLabourInto(L, b, d, who, h, isTemp, wage) {
-            const B = L.byBuilding || (L.byBuilding = {}), byM = B[b || ''] || (B[b || ''] = {});
-            const m = byM[d.slice(0, 7)] || (byM[d.slice(0, 7)] = { people: {}, tempCost: 0, tempNoWage: 0 });
+            const B = L.byBuilding || (L.byBuilding = {}), byD = B[b || ''] || (B[b || ''] = {});
+            const m = byD[d] || (byD[d] = { people: {}, tempCost: 0, tempNoWage: 0 });
             if (who) m.people[who] = (m.people[who] || 0) + h;
             if (isTemp) { if (Number(wage) > 0) m.tempCost += h * Number(wage); else m.tempNoWage += h; }
         }
-        // One building-month of a crop's hours at today's wages: { cost, missing hours }
-        function rptPriceLabourSlot(m) {
+        // One building-day of a crop's hours at that day's wages (price by date): { cost, missing hours }
+        function rptPriceLabourSlot(m, day) {
             let cost = m.tempCost || 0, missing = m.tempNoWage || 0;
             for (const [who, h] of Object.entries(m.people || {})) {
                 if (who.startsWith('temp:')) continue;
-                const w = employeeByName(who)?.wage;
-                if (w == null || !Number.isFinite(Number(w))) missing += h; else cost += h * Number(w);
+                const w = wageOn(who, day);
+                if (w == null) missing += h; else cost += h * w;
             }
             return { cost, missing };
         }
@@ -4618,7 +4716,7 @@
             let cost = 0, missing = 0;
             for (const r of M.other) {
                 if (!inRange(r.date, from, to) || frozen[r.date.slice(0, 7)]) continue;
-                const w = r.temp ? r.wage : Number(employeeByName(r.person)?.wage);
+                const w = r.temp ? r.wage : wageOn(r.person, r.date);
                 if (w > 0) cost += r.hours * w; else missing += r.hours;
             }
             for (const [ym, f] of Object.entries(frozen)) {
@@ -4653,7 +4751,7 @@
                 if (r.date.slice(0, 7) !== ym) continue;
                 const key = [r.date, r.buildingId || '', r.roomId || '', r.kind].join('|');
                 const a = agg.get(key) || agg.set(key, [r.date, r.buildingId || '', r.roomId || '', r.kind, 0, 0, 0]).get(key);
-                const w = r.temp ? r.wage : Number(employeeByName(r.person)?.wage);
+                const w = r.temp ? r.wage : wageOn(r.person, r.date);
                 a[4] += r.hours;
                 if (w > 0) a[5] += r.hours * w; else a[6] += r.hours;
             }
@@ -4717,7 +4815,12 @@
                 propertyShare: c.propertyShare === 'area' ? 'area' : c.propertyShare === 'lights' ? 'lights' : 'plants',   // plants by default (user decision 2026-10-26)
                 bills: (c.bills || []).filter(b => isDay(b?.from) && isDay(b?.to) && b.to >= b.from && Number(b.amount) > 0),
                 catalog, byName, price,
-                fertPrice: name => { const x = byName[String(name || '').trim().toLowerCase()]; return x && x.kind === 'fertilizer' ? price(x.price) : null; }
+                // 📅 Price by date (user decision 2026-10-26): each figure as it stood on a day (no day: today's)
+                rateOn: d => price(figureOnDay(c.kWhRateHistory, 'rate', c.kWhRate, d)),
+                waterRateOn: d => price(figureOnDay(c.waterPer1000LHistory, 'rate', c.waterPer1000L, d)),
+                itemPrice: (x, d) => x ? price(figureOnDay(x.priceHistory, 'price', x.price, d)) : null,
+                fertPrice: (name, d) => { const x = byName[String(name || '').trim().toLowerCase()]; return x && x.kind === 'fertilizer' ? price(figureOnDay(x.priceHistory, 'price', x.price, d)) : null; },
+                rentOn: (bid, d) => { const b = DB.data.buildings?.[bid]; return price(figureOnDay(b?.propertyCostHistory, 'cost', rptPropertySet(b), d)); }
             };
         }
 
@@ -4913,10 +5016,19 @@
                 }
             }
             // kBM / cBM: the lot's kWh (and, with bills, its $) by building and month: 'building|YYYY-MM' (where it was spent)
+            // 📅 Estimated usage is priced at each day's $/kWh (price by date)
+            const rateDay = {}, rateAt = d => d in rateDay ? rateDay[d] : (rateDay[d] = cfg.rateOn(d));
             const give = (lotId, kWh, part, b, d) => {
                 const o = byCrop.get(lotId); if (!o) return;
                 o.kWh += kWh; o[part] += kWh;
-                if (kWh) { const k = (b && b !== 'null' ? b : '') + '|' + d.slice(0, 7); (o.kBM || (o.kBM = {}))[k] = (o.kBM[k] || 0) + kWh; }
+                if (!kWh) return;
+                const k = (b && b !== 'null' ? b : '') + '|' + d.slice(0, 7);
+                (o.kBM || (o.kBM = {}))[k] = (o.kBM[k] || 0) + kWh;
+                if (cfg.source === 'estimate') {
+                    const r = rateAt(d);
+                    if (r == null) o.noRate = true;
+                    else { o.est = (o.est || 0) + kWh * r; (o.cBM || (o.cBM = {}))[k] = (o.cBM[k] || 0) + kWh * r; }
+                }
             };
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const dayKwh = new Map(), inBuilding = {}, pool = {};
@@ -4987,12 +5099,14 @@
                 }
             }
             if (cfg.source === 'estimate') {
-                for (const o of byCrop.values()) {
-                    o.cost = cfg.rate != null ? o.kWh * cfg.rate : null;
-                    if (cfg.rate != null) o.cBM = Object.fromEntries(Object.entries(o.kBM || {}).map(([k, v]) => [k, v * cfg.rate]));
+                for (const o of byCrop.values()) o.cost = o.noRate ? null : (o.est || 0);
+                let ua = 0, uaUnpriced = false;
+                for (const days of Object.values(idleBy)) for (const [d, x] of Object.entries(days)) {
+                    const r = rateAt(d);
+                    x.cost = r != null ? x.kWh * r : null;
+                    if (r == null) uaUnpriced = true; else ua += x.cost;
                 }
-                unallocated.cost = cfg.rate != null ? unallocated.kWh * cfg.rate : null;
-                for (const days of Object.values(idleBy)) for (const x of Object.values(days)) x.cost = cfg.rate != null ? x.kWh * cfg.rate : null;
+                unallocated.cost = uaUnpriced && !ua ? null : ua;
             }
             return { byCrop, unallocated, idleBy, missingLights, source: cfg.source, rate: cfg.rate };
         }
@@ -5010,9 +5124,13 @@
         // no share (noLights); when no room in use has one, that day is shared by plants. A day with no crop in the
         // building is unallocated: no crop carries it.
         function rptPropertyModel(crops) {
-            const today = rToday(), rooms = DB.data.rooms || {}, share = rptCostConfig().propertyShare;
+            const today = rToday(), rooms = DB.data.rooms || {}, cfg = rptCostConfig(), share = cfg.propertyShare;
             const byCrop = new Map(crops.map(c => [c.lotId, { cost: 0, days: 0, noRent: 0 }])), unallocated = {}, idleBy = {}, monthly = {}, noLights = new Set(), noArea = new Set();
-            for (const [id, b] of Object.entries(DB.data.buildings || {})) { const v = rptPropertySet(b); if (v != null) monthly[id] = v; }
+            // A building with its property cost set now, or with a history of it (price by date: each day takes its own figure)
+            for (const [id, b] of Object.entries(DB.data.buildings || {})) {
+                const v = rptPropertySet(b);
+                if (v != null || (Array.isArray(b?.propertyCostHistory) && b.propertyCostHistory.length)) monthly[id] = v;
+            }
             const stays = [];
             for (const c of crops) for (const st of rptCropRoomDays(c)) {
                 const b = rooms[st.roomId]?.buildingId;
@@ -5030,12 +5148,15 @@
             const plantsIn = m => [...m.values()].reduce((t, n) => t + n, 0);
             for (let d = start; d <= today; d = dAdd(d, 1)) {
                 const days = monthDays(d);
-                for (const [b, perMonth] of Object.entries(monthly)) {
-                    const amount = perMonth / days, inRoom = new Map();   // roomId → Map(lotId → plants)
+                for (const b of Object.keys(monthly)) {
+                    const perMonth = cfg.rentOn(b, d), inRoom = new Map();   // roomId → Map(lotId → plants)
                     for (const st of stays) if (st.b === b && st.from <= d && d <= st.to) {
                         const m = inRoom.get(st.roomId) || inRoom.set(st.roomId, new Map()).get(st.roomId);
                         m.set(st.lotId, (m.get(st.lotId) || 0) + rptPlantsOn(st.c, d));   // its plants that day
                     }
+                    // 📅 The building's figure that day (price by date); a day it had none leaves its lots' property out
+                    if (perMonth == null) { for (const m of inRoom.values()) for (const lotId of m.keys()) { const o = byCrop.get(lotId); if (o) o.noRent++; } continue; }
+                    const amount = perMonth / days;
                     if (!inRoom.size) {
                         // No crop in the building: an idle day. Its cost goes into the period's grams (user decision 2026-10-26)
                         unallocated[d] = (unallocated[d] || 0) + amount;
@@ -5107,14 +5228,24 @@
             const hasPower = !unbilled && !(pw.noWatts > 0) && (pw.kWh > 0 || (cfg.source === 'bills' && pw.cost > 0));
             const power = { kWh: pw.kWh, lights: pw.lights, equip: pw.equip, cost: hasPower ? pw.cost : null, source: cfg.source, pctMissingDays: pw.pctMissing,
                 ...(unbilled ? { unbilledDays: unbilled, billedCost: pw.cost } : {}), ...(pw.noWatts > 0 ? { noWattsDays: pw.noWatts } : {}) };
+            // 📅 Price by date (user decision 2026-10-26): water at the rate of the day it was used, fertilizer at its price that day
             const L = c.env?.waterL;
-            const water = { L: L ?? null, cost: L > 0 && cfg.waterRate != null ? L / 1000 * cfg.waterRate : null };
+            let waterCost = null;
+            if (L > 0) {
+                waterCost = 0;
+                for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) {
+                    const r = cfg.waterRateOn(d);
+                    if (r == null) { waterCost = null; break; }
+                    waterCost += litres / 1000 * r;
+                }
+            }
+            const water = { L: L ?? null, cost: waterCost };
             const byProduct = {}, unpriced = [];
             for (const [name, mL] of Object.entries(c.env?.nutrientByProduct || {})) {
                 if (!(mL > 0)) continue;
-                const p = name ? cfg.fertPrice(name) : null;
-                byProduct[name || '(product not linked)'] = { mL, cost: p != null ? mL / 1000 * p : null };
-                if (p == null) unpriced.push(name || '(product not linked)');
+                const cost = name ? rptFertCost(c, name, mL, cfg) : null;
+                byProduct[name || '(product not linked)'] = { mL, cost };
+                if (cost == null) unpriced.push(name || '(product not linked)');
             }
             // Partial = missing (user decision 2026-10-26): one product without a price (or mL not linked to a product) leaves
             // the lot's whole fertilizer out of the cost per gram, instead of counting it low
@@ -5126,7 +5257,8 @@
                 const item = cfg.catalog[x.inputId] || cfg.byName[String(x.name || '').trim().toLowerCase()];
                 const atTask = x.per === 'plant' && x.at ? rptPlantsAtTask(c, x.at) : null;
                 const qty = (Number(x.qty) || 0) * (atTask ? atTask.plants : x.per === 'plant' ? rptStartPlants(c) : 1);
-                const p = cfg.price(item?.price);
+                // 📅 At its price on its task's day, else the day the lot started (price by date)
+                const p = cfg.itemPrice(item, atTask?.date || rptStartDay(c));
                 // The task is named as the lot's recipe names it (else the task-type registry)
                 const rt = atTask ? (recipe?.tasks || []).find(t => t?.taskType === x.at) : null;
                 const label = atTask ? (rt?.name ? `${rt.emoji || ''} ${rt.name}`.trim() : rptTaskLabel(x.at)) : null;
@@ -5138,6 +5270,23 @@
             const supplies = { items, unpriced: unpricedSupplies, cost: supplyCosts.length && !unpricedSupplies.length ? rSum(supplyCosts) : null };
             return { power, water, fert, supplies, property: rptCropProperty(c, M) };
         }
+        // A product's fertilizer $ for a lot: each day's mL at that day's price; mL with no day (a 📌 constant) at today's. Null when
+        // any of it has no price (partial = missing)
+        function rptFertCost(c, name, mL, cfg) {
+            let sum = 0, dated = 0;
+            for (const [d, prods] of Object.entries(c.productDays || {})) {
+                const v = prods[name];
+                if (!(v > 0)) continue;
+                const pr = cfg.fertPrice(name, d);
+                if (pr == null) return null;
+                sum += v / 1000 * pr; dated += v;
+            }
+            const rest = mL - dated;
+            if (rest > 1e-9) { const pr = cfg.fertPrice(name); if (pr == null) return null; sum += rest / 1000 * pr; }
+            return sum;
+        }
+        // The day a lot started: its Day 0, else its planting, else its first day in a room
+        const rptStartDay = c => c.dates?.day0 || c.dates?.planting || rptCropRoomDays(c)[0]?.from || rToday();
         // Frozen with a crop summary (in Main.json, like the price list): the non-labour costs as they stood
         function rptFrozenCosts(c, M) {
             const k = rptCropInputCost(c, M, true);
@@ -5180,10 +5329,12 @@
             }
             if (t.tempNoWage > 0) return null;
             let cost = t.tempCost || 0;
-            for (const [who, h] of Object.entries(t.people)) {
+            // 📅 At the wage of the day it was cut (price by date); a summary saved before days were kept: today's wages
+            const byDay = t.peopleDays && Object.keys(t.peopleDays).length ? t.peopleDays : { [rToday()]: t.people };
+            for (const [day, people] of Object.entries(byDay)) for (const [who, h] of Object.entries(people)) {
                 if (who.startsWith('temp:')) continue;
-                const w = Number(employeeByName(who)?.wage);
-                if (employeeByName(who)?.wage == null || !Number.isFinite(w)) return null;
+                const w = wageOn(who, day);
+                if (w == null) return null;
                 cost += h * w;
             }
             return cost;
@@ -5294,11 +5445,13 @@
                 const k = rptCropCost(c), parts = [];
                 if (k?.frozen) parts.push(`${hrs(k.missing)} h had no wage when its summary was saved`);
                 else {
-                    for (const [who, h] of Object.entries(c.labour?.byPerson || {})) {
-                        if (who.startsWith('temp:')) continue;
-                        const w = employeeByName(who)?.wage;
-                        if (w == null || !Number.isFinite(Number(w))) parts.push(`${who} ${hrs(h)} h (no wage)`);
-                    }
+                    // Who had no wage on the days they worked (price by date)
+                    const miss = {}, B = c.labour?.byBuilding;
+                    if (B && Object.keys(B).length) {
+                        for (const byD of Object.values(B)) for (const [day, m] of Object.entries(byD)) for (const [who, h] of Object.entries(m.people || {}))
+                            if (!who.startsWith('temp:') && wageOn(who, day) == null) miss[who] = (miss[who] || 0) + h;
+                    } else for (const [who, h] of Object.entries(c.labour?.byPerson || {})) if (!who.startsWith('temp:') && wageOn(who, rToday()) == null) miss[who] = (miss[who] || 0) + h;
+                    for (const [who, h] of Object.entries(miss)) parts.push(`${who} ${hrs(h)} h (no wage)`);
                     if (c.labour?.tempNoWage > 0) parts.push(`temps ${hrs(c.labour.tempNoWage)} h (no wage typed on their hours)`);
                 }
                 const ch = rptCloneCharge(c, M);
@@ -5335,10 +5488,19 @@
                 if (k.power.cost != null) addBM(rptPowerFor(M, c)?.cBM, 'power');
                 if (k.property.cost != null) addBM(rptPropertyFor(M, c)?.cBM, 'property');
                 const on = rptBuildingOnDay(c);
-                if (k.water.cost != null) for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) add(on(d), d.slice(0, 7), 'water', litres / 1000 * cfg.waterRate);
-                if (k.fert.cost != null) for (const [d, prods] of Object.entries(c.productDays || {})) for (const [name, mL] of Object.entries(prods)) {
-                    const pr = cfg.fertPrice(name);
-                    if (pr != null) add(on(d), d.slice(0, 7), 'fert', mL / 1000 * pr);
+                if (k.water.cost != null) for (const [d, litres] of Object.entries(c.series?.['water.total'] || {})) add(on(d), d.slice(0, 7), 'water', litres / 1000 * (cfg.waterRateOn(d) || 0));
+                if (k.fert.cost != null) {
+                    const dated = {};
+                    for (const [d, prods] of Object.entries(c.productDays || {})) for (const [name, mL] of Object.entries(prods)) {
+                        const pr = cfg.fertPrice(name, d);
+                        dated[name] = (dated[name] || 0) + mL;
+                        if (pr != null) add(on(d), d.slice(0, 7), 'fert', mL / 1000 * pr);
+                    }
+                    // mL with no day (a 📌 constant): where it ships from, at today's price
+                    for (const [name, mL] of Object.entries(c.env?.nutrientByProduct || {})) {
+                        const rest = mL - (dated[name] || 0), pr = name ? cfg.fertPrice(name) : null;
+                        if (rest > 1e-9 && pr != null) add(shipB, shipYm, 'fert', rest / 1000 * pr);
+                    }
                 }
                 if (k.supplies.cost != null) {
                     const first = rptCropRoomDays(c)[0], startDay = first?.from || c.dates?.day0 || rToday();
@@ -5354,7 +5516,7 @@
             const L = rptCropCost(c);
             if (L && L.cost > 0) {
                 const slots = [];
-                for (const [b, byM] of Object.entries(c.labour?.byBuilding || {})) for (const [ym, m] of Object.entries(byM)) slots.push({ b, ym, ...rptPriceLabourSlot(m) });
+                for (const [b, byD] of Object.entries(c.labour?.byBuilding || {})) for (const [day, m] of Object.entries(byD)) slots.push({ b, ym: day.slice(0, 7), ...rptPriceLabourSlot(m, day) });
                 const priced = rSum(slots, x => x.cost);
                 if (!slots.length || !(priced > 0)) add(shipB, shipYm, 'labour', L.cost);
                 else if (L.frozen) for (const x of slots) add(x.b, x.ym, 'labour', L.cost * x.cost / priced);
@@ -5453,7 +5615,7 @@
             const add = (b, cost, miss) => { const o = out.get(b || '') || out.set(b || '', { cost: 0, missing: 0 }).get(b || ''); o.cost += cost; o.missing += miss; };
             for (const r of M.otherAll || []) {
                 if (!inRange(r.date, from, to) || frozen[r.date.slice(0, 7)]) continue;
-                const w = r.temp ? r.wage : Number(employeeByName(r.person)?.wage);
+                const w = r.temp ? r.wage : wageOn(r.person, r.date);
                 if (w > 0) add(r.buildingId, r.hours * w, 0); else add(r.buildingId, 0, r.hours);
             }
             for (const [ym, f] of Object.entries(frozen)) {
@@ -7978,6 +8140,10 @@ ${logHtml(M)}
             $('pwNote').textContent = src === 'bills'
                 ? `Crops are charged the bills: each day of a bill is split between the crops in that building by their estimated use. ${bills.length ? `${bills.length} bill${bills.length === 1 ? '' : 's'} entered${avg != null ? ` · average ${pwMoney(avg)} per kWh` : ''}.` : 'No bills entered yet — add them below.'}`
                 : `Crops are charged their estimated kWh × ${c.kWhRate > 0 ? pwMoney(c.kWhRate) + ' per kWh' : 'the rate (not set yet)'}. Set lights, watts per light and light cycles in SitkaTools' Room Manager, AC / dehumidifier watts in EquipmentWizard, and log the light % daily in the grow log.${avg != null ? ` Your bills average ${pwMoney(avg)} per kWh.` : ''}`;
+            // 📅 Each rate's history: a change applies from the day picked (price by date)
+            const rateHist = [['$/kWh', c.kWhRateHistory], ['water $/1,000 L', c.waterPer1000LHistory]].filter(([, h]) => Array.isArray(h) && h.length > 1)
+                .map(([l, h]) => `${l}: ${historyText(h, 'rate', pwMoney)}`).join(' — ');
+            if (rateHist) $('pwNote').textContent += ` 📅 Rates by date: ${rateHist}.`;
             const sel = $('pwBillBuilding'), keep = sel.value;
             sel.innerHTML = `<option value="">Whole site</option>` + Object.entries(DB.data.buildings || {}).map(([id, b]) => `<option value="${escapeHtml(id)}">${escapeHtml(b?.name || id)}</option>`).join('');
             if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
@@ -8016,10 +8182,19 @@ ${logHtml(M)}
             showToast(r.value === 'plants' ? 'Property cost is now shared by plants' : 'Property cost is now shared by lights in use');
         }));
         for (const [id, key, label] of [['pwRate', 'kWhRate', 'Electricity rate'], ['pwWater', 'waterPer1000L', 'Water rate']]) {
-            $(id).addEventListener('change', () => {
+            $(id).addEventListener('change', async () => {
                 if (!DB.data) return;
                 const v = parseFloat($(id).value), c = ensureCosts();
-                if (v >= 0) c[key] = v; else delete c[key];
+                // 📅 A changed rate applies from a day (today by default): days before it keep the old rate (price by date)
+                const old = c[key] != null && c[key] !== '' && Number.isFinite(Number(c[key])) ? Number(c[key]) : null, now = v >= 0 ? v : null;
+                if (old != null && now !== old) {
+                    const from = await askAppliesFrom(`${label}: ${pwMoney(old)} → ${now == null ? 'cleared' : pwMoney(now)}`, 'Days before then keep the old rate. Closed-out lots keep the costs saved with them.');
+                    if (!from) { $(id).value = old; return; }
+                    const cc = ensureCosts();   // the DB as it is now (a live update may have come in)
+                    cc[key + 'History'] = recordChange(cc[key + 'History'], 'rate', old, now, from);
+                }
+                const c2 = ensureCosts();
+                if (now != null) c2[key] = now; else delete c2[key];
                 notifySitkaTools();
                 renderPowerTab();
                 showToast(v >= 0 ? `${label} set to ${pwMoney(v)}` : `${label} cleared`);

@@ -42,6 +42,10 @@ export async function run(b, BASE) {
     check('detail panel edit saves the property cost', (await b.run(main, `return DB.data.buildings.B1.monthlyPropertyCost;`)) === 12500);
     check('…and the building list shows it', (await b.run(main, `return document.querySelector('#buildingList .room-item[data-building-id="B1"] .lot-meta').textContent;`)).includes('$12,500.00 / month'));
     await set(b, main, '.building-property-cost[data-building-id="B3"]', '');
+    // A change to a property cost already set asks which day it applies from (price by date): today
+    await b.waitFor(main, `return !!document.getElementById('appliesFromOverlay');`);
+    await b.run(main, `document.querySelector('#appliesFromOverlay [data-act="ok"]').click();`, { user: true });
+    await b.sleep(200);
     check('clearing it leaves no property cost', (await b.run(main, `return DB.data.buildings.B3.monthlyPropertyCost;`)) === null);
 
     // ---- EquipmentWizard: power on a new item, then edited on its card ----

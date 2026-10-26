@@ -16,7 +16,7 @@ Header: tool name on the left, **Active Lot** dropdown on the right (Tasks is lo
 - **No employee selected → Work Week:** Mon–Sun columns, current week only (no navigation), with the names of who works each day.
 - **Employee selected → editor:**
   - 7 day buttons, green (works) / red (off): the ongoing work week.
-  - **Name** and **Wage** ($/h). Blank (placeholder "not set") leaves the wage unset or clears it. No confirmation step for wages.
+  - **Name** and **Wage** ($/h). Blank (placeholder "not set") leaves the wage unset or clears it. A first wage covers all their hours; **changing** a wage asks **Applies from** (today by default, never later): hours worked before that day keep the old wage (price by date, user decision 2026-10-26). The history is in `_EmployeeWizard.wageHistory[name]` (Wages.json), shown under the box; it follows a rename and goes with a delete.
   - **Floor manager** checkbox: floor managers sign crop and equipment tasks off (DailyWizard's ✅ Mark done, the Tasks tab's Mark completed) with their PIN and drawn initials.
   - **🔒 Floor manager PIN** (shown when Floor manager is ticked): 4–8 digits, typed twice; blank keeps the PIN they have, and a note says when it was set or that there's none yet. Saved only as a salted SHA-256 hash (`pin`). Unticking Floor manager removes the PIN. Each floor manager's PIN unlocks DailyWizard's ✏️ edit mode and approves deletions there and in the Tasks tab (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
   - **Save Changes** and **Request Time Off**.
@@ -68,7 +68,7 @@ Inputs for the total cost per gram (root `CLAUDE.md` → "Total Cost per Gram"; 
 
 - **Electricity cost comes from** (radio, `costs.electricity`): **Power bills** (each bill spread over its days, each day split between the building's crops by estimated use) or **Estimated usage** (estimated kWh × the rate).
 - **Property cost is shared by** (radio, `costs.propertyShare`): **Plants** (default, user decision 2026-10-26: every lot in the building that day by its plants, the lot in the dry/trim room included, by the plants it harvested), **Floor area** (a day when a room in use has no floor area is split by lights) or **Lights in use**. Each day a building's monthly cost (SitkaTools' Building Manager) is split between its rooms holding a crop by plants, floor area or light count, then between a room's crops by plants, so four equal running rooms carry a quarter each. The note lists each building's monthly cost.
-- **$ per kWh:** used for the estimate; with bills, the note shows the bills' average $/kWh. **Water $ per 1,000 L:** prices the grow logs' water.
+- **$ per kWh:** used for the estimate; with bills, the note shows the bills' average $/kWh. **Water $ per 1,000 L:** prices the grow logs' water. Changing either asks **Applies from** (price by date): `costs.kWhRateHistory` / `costs.waterPer1000LHistory`, listed in the note.
 - **🧾 Power bills:** meter (a building, or "Whole site" = `buildingId: null`), from, to, kWh (optional), amount. Each row shows days and $/kWh and has an ✕ (asks first). A bill overlapping another on the same meter asks before it's added. A strip shows which of the last 12 months each meter's bills cover (full / part / none).
 - Every change calls `notifySitkaTools()`; live updates redraw it while open.
 
@@ -102,6 +102,7 @@ EmployeeWizard owns `_EmployeeWizard`:
   "costs":     { "electricity": "bills", "kWhRate": 0.11, "waterPer1000L": 2.4, "propertyShare": "lights",
                  "bills": [{ "id": "pb…", "buildingId": "B6", "from": "2026-09-01", "to": "2026-09-30", "kWh": 41774, "amount": 4558 }] },
   "cropCosts": { "<lotId>": { "cost": 20358.4, "missingHours": 0, "savedAt": "…", "cloneLabour": 312.5 } },   // cloneLabour: a lot cut from a mother, its clones' share of the mother's labour
+  "wageHistory": { "<name>": [{ "from": "", "wage": 20 }, { "from": "2026-10-01", "wage": 22 }] },   // in Wages.json: each wage change and the day it applies from
   "ctls":      { "2026-09": { "filedAt": "<ISO>", "plants": 1240, "wetG": 8400.5, "dryG": 700, "openingPlants": 1185, "openingWetG": 3000 } },
   "overheadCosts": { "2026-09": { "frozenAt": "<ISO>", "rows": [["2026-09-14", "B1", "", "chore", 2, 40, 0]], "history": [] } }   // in Wages.json
 }
