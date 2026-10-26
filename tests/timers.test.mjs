@@ -49,9 +49,14 @@ export async function run(b, BASE) {
     await b.sleep(400);
     const inMain = await b.run(main, `return { t: DB.data._DailyWizard.buildings.B1.timers?.wat1?.['2'] || null, unsaved: hasUnsavedChanges };`);
     check('SitkaTools got it and has it unsaved', inMain.t?.since === t['2'].since && inMain.unsaved, JSON.stringify(inMain));
-    await b.sleep(1300);
-    s = await slots('Water plants');
-    check('it counts up on the row', /^00:0[1-3]$/.test(s[1].time), s[1].time);
+    // The rows redraw once a second, at whatever point in the second the page started its tick: wait for the next
+    // redraw past the first second rather than reading at one fixed moment
+    for (let i = 0; i < 30; i++) {
+        s = await slots('Water plants');
+        if (s[1].time !== '00:00') break;
+        await b.sleep(100);
+    }
+    check('it counts up on the row', /^00:0[1-4]$/.test(s[1].time), s[1].time);
 
     // ---- ⏸ banks the run; ▶ resumes without asking ----
     await tap('Water plants', 2, 'go');

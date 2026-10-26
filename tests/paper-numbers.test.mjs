@@ -1,13 +1,13 @@
 // PaperWizard number answers take digits and one decimal point only (plant counts: digits only), in the
 // wizard's own steps and on the repeating-table Entries form. Typed with real key presses.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today, answerCountReasons } from './lib/helpers.mjs';
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, leave, today, answerCountReasons, caretToStart } from './lib/helpers.mjs';
 
 export const title = 'PaperWizard number answers: digits and one decimal point';
 
 export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const T = today();
-    const HOME = '', ENTER = '';
+    const ENTER = '';
     const db = fixtureDb();
     const q = (id, label, type, extra = {}) => ({ id, label, type, options: [], rowScoped: false, sameAsLast: false, mandatory: false, prefillFrom: null, ...extra });
     const box = (id, x, y, more = {}) => ({ id, label: id, x, y, w: 0.12, h: 0.03, page: 1, fontSize: 10, align: 'left',
@@ -48,7 +48,9 @@ export async function run(b, BASE) {
     c = await ctl();
     check('letters, spaces and a second decimal point are not taken', c.v === '24.53' && c.draft === '24.53', JSON.stringify(c));
     await clear();
-    await b.keys(pw, '1.5' + HOME + '.2');
+    await b.keys(pw, '1.5');
+    await caretToStart(b, pw);   // Home, or ⌘← on a Mac
+    await b.keys(pw, '.2');
     c = await ctl();
     check('a point typed before the one already there is not taken; the caret stays put', c.v === '21.5' && c.draft === '21.5', JSON.stringify(c));
     await b.run(pw, `const el = document.getElementById('wizCtl'); el.value = ' 6.5 pH '; el.dispatchEvent(new Event('input'));`);

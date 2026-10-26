@@ -153,6 +153,16 @@ export async function openSitka(b, ctx, base, device = null) {
     await b.navigate(ctx, `${base}/SitkaTools/SitkaTools.html${device ? `?device=${device}` : ''}`);
 }
 
+// Move the caret to the start of the focused text box with a real key press: Home on Windows and Linux, ⌘← on a Mac
+// (where Home doesn't move the caret in a text box)
+export async function caretToStart(b, ctx) {
+    const mac = await b.run(ctx, `return /Mac/i.test(navigator.platform);`);
+    const keys = mac ? ['\uE03D', '\uE012'] : ['\uE011'];   // Meta + ArrowLeft, or Home
+    await b.send('input.performActions', { context: ctx, actions: [{ type: 'key', id: 'keyboard', actions: [
+        ...keys.map(value => ({ type: 'keyDown', value })), ...keys.slice().reverse().map(value => ({ type: 'keyUp', value }))] }] });
+    await b.send('input.releaseActions', { context: ctx });
+}
+
 // A single-file DB, loaded the way 📂 Load DB does
 export async function loadSingle(b, ctx, db) {
     return b.run(ctx, `return loadDbFromText(${JSON.stringify(JSON.stringify(db))}, 'DB-26-10-13.json');`);
