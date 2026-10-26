@@ -2233,6 +2233,8 @@
         }
         .save-file-links { display: flex; flex-direction: column; gap: 4px; }
         .save-file-links .save-link.saved { opacity: 0.55; }
+        .save-file-links .save-link.unchanged { color: var(--text-secondary); }
+        .save-file-links .save-note { color: var(--warning); font-weight: 500; word-break: normal; }
         .split-status { font-size: 0.9rem; color: var(--text-secondary); margin: 8px 0 12px; line-height: 1.5; }
         .split-status strong { color: var(--text-primary); }
         .split-subtitle { font-size: 0.95rem; margin: 18px 0 8px; color: var(--text-primary); }
@@ -4222,6 +4224,7 @@
             facilityQueues: {},   // building id → its facility queue (_PaperWizard.facilityQueue) as that file holds it / this device last saved
             mainFacility: {},     // Main's _PaperWizard.facilityEntries as opened / last saved — what a building's queue is released against
             facilityPickups: [],  // office: [{ id, n }] facility pages with additions taken in from building queues on open (not in Main yet)
+            madeHere: new Set(),  // office: building files this session's split made (it may save them until the files are reopened)
             pending: null,        // manual (link) save in progress
 
             roleLabel(role = this.role, db = DB.data) {
@@ -4250,6 +4253,7 @@
                 this.diskPaper = {};
                 this.diskTransfers = {};
                 this.diskOverlays = {};
+                this.madeHere = new Set();   // building files this session's split made: the office may save them again
                 this.pending = null;
             },
 
@@ -5213,6 +5217,7 @@
                 this.haveWages = !!wages;
                 this.metas = {};
                 this.hashes = {};
+                this.madeHere = new Set();   // reopened: building files are saved by their own devices again
                 this.pending = null;
                 DB.data = db;
                 DB.ensureStructure();
@@ -5356,21 +5361,35 @@
 
                 const toSave = [];
                 const cannot = [];
+                // Files this device may save even with no changes: Save DB offers them too (user request 2026-10-26),
+                // so a Save As that went wrong can be done again
+                const unchanged = [];
+                let note = '';
+                const mayWrite = name => this.loaded.has(name) || DbFolder.active;
+                const offerUnchanged = name => {
+                    if (name in parts && !changed.includes(name) && mayWrite(name)) unchanged.push(name);
+                };
                 if (this.role === 'office') {
                     for (const name of changed) {
                         if (name === SPLIT_WAGES && !this.haveWages) cannot.push('wages (open Wages.json to save wage changes)');
-                        // Only a building's own device writes its file (user decision 2026-10-25): the office never does
-                        else if (SPLIT_BUILDING_RE.test(name)) cannot.push(`${name} (only that building's device saves its file — open SitkaTools as that building to change its data)`);
-                        else if (!this.loaded.has(name) && !DbFolder.active) cannot.push(`${name} (not opened on this device)`);
+                        // Only a building's own device writes its file (user decision 2026-10-25): the office never does,
+                        // except the files its own split just made, for the rest of that session
+                        else if (SPLIT_BUILDING_RE.test(name) && !this.madeHere.has(name)) cannot.push(`${name} (only that building's device saves its file — open SitkaTools as that building to change its data)`);
+                        else if (!mayWrite(name)) cannot.push(`${name} (not opened on this device)`);
                         else toSave.push(name);
                     }
+                    offerUnchanged(SPLIT_MAIN);
+                    if (this.haveWages) offerUnchanged(SPLIT_WAGES);
+                    for (const name of this.madeHere) offerUnchanged(name);
                 } else {
                     const own = buildingFileName(this.role);
                     if (changed.includes(own)) {
                         // Never overwrite the building's real file from a session that didn't open it
-                        if (!this.loaded.has(own) && !DbFolder.active) cannot.push(`${own} (open it together with Main.json to save)`);
+                        if (!mayWrite(own)) cannot.push(`${own} (open it together with Main.json to save)`);
                         else toSave.push(own);
                     }
+                    offerUnchanged(own);
+                    if (!mayWrite(own)) note = `${own} wasn't opened — open it together with Main.json to save this building's file.`;
                     const blocked = this.blockedOfficeChanges(db);
                     if (blocked.length) cannot.push(`office records: ${blocked.join(', ')}`);
                     for (const name of changed) {
@@ -5378,7 +5397,7 @@
                         cannot.push(name === SPLIT_WAGES ? 'wages' : `${name} (another building's paperwork or task list)`);
                     }
                 }
-                return { parts, toSave, cannot, snapshot: this.snapshot(db) };
+                return { parts, toSave, unchanged, note, cannot, snapshot: this.snapshot(db) };
             },
 
             describeCannot(cannot) {
@@ -5447,51 +5466,67 @@
                 revokeSaveBlobs();
 
                 if (plan.cannot.length) alert(this.describeCannot(plan.cannot));
+                if (plan.note) {
+                    const note = document.createElement('div');
+                    note.className = 'save-link save-note';
+                    note.textContent = plan.note;
+                    saveFileLinks.appendChild(note);
+                }
                 if (plan.toSave.length === 0) {
-                    const none = document.createElement('div');
-                    none.className = 'save-link';
-                    none.textContent = 'Nothing to save from this device.';
-                    saveFileLinks.appendChild(none);
-                    savePopup.classList.remove('hidden');
                     // Every file already matches (e.g. an edit was undone): nothing is unsaved any more
                     if (plan.cannot.length === 0) this.finish(plan);
-                    return;
+                    if (plan.unchanged.length === 0) {
+                        const none = document.createElement('div');
+                        none.className = 'save-link';
+                        none.textContent = 'Nothing to save from this device.';
+                        saveFileLinks.appendChild(none);
+                        savePopup.classList.remove('hidden');
+                        return;
+                    }
                 }
 
                 if (DbFolder.active && DbFolder.handle) {
+                    // The changed files; with none changed, every file this device saves, again
+                    const folderPlan = plan.toSave.length ? plan : { ...plan, toSave: plan.unchanged };
+                    const n = folderPlan.toSave.length;
                     const btn = document.createElement('button');
                     btn.className = 'save-folder-btn';
                     btn.id = 'saveToFolderBtn';
-                    btn.textContent = `💾 Save ${plan.toSave.length} file${plan.toSave.length === 1 ? '' : 's'} to "${DbFolder.handle.name}"`;
+                    btn.textContent = `💾 Save ${n} file${n === 1 ? '' : 's'} to "${DbFolder.handle.name}"` + (plan.toSave.length ? '' : ' (no changes)');
                     btn.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         closeSavePopup();
-                        await this.saveToFolder(plan);
+                        await this.saveToFolder(folderPlan);
                     });
                     saveFolderAction.appendChild(btn);
                     saveFolderAction.classList.remove('hidden');
                 }
 
                 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+                // Only the changed files count towards "saved"; an unchanged file's link just writes it again
                 const remaining = new Set(plan.toSave);
                 this.pending = plan;
-                for (const name of plan.toSave) {
+                for (const name of [...plan.toSave, ...plan.unchanged]) {
+                    const isChanged = plan.toSave.includes(name);
                     const part = plan.parts[name];
                     const { meta, text } = this.withMeta(name, part);
                     const blob = new Blob([text], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     saveBlobUrls.push(url);
                     const a = document.createElement('a');
-                    a.className = 'save-link';
+                    a.className = 'save-link' + (isChanged ? '' : ' unchanged');
                     a.dataset.file = name;
                     a.href = url;
                     a.download = name;
-                    a.textContent = `📄 ${name} — ${isTouchDevice ? 'Tap to save' : 'Right-click → Save Link As…'}`;
+                    a.textContent = `📄 ${name}${isChanged ? '' : ' (no changes)'} — ${isTouchDevice ? 'Tap to save' : 'Right-click → Save Link As…'}`;
+                    let done = false;
                     const used = () => {
-                        if (!remaining.has(name)) return;
-                        remaining.delete(name);
+                        if (done) return;
+                        done = true;
                         a.classList.add('saved');
                         this.commitFile(name, part, meta, text, plan.parts._homes);
+                        if (!isChanged) return;
+                        remaining.delete(name);
                         if (remaining.size === 0) this.finish(plan);
                     };
                     if (isTouchDevice) {
@@ -5513,7 +5548,8 @@
                     metas: this.metas, hashes: this.hashes, baseline: this.baseline, stamps: this.stamps,
                     overlays: this.overlays, paperHome: this.paperHome, sheetHome: this.sheetHome,
                     diskPaper: this.diskPaper, diskTransfers: this.diskTransfers, diskOverlays: this.diskOverlays, mainLabour: this.mainLabour,
-                    facilityQueues: this.facilityQueues, mainFacility: this.mainFacility, facilityPickups: this.facilityPickups
+                    facilityQueues: this.facilityQueues, mainFacility: this.mainFacility, facilityPickups: this.facilityPickups,
+                    madeHere: [...this.madeHere]
                 };
             },
             importState(state) {
@@ -5528,6 +5564,9 @@
                 this.facilityPickups = state.facilityPickups || [];
                 // …and no copy of each building file's own updates (close-out fingerprints): its overlays as saved
                 this.diskOverlays = state.diskOverlays || JSON.parse(JSON.stringify(state.overlays || {}));
+                // …and no list of the building files its split made: those it holds but never opened or saved
+                this.madeHere = new Set(state.madeHere ||
+                    (state.loaded || []).filter(n => SPLIT_BUILDING_RE.test(n) && !(state.hashes || {})[n]));
                 delete this.clearClosed;
                 this.active = true;
             },
@@ -5572,8 +5611,13 @@
                 DB.fileName = this.filesLabel(buildingIds.length);
                 const plan = this.plan();
                 plan.toSave = Object.keys(plan.parts);
+                plan.unchanged = [];
                 plan.cannot = [];
+                plan.note = '';
                 for (const name of plan.toSave) this.loaded.add(name);
+                // Nobody else has these files yet: the office may save them again until the files are reopened
+                // (a Save As cancelled or saved in the wrong place)
+                for (const name of plan.toSave) if (SPLIT_BUILDING_RE.test(name)) this.madeHere.add(name);
                 markUnsaved();
                 updateIOStatusBar();
                 updateSplitCard();

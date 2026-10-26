@@ -192,12 +192,13 @@ export async function openSplit(b, ctx, base, device, files) {
     return b.run(ctx, `return await DbSplit.open(${JSON.stringify(set)});`);
 }
 
-// 💾 Save DB with split files → the text of every offered file (each right-click link used)
+// 💾 Save DB with split files → the text of every changed file offered (each right-click link used; the
+// "(no changes)" links for files that didn't change are left alone)
 export async function saveSplit(b, ctx) {
     return b.run(ctx, `
         document.getElementById('exportBtn').click();
         const out = {};
-        for (const a of document.querySelectorAll('#saveFileLinks a.save-link')) {
+        for (const a of document.querySelectorAll('#saveFileLinks a.save-link:not(.unchanged)')) {
             out[a.dataset.file] = await (await fetch(a.href)).text();
             a.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
         }
