@@ -5846,12 +5846,12 @@
 
         .fp-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
             margin-bottom: 10px;
         }
 
-        .fp-grid .form-group, .field-properties .form-group { margin-bottom: 0; }
+        .fp-grid .form-group, .field-properties .form-group { margin-bottom: 0; min-width: 0; }
         .field-properties > .form-group { margin-bottom: 10px; }
 
         /* Panels below the page image: Sheet + Field properties sit side by side on wide
@@ -5922,15 +5922,20 @@
         .q-btn:hover:not(:disabled) { background: var(--bg-secondary); color: var(--text-primary); }
         .q-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .q-btn.q-del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
-        .q-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .q-controls > .form-group { margin-bottom: 0; }
+        /* The question editor's controls shrink with their card (a select is otherwise as wide as its longest option, and
+           a 1fr column at least as wide as that): minmax(0, 1fr) tracks, inputs at 100 %; one column on a narrow window */
+        .q-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .q-controls > .form-group { margin-bottom: 0; min-width: 0; }
+        .q-controls select, .q-controls input[type="text"], .q-controls input[type="number"], .q-controls textarea,
+        .fp-grid select, .fp-grid input[type="text"], .fp-grid input[type="number"] { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+        @media (max-width: 600px) { .q-controls { grid-template-columns: minmax(0, 1fr); } }
         .q-controls .q-full { grid-column: 1 / -1; }
         .q-product { display: flex; gap: 8px; flex-wrap: wrap; }
         .q-product > * { flex: 1; min-width: 160px; }
         .q-bind-indicator {
             font-size: 0.8rem; color: var(--text-secondary);
             background: var(--bg-secondary); border: 1px dashed var(--border);
-            border-radius: 4px; padding: 6px 8px; min-height: 34px;
+            border-radius: 4px; padding: 6px 8px; min-height: 34px; overflow-wrap: anywhere;
         }
         .q-checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
         .q-check {
@@ -11802,7 +11807,7 @@
                 const lots = Object.entries(DB.data?.lots || {}).filter(([, lot]) => DeviceView.lotVisible(lot));
                 // Redrawn whenever lots, rooms or buildings change (and when a tool that changed the DB closes), so the lists are rebuilt
                 // only when what they show changed: a pick or an open drop-down is never lost to a redraw
-                const lotsKey = JSON.stringify(lots.map(([id, lot]) => [id, lot.name, lot.strain]));
+                const lotsKey = JSON.stringify(lots.map(([id, lot]) => [id, lot.name, lot.strain, lotPhaseEmoji(id)]));
                 if (select.dataset.key !== lotsKey) {
                     select.dataset.key = lotsKey;
                     const keep = select.value;
@@ -11810,7 +11815,7 @@
                     for (const [id, lot] of lots) {
                         const opt = document.createElement('option');
                         opt.value = id;
-                        opt.textContent = `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                        opt.textContent = (lotPhaseEmoji(id) ? lotPhaseEmoji(id) + ' ' : '') + `${id} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
                         select.appendChild(opt);
                     }
                     if (keep && lots.some(([id]) => id === keep)) select.value = keep;
@@ -12738,7 +12743,7 @@
                 const lot = lots[key];
                 const opt = document.createElement('option');
                 opt.value = key;
-                opt.textContent = `${key} — ${lot.name || key}`;
+                opt.textContent = (lotPhaseEmoji(key) ? lotPhaseEmoji(key) + ' ' : '') + `${key} — ${lot.name || key}`;
                 parentLotSelect.appendChild(opt);
             });
         }
@@ -12926,6 +12931,18 @@
             return out.sort((a, b) => a.key.localeCompare(b.key));
         }
         function lotLocked(lotId) { return lotDailyPages(lotId).length > 0; }
+        // 🌸 A lot's phase as an emoji, in front of it in every lot dropdown (user request 2026-10-27): ✂️ or 🍂 when its
+        // current daily paperwork is its trim or drying log (the daily log whose newest page started last), else its stage.
+        // '' for a lot with neither (a projected lot, a lot with no stage). Every tool calls this one (the page's own).
+        const LOT_PHASE_EMOJI = { cloning: '🌱', veg: '🪴', vegetation: '🪴', mother: '🌿', flower: '🌸', bloom: '🌸', harvest: '🌸', harvesting: '🌸', drying: '🍂', curing: '🍂' };
+        function lotPhaseEmoji(lotId) {
+            const lot = DB.data?.lots?.[lotId];
+            if (!lot) return '';
+            const pages = lotDailyPages(lotId), current = pages[pages.length - 1]?.sheet?.document;   // sorted by start day
+            if (current === 'trim-log') return '✂️';
+            if (current === 'drying-log') return '🍂';
+            return LOT_PHASE_EMOJI[String(lot.stage || '').trim().toLowerCase()] || '';
+        }
         // An event holding hours or a floor manager's sign-off is the record of work done: it isn't deleted (user decision
         // 2026-10-25, review Q4); its lot's close-out archives it. What it holds, or null.
         function eventWorkRecord(ev) {
@@ -20404,7 +20421,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const lot = lots[lotId] || {};
                 const opt = document.createElement('option');
                 opt.value = lotId;
-                opt.textContent = `${lotId} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
+                opt.textContent = (lotPhaseEmoji(lotId) ? lotPhaseEmoji(lotId) + ' ' : '') + `${lotId} — ${lot.name || 'Unnamed'} (${lot.strain || '?'})`;
                 sel.appendChild(opt);
             };
 
@@ -26444,7 +26461,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const opt = document.createElement('option');
                 opt.value = lotId;
                 if (lot) {
-                    opt.textContent = lot.strain ? `${lotId} — ${lot.strain}` : lotId;
+                    opt.textContent = (lotPhaseEmoji(lotId) ? lotPhaseEmoji(lotId) + ' ' : '') + (lot.strain ? `${lotId} — ${lot.strain}` : lotId);
                 } else {
                     opt.textContent = `${lotId} — (closed)`; // orphaned: entries exist, lot record gone
                 }
@@ -33292,7 +33309,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const lot = lots[lotId];
                 const opt = document.createElement('option');
                 opt.value = lotId;
-                opt.textContent = `${lotId} — ${lot.name || lotId}`;
+                opt.textContent = (lotPhaseEmoji(lotId) ? lotPhaseEmoji(lotId) + ' ' : '') + `${lotId} — ${lot.name || lotId}`;
                 sel.appendChild(opt);
             };
 
