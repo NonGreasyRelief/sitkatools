@@ -267,9 +267,10 @@ Don't add details, APIs or schemas for a planned tool until asked.
       --input-bg: #1a1a3e; --radius: 8px; --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   ```
-- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms), the tool's content, and a sticky footer holding only **Close Tool** (changes sync on their own).
+- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms), the tool's content, and a sticky footer holding only **Close Tool**, centred in every tool (changes sync on their own; DailyWizard keeps its Reset Day at the left).
 - Lot dropdown: "— Select a lot —" first, then `id — name (strain)`. Room dropdown: "— Select a room —", then `id — name`.
 - Shared component styles (`.form-group`, `.btn`, `.btn-secondary`, `.db-btn`, toasts) and the `DB` object pattern (`data`, `lots`/`rooms`/`buildings` getters, `ensureStructure()`, `sync()`) are the same in every tool: copy them from an existing one.
+- **Toasts look the same everywhere** (user decision 2026-10-27): white text (`--text-primary`, 0.9rem, regular weight) in a dark box (`--bg-secondary`) with a 2px teal border, as SitkaTools' own; only warnings turn the border amber. A tool says nothing as it opens (no "Database loaded" toast).
 - Layouts must work on tablets in grow rooms: high contrast, large tap targets, Grid / Flexbox.
 
 ## Development Conventions
