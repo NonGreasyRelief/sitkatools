@@ -14,6 +14,9 @@ export async function run(b, BASE) {
     const main = await fresh(b);
     await openSitka(b, main, BASE);
     await loadSingle(b, main, fixtureDb());
+    // The old tool popup's size (half the window, 83 % of its height, plus SitkaTools' tool bar): at full width the form
+    // page draws larger and the next box's ↕ handle sits on the dragged box's bottom edge
+    await b.send('browsingContext.setViewport', { context: main, viewport: { width: 683, height: 620 } });
     const pw = await openTool(b, main, 'PaperWizard');
     const T = today();
 

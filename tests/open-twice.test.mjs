@@ -26,17 +26,17 @@ export async function run(b, BASE) {
 
     // ---- Two tabs of the same tool (a tablet) ----
     await b.run(main, 'await WorkCopy.flush();');
-    const t1 = await newTab(b, `${BASE}/PaperWizard/PaperWizard.html`);
+    const t1 = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
     await b.sleep(500);
-    const t2 = await newTab(b, `${BASE}/PaperWizard/PaperWizard.html`);
+    const t2 = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
     await b.waitFor(t2, `const w = document.getElementById('openTwice'); return !!w && w.style.display !== 'none';`, 3000).catch(() => {});
-    check('a second PaperWizard tab covers itself', await covered(t2));
+    check('a second EmployeeWizard tab covers itself', await covered(t2));
     const text = await b.run(t2, `return document.getElementById('openTwice').textContent;`);
-    check('…saying it\'s already open and to close this one', text.includes('PaperWizard is already open in another window') && text.includes('Close this one'), text);
+    check('…saying it\'s already open and to close this one', text.includes('Labour & Cost Wizard is already open in another window') && text.includes('Close this one'), text);
     check('the first tab isn\'t covered', !(await covered(t1)));
-    const other = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
+    const other = await newTab(b, `${BASE}/SitkaTools/SitkaTools.html`);
     await b.sleep(800);
-    check('another tool\'s tab isn\'t covered', !(await covered(other)));
+    check('another page\'s tab isn\'t covered', !(await covered(other)));
     await leave(b, t1); await b.send('browsingContext.close', { context: t1, promptUnload: false });
     await b.waitFor(t2, `const w = document.getElementById('openTwice'); return !w || w.style.display === 'none';`, 3000).catch(() => {});
     check('when the first tab closes, the second one\'s cover lifts', !(await covered(t2)));

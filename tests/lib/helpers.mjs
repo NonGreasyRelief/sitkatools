@@ -117,11 +117,16 @@ export function makeChecker() {
 // a test left unsaved isn't offered back ("Session closed without saving") to the next test.
 export async function fresh(b) {
     const ctxs = await b.contexts();
+    // Every page left from the last test lets go of its session first (no "Restore session?" card in the next one)
+    for (const c of ctxs) {
+        await b.run(c.context, 'window.onbeforeunload = null; if (typeof clearUnsaved === "function") clearUnsaved();').catch(() => {});
+        await forgetWorkCopy(b, c.context);
+    }
     for (const c of ctxs.slice(1)) await b.send('browsingContext.close', { context: c.context, promptUnload: false }).catch(() => {});
-    await b.run(ctxs[0].context, 'window.onbeforeunload = null; if (typeof clearUnsaved === "function") clearUnsaved();').catch(() => {});
-    await forgetWorkCopy(b, ctxs[0].context);
     await b.navigate(ctxs[0].context, 'about:blank').catch(() => {});
-    return ctxs[0].context;
+    // The test runs in a window of its own: in headless Firefox the first one never has the keyboard focus, and a page
+    // without it gets no blur or change events (tools now live in SitkaTools' page, where a tool window used to have it)
+    return (await b.send('browsingContext.create', { type: 'window' })).context;
 }
 
 // Delete the shared working copy (IndexedDB 'sitkatools' → 'work' → 'current') from a page of the site, and stop
@@ -221,6 +226,8 @@ export async function openTool(b, sitka, tool, { ready = 'return typeof DB !== "
     // (tests/lib/bidi.mjs runs its code inside the tool)
     if (await b.run(sitka, `return typeof Tools !== 'undefined' && Tools.has(${JSON.stringify(tool)});`)) {
         await b.run(sitka, `document.querySelector('a.module-link[href*="${tool}"]').click();`, { user: true });
+        // The page has the focus, as a new tool window had it (no blur or change events in a page without it)
+        await b.send('browsingContext.activate', { context: sitka }).catch(() => {});
         const handle = { context: sitka, tool };
         await b.waitFor(handle, ready);
         return handle;

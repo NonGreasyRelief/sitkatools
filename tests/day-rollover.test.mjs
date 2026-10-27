@@ -77,6 +77,7 @@ export async function run(b, BASE) {
         old: !!DB.data._DailyWizard.buildings.B1?.checks?.['${today()}']?.wat1 };`);
     check('…a tick then rolls the list over to the new day instead of ticking yesterday', h3.date === newDay && h3.toast.includes("new day") && !h3.old, JSON.stringify(h3));
     await leave(b, dw2); await b.send('browsingContext.close', { context: dw2 });
+    await b.run(main, `window.Date = window.__RealDate;`);   // the page's clock (the tools') back to the real one
 
     // ---- PaperWizard: a grow-log page whose 7 days end today; tomorrow the cabinet offers the next week ----
     const db = fixtureDb();

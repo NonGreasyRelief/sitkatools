@@ -21,7 +21,7 @@ function moveDb() {
 
 export async function run(b, BASE) {
     const { results, check } = makeChecker();
-    const main = await fresh(b);
+    let main = await fresh(b);
     const files = await splitFiles(b, main, BASE, moveDb());
     // Pick a device in the role picker; answer the unsaved-changes question
     const switchTo = (role, { ok = true } = {}) => b.run(main, `
@@ -89,7 +89,7 @@ export async function run(b, BASE) {
     check('…and keeps the building files\' paperwork (not reopened from Main alone)', await b.run(main, `return !!DB.data._PaperWizard?.entries?.L100?.glog;`));
 
     // ---- Right after the split, before its files are saved: nothing to reopen, so it stays the office ----
-    await fresh(b);
+    main = await fresh(b);
     await openSitka(b, main, BASE, 'office');
     await loadSingle(b, main, fixtureDb());
     await b.run(main, `window.alert = () => {}; window.confirm = () => true; await DbSplit.splitLegacy(); closeSavePopup();`, { user: true });
