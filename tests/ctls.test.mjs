@@ -152,13 +152,14 @@ export async function run(b, BASE) {
     check('💾 Save keeps the lot\'s plant and weight history with its crop summary', kept?.v === 4 && kept.ctls?.start === 40 && kept.ctls.moves.some(m => m.reason === 'harvested' && m.n === 40) && kept.ctls.dry[0]?.[1] === 700, JSON.stringify(kept));
     check('…and it shows as saved', (await b.run(ew, `return ctlsModel('2026-09').ready.find(r => r.lotId === 'D400')?.state;`)) === 'ok');
 
-    // ---- SitkaTools: close-out is refused while the crop summary isn't saved (🔒 cost audit 2026-10-26) ----
+    // ---- SitkaTools: close-out saves a crop summary that isn't saved yet, once it's OK'd (user request 2026-10-27) ----
     await b.run(main, `window.__msgs = []; window.confirm = m => { window.__msgs.push(m); return false; }; window.alert = m => window.__msgs.push('ALERT ' + m);
         DB.data.lots.C300.plantCount = 0;
         document.getElementById('lotActionSelect').innerHTML = '<option value="C300">C300</option><option value="D400">D400</option>';`);
     await b.run(main, `document.getElementById('lotActionSelect').value = 'C300'; await LotActions.closeOut(); document.getElementById('lotActionSelect').value = 'D400'; await LotActions.closeOut();`);
     const msgs = await b.run(main, `return window.__msgs;`);
-    check('close-out is refused while a lot\'s crop summary isn\'t saved, and goes ahead when it is', msgs.length === 2 && msgs[0].startsWith('ALERT Lot C300 can\'t be closed out yet') && msgs[0].includes('crop summary isn\'t saved') && msgs[1].startsWith('Close out lot D400?'), msgs.map(m => m.slice(0, 120)).join(' | '));
+    check('close-out offers to save a lot\'s crop summary that isn\'t saved, and doesn\'t for one that is', msgs.length === 2 && msgs[0].startsWith('Close out lot C300?') && msgs[0].includes('crop summary is saved first') && msgs[1].startsWith('Close out lot D400?') && !msgs[1].includes('saved first'), msgs.map(m => m.slice(0, 120)).join(' | '));
+    check('…and Cancel saved nothing', await b.run(main, `return !DB.data._EmployeeWizard.crops.C300 && !!DB.data.lots.C300;`));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
     await leave(b, main);
 

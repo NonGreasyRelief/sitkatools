@@ -11902,8 +11902,10 @@
                 const missing = DbSplit.active ? Object.keys(DB.buildings).filter(bid => !DbSplit.loaded.has(buildingFileName(bid))).map(buildingFileName) : [];
                 if (missing.length) { alert(`Open every building's file before closing out a lot — not open: ${missing.join(', ')}.\n\nThe archive is made from the files as you opened them.`); return; }
                 // 🔒 Nothing is closed out while it still has plants on record, or its grow logs aren't finished
-                const blockers = closeOutBlockers(lotId);
+                const blockers = closeOutBlockers(lotId, { summary: false });
                 if (blockers.length) { alert(`Lot ${lotId} can't be closed out yet:\n\n• ${blockers.join('\n• ')}`); return; }
+                // Its crop summary not saved as the lot is now: close-out saves it, once it's OK'd (user request 2026-10-27)
+                const saveSummary = closeOutBlockers(lotId).length > 0;
                 const today = localDate();
                 const events = DB.data.calendarEvents.filter(e => e.lotId === lotId);
                 const upcoming = events.filter(e => !e.completed && (e.endDate || e.date) >= today);
@@ -11914,8 +11916,19 @@
                 // The monthly CTLS report counts a closed-out lot from the plant history saved with its crop summary
                 if (DbSplit.active) msg += `\n\nThe archive is made from the files as you opened them: anything a building saved since isn't in it, so reopen the files first if unsure. The building files aren't rewritten: each building drops the lot from its own file with its next save, keeping anything it saved after the archive was made.`;
                 // Its crop summary (checked above) keeps its costs, frozen, and its plant history for the monthly CTLS report
-                msg += `\n\nIts costs stay as its crop summary froze them: wage, price or bill changes after this don't change them.`;
+                msg += saveSummary
+                    ? `\n\nIts crop summary is saved first (as the Labour & Cost Wizard's Save does), with its costs as they are today. They then stay as it froze them: wage, price or bill changes after this don't change them.`
+                    : `\n\nIts costs stay as its crop summary froze them: wage, price or bill changes after this don't change them.`;
                 if (!confirm(msg)) return;
+                if (saveSummary) {
+                    const saved = Tools.call('EmployeeWizard', 'saveCropSummary', lotId);
+                    const left = closeOutBlockers(lotId);
+                    if (!saved || left.length) {
+                        alert(saved ? `Lot ${lotId}'s crop summary is saved, but the lot can't be closed out yet:\n\n• ${left.join('\n• ')}`
+                            : `Lot ${lotId}'s crop summary couldn't be saved here. Save it in the Labour & Cost Wizard (📊 Reports → ⚙️ Setup & data), then close it out.`);
+                        return;
+                    }
+                }
 
                 const archive = {
                     lotId,
@@ -12427,6 +12440,35 @@
                 if (this.stale) { this.stale = false; refreshAllViews(); }
                 WorkCopy.schedule();
             },
+            // Do something only a tool's own code can, without showing it (close-out saving a lot's crop summary in the Labour &
+            // Cost Wizard, user request 2026-10-27): its code runs on a fresh copy of its markup that never goes in the page,
+            // gets the DB as on an open, does api[method](...args) and stops again, as on a close. Its notifySitkaTools()
+            // counts as usual. Only with no tool open: the hub's screens that ask for it are under an open tool.
+            call(name, method, ...args) {
+                const def = this.defs[name];
+                if (!def || this.current) return undefined;
+                const run = { received: false, sent: null, data: null, stops: [] };
+                let live = true;
+                def.run = run;
+                const isLive = () => live && def.run === run;
+                const hub = { changed: () => { if (isLive()) this.changed(name); }, close() {}, get open() { return isLive(); } };
+                const doc = scopedToolDocument(def.template.cloneNode(true), isLive), win = scopedToolWindow(isLive, hub.close), timers = toolTimers();
+                run.stops.push(doc.stop, win.stop, timers.stop);
+                try {
+                    run.api = def.factory(doc.document, hub, win.window, timers.api) || {};
+                    this.deliver(name, 'sitkaGit_db');
+                    return run.api[method]?.(...args);
+                } catch (err) {
+                    console.error(`[SitkaTools] ${name}.${method} failed`, err);
+                    return undefined;
+                } finally {
+                    this.changed(name);
+                    live = false;
+                    for (const stop of run.stops) stop();
+                    def.run = null;
+                    if (this.stale) { this.stale = false; refreshAllViews(); }
+                }
+            },
             // Hand the open tool the database — this page's own object, not a copy — as receive({ data: { type, payload, view } })
             deliver(name, type) {
                 const run = this.defs[name]?.run;
@@ -12913,14 +12955,17 @@
             return h.toString(16).padStart(8, '0') + ':' + text.length;
         }
         // Why a lot can't be closed out yet: plants still on record, an unfinished grow-log page, days with no log, or its costs
-        // not saved as they are now (a crop summary of the lot as it is, its labour priced with Wages.json, every power bill in)
-        function closeOutBlockers(lotId) {
+        // not saved as they are now (a crop summary of the lot as it is, its labour priced with Wages.json, every power bill in).
+        // { summary: false }: only what saving its crop summary now wouldn't settle (close-out saves it itself, user request
+        // 2026-10-27) — Wages.json not open, and everything that isn't about costs
+        function closeOutBlockers(lotId, { summary = true } = {}) {
             const lot = DB.data?.lots?.[lotId], out = [];
             if (!lot) return out;
             // 🔒 Its costs are frozen with its crop summary and never re-priced after close-out (cost audit 2026-10-26)
             const ew = DB.data._EmployeeWizard || {}, sum = ew.crops?.[lotId];
             const where = 'the Labour & Cost Wizard (📊 Reports → ⚙️ Setup & data, or 📋 CTLS month → "Lots ready to close out")';
-            if (!sum) out.push(`💾 Its crop summary isn't saved, so its costs and plant history aren't kept. Save it in ${where}, with Wages.json open.`);
+            if (!summary) { if (DbSplit.active && !DbSplit.haveWages) out.push('💰 Open Wages.json: its labour cost is kept there.'); }
+            else if (!sum) out.push(`💾 Its crop summary isn't saved, so its costs and plant history aren't kept. Save it in ${where}, with Wages.json open.`);
             else {
                 const savedDay = sum.savedAt ? localDate(new Date(sum.savedAt)) : null;
                 if (sum.sourceHash !== lotFingerprint(DB.data, lotId)) out.push(`💾 Its tasks, hours or paperwork changed since its crop summary was saved${savedDay ? ` (${savedDay})` : ''}. Save it again in ${where}.`);
@@ -39930,7 +39975,16 @@ ${logHtml(M)}
                 .replace(/'/g, '&#39;');
         }
 
-        return { receive: receiveDb, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
+        // For SitkaTools' close-out (Tools.call, user request 2026-10-27): save one lot's crop summary as the Reports' Save
+        // does. false when the Reports have no crop for it
+        function saveCropSummary(lotId) {
+            const c = rptModel().crops.find(x => x.lotId === lotId && !x.closed);
+            if (!c) return false;
+            rptSaveSummaries([c]);
+            return true;
+        }
+
+        return { receive: receiveDb, saveCropSummary, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
     });
     </script>
     <!-- ═══ TOOL scripts end ═══ -->

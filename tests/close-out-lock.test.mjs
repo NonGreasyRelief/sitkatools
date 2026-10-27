@@ -10,7 +10,7 @@ import { costDb } from './cost-per-gram.test.mjs';
 export const title = 'cost per gram audit: close-out waits for an up-to-date summary, then the lot\'s costs are locked';
 const D = n => today(-120 + n);
 
-function lockDb() {
+export function lockDb() {
     const db = costDb();
     db.lots.L100.plantCount = 0;   // no plants on record (it started with 100)
     db.lots.L100.startPlantCount = 100;
