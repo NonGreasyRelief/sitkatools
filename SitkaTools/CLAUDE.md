@@ -125,6 +125,12 @@ SitkaTools.html is the hub. It holds the Lot, Room and Building Managers and the
   - With an answer, the new tab offers nothing and deletes nothing. Its card says "SitkaTools is already open in another tab", with only OK.
   - When two tabs ask at once, restoring in one broadcasts `sitka-alive` and turns the other's card into that note.
 - **Storage kept:** after its first write, SitkaTools asks the browser to keep the site's storage (`navigator.storage.persist()`) so a full device doesn't clear it.
+- **😴 Tabs that sleep** (user request 2026-10-27; root `CLAUDE.md` → "Shared Working Copy"):
+  - `WorkCopy.seenAt` / `base`: the newest copy this tab wrote or took in, and the database as of then (exactly what `flush` wrote). `flush` reads the copy in the same transaction as its write: a tool's newer copy (`from` not SitkaTools, `at` > `seenAt`) isn't written over but taken in (`takeToolCopy`, merged with our changes) and the merge written next.
+  - `takeToolCopy(from, copy?)` merges (`WorkCopy.merge(base, ours, theirs)`) instead of replacing; a clash keeps the tool's and says so with an amber toast. `WorkCopy.catchUp()` runs on `visibilitychange`, `focus`, `pageshow` and `resume`, and as 💾 Save DB opens (the popup is redrawn when it took something in).
+  - Save requests: a tool's request is in the copy (`saveRequest: { at, from }`) and on the channel, resent each second; `answerSaveRequest` answers the first (`saveSeenAt`) and acknowledges every resend (`save-request-seen`).
+  - The start check restores by itself, with no card, when the page is the same tab reloaded (`document.wasDiscarded`, navigation type `reload`) or a tool reopened it to restore (`#restore`, removed from the address). What was in the copy at the start counts as seen.
+  - ♻️ A lost tool window's hand-over (`copy.handover = { at, from, base }`): with a session in the copy it's simply restored; with none (SitkaTools had closed with everything saved) it's kept in `WorkCopy.pendingHandover`, an amber toast says to open the database, and the first `flush` after one is opened adds it (`applyPendingHandover`: asked first, a three-way merge from the database that window started from; where the files changed the same thing since, the files' version is kept).
 
 ## On a Building Device
 

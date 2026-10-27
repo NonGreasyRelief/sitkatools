@@ -1352,6 +1352,10 @@
             LIVE: true,          // this tool handles live 'sitkaGit_db_update' messages without a full reload
             inUse: false,            // the DB in this tab came from the shared copy
             gotDb: false,            // SitkaTools delivered the DB by postMessage
+            lastAt: 0,               // the newest copy this window wrote or took in (its `at`)
+            base: null,              // the database as of then, kept apart: what a merge starts from
+            saveAsk: 0,              // when this window last asked SitkaTools to save, until SitkaTools says it has it
+            _resend: null,
             channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
             _open() {
                 return new Promise((resolve, reject) => {
@@ -1380,7 +1384,54 @@
                     return null;
                 }
             },
-            async write(db) {
+            clone(db) { try { return db == null ? null : JSON.parse(JSON.stringify(db)); } catch (_) { return null; } },
+            // This window and the shared copy agree on `db` as of `at`
+            synced(db, at) { this.base = this.clone(db); if (at) this.lastAt = Math.max(this.lastAt, at); },
+            // 🛡️ Three-way merge, for a tab that slept while another one changed the database (Android freezes background
+            // tabs) or two tabs changing it at once: what only one side changed since `base` is kept from that side; where both
+            // changed the same thing, theirs (the newer copy) wins, a deletion never wins over a change, and the places are
+            // listed in `clash`. Objects merge key by key, lists of records with an `id` (events, hours entries) record by
+            // record, anything else as one value. SitkaTools has the same merge. Identical in every tool.
+            merge(base, mine, theirs) {
+                const clash = [], S = v => v === undefined ? undefined : JSON.stringify(v);
+                const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+                const ids = v => v === undefined || (Array.isArray(v) && v.every(x => isObj(x) && typeof x.id === 'string' && x.id !== ''));
+                const objects = (b, m, t, path) => {
+                    const bb = b || {}, out = {};
+                    for (const k of new Set([...Object.keys(t), ...Object.keys(m)])) {
+                        const v = m3(bb[k], m[k], t[k], path + '.' + k);
+                        if (v !== undefined) out[k] = v;
+                    }
+                    return out;
+                };
+                const m3 = (b, m, t, path) => {
+                    const sm = S(m), st = S(t);
+                    if (sm === st) return t;
+                    const sb = S(b);
+                    if (sm === sb) return t;   // only theirs changed it (or removed it)
+                    if (st === sb) return m;   // only ours did
+                    if (isObj(m) && isObj(t) && (b === undefined || isObj(b))) return objects(b, m, t, path);
+                    if (Array.isArray(m) && Array.isArray(t) && ids(m) && ids(t) && ids(b)) {
+                        const bm = new Map((b || []).map(x => [x.id, x])), mm = new Map(m.map(x => [x.id, x])), tIds = new Set(t.map(x => x.id)), out = [];
+                        for (const x of t) { const v = m3(bm.get(x.id), mm.get(x.id), x, path + '#' + x.id); if (v !== undefined) out.push(v); }
+                        for (const x of m) if (!tIds.has(x.id)) { const v = m3(bm.get(x.id), x, undefined, path + '#' + x.id); if (v !== undefined) out.push(v); }
+                        return out;
+                    }
+                    clash.push(path.slice(1));
+                    return t !== undefined ? t : m;
+                };
+                if (!isObj(base) || !isObj(mine) || !isObj(theirs)) return { db: theirs, clash };
+                return { db: objects(base, mine, theirs, ''), clash };
+            },
+            warnClash() {
+                const msg = 'Another window (SitkaTools or a tool) changed the same thing as this one at the same moment, and the newer change was kept. Check your last change here.';
+                if (typeof showToast === 'function') showToast(msg); else alert(msg);
+            },
+            // Write this window's database into the shared copy. One that someone else (SitkaTools, another tool tab) wrote since
+            // this window last looked is never written over: the two are merged. opts.saveRequest: "Go back to SitkaTools to
+            // save" (the request is kept in the copy too); opts.handover: a window that lost SitkaTools hands its changes over
+            async write(db, opts = {}) {
+                let merged = null, clash = [], wroteAt = 0, written = null, view;
                 try {
                     const idb = await this._open();
                     await new Promise((resolve, reject) => {
@@ -1389,14 +1440,41 @@
                         const r = store.get('current');
                         r.onsuccess = () => {
                             const prev = (r.result && r.result.value) || {};
-                            store.put({ key: 'current', value: { ...prev, db, at: Date.now(), unsaved: true, from: this.TOOL } });
+                            let out = db;
+                            if (prev.db && prev.from !== this.TOOL && (prev.at || 0) > this.lastAt && this.base) {
+                                const m = this.merge(this.base, db, prev.db);
+                                out = merged = m.db; clash = m.clash; view = prev.view;
+                            }
+                            wroteAt = Math.max(Date.now(), (prev.at || 0) + 1);
+                            written = JSON.stringify(out);
+                            const value = { ...prev, db: out, at: wroteAt, unsaved: true, from: this.TOOL };
+                            if (opts.saveRequest) value.saveRequest = { at: wroteAt, from: this.TOOL };
+                            if (opts.handover) value.handover = { at: wroteAt, from: this.TOOL, base: this.base };
+                            store.put({ key: 'current', value });
                         };
                         tx.oncomplete = resolve;
                         tx.onerror = () => reject(tx.error);
                     });
                     idb.close();
-                    if (this.channel) this.channel.postMessage({ type: 'db-updated', from: this.TOOL });
-                } catch (_) { /* storage unavailable — changes stay in this tab */ }
+                    this.base = JSON.parse(written);
+                    this.lastAt = Math.max(this.lastAt, wroteAt);
+                    if (this.channel) this.channel.postMessage({ type: 'db-updated', from: this.TOOL, at: wroteAt });
+                } catch (_) { return false; /* storage unavailable — changes stay in this tab */ }
+                if (merged) this.apply(merged, false, view);
+                if (clash.length) this.warnClash();
+                return true;
+            },
+            // A tab that slept may have missed the news of a newer copy: take it in (merged with anything of ours it lacks)
+            async catchUp() {
+                if (!this.inUse) return;
+                const copy = await this.read();
+                if (!copy || copy.from === this.TOOL || !((copy.at || 0) > this.lastAt)) return;
+                const m = this.base ? this.merge(this.base, DB.data, copy.db) : { db: copy.db, clash: [] };
+                const oursToo = m.db !== copy.db && JSON.stringify(m.db) !== JSON.stringify(copy.db);
+                this.synced(copy.db, copy.at);
+                this.apply(m.db, false, copy.view);
+                if (m.clash.length) this.warnClash();
+                if (oursToo) this.write(DB.data);   // a change of ours the copy doesn't have yet goes back in
             },
             // Delete the copy unless it holds changes nobody has saved yet
             async forgetIfSaved() {
@@ -1413,10 +1491,13 @@
                     idb.close();
                 } catch (_) { /* ignore */ }
             },
-            // Hand the latest changes to SitkaTools, ask it to have the user save, and switch to its tab
+            // Hand the latest changes to SitkaTools, ask it to have the user save, and switch to its tab. Sent two ways, in
+            // case its tab is asleep: written into the shared copy (SitkaTools finds it when its tab wakes), and sent on the
+            // channel every second until SitkaTools says it has it
             async goBackToSave() {
-                await this.write(DB.data);
-                if (this.channel) this.channel.postMessage({ type: 'save-request', from: this.TOOL });
+                await this.write(DB.data, { saveRequest: true });
+                this.saveAsk = this.lastAt;
+                this.askToSave();
                 try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (_) { /* not allowed */ }
                 setTimeout(() => {
                     if (document.visibilityState !== 'visible') return; // switched tabs
@@ -1424,6 +1505,31 @@
                     if (typeof showToast === 'function') showToast(msg);
                     else alert(msg);
                 }, 600);
+            },
+            askToSave() {
+                clearInterval(this._resend);
+                let n = 0;
+                const send = () => { if (this.channel) this.channel.postMessage({ type: 'save-request', from: this.TOOL, at: this.saveAsk }); };
+                send();
+                this._resend = setInterval(() => { if (!this.saveAsk || ++n > 120) { clearInterval(this._resend); return; } send(); }, 1000);
+            },
+            // ♻️ A window that lost SitkaTools (reloaded or closed after opening it) hands its database, with the change
+            // SitkaTools didn't get, over through the shared copy and carries on as a tab on it. A SitkaTools still in its
+            // window takes it in; a closed one is opened again and restores it (or adds it to the files once they're opened)
+            async handOver() {
+                if (!DB.data) return false;
+                if (!await this.write(DB.data, { handover: true })) {
+                    alert('This device’s browser storage isn’t available, so the changes can’t be handed over to SitkaTools.');
+                    return false;
+                }
+                this.inUse = true;
+                this.showBanner();
+                let opener = null;
+                try { opener = window.opener && !window.opener.closed ? window.opener : null; } catch (_) { opener = null; }
+                if (opener) { try { opener.focus(); } catch (_) { /* not allowed */ } return true; }
+                const device = typeof DeviceView !== 'undefined' && DeviceView.split ? `?device=${encodeURIComponent(DeviceView.building || 'office')}` : '';
+                if (!window.open(`../SitkaTools/SitkaTools.html${device}#restore`, '_blank')) alert('The browser blocked the new window. Open SitkaTools yourself: it will bring these changes back.');
+                return true;
             },
             showOpenFromSitka() {
                 const wrap = document.createElement('div');
@@ -1445,15 +1551,8 @@
                 const type = (initial || !this.LIVE) ? 'sitkaGit_db' : 'sitkaGit_db_update';
                 window.dispatchEvent(new MessageEvent('message', { data: { type, payload: db, view } }));
             },
-            async start() {
-                const copy = await this.read();
-                if (!copy) {
-                    // Opened by itself with no SitkaTools open on this device: tools only run through SitkaTools
-                    if (!window.opener) this.showOpenFromSitka();
-                    return;
-                }
-                this.inUse = true;
-                this.apply(copy.db, true, copy.view);
+            showBanner() {
+                if (document.getElementById('workCopyBanner')) return;
                 const banner = document.createElement('div');
                 banner.id = 'workCopyBanner';
                 banner.textContent = '📋 Using the database open in SitkaTools. ';
@@ -1466,10 +1565,25 @@
                 back.addEventListener('click', () => this.goBackToSave());
                 banner.appendChild(back);
                 document.body.insertBefore(banner, document.body.firstChild);
+            },
+            async start() {
+                const copy = await this.read();
+                if (!copy) {
+                    // Opened by itself with no SitkaTools open on this device: tools only run through SitkaTools
+                    if (!window.opener) this.showOpenFromSitka();
+                    return;
+                }
+                this.inUse = true;
+                this.synced(copy.db, copy.at);
+                this.apply(copy.db, true, copy.view);
+                this.showBanner();
             }
         };
         window.addEventListener('message', (e) => {
-            if (e.isTrusted && e.data?.type === 'sitkaGit_db' && window.opener && e.source === window.opener) WorkCopy.gotDb = true;
+            if (!e.isTrusted || !window.opener || e.source !== window.opener) return;
+            if (e.data?.type === 'sitkaGit_db') WorkCopy.gotDb = true;
+            // What a merge starts from if this window ever has to hand its changes over (♻️)
+            if ((e.data?.type === 'sitkaGit_db' || e.data?.type === 'sitkaGit_db_update') && !WorkCopy.inUse) WorkCopy.synced(e.data.payload, 0);
         });
         if (!window.opener) WorkCopy.start();
         else setTimeout(() => { if (!WorkCopy.gotDb) WorkCopy.start(); }, 1500);
@@ -1480,10 +1594,22 @@
                     if (!e.data.unsaved) WorkCopy.forgetIfSaved();
                     return;
                 }
+                // SitkaTools has the changes this window asked it to save: stop asking
+                if (e.data?.type === 'save-request-seen') {
+                    if (WorkCopy.saveAsk && (e.data.at || 0) >= WorkCopy.saveAsk) { WorkCopy.saveAsk = 0; clearInterval(WorkCopy._resend); }
+                    return;
+                }
                 if (!WorkCopy.inUse || e.data?.type !== 'db-updated' || e.data.from === WorkCopy.TOOL) return;
-                const copy = await WorkCopy.read();
-                if (copy) WorkCopy.apply(copy.db, false, copy.view);
+                WorkCopy.catchUp();
             });
+        }
+        // A tab Android froze in the background may have slept through the news on the channel: look again when it wakes
+        {
+            const wake = () => { if (document.visibilityState !== 'hidden') WorkCopy.catchUp(); };
+            document.addEventListener('visibilitychange', wake);
+            window.addEventListener('focus', wake);
+            window.addEventListener('pageshow', wake);
+            document.addEventListener('resume', wake);
         }
 
         // postMessage target origin: our own origin when served over http(s) (ROADMAP 0.4).
@@ -1527,16 +1653,24 @@
                             <div style="font-size: 2.5rem; margin-bottom: 10px;">⚠️</div>
                             <div data-title style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);"></div>
                             <div data-text style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></div>
-                            <button type="button" data-close style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">Close this window</button>
+                            <button type="button" data-reopen style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">♻️ Reopen SitkaTools with this window’s changes</button>
+                            <div style="margin-top: 12px;"><button type="button" data-close style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer;">Close this window</button></div>
                             <div style="margin-top: 14px;"><button type="button" data-keep style="background: none; border: none; color: var(--text-secondary); text-decoration: underline; cursor: pointer; font-size: 0.85rem;">Keep it open to look (changes here won't be saved)</button></div>
                         </div>`;
+                    // ♻️ Hand this window's database over through the shared copy: SitkaTools (reopened if it's closed) takes it in
+                    wrap.querySelector('[data-reopen]').addEventListener('click', async () => {
+                        if (!await WorkCopy.handOver()) return;
+                        this.dismissed = true; wrap.style.display = 'none';
+                        if (typeof showToast === 'function') showToast('♻️ This window’s changes went to SitkaTools — save them there');
+                    });
                     wrap.querySelector('[data-close]').addEventListener('click', () => window.close());
                     wrap.querySelector('[data-keep]').addEventListener('click', () => { this.dismissed = true; wrap.style.display = 'none'; });
                     document.body.appendChild(wrap);
                 }
                 wrap.querySelector('[data-title]').textContent = lostChange ? 'SitkaTools didn’t get your last change' : 'This window lost its link to SitkaTools';
-                wrap.querySelector('[data-text]').textContent = 'SitkaTools was reloaded or closed after it opened this window, so changes made here can’t be saved. ' +
-                    'Close this window and open the tool again from SitkaTools' + (lostChange ? ', then make your last change again.' : '.');
+                wrap.querySelector('[data-text]').textContent = 'SitkaTools was reloaded or closed after it opened this window, so changes made here can’t reach it. ' +
+                    '♻️ Reopen SitkaTools brings this window’s changes' + (lostChange ? ', your last one included,' : '') + ' back into SitkaTools (opened again if it was closed), to save there. ' +
+                    'Or close this window and open the tool again from SitkaTools' + (lostChange ? ', then make your last change again.' : '.');
                 wrap.style.display = 'flex';
             }
         };
