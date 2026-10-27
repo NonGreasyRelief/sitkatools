@@ -19,8 +19,14 @@ export async function run(b, BASE) {
     check('the hub keeps its theme inside its @scope: its colours on the page, a dark page', look.accent === '#53d8a8' && look.bg === 'rgb(26, 26, 46)', JSON.stringify(look));
 
     const ge = await openTool(b, main, 'GeneralEvent');
-    const bar = await b.run(main, `const bar = document.querySelector('.tool-bar'); return { bg: getComputedStyle(bar).backgroundColor, name: document.getElementById('toolBarName').textContent };`);
-    check('the bar over the tool is solid and names it', bar.bg === 'rgb(22, 33, 62)' && bar.name === '📅 General Event', JSON.stringify(bar));
+    // One header (user request 2026-10-27): the tool's own, with 💾 Save DB and ✕ Close at its right end, nothing under them
+    const bar = await b.run(main, `const bar = document.querySelector('.tool-bar').getBoundingClientRect();
+        const head = document.querySelector('#tool-GeneralEvent > .tool-root > header'), hr = head.getBoundingClientRect();
+        const save = document.getElementById('toolBarSave').getBoundingClientRect(), close = document.getElementById('toolBarClose').getBoundingClientRect();
+        const under = [...head.querySelectorAll('*')].filter(e => e.offsetParent && e.children.length === 0).some(e => { const r = e.getBoundingClientRect(); return r.right > bar.left && r.top < bar.bottom && r.width > 0; });
+        return { name: head.textContent.includes('GeneralEvent'), inHeader: save.top >= hr.top && close.bottom <= hr.bottom + 1 && close.right > save.right && close.right >= hr.right - 40,
+            under };`);
+    check('one header: the tool\'s own, its name on it, 💾 Save DB and ✕ Close at its right end with nothing under them', bar.name && bar.inHeader && !bar.under, JSON.stringify(bar));
     check('the tool\'s own styles reach it (its text colour on its root)', (await b.run(ge, `return getComputedStyle(document.body).color;`)) === 'rgb(232, 232, 232)');
 
     const ids = await b.run(ge, `return { tool: !!document.getElementById('statusBar')?.closest('#tool-GeneralEvent'), page: !window.document.getElementById('statusBar')?.closest('.tool-overlay') };`);

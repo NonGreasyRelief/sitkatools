@@ -2743,8 +2743,13 @@
            are in an @scope block for its section (`#tool-<Name> > .tool-root`), so no style crosses between tools and hub. */
         #toolHost { position: fixed; inset: 0; z-index: 150; display: flex; flex-direction: column; background: var(--bg-primary); }
         #toolHost[hidden], .tool-overlay[hidden] { display: none; }
-        .tool-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-secondary); border-bottom: 2px solid var(--accent); }
-        .tool-bar-name { flex: 1; min-width: 0; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* One header (user request 2026-10-27): the open tool's own header — its name and its lot / room / date pickers — is
+           the only one. The bar is just 💾 Save DB and ✕ Close, laid over that header's right end at its height, and the
+           header keeps their width free (Tools.fitBar sets the sizes). */
+        .tool-bar { position: absolute; top: 0; right: var(--tool-sb, 0px); z-index: 110; height: var(--tool-head-h, 56px); display: flex; align-items: center; gap: 8px; padding-right: 16px; }
+        .tool-bar-name { display: none; }
+        .tool-overlay > .tool-root > header { padding-right: calc(var(--tool-bar-w, 230px) + 8px); flex-wrap: wrap; row-gap: 8px; }
+        .tool-overlay > .tool-root > header .logo { white-space: nowrap; }
         .tool-bar-btn { min-height: 40px; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; }
         .tool-bar-btn:hover, .tool-bar-btn:focus-visible { border-color: var(--accent); }
         .tool-bar-save { position: relative; }   /* 💾 Save DB's popup drops down from here while a tool is open */
@@ -3682,12 +3687,12 @@
             letter-spacing: 0.5px;
         }
 
-        .header-right { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; justify-content: flex-end; }
+        .header-right { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 560px; min-width: 0; }
 
         /* Header controls must squish on narrow screens — native selects size to their longest option, so cap them and
            let them shrink */
         .header-right select { min-width: 150px; max-width: 260px; }
-        .header-right .form-group { flex: 1 1 auto; min-width: 140px; }
+        .header-right .form-group { flex: 0 1 190px; min-width: 140px; }
 
         /* ---- Main Content ---- */
         .main {
@@ -12421,8 +12426,33 @@
                     run.api = {};
                 }
                 this.deliver(name, 'sitkaGit_db');
+                // 💾 Save DB and ✕ Close sit at the right end of its header, which may wrap or change height (a language)
+                this.barSizes?.disconnect();
+                this.barSizes = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.fitBar()) : null;
+                const head = root.querySelector(':scope > header');
+                if (this.barSizes) { if (head) this.barSizes.observe(head); this.barSizes.observe(def.section); }
+                this.fitBar();
                 WorkCopy.schedule();   // the copy says which tool is open
                 return true;
+            },
+            // The bar over the open tool's header: its width kept free in the header, the header's height, and clear of the
+            // section's scrollbar
+            fitBar() {
+                const def = this.defs[this.current];
+                if (!def) return;
+                const host = $('toolHost'), bar = host.querySelector('.tool-bar');
+                const head = def.root.querySelector(':scope > header');
+                host.style.setProperty('--tool-bar-w', bar.offsetWidth + 'px');
+                // The header's first row (the items beside its first one), down to its bottom padding
+                let rowH = 56;
+                if (head?.firstElementChild) {
+                    const top = head.getBoundingClientRect().top, kids = [...head.children].filter(k => k.offsetParent);
+                    const first = kids[0].getBoundingClientRect();
+                    const row = kids.filter(k => k.getBoundingClientRect().top < first.bottom - 2);
+                    rowH = Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - top + (parseFloat(getComputedStyle(head).paddingBottom) || 0);
+                }
+                host.style.setProperty('--tool-head-h', Math.round(rowH) + 'px');
+                host.style.setProperty('--tool-sb', Math.max(0, def.section.offsetWidth - def.section.clientWidth) + 'px');
             },
             close() {
                 const name = this.current;
@@ -12430,6 +12460,8 @@
                 const def = this.defs[name];
                 this.changed(name);   // anything it changed without saying so counts too
                 this.current = null;
+                this.barSizes?.disconnect();
+                this.barSizes = null;
                 for (const stop of def.run?.stops || []) stop();
                 def.run = null;
                 def.root.replaceChildren();

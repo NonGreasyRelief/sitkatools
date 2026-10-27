@@ -77,7 +77,7 @@ CropLabourWizard (on Generate) and EquipmentWizard (on every resync) rebuild the
 
 ## Tool Overlays (one file)
 
-User decision 2026-10-27. Every tool lives in `SitkaTools/SitkaTools.html` and opens over SitkaTools, one at a time, full window, under a bar with its name, **💾 Save DB** and **✕ Close**. One tab and one database: no copies to keep in step, no windows that can outlive SitkaTools, sleep out of step or be opened twice (what the old popup / tab design kept guarding against).
+User decision 2026-10-27. Every tool lives in `SitkaTools/SitkaTools.html` and opens over SitkaTools, one at a time, full window. Its own header is the only one (user request 2026-10-27): SitkaTools puts **💾 Save DB** and **✕ Close** at its right end. One tab and one database: no copies to keep in step, no windows that can outlive SitkaTools, sleep out of step or be opened twice (what the old popup / tab design kept guarding against).
 
 - **Where a tool's code is:** three sections per tool, found with one grep (`═══ TOOL <Name>`):
   - `<!-- ═══ TOOL <Name>: style ═══ -->`: its CSS, in `@scope (#tool-<Name> > .tool-root) { … }` (its `html` / `body` / `:root` rules are `:scope`; `@keyframes` outside, named `<Name>-…`);
@@ -268,7 +268,7 @@ Don't add details, APIs or schemas for a planned tool until asked.
       --input-bg: #1a1a3e; --radius: 8px; --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   ```
-- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms), the tool's content, and a sticky footer holding only **Close Tool**, centred in every tool (changes sync on their own; DailyWizard keeps its Reset Day at the left).
+- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms; SitkaTools adds 💾 Save DB and ✕ Close at its right end, keeping their width free, so it may wrap on a narrow screen), the tool's content, and a sticky footer holding only **Close Tool**, centred in every tool (changes sync on their own; DailyWizard keeps its Reset Day at the left).
 - Lot dropdown: "— Select a lot —" first, then `id — name (strain)`. Room dropdown: "— Select a room —", then `id — name`.
 - Shared component styles (`.form-group`, `.btn`, `.btn-secondary`, `.db-btn`, toasts) and the `DB` object pattern (`data`, `lots`/`rooms`/`buildings` getters, `ensureStructure()`) are the same in every tool: copy them from an existing one.
 - **Toasts look the same everywhere** (user decision 2026-10-27): white text (`--text-primary`, 0.9rem, regular weight) in a dark box (`--bg-secondary`) with a 2px teal border, as SitkaTools' own; only warnings turn the border amber. A tool says nothing as it opens (no "Database loaded" toast).
