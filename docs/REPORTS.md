@@ -1,8 +1,8 @@
-# Labour & Cost Wizard Reports (EmployeeWizard folder)
+# Labour & Cost Wizard Reports
 
-Spec for the **📊 Reports** tab, and the guide for hooking up the harvest log. Every chart is hand-rolled SVG inside `EmployeeWizard.html`: no chart libraries, no network calls, no new browser storage.
+Spec for the **📊 Reports** tab, and the guide for hooking up the harvest log. Every chart is hand-rolled SVG in the Labour & Cost Wizard's code (`SitkaTools/SitkaTools.html`, `═══ TOOL EmployeeWizard`): no chart libraries, no network calls, no new browser storage.
 
-**Demo DB:** `node examples/make-example-db.js [out.json] [--today=YYYY-MM-DD]` builds `examples/Example-Reports-DB.json`. It starts from `local/Current.json` and adds past crops (1000 g wet per plant), labour, grow and harvest logs, chore and equipment hours, time off and the cost inputs, dated relative to today. Load it with SitkaTools' 📂 Load DB; rerun it on the day of a demo. It is git-ignored because it holds real staff and lot names.
+**Demo DB:** `node examples/make-tens-db.js [out.json] [--today=YYYY-MM-DD]` builds `examples/Tens-DB-YY-MM-DD.json`, a facility of round numbers with crops, labour, grow and harvest logs, chore and equipment hours and the cost inputs, dated relative to today, and an answer key (`…-answer-key.md`) worked out on its own to check the Reports against. Load it with SitkaTools' 📂 Load DB; rerun it on the day of a demo. It is git-ignored.
 
 **Checking a change:** run every page against an empty DB, the sample DB (`local/Current.json`) and the demo DB, also with no wages and with building and strain filters. `tests/cost-per-gram.test.mjs` checks a hand-worked cost per gram.
 
@@ -16,7 +16,6 @@ Reports is the last tab and office only (building devices don't get it). The **L
   - **Period:** last 3, 6, 12, 24 or 36 months, or year to date. Every tile compares against the **previous period of the same length**.
   - **Building, Flower room, Strain.**
   - **Per:** plant (default), sq ft of canopy, light, gram of flower, or total. It changes hours by task, labour $ by phase, the strain scorecard, the weight cascade and the room trend; every other card says it isn't affected. Per gram shows hours per kg (per gram is too small to read). Per light uses the flower room's `rooms.<id>.lightCount`.
-- **⤢ Expand** grows the popup to the full screen; cards then go two to a row.
 - **🖨️ Board pack:** the seven report pages with the current filters in a print-ready window — light theme, Letter landscape, one page per sheet, a tick box per page, an optional **Data tables** toggle. **Print / Save as PDF** uses the browser's dialog. Same numbers and privacy rules.
 - **Every card:** its title is the question it answers; a chip says what data it needs; **⊞ Table** shows the same numbers as a table; hover any mark for details; with no data it says exactly what's missing and where to add it.
 

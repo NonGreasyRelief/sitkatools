@@ -72,7 +72,7 @@ A resync deletes the room's EquipmentWizard events (`sourceTool === 'EquipmentWi
 
 **When it runs** (there's no need to press anything):
 
-- `syncAllRooms` resyncs every room on each `sitkaGit_db` (open), then calls `notifySitkaTools()`.
+- `syncAllRooms` resyncs every room as it opens (`sitkaGit_db`), then calls `notifySitkaTools()`: SitkaTools counts the resync as a change when it changed something.
 - `autoSyncCalendar(roomId)` resyncs one room on a room switch and after every equipment or task add, edit or delete. Adding or deleting a task also purges and regenerates its equipment's events.
 
 **What survives a resync:**
@@ -94,12 +94,12 @@ A resync deletes the room's EquipmentWizard events (`sourceTool === 'EquipmentWi
 
 These follow root `CLAUDE.md` → "Tool Overlays" (`receiveDb`); only this tool's specifics are listed here.
 
-- **`sitkaGit_db` (as it opens):** `DeviceView.take`, fill the room selector, render, then `syncAllRooms()` and `notifySitkaTools()` (SitkaTools counts it only when the resync really changed something).
+- **`sitkaGit_db` (as it opens):** `DeviceView.take`, fill the room selector, render, then `syncAllRooms()` and `notifySitkaTools()` (SitkaTools counts it once the tool has the DB, only when the resync really changed something: `Tools.deliver`).
 - **`sitkaGit_db_update` (SitkaTools changed the DB while it's open):**
   - Replace `DB.data` and run `ensureStructure()`.
   - Keep the selected room, and refresh the preview.
   - Rebuild the equipment list only when the selected room's equipment changed, so half-filled task and Repair Log forms survive.
-  - Never resync, and never call `notifySitkaTools()` in reply. Only `sitkaGit_db` resyncs.
+  - Never resync: only opening does.
 
 ## BC Civic Holidays (implementation pending)
 

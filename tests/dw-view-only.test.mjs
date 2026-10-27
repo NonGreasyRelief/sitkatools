@@ -84,10 +84,6 @@ export async function run(b, BASE) {
     check('each building\'s ⏰ Still open shows in its section', /still open/i.test(s1.text) && s1.text.includes('Room Tidy') && /still open/i.test(s2.text) && s2.text.includes('Strip Fans'));
     await b.run(dw, `[...document.querySelectorAll('#listContainer .building-section')][0].querySelector('.task-check input').click();`, { user: true });
     check('ticking Building 1\'s chore in All Buildings works', await b.run(dw, `return !!DB.data._DailyWizard.buildings.B1.checks?.['${T}']?.wat1;`));
-    // Reset Day clears only Building 1's ticks
-    await b.run(dw, `window.confirm = () => true; document.getElementById('resetDayBtn').click();`, { user: true });
-    check('Reset Day in All Buildings clears only Building 1\'s ticks', await b.run(dw, `return !DB.data._DailyWizard.buildings.B1.checks?.['${T}'] && !!DB.data._DailyWizard.buildings.B2.checks['${T}'].wat2;`));
-    await b.run(dw, `[...document.querySelectorAll('#listContainer .building-section')][0].querySelector('.task-check input').click();`, { user: true });
     await b.sleep(400);
 
     // Saving: only Building 1's file

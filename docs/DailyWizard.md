@@ -39,7 +39,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 - **Shown as** a `🚪 {room}` chip on the task row, a line in the detail view's summary, and a note in the hours view.
 - **Only while a lot is in the room** (user decision 2026-10-23): a room chore is listed only while some open lot's current room (`lots.<id>.currentRoom`) is that room, so "Water Grow 2" isn't asked for an empty Grow 2, and "Check the trim room" only while a lot is in it (`choreForEmptyRoom`, `choresToShow`).
   - A chore already ticked, with hours logged or a timer going that day stays listed. Whole-building chores, and chores whose room is gone, always show.
-  - **🚪 Show N chores for empty rooms** under the list reveals them, dimmed (this page session only; "Hide the chores for empty rooms" puts them away). All Buildings has the same button per building.
+  - **🚪 Show N chores for empty rooms** under the list reveals them, dimmed (until DailyWizard closes; "Hide the chores for empty rooms" puts them away). All Buildings has the same button per building.
   - The status bar and the building's ✅ count leave them out. Edit mode lists every chore, so the floor manager can still edit or reorder them.
   - It reads the lots' current room as it is now, for any date shown.
 - **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
@@ -101,12 +101,12 @@ A task appears on a date when its weekday is in `days` **or** its day of month i
 
 Pictures bind to steps by **filename only**; nothing is stored in the DB.
 
-- **Name:** `pics/{code}_{n}.{ext}`, `n` = the step's 1-based position (`j234_1`, `j234_2`); `pics/` sits next to `DailyWizard.html`. Probe `.png` → `.jpg` → `.webp`, first that loads wins.
+- **Name:** `pics/{code}_{n}.{ext}`, `n` = the step's 1-based position (`j234_1`, `j234_2`); `pics/` sits next to `SitkaTools.html` (`SitkaTools/pics/`; kept out of git, user decision 2026-10-27). A page opened from a local file on Android probably can't reach it: use the uploads there. Probe `.png` → `.jpg` → `.webp`, first that loads wins.
 - **Video:** `pics/{code}_{n}.mp4`, probed with a metadata-only `<video>`; plays with browser controls, `playsinline`, no autoplay. Picture shows first, then video. Neither → `🖼 j234_1.png / .mp4 not found`.
   - Use **H.264**; an undecodable video (e.g. HEVC) probes as missing. Keep files short (GitHub refuses > 100 MB; every tablet streams them).
 - **Language versions:** a name prefixed with a language code (`es_j234_1.jpg`, `fr_j234_1.mp4`; codes as in "🌐 Language") is that language's version.
   - Lookup order: the language's version (uploaded, then `pics/`), then English (uploaded, then `pics/`). Picture and video are looked up separately. English never looks at prefixed files.
-- **Loading:** plain `<img>` / `<video>` tags, which work on http (commit `pics/`) and on `file://`. Never `fetch()` — detect missing files with `Image()` + `onerror`, and show a muted chip with the expected filename.
+- **Loading:** plain `<img>` / `<video>` tags, which work on http and on `file://` (a PC's local file). Never `fetch()` — detect missing files with `Image()` + `onerror`, and show a muted chip with the expected filename.
 - **🔄 Refresh images** re-probes every step (cache-busting query string; browsers cache failed loads), for the language on screen and English.
 - **Positional:** reordering or deleting steps shifts which picture shows; rename files to remap.
 - **Placement:** the page can't write into `pics/`. The manager copies files in by hand, then hits Refresh. Suggest ~1280 px JPGs to keep the repo lean.
@@ -114,7 +114,7 @@ Pictures bind to steps by **filename only**; nothing is stored in the DB.
   - a folder (`webkitdirectory`; Chrome for Android picks folders from version 143) — keep one folder per building and pick each in turn, since task codes are unique across buildings;
   - or files, several at once (the fallback where a folder can't be picked).
   - Only the file name counts: `{code}_{n}.png|jpg|jpeg|webp` or `.mp4`, optional language prefix. Subfolders and leading zeros (`j234_01.jpg`) are fine. Within one pick png beats jpg beats webp; a later pick replaces an earlier file for the same step.
-  - Held as object URLs in `uploadedPics` / `uploadedVids` for this window only (never stored or sent); they win over `pics/` (`stepMediaSrc`). A new window needs the pack picked again.
+  - Held as object URLs in `uploadedPics` / `uploadedVids`, kept by SitkaTools while it stays open (`DailyWizardKept`: closing DailyWizard keeps them, user request 2026-10-27; never stored or sent); they win over `pics/` (`stepMediaSrc`). A reload of SitkaTools needs the pack picked again.
   - A toast reports how many loaded, names that don't fit, and codes that match no task; a note in the steps view counts those in use.
 
 ## Calendar Event Attribution (Building Resolution)
@@ -155,7 +155,7 @@ Four pausable stopwatches on every row that has **⏱ Log** (chores, and crop an
 - **Where they're kept:** `_DailyWizard.buildings[<id>].timers[<item>][<1–4>] = { label?, ms, since? }`.
   - `item` is the task `code` or `ev:<event id>`, as for ticks.
   - `ms` is the time banked by earlier runs; `since` is the ISO start of the run in progress (absent while paused).
-  - The time shown is `ms + (now − since)`, so nothing is written while a timer runs, and it keeps counting through a closed window, a reload or a sleeping tablet. Start, pause, relabel and clear each call `notifySitkaTools()`; they save in the building's own file.
+  - The time shown is `ms + (now − since)`, so nothing is written while a timer runs, and it keeps counting while DailyWizard is closed, through a reload or a sleeping tablet. Start, pause, relabel and clear each call `notifySitkaTools()`; they save in the building's own file.
 - **Per row, not per day:** a timer left running shows the next day until someone clears it.
 - **Tidy:** every timer change drops empty slots and the timers of chores that were deleted and of events that are gone, or done with their last day past.
 - **In ⏱ Log** (today only): **Time from a timer** lists Timer 1–4 with label, time and what it would log (`→ 25m`), plus **None — type the time** (picked by default). Timers with no time are greyed out.
@@ -187,7 +187,7 @@ Each floor manager has their own PIN, set by the office in the Labour & Cost Wiz
   - `FloorPin.ask(why, { initials: true })` adds an initials pad ("✍️ Floor manager sign-off") and resolves `{ name, initials: { name, strokes } }`. The Labour & Cost Wizard uses it when hours are added or changed in its Tasks tab; DailyWizard doesn't use it yet.
 - **✏️ Edit mode** (`EditMode`, `canEditTasks(bid)` = `canEditBuilding(bid)` and edit mode on): needed to add, edit, reorder and delete tasks, and to write, move or delete steps and translations. Every entry point checks it (`openTaskEditor`, `saveTaskFromEditor`, `moveTask`, step edits, `deleteCurrentTask`), not just the buttons.
   - **✏️ Edit tasks** asks for the PIN. Then the bar shows **+ Add Task**, **✅ Done editing** and "✏️ Editing as {name}", the rows show ▲ ▼, and the detail view shows Edit Task, Delete Task and step editing.
-  - It ends with ✅ Done editing, or after 10 minutes without an edit (checked every 15 s; never while the task editor is open or a step is being typed). It lasts for this window only and is never stored.
+  - It ends with ✅ Done editing, or after 10 minutes without an edit (checked every 15 s; never while the task editor is open or a step is being typed). It lasts until DailyWizard closes and is never stored.
 - **Deletions ask every time:** removing an hours entry, and deleting a whole task even in edit mode. Each goes in `adjustments` with `approvedBy` (see "Database Key"). Deleting a step in edit mode needs no extra PIN.
 - **Applies on every device**, the office included. Ticks, ⏱ Log and timers need no PIN; ✅ Mark done takes the floor manager's PIN with their initials (below).
 - **Limits:** a PIN slows people down but can't stop someone with the files or the browser's developer tools; the drawn initials and the records are the real control. A PIN set or changed at the office reaches a tablet when it reopens the files.
@@ -216,7 +216,7 @@ Each floor manager has their own PIN, set by the office in the Labour & Cost Wiz
 
 Translations cover daily chores only, not crop or equipment task names; the screen's own text translates too.
 
-- **The picker** is the first header control: English, Français, Español, Tiếng Việt, 中文（简体）, each in its own language. Opens in English every time; the choice lasts while the window is open and is never stored.
+- **The picker** is the first header control: English, Français, Español, Tiếng Việt, 中文（简体）, each in its own language. Opens in English; the choice lasts while SitkaTools stays open, closing DailyWizard included (`DailyWizardKept`, user request 2026-10-27), and is never stored. It sets `lang` on DailyWizard's own root, not the page's.
 - **English is the master.** `name` and step `text` stay English, and other tools read only those. Translations sit beside them and only change what DailyWizard shows: `task.translations[<lang>]`, `step.translations[<lang>]`, codes `fr`, `es`, `vi`, `zh`. An empty translation is removed, and an empty map with it. They save with the task list in the building's file.
 - **Missing translations:**
   - a name shows the English with a small dashed **EN** tag ("Not translated yet — showing English");
@@ -237,9 +237,9 @@ Translations cover daily chores only, not crop or equipment task names; the scre
 
 - **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL DailyWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 
-The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overlays"); on every device, tablets included, it opens over SitkaTools. Before the DB arrives: "Waiting for SitkaTools to deliver the database…".
+The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overlays"); on every device, tablets included, it opens over SitkaTools.
 
-- `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, Reset Day, every Mark done or reopen, and every timer start, pause, relabel or clear.
+- `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, every Mark done or reopen, and every timer start, pause, relabel or clear.
 - **Live `sitkaGit_db_update`:** refresh the selector, status bar and list without disturbing ticks or an open editor. An open task detail view refreshes too, except while a step is being typed: it refreshes when the edit ends, and the edit is written into the fresh DB. Step buttons (▲ ▼ 🗑, + Add Step) look their task up again by building + code when tapped; if it is gone they only re-render (the view closes).
 
 ## UI
@@ -284,7 +284,7 @@ A building device opens on its own building and stays there until someone picks 
 - In the selector, other buildings are marked `· 👀 view only`; orphans are left out.
 - **Another building:** a note **👀 Viewing {building} — view only** with **Back to {own building}**; no + Add Task or ▲ ▼. Ticks show but can't change; ⏱ Log shows the total but doesn't open; Mark done / ✅ Done don't open. Still open, Scheduled today and Upcoming all show.
 - **Its detail view:** steps, pictures and videos (any language, uploaded too) to read; no Edit Task, Delete Task, ▲ ▼ 🗑, + Add Step or step editing.
-- **All Buildings:** a note **👀 All buildings — only {building} can be changed here**; the own building's rows work, the other sections are marked 👀. **Reset Day** clears only the own building's ticks.
+- **All Buildings:** a note **👀 All buildings — only {building} can be changed here**; the own building's rows work, the other sections are marked 👀.
 
 ### Task Detail View
 
@@ -308,7 +308,7 @@ Full picker, all inline (no library, no network): the current-emoji button opens
 
 ### Footer and Empty States
 
-- **Reset Day:** clears the selected date's ticks in the buildings shown (confirm first); other dates untouched; disabled when nothing is ticked. **Close Tool:** `window.close()` (closes the tab on a tablet).
+- **Close Tool** (centred, alone: Reset Day was removed, user request 2026-10-27) closes DailyWizard (`Hub.close()`).
 - No tasks in the building: "No daily tasks defined for {building} yet." + a prominent **+ Add Task**.
 - Tasks but none that day: "No daily tasks scheduled for this date." (events still show).
 

@@ -69,7 +69,6 @@ An audit of how each tool reads and writes the DB found six data-loss paths. Pha
   - EquipmentWizard resets dates moved on the calendar every time it resyncs.
   - SitkaTools' 📋 Duplicate copies the original's labour hours and completed tick, which double-counts labour.
   - GeneralEvent re-stamps its own log's `createdAt` every time it opens.
-  - Standalone exports from DailyWizard and PaperWizard don't stamp `_meta` yet.
 
 ### Phase 1: Split by Building
 

@@ -234,16 +234,7 @@ export async function openTool(b, sitka, tool, { ready = 'return typeof DB !== "
         await b.waitFor(handle, ready);
         return handle;
     }
-    const before = new Set((await b.contexts()).map(c => c.context));
-    await b.run(sitka, `document.querySelector('a.module-link[data-tool="${tool}"]').click();`, { user: true });
-    let ctx = null;
-    for (let i = 0; i < 60 && !ctx; i++) {
-        await b.sleep(100);
-        ctx = (await b.contexts()).find(c => !before.has(c.context) && c.url.includes(tool))?.context || null;
-    }
-    if (!ctx) throw new Error('tool window did not open: ' + tool);
-    await b.waitFor(ctx, ready);
-    return ctx;
+    throw new Error('no such tool: ' + tool);
 }
 
 export async function newTab(b, url) {
@@ -296,22 +287,6 @@ export async function logHours(b, dw, rowMatch, who, h, m, { temp = null, note =
 }
 
 // In DailyWizard: remove entry `index` from a row's hours view, approved with a floor manager's PIN
-export async function removeHoursEntry(b, dw, rowMatch, index, { fm = 'Casey', pin = FM_PIN } = {}) {
-    await b.run(dw, `
-        const rows = [...document.querySelectorAll('#listContainer *')].filter(el => el.querySelector(':scope > .hours-btn'));
-        rows.find(r => r.textContent.includes(${JSON.stringify(rowMatch)})).querySelector(':scope > .hours-btn').click();`, { user: true });
-    const res = await b.run(dw, `
-        const dels = document.querySelectorAll('#hoursList .hours-del');
-        if (!dels[${index}]) return 'no remove button';
-        dels[${index}].click();
-        return '';`, { user: true });
-    if (res) { await b.run(dw, 'closeHours();'); return res; }
-    await answerPin(b, dw, fm, pin);
-    const toast = await b.run(dw, `return document.querySelector('.toast, #toast')?.textContent || '';`);
-    await b.run(dw, 'closeHours();');
-    return toast;
-}
-
 // Labour entries on an event / a chore, by name
 export const evNames = (db, evId, day) => (db.calendarEvents.find(e => e.id === evId)?.labour_map?.[day] || []).map(e => e.employee || e.temp);
 export const choreNames = (db, bid, code, day) => (db._DailyWizard?.buildings?.[bid]?.labour?.[day]?.[code] || []).map(e => e.employee || e.temp);

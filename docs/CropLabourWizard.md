@@ -364,8 +364,8 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 - **Office only** (`DeviceView` with `OFFICE_ONLY: true`): on a building device SitkaTools hides the link, and if opened anyway the page is covered with "Office only" before anything loads.
 - **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL CropLabourWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 - Works on SitkaTools' own database (root `CLAUDE.md` → "Tool Overlays"). No browser storage.
-  - `sitkaGit_db` (as it opens): full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderScheduleList`, `updateStatusBar`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`) and a toast.
-  - `sitkaGit_db_update` (SitkaTools changed the DB while it's open): refreshes selectors, schedule list, status bar and buttons only — no offset rebuild, no toast, no notify back — so editing isn't interrupted.
+  - `sitkaGit_db` (as it opens): full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderScheduleList`, `updateStatusBar`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`); no toast.
+  - `sitkaGit_db_update` (SitkaTools changed the DB while it's open): refreshes selectors, schedule list, status bar and buttons only — no offset rebuild, no toast — so editing isn't interrupted.
   - `notifySitkaTools()` after every change (generate, clear, delete, recipe save, projections).
 
 ### DB Keys
@@ -381,7 +381,7 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 
 ## UI Notes
 
-Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop Labour Wizard" with the Active Lot selector; footer is Close Tool only (centred). Toast: bottom-centre, 2.5 s. Status bar starts as "No database loaded. Open from SitkaTools."
+Follows root `CLAUDE.md` → "UI Standards". Lot-focused: header logo "👷 Crop Labour Wizard" with the Active Lot selector; footer is Close Tool only (centred). Toast: bottom-centre, 2.5 s.
 
 ## Tests
 

@@ -33,7 +33,7 @@ export async function run(b, BASE) {
 
     // ---- Spanish: the screen's text, and the English shown with an EN tag where nothing is translated yet ----
     await lang(b, dw, 'es');
-    check('the footer and status bar switch to Spanish', (await text(b, dw, 'resetDayBtn')) === 'Reiniciar el día' && (await text(b, dw, 'statusText')).includes('hoy'));
+    check('the footer and status bar switch to Spanish', (await text(b, dw, 'closeToolBtn')) === 'Cerrar la herramienta' && (await text(b, dw, 'statusText')).includes('hoy'));
     let list = await text(b, dw, 'listContainer');
     check('an untranslated chore shows its English name, tagged EN', list.includes('Water plants') && list.includes('EN') && list.includes('⏱ Registrar'), list.slice(0, 200));
 

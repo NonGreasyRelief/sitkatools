@@ -68,10 +68,8 @@ const mk = () => { const el = { value: '', options: [], dataset: {}, style: {}, 
   setAttribute() {}, getAttribute: () => null, removeAttribute() {}, scrollIntoView() {} }; return el; };
 const els = {};
 globalThis.document = { getElementById: id => els[id] || (els[id] = mk()), querySelector: () => mk(), querySelectorAll: () => [], createElement: () => mk(), body: mk(), head: mk(), documentElement: mk(), addEventListener() {}, activeElement: null, visibilityState: 'visible', hasFocus: () => true };
-globalThis.window = globalThis; window.opener = null; globalThis.addEventListener = () => {};
+globalThis.window = globalThis; globalThis.addEventListener = () => {};
 globalThis.location = { protocol: 'file:', origin: 'null', search: '', href: 'file:///CropLabourWizard.html' };
-globalThis.indexedDB = { open: () => ({}) };
-globalThis.BroadcastChannel = class { postMessage() {} close() {} addEventListener() {} };
 globalThis.innerWidth = 1400; globalThis.innerHeight = 900; globalThis.screen = { availWidth: 1400, availHeight: 900 };
 globalThis.alert = () => {}; globalThis.confirm = () => true;
 const realTimers = { setInterval: globalThis.setInterval, setTimeout: globalThis.setTimeout };

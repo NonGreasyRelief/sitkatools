@@ -58,11 +58,6 @@ export async function run(b, BASE) {
     await dwBuilding(b, dw, 'B1');
     check('after reopening, today\'s tick is still there', (await dwTicked(b, dw, 'Water plants')) === true && (await dwTicked(b, dw, 'Scout rooms')) === false);
 
-    // Reset Day clears the day's saved ticks in the building shown
-    await b.run(dw, `document.getElementById('resetDayBtn').click();`, { user: true });
-    await b.sleep(200);
-    c = await checks(b, main, 'B1');
-    check('Reset Day clears today\'s ticks (and leaves other days)', !c?.[T] && !!c?.[Y]?.scu1, JSON.stringify(c));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
 
     // Tablet: DailyWizard opens over SitkaTools there too (no tab of its own), and its ticks are in SitkaTools' database
