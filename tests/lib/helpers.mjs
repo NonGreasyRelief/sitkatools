@@ -151,7 +151,9 @@ export async function forgetWorkCopy(b, ctx) {
 }
 
 // Let a page be left without the unsaved-changes prompt
-export const leave = (b, ctx) => b.run(ctx, 'window.onbeforeunload = null; if (typeof clearUnsaved === "function") clearUnsaved();').catch(() => {});
+// (a tool inside SitkaTools.html is part of its page: nothing of its own to let go of)
+export const leave = (b, ctx) => typeof ctx === 'object' ? Promise.resolve()
+    : b.run(ctx, 'window.onbeforeunload = null; if (typeof clearUnsaved === "function") clearUnsaved();').catch(() => {});
 
 export async function openSitka(b, ctx, base, device = null) {
     await leave(b, ctx);

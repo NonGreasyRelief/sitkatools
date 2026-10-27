@@ -61,6 +61,7 @@ export async function run(b, BASE) {
     check('SitkaTools has the PIN record', (await b.run(main, `return DB.data._EmployeeWizard.employees.Casey.pin?.hash || null;`)) === s.pin.hash);
 
     // ---- DailyWizard: locked until a floor manager unlocks it ----
+    await dwBuilding(b, dw, 'B1');   // back in DailyWizard (one tool at a time: it opens afresh), on Building 1 again
     await b.run(dw, `openTaskEditor('B1', 'wat1');`);
     check('locked: the task editor doesn\'t open', !(await b.run(dw, `return document.getElementById('editorOverlay').classList.contains('open');`)));
     const det = () => b.run(dw, `openTaskDetail('B1', 'wat1'); const r = { edit: getComputedStyle(document.getElementById('editTaskBtn')).display !== 'none',

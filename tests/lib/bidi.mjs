@@ -57,7 +57,9 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
         // Evaluate a function body (string) in a context; returns the deserialized JSON value
         async run(context, body, { user = false } = {}) {
             if (context && typeof context === 'object') {
-                body = `return await Tools.run(${JSON.stringify(context.tool)}, ${JSON.stringify(body)});`;
+                // One tool shows at a time: going back to a tool another one replaced opens it again, as a person would
+                const name = JSON.stringify(context.tool);
+                body = `if (!Tools.isOpen(${name})) Tools.open(${name}); return await Tools.run(${name}, ${JSON.stringify(body)});`;
                 context = context.context;
             }
             const r = await send('script.callFunction', {

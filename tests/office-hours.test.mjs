@@ -95,7 +95,10 @@ export async function run(b, BASE) {
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
 
     // ---- Removing hours still asks only for the PIN ----
-    await b.run(ew, `document.getElementById('tabTasks').click(); renderTasksTab(); document.querySelector('#teEntryList .emp-del').click();`, { user: true });
+    // Back in the Labour & Cost Wizard (one tool at a time: it opens afresh), on the same task
+    await b.run(ew, `document.getElementById('tabTasks').click();
+        const lot = document.getElementById('activeLot'); lot.value = 'L100'; lot.dispatchEvent(new Event('change'));
+        TASK.selectedKey = 'ev_cropb1'; TASK.editDate = '${T}'; renderTasksTab(); document.querySelector('#teEntryList .emp-del').click();`, { user: true });
     d = await dlg();
     check('removing hours asks for the PIN only (no initials pad)', d?.title === '🔒 Floor manager PIN' && !d.pad, JSON.stringify(d));
     await b.run(ew, `document.querySelector('#floorPin [data-fpin-cancel]').click();`);

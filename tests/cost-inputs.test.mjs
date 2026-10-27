@@ -150,7 +150,9 @@ export async function run(b, BASE) {
 
     // ---- Labour & Cost Wizard: Power & Rates ----
     const ew = await openTool(b, main, 'EmployeeWizard');
-    check('renamed: Labour & Cost Wizard', (await b.run(ew, `return document.querySelector('.logo').textContent + ' | ' + document.title;`)) === '👥 Labour & Cost Wizard | Labour & Cost Wizard');
+    // Its name in its header, and in SitkaTools' tool bar above it
+    check('renamed: Labour & Cost Wizard', (await b.run(ew, `return document.querySelector('.logo').textContent;`)) + ' | ' + (await b.run(main, `return document.getElementById('toolBarName').textContent;`))
+        === '👥 Labour & Cost Wizard | 👥 Labour & Cost Wizard');
     await b.run(ew, `document.getElementById('tabPower').click();`, { user: true });
     await b.run(ew, `document.querySelector('input[name="powerSource"][value="bills"]').click();`, { user: true });
     await set(b, ew, '#pwRate', '0.12');
