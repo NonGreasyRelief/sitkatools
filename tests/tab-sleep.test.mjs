@@ -7,7 +7,8 @@
 //   where both changed the same thing the newer one is kept, and the tool says so;
 // - "Go back to SitkaTools to save" is kept in the copy too and resent until SitkaTools answers;
 // - SitkaTools reloaded (the browser putting a tab away and bringing it back, a pull-to-refresh) restores its session itself;
-// - ♻️ a window that lost SitkaTools hands its changes over: to a SitkaTools still in its window, or to a new one, which adds
+// - ♻️ a window that lost SitkaTools hands its changes over: to a SitkaTools still in its window, or to a new one, which
+//   restores the whole session (SitkaTools keeps its saved copy while tool windows are open), or, with no session left, adds
 //   them to the database once it's opened.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, saveSingle, openTool, newTab, leave } from './lib/helpers.mjs';
 
@@ -115,19 +116,45 @@ export async function run(b, BASE) {
     check('…and the window carries on on the shared copy, cover gone', await until(ew, `return WorkCopy.inUse && document.getElementById('linkLost').style.display === 'none' && !!document.getElementById('workCopyBanner');`));
     await leave(b, ew); await b.send('browsingContext.close', { context: ew });
 
-    // SitkaTools closed with everything saved, so there's no session left to restore: a new SitkaTools adds the changes to
-    // the database once it's opened (asked first)
-    const savedText = await saveSingle(b, main);
+    // SitkaTools closed with everything saved while the tool window stays open (the user's report, 2026-10-27): it keeps its
+    // copy for that window, so ♻️ brings the whole session back in a new SitkaTools — the same file, with the window's change
+    const reopen = async () => {
+        const before = new Set((await b.contexts()).map(c => c.context));
+        await b.run(ew, `document.querySelector('#linkLost [data-reopen]').click();`, { user: true });
+        let ctx = null;
+        for (let i = 0; i < 50 && !ctx; i++) { await b.sleep(100); ctx = (await b.contexts()).find(c => !before.has(c.context) && c.url.includes('SitkaTools.html'))?.context || null; }
+        return ctx;
+    };
+    let savedText = await saveSingle(b, main);
     ew = await openTool(b, main, 'DailyWizard');
-    await b.run(main, `clearUnsaved(); await WorkCopy.clear(); window.onbeforeunload = null;`);
     await b.send('browsingContext.close', { context: main });
+    check('SitkaTools closed with everything saved and a tool window open: its copy is kept, marked saved, with its file name',
+        await until(ew, `const c = await WorkCopy.read(); return !!c && c.unsaved === false && c.from === 'SitkaTools' && c.fileName === 'DB-26-10-13';`),
+        JSON.stringify(await b.run(ew, `const c = await WorkCopy.read(); return c && { unsaved: c.unsaved, from: c.from, file: c.fileName };`)));
     await b.run(ew, `DB.data._DailyWizard.probe.h = 'made after SitkaTools closed'; notifySitkaTools();`);
     check('SitkaTools closed: the cover offers ♻️ Reopen SitkaTools', await until(ew, `return document.getElementById('linkLost')?.style.display === 'flex';`));
-    const before = new Set((await b.contexts()).map(c => c.context));
-    await b.run(ew, `document.querySelector('#linkLost [data-reopen]').click();`, { user: true });
-    let hub = null;
-    for (let i = 0; i < 50 && !hub; i++) { await b.sleep(100); hub = (await b.contexts()).find(c => !before.has(c.context) && c.url.includes('SitkaTools.html'))?.context || null; }
+    let hub = await reopen();
     check('♻️ with SitkaTools closed: a new SitkaTools opens', !!hub);
+    if (!hub) return results;
+    check('…and restores the whole session by itself: the same file and its lots, with the window\'s change, marked unsaved',
+        await until(hub, `return typeof WorkCopy !== 'undefined' && WorkCopy.ready && DB.fileName === 'DB-26-10-13' && Object.keys(DB.data.lots).length === 2 &&
+            DB.data._DailyWizard?.probe?.h === 'made after SitkaTools closed' && DB.data._DailyWizard.probe.g === 'made after SitkaTools reloaded' &&
+            hasUnsavedChanges && !WorkCopy.pendingHandover && document.getElementById('restoreOverlay').classList.contains('hidden');`),
+        JSON.stringify(await b.run(hub, `return { ready: WorkCopy.ready, pending: !!WorkCopy.pendingHandover, file: DB.fileName || null, lots: Object.keys(DB.data?.lots || {}).length, h: DB.data?._DailyWizard?.probe?.h || null };`)));
+    await leave(b, ew); await b.send('browsingContext.close', { context: ew });
+
+    // No session left: a SitkaTools that didn't open the window (reloaded since, its window list empty) closes with everything
+    // saved and forgets its copy. A new SitkaTools adds the window's changes to the database once it's opened (asked first)
+    savedText = await saveSingle(b, hub);
+    ew = await openTool(b, hub, 'DailyWizard');
+    await b.run(hub, `openSubtools = []; window.onbeforeunload = null;`);
+    await b.send('browsingContext.close', { context: hub });
+    check('…a SitkaTools closed with everything saved and no tool window of its own open still forgets its copy',
+        await until(ew, `return (await WorkCopy.read()) === null;`));
+    await b.run(ew, `DB.data._DailyWizard.probe.i = 'made after a SitkaTools that had lost this window closed'; notifySitkaTools();`);
+    check('…the cover offers ♻️ Reopen SitkaTools', await until(ew, `return document.getElementById('linkLost')?.style.display === 'flex';`));
+    hub = await reopen();
+    check('♻️ with no session left: a new SitkaTools opens', !!hub);
     if (hub) {
         const st = await until(hub, `return typeof WorkCopy !== 'undefined' && WorkCopy.ready && !!WorkCopy.pendingHandover && !DB.fileName;`);
         check('…which has no session to restore, so it says to open the database (the changes are kept for it)', st,
@@ -135,7 +162,7 @@ export async function run(b, BASE) {
         await b.run(hub, `window.confirm = () => true;`);
         await b.run(hub, `return loadDbFromText(${JSON.stringify(savedText)}, 'DB-26-10-27.json');`);
         check('…opened, it adds them to the database (asked first), marked unsaved',
-            await until(hub, `return DB.data._DailyWizard?.probe?.h === 'made after SitkaTools closed' && DB.data._DailyWizard.probe.g === 'made after SitkaTools reloaded' && hasUnsavedChanges && !WorkCopy.pendingHandover;`));
+            await until(hub, `return DB.data._DailyWizard?.probe?.i === 'made after a SitkaTools that had lost this window closed' && DB.data._DailyWizard.probe.h === 'made after SitkaTools closed' && hasUnsavedChanges && !WorkCopy.pendingHandover;`));
         await leave(b, hub);
     }
     await leave(b, ew);

@@ -6056,12 +6056,16 @@
         // Leaving with everything saved forgets the copy; unsaved work stays to be offered back on the next start.
         // A tab that never wrote the copy leaves it alone: it's still on the start screen (or on the restore question),
         // or the session belongs to SitkaTools in another tab.
+        // ♻️ With tool windows still open, a saved copy is kept too (user decision 2026-10-27): it holds the session (file
+        // name, split files, device), so ♻️ Reopen SitkaTools in one of them brings the whole session back with its changes.
+        // The next start deletes it if nothing changed it.
         window.addEventListener('pagehide', () => {
             if (!WorkCopy.wrote) return;
+            const toolsOpen = openSubtools.some(w => { try { return !!w.win && !w.win.closed; } catch (_) { return false; } });
             if (hasUnsavedChanges) WorkCopy.flush();
-            else WorkCopy.clear();
-            // The delete above may not finish while the page unloads; open tool tabs finish it for us
-            if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-closing', unsaved: hasUnsavedChanges });
+            else if (!toolsOpen) WorkCopy.clear();
+            // The delete above may not finish while the page unloads; open tool tabs finish it for us (not when it's kept)
+            if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-closing', unsaved: hasUnsavedChanges, toolsOpen });
         });
 
         // Is SitkaTools open in another tab on this device with a database (it answers within `wait` ms)?

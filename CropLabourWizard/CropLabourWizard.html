@@ -2863,9 +2863,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         else setTimeout(() => { if (!WorkCopy.gotDb) WorkCopy.start(); }, 1500);
         if (WorkCopy.channel) {
             WorkCopy.channel.addEventListener('message', async (e) => {
-                // SitkaTools closed with everything saved: finish forgetting the copy (it may not get to)
+                // SitkaTools closed with everything saved: finish forgetting the copy (it may not get to). Not while tool windows
+                // are open: it keeps the copy for them, so ♻️ Reopen SitkaTools brings its whole session back
                 if (e.data?.type === 'sitka-closing') {
-                    if (!e.data.unsaved) WorkCopy.forgetIfSaved();
+                    if (!e.data.unsaved && !e.data.toolsOpen) WorkCopy.forgetIfSaved();
                     return;
                 }
                 // SitkaTools has the changes this window asked it to save: stop asking
