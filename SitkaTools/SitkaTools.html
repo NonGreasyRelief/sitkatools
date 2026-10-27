@@ -14483,9 +14483,7 @@
                     ['room', '🏠 Room'],
                     ['building', '🏢 Building'],
                     ['strain', '🌿 Strain'],
-                    ['taskType', '🛠️ Task'],
-                    ['status', 'Status'],
-                    ['estimatedHours', '⏱ Est. Hours']
+                    ['taskType', '🛠️ Task']
                 ];
                 for (const [key, label] of extra) {
                     if (event[key]) {
@@ -15947,11 +15945,12 @@
                 // A schedule task's dates are CropLabourWizard's: shown, not edited (user decision 2026-10-26)
                 const datesLocked = !readOnly && isScheduleTask(event);
                 const lockedDates = datesLocked ? ['date', ...(event.endDate ? ['endDate'] : [])] : [];
-                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'status', 'estimatedHours']
+                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime']
                     .filter(f => !datesLocked || (f !== 'date' && f !== 'endDate'));
-                // The sign-off shows in the Completed row; Notes and Assigned To aren't used (user request 2026-10-27: an
-                // event that has them keeps them, unseen)
-                const HIDDEN_FIELDS = ['type', 'id', 'completedBy', 'notes', 'assignedTo'];
+                // The sign-off shows in the Completed row. Notes, Assigned To, Status and Est. Hours aren't used: nothing read
+                // them (the labour estimate is the recipe's, estStaff / estMinutes; done is Completed). User request
+                // 2026-10-27: an event that has them keeps them, unseen
+                const HIDDEN_FIELDS = ['type', 'id', 'completedBy', 'notes', 'assignedTo', 'status', 'estimatedHours'];
 
                 // Build field list from the event, ensuring all modifiable fields are always present
                 // so users can add missing fields (e.g., add endDate to convert a single-day task to multi-day)
@@ -15986,8 +15985,6 @@
                             html += `<input type="date" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else if (key === 'startTime' || key === 'endTime') {
                             html += `<input type="time" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
-                        } else if (key === 'estimatedHours') {
-                            html += `<input type="number" step="0.5" min="0" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         } else {
                             html += `<input type="text" class="event-detail-input" data-field="${escapeHtml(key)}" value="${escapeHtml(String(event[key] || ''))}">`;
                         }
@@ -16052,11 +16049,6 @@
                     let value = input.value;
 
                     if (field === 'date' && !value) { blankDate = true; return; }   // an event needs its start date
-                    // Type coercion
-                    if (field === 'estimatedHours' && value) {
-                        value = parseFloat(value);
-                        if (!Number.isFinite(value)) return;
-                    }
                     const had = this.selectedEvent[field];
                     if (value === '' || value === null) {
                         if (had !== undefined && had !== '') { delete this.selectedEvent[field]; changed = true; }

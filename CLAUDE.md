@@ -66,7 +66,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 
 ### Event Annotations Survive Regeneration
 
-CropLabourWizard (on Generate) and EquipmentWizard (on every resync) rebuild their events from scratch. `carryOverAnnotations(previous, fresh, keyOf)` copies these onto the replacement: `id`, `completed`, `completedBy` (DailyWizard's floor-manager sign-off), `labour_map` (hours), and the SitkaTools event-panel fields `startTime`, `endTime`, `status`, `estimatedHours` (and `notes`, `assignedTo`, which the panel no longer shows: user request 2026-10-27).
+CropLabourWizard (on Generate) and EquipmentWizard (on every resync) rebuild their events from scratch. `carryOverAnnotations(previous, fresh, keyOf)` copies these onto the replacement: `id`, `completed`, `completedBy` (DailyWizard's floor-manager sign-off), `labour_map` (hours), and the SitkaTools event-panel fields `startTime`, `endTime` (and `notes`, `assignedTo`, `status`, `estimatedHours`, which the panel no longer shows: user request 2026-10-27).
 
 - Matching: CropLabourWizard by `taskType` (and `repeat`) within the lot; EquipmentWizard by `equipmentId + taskId + date` (falling back to `equipmentId + title + date`).
 - Unmatched work records (`completed`, or a non-empty `labour_map`) are never dropped silently. CropLabourWizard asks before Generate, Clear or Delete Schedule would delete them (Cancel changes nothing). EquipmentWizard keeps them on the calendar as maintenance history while their equipment and room exist.
@@ -176,7 +176,7 @@ CropLabourWizard's tasks come from recipes: four built-ins in code (Sitka Standa
 CropLabourWizard events: `{ id, date, endDate?, title, sourceTool: 'CropLabourWizard', lotId, taskType, repeat?, roomId?, roomPhase?, estStaff?, estMinutes? }`. `repeat` numbers a repeating task's events; annotations carry over by `taskType` + `repeat`.
 
 - `roomPhase` (`cloning` | `veg` | `flower` | `dry` | `trim`) is on every real lot's task: the recipe task's own, else CropLabourWizard's rules (see "Task Recipes"). Projected lots' events carry `roomId` instead.
-- `estStaff` / `estMinutes` are the recipe's labour estimate **per day**: estimated person-hours = `estStaff × estMinutes × days in [date, endDate] ÷ 60`. Shown by CropLabourWizard, DailyWizard, the SitkaTools tooltip and the Labour & Cost Wizard. Not carried over on regeneration (they come from the recipe). They're separate from the event panel's typed `estimatedHours`.
+- `estStaff` / `estMinutes` are the recipe's labour estimate **per day**: estimated person-hours = `estStaff × estMinutes × days in [date, endDate] ÷ 60`. Shown by CropLabourWizard, DailyWizard, the SitkaTools tooltip and the Labour & Cost Wizard. Not carried over on regeneration (they come from the recipe). (The event panel's typed `estimatedHours` is gone, user request 2026-10-27: nothing read it.)
 
 ## Total Cost per Gram
 
@@ -268,7 +268,7 @@ Don't add details, APIs or schemas for a planned tool until asked.
       --input-bg: #1a1a3e; --radius: 8px; --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   ```
-- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms; SitkaTools adds 💾 Save DB and ✕ Close at its right end, keeping their width free, so it may wrap on a narrow screen), the tool's content, and a sticky footer holding only **Close Tool**, centred in every tool (changes sync on their own; DailyWizard keeps its Reset Day at the left).
+- **Layout, top to bottom:** a sticky header (the tool's name on the left; an **Active Lot** or **Active Room** dropdown on the right, or nothing for a tool not scoped to lots or rooms; SitkaTools adds 💾 Save DB and ✕ Close at its right end, keeping their width free, so it may wrap on a narrow screen), the tool's content, and a sticky footer holding only **Close Tool**, centred in every tool (changes sync on their own).
 - Lot dropdown: "— Select a lot —" first, then `id — name (strain)`, with the lot's phase emoji in front (user request 2026-10-27; `lotPhaseEmoji`, one function in SitkaTools that every tool calls): ✂️ when its current daily paperwork is its trim log and 🍂 when it's its drying log, else by `stage` — 🌱 cloning, 🪴 veg, 🌿 mother, 🌸 bloom or harvest, 🍂 drying or curing; none without a stage. Room dropdown: "— Select a room —", then `id — name`.
 - Shared component styles (`.form-group`, `.btn`, `.btn-secondary`, `.db-btn`, toasts) and the `DB` object pattern (`data`, `lots`/`rooms`/`buildings` getters, `ensureStructure()`) are the same in every tool: copy them from an existing one.
 - **Toasts look the same everywhere** (user decision 2026-10-27): white text (`--text-primary`, 0.9rem, regular weight) in a dark box (`--bg-secondary`) with a 2px teal border, as SitkaTools' own; only warnings turn the border amber. A tool says nothing as it opens (no "Database loaded" toast).

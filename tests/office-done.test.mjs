@@ -28,7 +28,7 @@ export async function run(b, BASE) {
     check('a building device: clicking Completed in the event panel changes nothing', !s.panel && s.readonly, JSON.stringify(s));
     check('…nor the task list\'s ○', !s.list && s.checkReadonly, JSON.stringify(s));
     check('…and the panel says where it\'s done', s.note.includes('DailyWizard') && s.note.includes('Labour & Cost Wizard') && s.note.includes('PIN'), s.note);
-    check('the event panel has no Notes or Assigned To', !s.labels.some(l => /Notes|Assigned/.test(l)), s.labels.join(', '));
+    check('the event panel has no Notes, Assigned To, Status or Est. Hours', !s.labels.some(l => /Notes|Assigned|Status|Estimated/.test(l)), s.labels.join(', '));
 
     // ---- The office ----
     await openSitka(b, main, BASE);

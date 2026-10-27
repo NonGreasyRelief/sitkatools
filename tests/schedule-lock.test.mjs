@@ -107,14 +107,14 @@ export async function run(b, BASE) {
     let p = await panel('ev_harv');
     check('the panel shows a Harvest\'s date as text, not a date box', !p.inputs.includes('date') && !p.inputs.includes('endDate') && p.values.includes(T), JSON.stringify(p));
     check('…with the warning under it', p.note === `⚠️ ${TEXT}` && p.groups[0] === 'Date' && p.groups[1] === 'NOTE', p.groups.join(' | '));
-    check('…and the rest still editable (times, status, hours); no Notes or Assigned To (user request 2026-10-27)', ['startTime', 'endTime', 'status', 'estimatedHours'].every(f => p.inputs.includes(f)) && !p.inputs.includes('notes') && !p.inputs.includes('assignedTo'), p.inputs.join());
+    check('…and the times still editable; no Notes, Assigned To, Status or Est. Hours (user request 2026-10-27)', ['startTime', 'endTime'].every(f => p.inputs.includes(f)) && !['notes', 'assignedTo', 'status', 'estimatedHours'].some(f => p.inputs.includes(f)), p.inputs.join());
     p = await panel('ev_trim');
     check('a multi-day Trim shows both dates as text, the warning under the end date', !p.inputs.includes('date') && !p.inputs.includes('endDate')
         && p.groups.slice(0, 3).join() === 'Date,End Date,NOTE' && p.values.includes(today(6)), p.groups.join(' | '));
     p = await panel('ev_tba');
     check('a projected lot\'s Harvest is read-only in the panel too', !p.inputs.includes('date') && !!p.note, JSON.stringify(p.inputs));
-    await run(`const n = document.querySelector('#eventPanelBody .event-detail-input[data-field="estimatedHours"]'); n.value = '3'; n.dispatchEvent(new Event('change'));`);
-    check('…its other fields still save (estimated hours)', String((await ev('ev_tba')).estimatedHours) === '3' && (await ev('ev_tba')).date === T);
+    await run(`const n = document.querySelector('#eventPanelBody .event-detail-input[data-field="startTime"]'); n.value = '08:30'; n.dispatchEvent(new Event('change'));`);
+    check('…its other fields still save (start time)', (await ev('ev_tba')).startTime === '08:30' && (await ev('ev_tba')).date === T);
     p = await panel('ev_copy');
     check('a copy\'s dates stay editable, with no warning', p.inputs.includes('date') && p.inputs.includes('endDate') && !p.note, JSON.stringify(p.inputs));
     p = await panel('ev_cropb2');
