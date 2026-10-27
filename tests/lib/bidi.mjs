@@ -29,12 +29,26 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
         if (m.method === 'browsingContext.userPromptOpened') logs.push(`[prompt ${m.params.type}] ${m.params.message}`);
     });
 
+    // A tool inside SitkaTools.html is a handle { context, tool } (tests/lib/helpers.mjs openTool): its code runs inside the
+    // tool's own scope in the SitkaTools page, and input goes to that page
+    const ctxOf = c => (c && typeof c === 'object') ? c.context : c;
+    const sendAny = (method, params = {}) => {
+        const handle = params.context && typeof params.context === 'object' ? params.context : null;
+        if (!handle) return send(method, params);
+        if (method === 'browsingContext.close') return api.run(handle.context, `Tools.close(); return null;`);
+        if (method === 'browsingContext.activate') return send(method, { ...params, context: handle.context });
+        return Promise.reject(new Error(`${method} on a tool overlay (${handle.tool}): not a window any more`));
+    };
     const api = {
-        send, logs, ws,
+        send: sendAny, logs, ws,
         async contexts() { return (await send('browsingContext.getTree', {})).contexts; },
         async navigate(context, url) { return send('browsingContext.navigate', { context, url, wait: 'complete' }); },
         // Evaluate a function body (string) in a context; returns the deserialized JSON value
         async run(context, body, { user = false } = {}) {
+            if (context && typeof context === 'object') {
+                body = `return await Tools.run(${JSON.stringify(context.tool)}, ${JSON.stringify(body)});`;
+                context = context.context;
+            }
             const r = await send('script.callFunction', {
                 functionDeclaration: `async function() { const __r = await (async () => { ${body} })(); return JSON.stringify(__r === undefined ? null : __r); }`,
                 target: { context }, awaitPromise: true, userActivation: user
@@ -63,14 +77,14 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
             const actions = [{ type: 'pointerMove', ...P(pts[0]), duration: 0 }, { type: 'pointerDown', button: 0 }];
             for (const p of pts.slice(1)) actions.push({ type: 'pointerMove', ...P(p), duration: 30 });
             actions.push({ type: 'pointerUp', button: 0 });
-            await send('input.performActions', { context, actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
+            await send('input.performActions', { context: ctxOf(context), actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
             return box;
         },
         // Real key presses into the focused element. Special keys use WebDriver codes, e.g. '' Home, '' Enter.
         async keys(context, text) {
             const actions = [];
             for (const ch of text) actions.push({ type: 'keyDown', value: ch }, { type: 'keyUp', value: ch });
-            await send('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions }] });
+            await send('input.performActions', { context: ctxOf(context), actions: [{ type: 'key', id: 'keyboard', actions }] });
         },
         async close() { try { await send('session.end', {}); } catch (_) {} ws.close(); }
     };

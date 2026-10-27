@@ -11,6 +11,7 @@
         Version: 0.1.0 — Lot creation only; calendar view placeholder
     -->
     <style>
+        @scope (:root) to (.tool-overlay) {
         :root {
             --bg-primary: #1a1a2e;
             --bg-secondary: #16213e;
@@ -2063,10 +2064,7 @@
             display: none;
         }
 
-        @keyframes slideInToast {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
+        
 
         .sync-toast-icon {
             font-size: 1.5rem;
@@ -2786,7 +2784,32 @@
         #icsImportInput {
             display: none;
         }
+}
+@keyframes slideInToast {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
     </style>
+    <style>
+        /* ═══ Tool overlays: one tool at a time, over SitkaTools (root CLAUDE.md → "Tool Overlays") ═══
+           Outside the hub's @scope: the overlay host, its bar, and the sections the tools live in. Each tool's own styles
+           are in an @scope block for its section (`#tool-<Name> > .tool-root`), so no style crosses between tools and hub. */
+        #toolHost { position: fixed; inset: 0; z-index: 150; display: flex; flex-direction: column; background: var(--bg-primary); }
+        #toolHost[hidden], .tool-overlay[hidden] { display: none; }
+        .tool-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-secondary); border-bottom: 2px solid var(--accent); }
+        .tool-bar-name { flex: 1; min-width: 0; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tool-bar-btn { min-height: 40px; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; }
+        .tool-bar-btn:hover, .tool-bar-btn:focus-visible { border-color: var(--accent); }
+        .tool-overlay { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; position: relative; }
+        html.tool-open, html.tool-open body { overflow: hidden; }
+        @media print {
+            html.tool-open body > :not(#toolHost) { display: none !important; }
+            html.tool-open #toolHost { position: static; display: block; }
+            html.tool-open .tool-bar { display: none; }
+            html.tool-open .tool-overlay { overflow: visible; }
+        }
+    </style>
+    <!-- ═══ TOOL styles end ═══ -->
 </head>
 <body>
     <input type="file" id="dbImportInput" accept=".json" multiple>
@@ -3297,6 +3320,17 @@
         </section>
     </main>
 
+
+    <!-- ═══ Tool overlays (root CLAUDE.md → "Tool Overlays"): each tool's markup is a section here ═══ -->
+    <div id="toolHost" hidden>
+        <div class="tool-bar">
+            <span class="tool-bar-name" id="toolBarName"></span>
+            <button type="button" class="tool-bar-btn" id="toolBarSave">💾 Save DB</button>
+            <button type="button" class="tool-bar-btn" id="toolBarClose">✕ Close</button>
+        </div>
+        <!-- ═══ TOOL sections end ═══ -->
+    </div>
+
     <script>
         // =====================================================
         // SitkaTools — Lot Management Module
@@ -3505,13 +3539,13 @@
         }
 
         // ---- Tab Navigation ----
-        const mainEl = document.querySelector('.main');
-        document.querySelectorAll('.tab').forEach(tab => {
+        const mainEl = document.querySelector('.main:not(.tool-overlay *)');
+        document.querySelectorAll('.tab:not(.tool-overlay *)').forEach(tab => {
             tab.addEventListener('click', () => {
                 if (tab.classList.contains('disabled')) return;
 
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                document.querySelectorAll('.tab:not(.tool-overlay *)').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content:not(.tool-overlay *)').forEach(c => c.classList.remove('active'));
 
                 tab.classList.add('active');
                 const targetId = tab.dataset.tab;
@@ -3538,7 +3572,7 @@
         mainEl.classList.add('calendar-active');
 
         // ---- Tabs Scroll Fade Indicator (mobile) ----
-        const tabsContainer = document.querySelector('.tabs');
+        const tabsContainer = document.querySelector('.tabs:not(.tool-overlay *)');
         const tabsFade = document.getElementById('tabsFade');
         if (tabsContainer && tabsFade) {
             const updateTabsFade = () => {
@@ -5752,8 +5786,8 @@
             apply() {
                 const on = !!this.building;
                 document.body.classList.toggle('building-device', on);
-                if (on && document.querySelector('.tab.active.office-only')) {
-                    document.querySelector('.tab[data-tab="calendar-view"]')?.click();
+                if (on && document.querySelector('.tab.active.office-only:not(.tool-overlay *)')) {
+                    document.querySelector('.tab[data-tab="calendar-view"]:not(.tool-overlay *)')?.click();
                 }
             }
         };
@@ -6902,6 +6936,133 @@
 
 
 
+        // =====================================================
+        // ═══ Tool overlays (one file, user decision 2026-10-27; root CLAUDE.md → "Tool Overlays") ═══
+        // Every tool lives in this file. Its markup is a <section class="tool-overlay" id="tool-<Name>"> in #toolHost, its
+        // styles an @scope block for that section, and its code runs inside Tools.register('<Name>', function (document, Hub)
+        // { … }): it gets its own `document`, which finds only its own elements (`document.body` is its section), and it works
+        // on this page's own DB.data — no copy, no messages. One tool shows at a time, full window, under a bar with
+        // 💾 Save DB and ✕ Close.
+        // A tool's code gives back { receive, run }: receive(e) takes the database the way its message handler did
+        // (e.data = { type: 'sitkaGit_db' | 'sitkaGit_db_update', payload, view }); run(code) runs test code inside it.
+        // =====================================================
+        var Tools = {
+            defs: {},
+            current: null,   // the open tool's name
+            stale: false,    // a tool changed the database while open: the hub's views redraw when it closes
+            has(name) { return !!this.defs[name]; },
+            isOpen(name) { return this.current === name; },
+            register(name, factory) {
+                const section = document.getElementById('tool-' + name);
+                const root = section?.querySelector(':scope > .tool-root');
+                if (!root) { console.error(`[SitkaTools] No section for tool ${name}`); return; }
+                const def = { name, section, root, received: false, sent: null, data: null };
+                const hub = {
+                    changed: () => this.changed(name),
+                    close: () => { if (this.current === name) this.close(); },
+                    get open() { return Tools.current === name; }
+                };
+                this.defs[name] = def;
+                def.api = factory(scopedToolDocument(root, () => this.current === name), hub) || {};
+            },
+            // The name people see: its module link's ("📅 General Event")
+            label(name) {
+                const link = [...document.querySelectorAll('.module-link')].find(a => toolNameOfUrl(a.getAttribute('href')) === name);
+                return link?.querySelector('.tool-link-name')?.textContent.trim() || toolDisplayName(name);
+            },
+            open(name) {
+                const def = this.defs[name];
+                if (!def) return false;
+                if (this.current === name) return true;
+                if (this.current) this.close();
+                this.current = name;
+                $('toolBarName').textContent = this.label(name);
+                for (const d of Object.values(this.defs)) d.section.hidden = d !== def;
+                $('toolHost').hidden = false;
+                document.documentElement.classList.add('tool-open');
+                def.section.scrollTop = 0;
+                this.deliver(name, 'sitkaGit_db');
+                return true;
+            },
+            close() {
+                const name = this.current;
+                if (!name) return;
+                this.changed(name);   // anything it changed without saying so counts too
+                this.current = null;
+                this.defs[name].section.hidden = true;
+                $('toolHost').hidden = true;
+                document.documentElement.classList.remove('tool-open');
+                if (this.stale) { this.stale = false; refreshAllViews(); }
+            },
+            // Hand a tool the database — this page's own object, not a copy — the way its message handler took it
+            deliver(name, type) {
+                const def = this.defs[name];
+                if (!def?.api.receive) return;
+                DB.ensureStructure();
+                def.data = DB.data;
+                def.api.receive({ data: { type, payload: DB.data, view: DeviceView.message() } });
+                def.received = true;
+                // The baseline its next change is measured against: what it set up as it opened (its own keys, a rebuilt
+                // log) isn't a change of its own
+                def.sent = subtoolSyncKey(DB.data, DeviceView.message());
+            },
+            // A tool changed the database (its notifySitkaTools()): unsaved, if something really changed
+            changed(name) {
+                const def = this.defs[name];
+                if (!def?.received) return;   // nothing counts before it has the database
+                if (def.data !== DB.data) { console.warn(`[SitkaTools] ${name} changed a database that's no longer open — ignored`); return; }
+                const key = subtoolSyncKey(DB.data, DeviceView.message());
+                if (key === def.sent) return;
+                def.sent = key;
+                DB.ensureStructure();
+                markUnsaved();
+                this.stale = true;
+            },
+            // The database changed here, or was replaced (loaded, restored, another device): the open tool gets it
+            push() {
+                const def = this.defs[this.current];
+                if (!def?.received) return;
+                if (def.data === DB.data && def.sent === subtoolSyncKey(DB.data, DeviceView.message())) return;
+                this.deliver(this.current, 'sitkaGit_db_update');
+            },
+            // Tests: run code inside a tool's scope (tests/lib/bidi.mjs)
+            run(name, code) { return this.defs[name].api.run(code); }
+        };
+
+        // A tool's own `document`: lookups find only its elements, `document.body` is its section (so its toasts and covers
+        // get its styles), and its document-wide listeners run only while it's open. Everything else is the page's.
+        function scopedToolDocument(root, isOpen) {
+            const guarded = new WeakMap();
+            const guard = fn => {
+                if (typeof fn !== 'function') return fn;
+                if (!guarded.has(fn)) guarded.set(fn, function (e) { if (isOpen()) return fn.call(this, e); });
+                return guarded.get(fn);
+            };
+            const own = {
+                body: root,
+                getElementById: id => root.querySelector('#' + CSS.escape(id)),
+                querySelector: sel => root.querySelector(sel),
+                querySelectorAll: sel => root.querySelectorAll(sel),
+                getElementsByClassName: names => root.getElementsByClassName(names),
+                getElementsByTagName: tag => root.getElementsByTagName(tag),
+                addEventListener: (type, fn, opts) => document.addEventListener(type, guard(fn), opts),
+                removeEventListener: (type, fn, opts) => document.removeEventListener(type, guard(fn), opts)
+            };
+            return new Proxy(document, {
+                get(target, key) {
+                    if (Object.prototype.hasOwnProperty.call(own, key)) return own[key];
+                    const value = Reflect.get(target, key, target);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                },
+                set(target, key, value) {
+                    if (key === 'title') return true;   // a tool doesn't rename SitkaTools' tab
+                    return Reflect.set(target, key, value, target);
+                }
+            });
+        }
+        $('toolBarClose').addEventListener('click', () => Tools.close());
+        $('toolBarSave').addEventListener('click', () => $('exportBtn').click());
+
         // ---- Module Link Handlers — postMessage Convention ----
         let openSubtools = [];
 
@@ -6916,6 +7077,9 @@
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
+                // A tool that lives in this file opens as an overlay
+                const toolName = toolNameOfUrl(link.getAttribute('href'));
+                if (Tools.has(toolName)) { Tools.open(toolName); return; }
                 const href = link.href;
                 // Already open: switch to that window instead of opening a second one, which would hold its own copy of
                 // the database and undo the other's changes (review A9/A12; the tools also warn in a second window)
@@ -7833,6 +7997,7 @@
                     entry.sent = key;
                 } catch (_) { /* window gone */ }
             });
+            Tools.push();   // and the tool open in this page
         }
 
         // =====================================================
@@ -11618,5 +11783,6 @@
         CalendarIO.init();
         DayRollover.start();
     </script>
+    <!-- ═══ TOOL scripts end ═══ -->
 </body>
 </html>

@@ -217,6 +217,14 @@ export async function saveSingle(b, ctx) {
 
 // Open a module from SitkaTools (its module link) and wait for the new window to have the DB
 export async function openTool(b, sitka, tool, { ready = 'return typeof DB !== "undefined" && !!DB.data && Object.keys(DB.data.lots || {}).length > 0;' } = {}) {
+    // A tool that lives in SitkaTools.html opens as an overlay there: a handle { context, tool } that tests use like a window
+    // (tests/lib/bidi.mjs runs its code inside the tool)
+    if (await b.run(sitka, `return typeof Tools !== 'undefined' && Tools.has(${JSON.stringify(tool)});`)) {
+        await b.run(sitka, `document.querySelector('a.module-link[href*="${tool}"]').click();`, { user: true });
+        const handle = { context: sitka, tool };
+        await b.waitFor(handle, ready);
+        return handle;
+    }
     const before = new Set((await b.contexts()).map(c => c.context));
     await b.run(sitka, `document.querySelector('a.module-link[href*="${tool}"]').click();`, { user: true });
     let ctx = null;
