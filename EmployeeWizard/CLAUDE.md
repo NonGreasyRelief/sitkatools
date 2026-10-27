@@ -1,6 +1,6 @@
 # Labour & Cost Wizard (EmployeeWizard) — Tool Context
 
-Shown everywhere as **"👥 Labour & Cost Wizard"**. The folder, file, `_EmployeeWizard` DB key, `sourceTool: 'EmployeeWizard'` and `WorkCopy.TOOL` keep the old name so old files, links and other tools keep working. SitkaTools maps the id to the new name in its toasts (`toolDisplayName`).
+Shown everywhere as **"👥 Labour & Cost Wizard"**. The folder, its `═══ TOOL EmployeeWizard` sections in SitkaTools.html, the `_EmployeeWizard` DB key and `sourceTool: 'EmployeeWizard'` keep the old name so old files, links and other tools keep working. SitkaTools maps the id to the new name in its toasts (`toolDisplayName`).
 
 It holds the employee roster and work weeks, books time off as shared calendar events, records daily labour hours on Labour-wizard tasks, and produces labour and cost reports.
 
@@ -169,11 +169,12 @@ The tool writes `labour_map` and `completed` directly onto Labour-wizard events 
 
 ## Relationship to SitkaTools
 
-A standard subtool: root `CLAUDE.md` → "Cross-Window Database Workflow", "Shared Working Copy" and "Building Device View".
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EmployeeWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `EmployeeWizard/EmployeeWizard.html` only points there.
+- The database and the view as for every tool: root `CLAUDE.md` → "Tool Overlays" and "Building Device View".
 
-- **Live updates** (`WorkCopy.LIVE: true`): on `sitkaGit_db_update` it redraws the roster, work week / time-off calendar and task list, keeping the selected lot and task. No form field is reset, and it never calls `notifySitkaTools()` in response.
+- **Live updates:** on `sitkaGit_db_update` (SitkaTools changed the DB while it's open) it redraws the roster, work week / time-off calendar and task list, keeping the selected lot and task. No form field is reset, and it never calls `notifySitkaTools()` in response.
 - **Building devices:** only the Tasks tab (its Active Lot list holds only that building's lots) and the Labour Log of work done in that building. Labour and completion are floor fields, saved in the building's own file. The roster, wages, time off, the Labour Report, Power & Rates and Reports are hidden.
 
 ## Constraints
 
-Root `CLAUDE.md` → "Core Principles" and "JavaScript" apply: one HTML file, vanilla JS, no network calls, no browser storage beyond the shared working copy. Charts and reports are hand-rolled SVG/canvas — no chart libraries.
+Root `CLAUDE.md` → "Core Principles" and "JavaScript" apply: its code in SitkaTools.html, vanilla JS, no network calls, no browser storage of its own. Charts and reports are hand-rolled SVG/canvas — no chart libraries.

@@ -2,7 +2,8 @@
 
 Puts quick standalone events on the shared calendar: reminders and milestones that aren't tied to a lot or room (e.g. "license renewal due", "team meeting").
 
-- **Independent tool:** the header shows only "📌 GeneralEvent", with no selector. The footer and UI follow the root `CLAUDE.md`, and so do postMessage, `LinkLost` and `WorkCopy`.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL GeneralEvent` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `GeneralEvent/GeneralEvent.html` only points there.
+- **Independent tool:** the header shows only "📌 GeneralEvent", with no selector. The footer and UI follow the root `CLAUDE.md`, and so does the database ("Tool Overlays").
 - **Office only** (`DeviceView.OFFICE_ONLY: true`). On a building device, SitkaTools hides the link. If the tool is opened anyway, it covers the page with "Office only" and stops before loading, because calendar events go in Main.json, which a building device can't save. See root `CLAUDE.md` → "Building Device View".
 
 ## The Form
@@ -27,11 +28,11 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
   - A row keeps the `createdAt` it was first logged with; the rebuild doesn't re-stamp it (review H8).
 - **✕ Delete** asks first, then removes exactly that one event by id. Another event with the same text on the same day stays.
 
-## Messages from SitkaTools
+## The Database from SitkaTools (`receiveDb`)
 
-- **Until a DB arrives** (by postMessage or from the shared working copy), Add Event is refused with "Waiting for SitkaTools…". Sending back the empty DB would replace SitkaTools' whole DB.
-- **`sitkaGit_db` (open):** acknowledge, rebuild the log, render the list, show a toast.
-- **`sitkaGit_db_update` (live push):** rebuild the log and the list, and leave the form alone. No ack, no toast, and nothing is sent back.
+- **Until the DB arrives,** Add Event is refused with "Waiting for SitkaTools…".
+- **`sitkaGit_db` (as it opens):** rebuild the log, render the list, show a toast.
+- **`sitkaGit_db_update` (SitkaTools changed the DB while it's open):** rebuild the log and the list, and leave the form alone. No toast, and no notify back.
 
 ## BC Civic Holidays (implementation pending)
 

@@ -12,7 +12,7 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 - **`_DailyWizard`:** only DailyWizard writes it (task lists, chore hours, check-offs, timers, adjustments). EmployeeWizard's Reports and Labour Log read the chore hours.
 - **Calendar events:** never created, edited, moved or deleted, and nothing is appended. On a crop or equipment event it writes only the floor fields `labour_map` ("⏱ Hours") and `completed` / `completedBy` ("✅ Mark done").
 - **Reads:** events' `date`, `endDate`, `title`, `sourceTool`, `lotId`, `roomId`, `roomPhase`, `taskType`, `completed` / `completedBy`, `estStaff` / `estMinutes`; `rooms`, `buildings`, `lots` (attribution); `_EmployeeWizard.employees` (names for hours, `floorManager` for Mark done, `pin` for edit mode and deletions).
-- No network calls (🗣️ Talk only opens a link). No browser storage beyond SitkaTools' shared working copy. Emoji data is embedded.
+- No network calls (🗣️ Talk only opens a link). No browser storage of its own. Emoji data is embedded.
 
 ## Task Model
 
@@ -176,7 +176,7 @@ Each entry is the person's name, the hours and minutes they type (or fill from a
 - **Where they go:** chores → `_DailyWizard.buildings[<id>].labour[<day>][<code>]`. Crop or equipment task → the event's `labour_map[<day>]`, the same field EmployeeWizard's Tasks tab edits (it marks these "✍️ signed"), CropLabourWizard and EquipmentWizard carry over, and the Reports read. A building device saves it in its own file as an overlay.
 - **Removing** needs a floor manager's PIN on every device ("🔒 Edit Mode and Floor Manager PINs"): ✕ on any entry in a building the device may change, anyone's and any day's, including Labour & Cost Wizard ones. The entry leaves the hours and goes in `adjustments` with `approvedBy`; the hours view shows it struck through ("removed …, approved by …").
 - **Live updates:** an open hours view re-renders its list on `sitkaGit_db` / `sitkaGit_db_update`, leaving the form and the initials being drawn alone.
-- **Lost link:** if SitkaTools is reloaded or closed, a cover says so; **♻️ Reopen SitkaTools** hands the window's changes, the last one included, over to SitkaTools (root `CLAUDE.md` → postMessage rule 4). On a tablet, a tab that slept in the background catches up when it wakes and never writes over a newer copy (root `CLAUDE.md` → "Shared Working Copy").
+- **A tablet that sleeps:** DailyWizard lives in SitkaTools' page, so there's one tab; if Android discards it, SitkaTools restores the session on reload with DailyWizard open again (root `CLAUDE.md` → "Working Copy").
 - **Elsewhere:** EmployeeWizard's 📜 Labour Log lists every entry (office: all buildings; building device: its own), with a room chore's room and the lots its hours went to that day. Its Reports read chore hours (`rptChoreLabour`) and `labour_map`. A temp's typed wage is used for cost; a temp with no wage counts in hours only, and a crop with such hours is left out of $ figures (the missing-wage rule).
 
 ## 🔒 Edit Mode and Floor Manager PINs
@@ -235,7 +235,9 @@ Translations cover daily chores only, not crop or equipment task names; the scre
 
 ## SitkaTools Link
 
-Uses the standard subtool pattern (root `CLAUDE.md` → "Cross-Window Database Workflow", "Shared Working Copy"). Popup on laptops; tab fed from the shared working copy on tablets. Opened alone: "Open this tool from SitkaTools"; before the DB arrives: "Waiting for SitkaTools to deliver the database…".
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL DailyWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `DailyWizard/DailyWizard.html` only points there.
+
+The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overlays"); on every device, tablets included, it opens over SitkaTools. Before the DB arrives: "Waiting for SitkaTools to deliver the database…".
 
 - `notifySitkaTools()` after every task or step change, every hours entry added or removed, every tick or untick, Reset Day, every Mark done or reopen, and every timer start, pause, relabel or clear.
 - **Live `sitkaGit_db_update`:** refresh the selector, status bar and list without disturbing ticks or an open editor. An open task detail view refreshes too, except while a step is being typed: it refreshes when the edit ends, and the edit is written into the fresh DB. Step buttons (▲ ▼ 🗑, + Add Step) look their task up again by building + code when tapped; if it is gone they only re-render (the view closes).

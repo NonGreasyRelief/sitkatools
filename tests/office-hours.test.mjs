@@ -104,7 +104,7 @@ export async function run(b, BASE) {
     await b.run(ew, `document.querySelector('#floorPin [data-fpin-cancel]').click();`);
 
     // ---- No floor manager with a PIN: hours can't be added here ----
-    await b.run(main, `delete DB.data._EmployeeWizard.employees.Casey.pin; markUnsaved(); broadcastToSubtools();`);
+    await b.run(main, `delete DB.data._EmployeeWizard.employees.Casey.pin; markUnsaved(); Tools.push();`);
     await b.waitFor(ew, `return !DB.data._EmployeeWizard.employees.Casey.pin;`);
     await fill('Blair', 1, 0);
     d = await b.run(ew, `const el = document.getElementById('floorPin'); return { none: !el.querySelector('[data-fpin-none]').hidden, pad: !el.querySelector('[data-fpin-sign]').hidden, text: el.querySelector('[data-fpin-none]').textContent };`);

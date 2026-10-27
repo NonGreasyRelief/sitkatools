@@ -1,8 +1,7 @@
-// Saves only count when the file really holds the work (review A6, A7, A8):
+// Saves only count when the file really holds the work (review A6, A7):
 // - a change made after the save popup opened keeps the DB unsaved (single file; split files already did);
-// - on a tablet, a cancelled share saves nothing (single file and split files);
-// - a tool tab's update is ignored until the start check (restore or discard) is done, and Restore takes the copy as
-//   it is when tapped.
+// - on a tablet, a cancelled share saves nothing (single file and split files).
+// (A8, a tool tab writing while SitkaTools started, went with the tool tabs: the tools live in SitkaTools' page.)
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, openSplit, saveSingle } from './lib/helpers.mjs';
 
 export const title = 'SitkaTools: a save counts only when the file holds the work';
@@ -66,26 +65,6 @@ export async function run(b, BASE) {
     await b.run(main, `document.querySelectorAll('#saveFileLinks a.save-link').forEach(a => a.click());`, { user: true });
     await b.sleep(300);
     check('split: a completed share saves', await unsaved(main) === false);
-
-    // ---- A8: a tool tab writing while SitkaTools starts up ----
-    main = await fresh(b);
-    await openSitka(b, main, BASE);
-    await loadSingle(b, main, fixtureDb());
-    await rename(main, 'Left unsaved');
-    await b.waitFor(main, `const c = await WorkCopy.read(); return c?.unsaved && c.db.lots.L100.name === 'Left unsaved';`);
-    await b.navigate(main, URL);   // the session is left behind
-    await b.waitFor(main, `return !document.getElementById('restoreOverlay').classList.contains('hidden');`, 5000);
-    // A tool tab still open from that session writes the copy, as its WorkCopy.write does, and says so
-    await b.run(main, `const c = await WorkCopy.read(); c.db.lots.L100.name = 'Written by a tool tab'; c.from = 'PaperWizard';
-        await FolderStore._tx('readwrite', s => s.put({ key: 'current', value: c }), 'work');
-        WorkCopy.channel.postMessage({ type: 'db-updated', from: 'PaperWizard' });
-        await takeToolCopy('PaperWizard');`);
-    await b.sleep(300);
-    check('while the restore card is up, a tool tab\'s update isn\'t taken in', await b.run(main, `return DB.data?.lots?.L100?.name !== 'Written by a tool tab' && !hasUnsavedChanges && !DB.fileName;`));
-    await b.run(main, `document.getElementById('restoreBtn').click();`, { user: true });
-    await b.sleep(500);
-    const st = await b.run(main, `return { name: DB.data?.lots?.L100?.name, file: DB.fileName, unsaved: hasUnsavedChanges };`);
-    check('Restore takes the copy as it is now, with the tool tab\'s change', st.name === 'Written by a tool tab' && st.file === 'DB-26-10-13' && st.unsaved, JSON.stringify(st));
 
     await b.run(main, `window.onbeforeunload = null; clearUnsaved();`);
     return results;

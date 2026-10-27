@@ -102,7 +102,7 @@ export async function run(b, BASE) {
 
     // ---- Regenerating keeps each repeat's hours ----
     await b.run(main, `const e = DB.data.calendarEvents.find(e => e.lotId === 'M100' && e.taskType === 'mother_prune' && e.repeat === 2);
-        e.labour_map = { [e.date]: [{ id: 'le_testprune2', employee: 'Alex', hours: 1.5 }] }; e.completed = true; markUnsaved(); broadcastToSubtools();`);
+        e.labour_map = { [e.date]: [{ id: 'le_testprune2', employee: 'Alex', hours: 1.5 }] }; e.completed = true; markUnsaved(); Tools.push();`);
     await b.waitFor(clw, `return DB.data.calendarEvents.some(e => e.lotId === 'M100' && e.repeat === 2 && e.completed);`);
     await b.run(clw, `const l = document.getElementById('activeLot'); l.dispatchEvent(new Event('change'));`);
     const restored = await b.run(clw, `return taskOffsets.find(e => e.def.taskType === 'mother_prune').offset;`);
@@ -113,7 +113,7 @@ export async function run(b, BASE) {
     check('regenerating keeps repeat 2\'s hours and completion on repeat 2 only', kept.length === prunes.length && JSON.stringify(kept[1]) === '[2,true,1]' && kept.filter(k => k[1]).length === 1, JSON.stringify(kept.slice(0, 3)));
     // A shorter life drops later repeats: work on them is asked about first
     await b.run(main, `const e = DB.data.calendarEvents.find(e => e.lotId === 'M100' && e.taskType === 'mother_prune' && e.repeat === ${prunes.length});
-        e.completed = true; markUnsaved(); broadcastToSubtools();`);
+        e.completed = true; markUnsaved(); Tools.push();`);
     await b.waitFor(clw, `return DB.data.calendarEvents.some(e => e.lotId === 'M100' && e.repeat === ${prunes.length} && e.completed);`);
     await b.run(clw, `window.__asked = ''; window.confirm = m => { window.__asked = m; return false; };
         taskOffsets.find(e => e.def.taskType === 'retire').offset = 90; refreshPreview(); document.getElementById('generateBtn').click();`, { user: true });
@@ -121,7 +121,7 @@ export async function run(b, BASE) {
     check('retiring the mothers sooner asks before dropping a later repeat that holds work', asked.includes('with recorded work will be removed') && asked.includes(`Prune Mothers (${prunes.length}/${prunes.length})`), asked.slice(0, 200));
 
     // A changed interval: repeats are matched by date, so the done marks and hours stay on their days (review G4)
-    const setEvery = n => b.run(main, `DB.data._CropLabourWizard.recipes['${rid}'].tasks.find(t => t.taskType === 'mother_prune').every = ${n}; markUnsaved(); broadcastToSubtools();`)
+    const setEvery = n => b.run(main, `DB.data._CropLabourWizard.recipes['${rid}'].tasks.find(t => t.taskType === 'mother_prune').every = ${n}; markUnsaved(); Tools.push();`)
         .then(() => b.waitFor(clw, `return DB.data._CropLabourWizard.recipes['${rid}'].tasks.find(t => t.taskType === 'mother_prune').every === ${n};`));
     await setEvery(7);
     await b.run(clw, `const l = document.getElementById('activeLot'); l.value = 'M100'; l.dispatchEvent(new Event('change'));
@@ -202,13 +202,13 @@ export async function run(b, BASE) {
         && (await b.run(dw, `return document.querySelector('.empty-room-toggle').textContent;`)) === 'Hide the chores for empty rooms (2)', txt.slice(0, 300));
     await b.run(dw, `document.querySelector('.empty-room-toggle').click();`, { user: true });
     // A lot moving into the clone room brings its chore back
-    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Clone 1'; markUnsaved(); broadcastToSubtools();`);
+    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Clone 1'; markUnsaved(); Tools.push();`);
     await b.waitFor(dw, `return DB.lots.L200.currentRoom === 'Clone 1';`);
     txt = await listed();
     check('a lot moving into the room brings its chore back', txt.includes('Check clone domes') && !txt.includes('Water veg room'), txt.slice(0, 300));
     // A chore already done today stays, even when its room empties
     await b.run(dw, `const row = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes('Check clone domes')); row.querySelector('input[type=checkbox]').click();`, { user: true });
-    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Grow A'; markUnsaved(); broadcastToSubtools();`);
+    await b.run(m2, `DB.data.lots.L200.currentRoom = 'Grow A'; markUnsaved(); Tools.push();`);
     await b.waitFor(dw, `return DB.lots.L200.currentRoom === 'Grow A';`);
     txt = await listed();
     check('a chore ticked today stays even after its room empties', txt.includes('Check clone domes'), txt.slice(0, 300));
@@ -281,7 +281,7 @@ export async function run(b, BASE) {
     check('a crop summary freezes the clone charge (labour with the wages, the rest in Main.json)', fz.c?.n === 100 && fz.c.mother === 'M100' && near(fz.c.parts.power, 174)
         && near(fz.l?.cloneLabour, 26.67) && near(fz.l?.cost, 121) && fz.l.cutLabour === undefined, JSON.stringify(fz));
     await b.run(m3, `delete DB.data.lots.K1; DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'K1');
-        DB.data.calendarEvents.find(e => e.id === 'm3').labour_map[DB.data.calendarEvents.find(e => e.id === 'm3').date][0].hours = 20; markUnsaved(); broadcastToSubtools();`);
+        DB.data.calendarEvents.find(e => e.id === 'm3').labour_map[DB.data.calendarEvents.find(e => e.id === 'm3').date][0].hours = 20; markUnsaved(); Tools.push();`);
     await b.waitFor(ew, `return !DB.lots.K1;`);
     const after = await b.run(ew, `const M = rptModel(), k1 = M.crops.find(c => c.lotId === 'K1'); return { closed: !!k1?.closed, parts: rptCropCostParts(k1, M), charge: rptCloneCharge(k1, M).parts, per: rptCloneModel(M).priceOf('M100').perClone };`);
     check('closed out, K1 keeps its frozen clone charge though the mother\'s costs changed', after.closed && near(after.parts.labour, 147.67) && near(after.charge.power, 174) && !near(after.per.labour, 40 / 150), JSON.stringify(after));

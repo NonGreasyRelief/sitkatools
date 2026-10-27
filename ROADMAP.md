@@ -75,10 +75,10 @@ An audit of how each tool reads and writes the DB found six data-loss paths. Pha
 
 This is option B with one difference: **there's no separate plan file.** `Main.json` holds what the office edits, and floor work lives in one file per building. Every device opens all the files but saves only its own.
 
-Built and documented in root `CLAUDE.md` → "Split Database", "Shared Working Copy (tablets)" and "Building Device View":
+Built and documented in root `CLAUDE.md` → "Split Database", "Working Copy (crash recovery)", "Tool Overlays" and "Building Device View":
 
 - [x] Files, device identity, the loader and saver, and floor overlays. Each saved split file's `_meta` also records `savedBy` (the device's role).
-- [x] Folder mode, Android tablets, and tools opened as tablet tabs.
+- [x] Folder mode and Android tablets (tools opened as tablet tabs at first; since 2026-10-27 every tool opens over SitkaTools in its one file).
 - [x] The one-time split, lot move and hand-off, and lot close-out.
 
 Still to do:

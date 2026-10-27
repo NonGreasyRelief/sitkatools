@@ -2,7 +2,8 @@
 
 Schedules recurring maintenance for grow-room equipment, room by room. It writes every occurrence of each maintenance task onto the shared calendar, up to 12 months ahead.
 
-- **Room-focused tool:** the header shows "🔧 EquipmentWizard" and an **Active Room** selector. The footer and UI follow the root `CLAUDE.md`, and so do postMessage, `LinkLost` and `WorkCopy`.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EquipmentWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `EquipmentWizard/EquipmentWizard.html` only points there.
+- **Room-focused tool:** the header shows "🔧 EquipmentWizard" and an **Active Room** selector. The footer and UI follow the root `CLAUDE.md`, and so does the database ("Tool Overlays").
 - **Office only** (`DeviceView.OFFICE_ONLY: true`). On a building device, SitkaTools hides the link. If the tool is opened anyway, it covers the page with "Office only" and stops before loading, because a building device couldn't save the result. It never resyncs there. See root `CLAUDE.md` → "Building Device View".
 
 ## Data — `_EquipmentWizard.rooms[roomId].equipment[]`
@@ -91,10 +92,10 @@ A resync deletes the room's EquipmentWizard events (`sourceTool === 'EquipmentWi
 
 ## Messages from SitkaTools
 
-These follow root `CLAUDE.md` → "Cross-Window Database Workflow"; only this tool's specifics are listed here.
+These follow root `CLAUDE.md` → "Tool Overlays" (`receiveDb`); only this tool's specifics are listed here.
 
-- **`sitkaGit_db` (open):** acknowledge, `DeviceView.take`, fill the room selector, render, then `syncAllRooms()`. That means opening the tool always sends an update back.
-- **`sitkaGit_db_update` (live push; the shared copy sends the same, `WorkCopy.LIVE: true`):**
+- **`sitkaGit_db` (as it opens):** `DeviceView.take`, fill the room selector, render, then `syncAllRooms()` and `notifySitkaTools()` (SitkaTools counts it only when the resync really changed something).
+- **`sitkaGit_db_update` (SitkaTools changed the DB while it's open):**
   - Replace `DB.data` and run `ensureStructure()`.
   - Keep the selected room, and refresh the preview.
   - Rebuild the equipment list only when the selected room's equipment changed, so half-filled task and Repair Log forms survive.

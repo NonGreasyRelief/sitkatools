@@ -59,7 +59,7 @@ export async function run(b, BASE) {
     let v = await visits();
     check('equipment: every 30 days from 60 days ago', v.slice(0, 3).map(x => x.d).join() === [today(-60), today(-30), today()].join(), JSON.stringify(v.slice(0, 3)));
     await b.run(main, `const e = DB.data.calendarEvents.find(e => e.equipmentId === 'eq1' && e.date === '${today(-30)}'); e.completed = true;
-        e.labour_map = { '${today(-30)}': [{ id: 'le_eq0000001', employee: 'Alex', hours: 1 }] }; markUnsaved(); broadcastToSubtools();`);
+        e.labour_map = { '${today(-30)}': [{ id: 'le_eq0000001', employee: 'Alex', hours: 1 }] }; markUnsaved(); Tools.push();`);
     await b.waitFor(eq, `return DB.data.calendarEvents.some(e => e.equipmentId === 'eq1' && e.completed);`);
     await b.run(eq, `DB.data._EquipmentWizard.rooms.R1G1.equipment[0].tasks[0].intervalValue = 20; autoSyncCalendar('R1G1');`);
     await b.sleep(300);

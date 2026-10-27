@@ -1,6 +1,6 @@
 # PaperWizard — Tool Context
 
-PaperWizard fills the facility's **controlled paper forms** (propagation worksheet, weekly grow-logs, room cleans, IPM, harvest, drying and trim logs). Click-through wizards capture the answers. The print popup overlays them on the form's WebP page images, and the user prints from the browser. Suite rules (single file, launched from SitkaTools, postMessage, UI standards) are in the root `CLAUDE.md`.
+PaperWizard fills the facility's **controlled paper forms** (propagation worksheet, weekly grow-logs, room cleans, IPM, harvest, drying and trim logs). Click-through wizards capture the answers. The print popup overlays them on the form's WebP page images, and the user prints from the browser. Suite rules (one file, opened over SitkaTools, UI standards) are in the root `CLAUDE.md`.
 
 Two tabs:
 
@@ -424,7 +424,9 @@ _PaperWizard: {
 
 ## Relationship to SitkaTools
 
-Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessage), a tab on tablets (shared working copy, "Go back to SitkaTools to save"); by itself it shows "Open this tool from SitkaTools". It has no DB import / export of its own — only sheet-configuration import / export and Load document. It calls `notifySitkaTools()` after every `_PaperWizard` change (sheets, wizards, entries, signatures) and after every lot write-back.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL PaperWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `PaperWizard/PaperWizard.html` only points there.
+
+It has no DB import / export of its own — only sheet-configuration import / export and Load document. It calls `notifySitkaTools()` after every `_PaperWizard` change (sheets, wizards, entries, signatures) and after every lot write-back.
 
 **Split files:** paperwork filled on a building device is saved in that building's `Building-<ID>.json`; other buildings' paperwork is shown but stays in their files.
 
@@ -445,9 +447,9 @@ Launched from SitkaTools only (root `CLAUDE.md`): a popup on laptops (postMessag
 
   The cabinet shows the banner and drops Fill, Start, Sign and Initialize paperwork. `openRunner`, `openStartLogModal`, `openSignatureModal` and `openInitQuiz` refuse with a toast (`readOnlyHere`). Printing doesn't stamp `printedAt`, for these lots and any lot this device doesn't list.
 
-### Standard postMessage Pattern
+### The Database from SitkaTools
 
-The root pattern applies. Live `sitkaGit_db_update` pushes (from `window.opener` or the shared-copy loader) replace `DB.data`, apply the view and re-render the lot selector, status bar and cabinet — no toast, never `notifySitkaTools()` back.
+The root pattern applies ("Tool Overlays"). A `sitkaGit_db_update` (SitkaTools changed the DB while it's open) replaces `DB.data`, applies the view and re-renders the lot selector, status bar and cabinet — no toast, never `notifySitkaTools()` back.
 
 - **Open dialogs survive:** the runner and dialogs are overlays outside the cabinet. The runner keeps its draft and isn't re-rendered; its page is looked up again in the new DB. The signature, Start on a chosen day and Initialize dialogs look their record up again on save, and every save re-checks that the lot isn't read-only here.
 - **The cabinet keeps its open sections** when the same lot redraws (push or save). Switching lots resets to the default.

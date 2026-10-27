@@ -122,7 +122,7 @@ export async function run(b, BASE) {
     task = await b.run(main, `return DB.data._DailyWizard.buildings.B1.tasks.find(t => t.code === 'hal1');`);
     check('saving with "Whole building" removes roomId', task && !('roomId' in task), JSON.stringify(task));
     // A room that leaves the building: flagged, and the Reports treat the chore as whole-building
-    await b.run(main, `DB.data.rooms.R1G1.buildingId = null; markUnsaved(); await WorkCopy.flush(); broadcastToSubtools();`);
+    await b.run(main, `DB.data.rooms.R1G1.buildingId = null; markUnsaved(); await WorkCopy.flush(); Tools.push();`);
     await b.sleep(600);
     const chip = await b.run(dw, `renderAll(); return document.querySelector('#listContainer .chip-room')?.textContent || '';`);
     check('a room no longer in the building shows ⚠️ on the chip', chip === '🚪 ⚠️ Grow 1', chip);

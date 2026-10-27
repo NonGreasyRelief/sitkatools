@@ -53,7 +53,7 @@ export async function run(b, BASE) {
 
     // ---- A live update that moves a prefill isn't typing ----
     await b.run(pw, `await openRunner('L100', 'glog', '${Y}', '${T}');`);
-    await b.run(main, `DB.data.lots.L100.plantCount = 95; markUnsaved(); broadcastToSubtools();`);
+    await b.run(main, `DB.data.lots.L100.plantCount = 95; markUnsaved(); Tools.push();`);
     await b.waitFor(pw, `return DB.lots.L100.plantCount === 95;`);
     check('the live update reached the open wizard and moved its prefilled count', (await b.run(pw, `return runnerCtx.draft.cnt;`)) === '95');
     await asked(true);

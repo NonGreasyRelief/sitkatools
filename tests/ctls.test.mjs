@@ -133,7 +133,7 @@ export async function run(b, BASE) {
     check('Mark as filed keeps September\'s closing numbers, and SitkaTools has them to save', filed?.plants === 90 && filed.wetG === 8400.5 && filed.shippedG === 700 && filed.driedG === 0 && filed.rule === 2 && !!filed.filedAt, JSON.stringify(filed));
     let octChecks = await b.run(ew, `return ctlsModel('2026-10').checks.map(c => c.text);`);
     check('October\'s opening matches September\'s filing: nothing to say', !octChecks.some(t => t.includes('was filed with different closing numbers')), octChecks.join(' | '));
-    await b.run(main, `const d = DB.data._PaperWizard.entries.E500.glog.instances['2026-09-01'].days['2026-09-30']; d.cnt = '27'; d._removed = { destroyed: 1 }; markUnsaved(); broadcastToSubtools();`);
+    await b.run(main, `const d = DB.data._PaperWizard.entries.E500.glog.instances['2026-09-01'].days['2026-09-30']; d.cnt = '27'; d._removed = { destroyed: 1 }; markUnsaved(); Tools.push();`);
     await b.waitFor(ew, `return DB.data._PaperWizard.entries.E500.glog.instances['2026-09-01'].days['2026-09-30'].cnt === '27';`);
     octChecks = await b.run(ew, `return ctlsModel('2026-10').checks.map(c => c.text);`);
     check('a September day changed after filing: October says the opening no longer matches what was filed', octChecks.some(t => t.startsWith('September 2026 was filed with different closing numbers') && t.includes('90 plants → 89 (−1)')), octChecks.join(' | '));
@@ -142,7 +142,7 @@ export async function run(b, BASE) {
 
     // ---- Lots ready to close out: save their plant history ----
     // (D400's last grow-log page is signed off first: close-out needs its summary saved as the lot is then)
-    await b.run(main, `DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt = '2026-08-26T00:00:00.000Z'; markUnsaved(); broadcastToSubtools();`);
+    await b.run(main, `DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt = '2026-08-26T00:00:00.000Z'; markUnsaved(); Tools.push();`);
     await b.waitFor(ew, `return !!DB.data._PaperWizard.entries.D400.glog.instances['2026-07-01'].completedAt;`);
     const ready = await b.run(ew, `return ctlsModel('2026-09').ready;`);
     check('lots with no plants and nothing hanging are offered for close-out, with their history not saved yet', JSON.stringify(ready.map(r => [r.lotId, r.state])) === JSON.stringify([['D400', 'none']]), JSON.stringify(ready));

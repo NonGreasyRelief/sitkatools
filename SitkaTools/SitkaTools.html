@@ -2038,7 +2038,7 @@
             transform: translateY(-1px);
         }
 
-        /* Sync Toast — appears when a subtool sends a postMessage update */
+        /* Sync Toast — short notes about the database (a session restored, a save, a warning) */
         .sync-toast {
             position: fixed;
             bottom: 24px;
@@ -2264,19 +2264,6 @@
         }
         .split-transfer input { width: 90px; }
         .split-transfer.pending { border-style: dashed; border-color: var(--border); color: var(--text-secondary); }
-
-        /* "Go back to SitkaTools to save": covers the page below the header (💾 Save DB stays reachable) */
-        .save-required {
-            position: fixed; left: 0; right: 0; bottom: 0; top: 64px; z-index: 90;
-            background: rgba(10, 10, 30, 0.94);
-            display: flex; align-items: center; justify-content: center; padding: 24px;
-        }
-        .save-required.hidden { display: none; }
-        .save-required-card {
-            max-width: 460px; text-align: center; background: var(--bg-secondary);
-            border: 2px solid var(--warning); border-radius: 12px; padding: 32px;
-        }
-        .save-required-card .db-overlay-actions { flex-direction: column; align-items: center; gap: 12px; }
 
         /* ⚠️ A session closed without saving, offered back on the next start (over the start screen) */
         .restore-overlay { z-index: 10000; padding: 16px; }
@@ -11375,7 +11362,6 @@
                 if (plan.cannot.length === 0 || this.role === 'office') this.baseline = plan.snapshot;
                 if (plan.cannot.length === 0 && this.snapshot(DB.data) === plan.snapshot) clearUnsaved();
                 if (plan.toSave.includes(SPLIT_MAIN)) pendingArchives = [];   // Main records the close-outs
-                else if (plan.cannot.length) SaveRequired.hide(); // saved all this device may save; the rest was reported
                 updateIOStatusBar();
                 updateSplitCard();
             },
@@ -11645,13 +11631,14 @@
         };
 
         // =====================================================
-        // SitkaTools — Shared working copy (ROADMAP Phase 1, tablets)
-        // The open DB is mirrored into IndexedDB ('sitkatools' → 'work') so tools opened as plain tabs (tablets,
-        // where the popup / postMessage hand-off doesn't work) load it and write their changes back; a
-        // BroadcastChannel keeps every open tab in step. Saving to SharePoint still happens here. The copy is
-        // deleted when you leave with everything saved. If a session ends with unsaved work (a flat battery, the
-        // browser closed), it is kept however long it takes and offered back on the next start until it's restored
-        // or discarded (user decision 2026-10-22, "⚠️ Session closed without saving").
+        // SitkaTools — Working copy (crash recovery)
+        // The open database is mirrored into IndexedDB ('sitkatools' → 'work', key 'current') after every change, with the
+        // session: the file name, the split files' bookkeeping, the device and the tool open. It's deleted when you leave
+        // with everything saved. A session that ended with unsaved work (a flat battery, the browser closed, the tab
+        // discarded) is kept however long it takes and offered back on the next start until it's restored or discarded
+        // (user decision 2026-10-22, "⚠️ Session closed without saving"); the same tab reloaded restores it by itself, with
+        // the tool that was open. The tools live in this page (root CLAUDE.md → "Tool Overlays"), so this page is the copy's
+        // only writer; the channel only tells another SitkaTools tab on the device that this one holds the session.
         // =====================================================
         var WorkCopy = {
             channel: ('BroadcastChannel' in window) ? new BroadcastChannel('sitkatools-db') : null,
@@ -11659,67 +11646,6 @@
             ready: false,    // the start check is done: a session left behind is restored or discarded before anything overwrites it
             wrote: false,    // this tab has written the copy, so it holds the session (another SitkaTools tab never deletes it)
             _keepAsked: false,
-            seenAt: 0,       // the newest copy this tab wrote or took in (its `at`): a tool's newer one is taken in, never written over
-            base: null,      // the database as of then, kept apart: what a merge starts from
-            saveSeenAt: 0,   // the newest "Go back to SitkaTools to save" answered
-            pendingHandover: null,   // a lost tool window's changes waiting for a database to be opened (♻️)
-            clone(db) { try { return db == null ? null : JSON.parse(JSON.stringify(db)); } catch (_) { return null; } },
-            // 🛡️ Three-way merge, for a tab that slept while another one changed the database (Android freezes background
-            // tabs) or two tabs changing it at once: what only one side changed since `base` is kept from that side; where both
-            // changed the same thing, theirs (the newer copy) wins, a deletion never wins over a change, and the places are
-            // listed in `clash`. Objects merge key by key, lists of records with an `id` (events, hours entries) record by
-            // record, anything else as one value. The tools have the same merge (their WorkCopy snippet).
-            merge(base, mine, theirs) {
-                const clash = [], S = v => v === undefined ? undefined : JSON.stringify(v);
-                const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-                const ids = v => v === undefined || (Array.isArray(v) && v.every(x => isObj(x) && typeof x.id === 'string' && x.id !== ''));
-                const objects = (b, m, t, path) => {
-                    const bb = b || {}, out = {};
-                    for (const k of new Set([...Object.keys(t), ...Object.keys(m)])) {
-                        const v = m3(bb[k], m[k], t[k], path + '.' + k);
-                        if (v !== undefined) out[k] = v;
-                    }
-                    return out;
-                };
-                const m3 = (b, m, t, path) => {
-                    const sm = S(m), st = S(t);
-                    if (sm === st) return t;
-                    const sb = S(b);
-                    if (sm === sb) return t;   // only theirs changed it (or removed it)
-                    if (st === sb) return m;   // only ours did
-                    if (isObj(m) && isObj(t) && (b === undefined || isObj(b))) return objects(b, m, t, path);
-                    if (Array.isArray(m) && Array.isArray(t) && ids(m) && ids(t) && ids(b)) {
-                        const bm = new Map((b || []).map(x => [x.id, x])), mm = new Map(m.map(x => [x.id, x])), tIds = new Set(t.map(x => x.id)), out = [];
-                        for (const x of t) { const v = m3(bm.get(x.id), mm.get(x.id), x, path + '#' + x.id); if (v !== undefined) out.push(v); }
-                        for (const x of m) if (!tIds.has(x.id)) { const v = m3(bm.get(x.id), x, undefined, path + '#' + x.id); if (v !== undefined) out.push(v); }
-                        return out;
-                    }
-                    clash.push(path.slice(1));
-                    return t !== undefined ? t : m;
-                };
-                if (!isObj(base) || !isObj(mine) || !isObj(theirs)) return { db: theirs, clash };
-                return { db: objects(base, mine, theirs, ''), clash };
-            },
-            // 😴 A tab Android froze in the background may have slept through a tool's news on the channel: look at the copy
-            // when the tab wakes and before saving. Takes in a tool's newer copy (merged with our own changes) and answers a
-            // save request written into it. Returns whether it took something in
-            async catchUp() {
-                if (!this.ready) return false;
-                const copy = await this.read();
-                if (!copy?.db) return false;
-                let took = false;
-                if (copy.from !== 'SitkaTools' && (copy.at || 0) > this.seenAt) took = await takeToolCopy(toolDisplayName(copy.from), copy);
-                const ask = copy.saveRequest;
-                if (ask && (ask.at || 0) > this.saveSeenAt) this.answerSaveRequest(ask.from, ask.at);
-                return took;
-            },
-            // "Go back to SitkaTools to save": say we have it (the tool stops resending), then cover the page until it's saved
-            answerSaveRequest(from, at) {
-                this.saveSeenAt = Math.max(this.saveSeenAt, at || 0);
-                if (this.channel) this.channel.postMessage({ type: 'save-request-seen', at: at || 0 });
-                if (hasUnsavedChanges) SaveRequired.show(toolDisplayName(from));
-                else showSyncToast('Nothing to save — everything is already saved');
-            },
             async read() {
                 try {
                     return (await FolderStore._tx('readonly', store => store.get('current'), 'work'))?.value || null;
@@ -11735,38 +11661,18 @@
                 clearTimeout(this._timer);
                 if (!DB.data) return;
                 if (!this.ready) { this.schedule(); return; }
-                // ♻️ A lost tool window's changes, waiting for a database: added to the one just opened (asked first)
-                if (this.pendingHandover) applyPendingHandover();
-                // Every DB change or (re)load lands here (markUnsaved / clearUnsaved schedule it): push it to
-                // open tool windows too, so none keeps an old copy that its next edit would write back
-                broadcastToSubtools();
-                const snap = this.clone(DB.data);   // exactly what goes in the copy: the base of the next merge
+                // Every DB change or (re)load lands here (markUnsaved / clearUnsaved schedule it): the open tool gets it too
+                Tools.push();
                 const value = {
-                    db: snap, at: Date.now(), unsaved: hasUnsavedChanges, from: 'SitkaTools',
+                    db: DB.data, at: Date.now(), unsaved: hasUnsavedChanges, from: 'SitkaTools',
                     fileName: DB.fileName, split: DbSplit.active ? DbSplit.exportState() : null,
-                    view: DeviceView.message()
+                    view: DeviceView.message(), tool: Tools.current
                 };
                 try {
-                    // 🛡️ In the same step: a tool tab's newer copy we haven't taken in (this tab slept through its news) is never
-                    // written over — it's taken in, merged with our changes, and the merge written next
-                    let newer = null;
-                    await FolderStore._tx('readwrite', store => {
-                        const r = store.get('current');
-                        r.onsuccess = () => {
-                            const cur = r.result?.value;
-                            if (cur?.db && cur.from !== 'SitkaTools' && (cur.at || 0) > this.seenAt) { newer = cur; return; }
-                            if (cur?.at && value.at <= cur.at) value.at = cur.at + 1;
-                            store.put({ key: 'current', value });
-                        };
-                        return r;
-                    }, 'work');
-                    if (newer) { await takeToolCopy(toolDisplayName(newer.from), newer); this.schedule(); return; }
-                    this.seenAt = Math.max(this.seenAt, value.at);
-                    this.base = snap;
+                    await FolderStore._tx('readwrite', store => store.put({ key: 'current', value }), 'work');
                     this.wrote = true;
                     this.keepStorage();
-                    if (this.channel) this.channel.postMessage({ type: 'db-updated', from: 'SitkaTools' });
-                } catch (_) { /* storage unavailable — popups still get the DB by postMessage */ }
+                } catch (_) { /* storage unavailable: everything works without it except restoring a session */ }
             },
             // Ask the browser not to clear this site's storage when the device runs low on space (once per page).
             // Chrome grants it quietly (a site on the home screen, or used a lot); Firefox asks once.
@@ -11783,175 +11689,27 @@
             }
         };
 
-        // The save stamp (_meta) belongs to SitkaTools: a tool's copy may still carry the stamp from before
-        // the last save, which must not undo it (or count as a change)
-        function keepOwnSaveStamp(incoming) {
-            if (!incoming || typeof incoming !== 'object') return;
-            if (DB.data?._meta) incoming._meta = DB.data._meta;
-            else delete incoming._meta;
-        }
-
-        // A tool tab changed the shared copy → take it in, like a subtool update
         // A tool's name as people see it (EmployeeWizard is shown as the Labour & Cost Wizard)
         const toolDisplayName = id => ({ EmployeeWizard: 'Labour & Cost Wizard' })[id] || id;
-
-        // Not before the start check is done (review A8): a session left behind is restored or discarded first, and the
-        // restore reads the copy as it is then. With no DB open, a tool tab's copy that carries its session (file name,
-        // split files) is taken as that session; one without them can't be saved correctly, so it's left alone.
-        // 🛡️ Never let a tool's database replace ours wholesale (2026-10-26). Lots, rooms and buildings are only ever removed in
-        // SitkaTools, and a tool always sends the whole DB with its events.
-        // A database with none of our lots, rooms, buildings or events (an empty one, sent before it arrived): refused.
-        function toolUpdateWipes(payload) {
-            const has = (db, key) => db?.[key] && typeof db[key] === 'object' && Object.keys(db[key]).length > 0;
-            const oursHas = ['lots', 'rooms', 'buildings'].some(k => has(DB.data, k)) || (DB.data?.calendarEvents || []).length > 0;
-            const theirsHas = ['lots', 'rooms', 'buildings'].some(k => has(payload, k)) || (Array.isArray(payload?.calendarEvents) && payload.calendarEvents.length > 0);
-            return oursHas && (!theirsHas || !Array.isArray(payload?.calendarEvents));
-        }
-        // A lot, room or building of ours the tool's copy doesn't have (made here a moment before its change): kept. Returns
-        // how many were kept back, so the sender is sent the DB too.
-        function keepWhatToolHadntSeen(payload) {
-            let n = 0;
-            for (const key of ['lots', 'rooms', 'buildings']) {
-                const mine = DB.data?.[key] || {};
-                if (!payload[key] || typeof payload[key] !== 'object') payload[key] = {};
-                for (const [id, rec] of Object.entries(mine)) if (!(id in payload[key])) { payload[key][id] = JSON.parse(JSON.stringify(rec)); n++; }
-            }
-            if (n) console.info(`[SitkaTools] Kept ${n} lot/room/building record${n === 1 ? '' : 's'} a tool's update didn't have yet`);
-            return n;
-        }
-        // A tool's name from its page address (../EmployeeWizard/EmployeeWizard.html → EmployeeWizard)
+        // A tool's name from its link (../EmployeeWizard/EmployeeWizard.html → EmployeeWizard)
         const toolNameOfUrl = url => (String(url || '').match(/([A-Za-z]+)\.html/) || [])[1] || 'a tool';
-        // pre: the copy, when it's been read already. Returns whether the database changed
-        async function takeToolCopy(from, pre = null) {
-            if (!WorkCopy.ready) return false;
-            const copy = pre || await WorkCopy.read();
-            if (!copy?.db) return false;
-            if (!DB.data || !DB.fileName) {   // no database open (the start screen holds an empty one)
-                if (copy.unsaved && (copy.split || copy.fileName)) { restoreWorkCopy(copy); return true; }
-                if (copy.handover) { WorkCopy.pendingHandover = copy; WorkCopy.seenAt = Math.max(WorkCopy.seenAt, copy.at || 0); showWarningToast(`♻️ ${from} has changes SitkaTools didn't get. Open your database with 📂 Load DB and they'll be added to it.`); }
-                else showSyncToast(`${from} changed a database that isn't open here — open it with 📂 Load DB first`);
-                return false;
-            }
-            keepOwnSaveStamp(copy.db);
-            WorkCopy.seenAt = Math.max(WorkCopy.seenAt, copy.at || 0);
-            if (JSON.stringify(copy.db) === JSON.stringify(DB.data)) { WorkCopy.base = WorkCopy.clone(copy.db); return false; }
-            // 🛡️ A copy with none of our lots, rooms, buildings or events came from a tool that didn't have the database: refused,
-            // and the shared copy is put back to ours so the tool tabs catch up. One that hadn't seen a record made here yet
-            // keeps it (cost audit 2026-10-26)
-            if (toolUpdateWipes(copy.db)) {
-                console.warn('[SitkaTools] Refused a shared-copy update with no lots, rooms, buildings or events');
-                showWarningToast(`An update from ${from} was ignored: it had none of the database's lots, rooms, buildings or events. It has the current database now; redo the change there.`);
-                WorkCopy.flush();
-                return false;
-            }
-            // 🛡️ Merged with what changed here since this tab last wrote or took in the copy (a change made here just before the
-            // tool's, or while this tab slept): neither side's change is lost
-            const m = WorkCopy.base ? WorkCopy.merge(WorkCopy.base, DB.data, copy.db) : { db: copy.db, clash: [] };
-            WorkCopy.base = WorkCopy.clone(copy.db);
-            const restored = keepWhatToolHadntSeen(m.db);
-            DB.data = m.db;
-            DB.ensureStructure();
-            markUnsaved();
-            refreshAllViews();
-            showSyncToast(`${from} updated the database — views refreshed`);
-            if (m.clash.length) showWarningToast(`${from} and SitkaTools changed the same thing at the same moment: ${from}'s change was kept. Check your last change here.`);
-            return true;
-        }
-        // ♻️ A lost tool window's changes, handed over with no session open here: added to the database just opened, if the
-        // user says so (a three-way merge from the database that window started from)
-        function applyPendingHandover() {
-            const h = WorkCopy.pendingHandover;
-            WorkCopy.pendingHandover = null;
-            if (!h?.db || !h.handover || !DB.data) return;
-            const who = toolDisplayName(h.handover.from), when = new Date(h.handover.at).toLocaleString();
-            if (!h.handover.base) { showWarningToast(`${who}'s changes from ${when} can't be added: that window didn't keep the database it started from.`); return; }
-            if (!confirm(`${who} has changes from ${when} that SitkaTools didn't get (its window lost SitkaTools).\n\nAdd them to this database?`)) { showSyncToast(`${who}'s changes from ${when} were not added`); return; }
-            keepOwnSaveStamp(h.db);
-            const m = WorkCopy.merge(h.handover.base, h.db, DB.data);
-            DB.data = m.db;
-            DB.ensureStructure();
-            markUnsaved();
-            refreshAllViews();
-            showSyncToast(`♻️ Added ${who}'s changes — save them with 💾 Save DB`);
-            if (m.clash.length) showWarningToast(`Some of ${who}'s changes were to things changed in the files since: the files' version was kept there.`);
-        }
 
-        // "Go back to SitkaTools to save" (tool tabs): cover the page until the changes are saved
-        var SaveRequired = {
-            el: null,
-            show(from) {
-                if (!this.el) {
-                    this.el = document.createElement('div');
-                    this.el.className = 'save-required hidden';
-                    this.el.id = 'saveRequired';
-                    this.el.innerHTML = `
-                        <div class="save-required-card">
-                            <div class="db-overlay-icon">💾</div>
-                            <div class="db-overlay-title">Save before you continue</div>
-                            <div class="db-overlay-desc" id="saveRequiredText"></div>
-                            <div class="db-overlay-actions">
-                                <button class="btn-load-db" id="saveRequiredSaveBtn">💾 Save DB</button>
-                                <button class="btn-link" id="saveRequiredSkip">I can't save right now</button>
-                            </div>
-                        </div>`;
-                    document.body.appendChild(this.el);
-                    this.el.querySelector('#saveRequiredSaveBtn').addEventListener('click', (e) => {
-                        e.stopPropagation(); // the save popup opens in the header; a document click would close it
-                        exportBtn.click();
-                    });
-                    this.el.querySelector('#saveRequiredSkip').addEventListener('click', () => {
-                        if (confirm('Your changes are NOT saved yet. Continue without saving?')) this.hide();
-                    });
-                }
-                this.el.querySelector('#saveRequiredText').textContent =
-                    `${from} sent you back to save. Save your changes with 💾 Save DB — this screen closes once they're saved.`;
-                this.el.style.top = `${Math.round(document.querySelector('.header').getBoundingClientRect().bottom)}px`;
-                this.el.classList.remove('hidden');
-            },
-            hide() {
-                if (this.el) this.el.classList.add('hidden');
-            }
-        };
-
+        // Another SitkaTools tab on this device: one starting up asks whether the session is open here
         if (WorkCopy.channel) {
-            WorkCopy.channel.addEventListener('message', async (e) => {
+            WorkCopy.channel.addEventListener('message', (e) => {
                 const type = e.data?.type;
-                // Another SitkaTools tab starting up asks whether this device's session is open here
                 if (type === 'sitka-alive?') { if (WorkCopy.wrote) WorkCopy.channel.postMessage({ type: 'sitka-alive' }); return; }
-                if (type === 'sitka-alive') { RestoreCard.elsewhere(); return; }   // another tab restored it meanwhile
-                if ((type !== 'db-updated' && type !== 'save-request') || e.data.from === 'SitkaTools') return;
-                if (!WorkCopy.ready) return;   // the start check (restore or discard) comes first
-                // A tool resends its save request every second until we say we have it: answer the first, acknowledge the rest
-                if (type === 'save-request' && e.data.at && e.data.at <= WorkCopy.saveSeenAt) { WorkCopy.channel.postMessage({ type: 'save-request-seen', at: e.data.at }); return; }
-                await WorkCopy.catchUp();   // takes the tool's copy in, and answers a save request written into it
-                if (type !== 'save-request' || (e.data.at && e.data.at <= WorkCopy.saveSeenAt)) return;
-                if (!e.data.at) await takeToolCopy(toolDisplayName(e.data.from));   // a tool tab from before save requests were kept in the copy
-                WorkCopy.answerSaveRequest(e.data.from, e.data.at);
+                if (type === 'sitka-alive') RestoreCard.elsewhere();   // another tab restored it meanwhile
             });
-        }
-
-        // 😴 Woken (shown again, focused, back from the page cache, unfrozen): catch up with the tools' copy
-        {
-            const wake = () => { if (document.visibilityState !== 'hidden') WorkCopy.catchUp(); };
-            document.addEventListener('visibilitychange', wake);
-            window.addEventListener('focus', wake);
-            window.addEventListener('pageshow', wake);
-            document.addEventListener('resume', wake);
         }
 
         // Leaving with everything saved forgets the copy; unsaved work stays to be offered back on the next start.
         // A tab that never wrote the copy leaves it alone: it's still on the start screen (or on the restore question),
         // or the session belongs to SitkaTools in another tab.
-        // ♻️ With tool windows still open, a saved copy is kept too (user decision 2026-10-27): it holds the session (file
-        // name, split files, device), so ♻️ Reopen SitkaTools in one of them brings the whole session back with its changes.
-        // The next start deletes it if nothing changed it.
         window.addEventListener('pagehide', () => {
             if (!WorkCopy.wrote) return;
-            const toolsOpen = openSubtools.some(w => { try { return !!w.win && !w.win.closed; } catch (_) { return false; } });
             if (hasUnsavedChanges) WorkCopy.flush();
-            else if (!toolsOpen) WorkCopy.clear();
-            // The delete above may not finish while the page unloads; open tool tabs finish it for us (not when it's kept)
-            if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-closing', unsaved: hasUnsavedChanges, toolsOpen });
+            else WorkCopy.clear();
         });
 
         // Is SitkaTools open in another tab on this device with a database (it answers within `wait` ms)?
@@ -12033,8 +11791,6 @@
         }
 
         function restoreWorkCopy(copy) {
-            WorkCopy.seenAt = Math.max(WorkCopy.seenAt, copy.at || 0);
-            WorkCopy.base = WorkCopy.clone(copy.db);
             DB.data = copy.db;
             DB.ensureStructure();
             DB.fileName = copy.fileName || 'Recovered';
@@ -12047,44 +11803,28 @@
             updateIOStatusBar();
             updateSplitCard();
             if (WorkCopy.channel) WorkCopy.channel.postMessage({ type: 'sitka-alive' });   // another tab still asking: it's here now
+            // The tool that was open (DailyWizard in front all day on a tablet) opens again
+            if (copy.tool && Tools.has(copy.tool)) Tools.open(copy.tool);
             showSyncToast('Session restored — save it with 💾 Save DB when ready');
         }
 
         // On start: a copy left with unsaved work is offered back, however old. A saved one is forgotten. Nothing is
         // offered (or deleted) while another SitkaTools tab on this device holds the session.
         async function checkWorkCopyOnStart() {
-            let copy = null;
             try {
-                copy = await WorkCopy.read();
+                const copy = await WorkCopy.read();
                 if (!copy?.db) return;
                 if (await otherSitkaOpen()) { RestoreCard.elsewhere(true); return; }
                 if (DB.fileName || hasUnsavedChanges) return;   // a database was opened meanwhile
                 if (!copy.unsaved) { await WorkCopy.clear(); return; }
-                // ♻️ A lost tool window's changes with no session to restore (SitkaTools had closed with everything saved): kept
-                // to add to the database once it's opened
-                if (copy.handover && !(copy.split || copy.fileName)) {
-                    if (location.hash === '#restore') history.replaceState(null, '', location.pathname + location.search);
-                    WorkCopy.pendingHandover = copy;
-                    showWarningToast(`♻️ ${toolDisplayName(copy.handover.from)} has changes SitkaTools didn't get. Open your database with 📂 Load DB and they'll be added to it.`);
-                    return;
-                }
                 // 😴 The same tab, reloaded — the browser putting it away to save memory and bringing it back
-                // (document.wasDiscarded), a pull-to-refresh — or a window a tool reopened to restore (#restore): the session
-                // comes back by itself, with nothing to answer
+                // (document.wasDiscarded), a pull-to-refresh: the session comes back by itself, with nothing to answer
                 const nav = (performance.getEntriesByType?.('navigation') || [])[0];
-                if (document.wasDiscarded === true || nav?.type === 'reload' || location.hash === '#restore') {
-                    if (location.hash === '#restore') history.replaceState(null, '', location.pathname + location.search);
-                    restoreWorkCopy(copy);
-                    return;
-                }
+                if (document.wasDiscarded === true || nav?.type === 'reload') { restoreWorkCopy(copy); return; }
                 const choice = await RestoreCard.ask(copy);
-                // A tool tab may have written the copy while the card was up: restore what's there now
-                if (choice === 'restore') restoreWorkCopy((await WorkCopy.read()) || copy);
+                if (choice === 'restore') restoreWorkCopy(copy);
                 else if (choice === 'discard') await WorkCopy.clear();
             } finally {
-                // What was in the copy at the start is answered (restored, discarded, kept aside or superseded by a database
-                // opened meanwhile): only a tool's later copy is taken in
-                WorkCopy.seenAt = Math.max(WorkCopy.seenAt, copy?.at || 0);
                 WorkCopy.ready = true;
             }
         }
@@ -12410,8 +12150,6 @@
 
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Don't trigger document click handler that closes popup
-            // 😴 A tool tab's changes this tab slept through are taken in, and the popup redrawn with them, before a link is used
-            WorkCopy.catchUp().then(took => { if (took && !savePopup.classList.contains('hidden')) exportBtn.click(); }).catch(() => {});
 
             if (DbSplit.active) {
                 DbSplit.showSavePopup();
@@ -12769,22 +12507,6 @@
             printTodoOverlay.classList.add('hidden');
         }
 
-        // Phones: open the tool in a tab; it loads the DB from the shared working copy
-        function openToolInTab(toolUrl) {
-            const newWindow = window.open(toolUrl, '_blank');
-            if (!newWindow) return;
-
-            openSubtools.push({ win: newWindow, url: toolUrl });
-
-            // Track close with interval fallback
-            const closeCheck = setInterval(() => {
-                if (newWindow.closed) {
-                    openSubtools = openSubtools.filter(w => w.win !== newWindow);
-                    clearInterval(closeCheck);
-                }
-            }, 1000);
-
-        }
 
 
 
@@ -12851,6 +12573,7 @@
                     run.api = {};
                 }
                 this.deliver(name, 'sitkaGit_db');
+                WorkCopy.schedule();   // the copy says which tool is open
                 return true;
             },
             close() {
@@ -12867,6 +12590,7 @@
                 $('toolHost').hidden = true;
                 document.documentElement.classList.remove('tool-open');
                 if (this.stale) { this.stale = false; refreshAllViews(); }
+                WorkCopy.schedule();
             },
             // Hand the open tool the database — this page's own object, not a copy — the way its message handler took it
             deliver(name, type) {
@@ -13013,43 +12737,11 @@
             }
         }
 
-        // ---- Module Link Handlers — postMessage Convention ----
-        let openSubtools = [];
-
-        // postMessage target origin: our own origin when served over http(s) (ROADMAP 0.4).
-        // file:// pages have opaque origins, so they can only be reached with '*'.
-        const SITKA_MSG_ORIGIN = (location.protocol === 'file:' || location.origin === 'null') ? '*' : location.origin;
-
-        // Detect mobile devices — require both small viewport AND touch hardware
-        // 'ontouchstart' in window alone is unreliable (exists in modern desktop browsers even without touch)
-        const isMobileDevice = window.innerWidth < 768 && navigator.maxTouchPoints > 0;
-
+        // ---- Tool links: each opens its tool over this page (Tools.open) ----
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                // A tool that lives in this file opens as an overlay
-                const toolName = toolNameOfUrl(link.getAttribute('href'));
-                if (Tools.has(toolName)) { Tools.open(toolName); return; }
-                const href = link.href;
-                // Already open: switch to that window instead of opening a second one, which would hold its own copy of
-                // the database and undo the other's changes (review A9/A12; the tools also warn in a second window)
-                const path = new URL(href, location.href).pathname;
-                const open = openSubtools.find(w => { try { return !w.win.closed && new URL(w.url, location.href).pathname === path; } catch (_) { return false; } });
-                if (open) {
-                    try { open.win.focus(); } catch (_) { /* the browser may not allow it */ }
-                    showSyncToast(`${link.querySelector('.tool-link-name')?.textContent.trim() || 'That tool'} is already open — use that window`);
-                    return;
-                }
-                WorkCopy.flush(); // a tool that can't get the DB by postMessage loads it from the shared copy
-
-                if (isMobileDevice) {
-                    // On phones: open the tool in a tab; it loads the DB from the shared copy
-                    // (replaces the old save-then-import overlay)
-                    openToolInTab(href);
-                } else {
-                    // On desktop: existing behavior — open popup with postMessage
-                    openModuleInTab(href);
-                }
+                Tools.open(toolNameOfUrl(link.getAttribute('href')));
             });
         });
 
@@ -13073,120 +12765,6 @@
         // Amber, and up a little longer: something was refused
         const showWarningToast = message => showSyncToast(message, { warn: true, ms: 5000 });
 
-        // Open subtool as a centered popup window and send DB via postMessage
-        function openModuleInTab(url) {
-            // Popup size: half viewport width, 66% taller than half viewport height
-            const width = Math.round(window.innerWidth / 2);
-            const height = Math.round(window.innerHeight * 0.5 * 1.66); // 83% of viewport
-            const left = Math.round((window.innerWidth - width) / 2);
-            const top = Math.round((window.innerHeight - height) / 2);
-
-            const newWindow = window.open(
-                url,
-                '_blank',
-                `width=${width},height=${height},left=${left},top=${top}`
-            );
-            if (!newWindow) return;
-
-            const entry = { win: newWindow, url };
-            openSubtools.push(entry);
-
-            // Track close with interval fallback (close event unreliable on file://)
-            const closeCheck = setInterval(() => {
-                if (newWindow.closed) {
-                    openSubtools = openSubtools.filter(w => w.win !== newWindow);
-                    clearInterval(closeCheck);
-                }
-            }, 1000);
-
-            // Send DB via postMessage with retry mechanism: every 200 ms for up to 5 s, so a slow PC's popup gets it
-            // before it gives up waiting (1.5 s after its script starts) and runs on the shared copy (review A13)
-            let attempts = 0, acknowledged = false;
-
-            function trySend() {
-                if (acknowledged || newWindow.closed || attempts >= 25) return;
-                attempts++;
-                // The DB as it is now (it may have changed since the window opened); note what the window was
-                // sent, so broadcastToSubtools doesn't send the same again
-                const payload = DB.data || { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] };
-                const view = DeviceView.message();
-                entry.sent = subtoolSyncKey(payload, view);
-                newWindow.postMessage({ type: 'sitkaGit_db', payload, view }, SITKA_MSG_ORIGIN);
-            }
-
-            // Listen for acknowledgment from subtool
-            const ackHandler = (e) => {
-                if (e.source === newWindow && e.data?.type === 'sitkaGit_ready') {
-                    acknowledged = true;
-                    entry.ready = true;   // it has the database: its updates are taken from now on
-                    window.removeEventListener('message', ackHandler);
-                }
-            };
-            window.addEventListener('message', ackHandler);
-
-            // Initial send + retry at 200ms intervals
-            trySend();
-            const retryTimer = setInterval(() => {
-                if (acknowledged || newWindow.closed || attempts >= 25) clearInterval(retryTimer);
-                else trySend();
-            }, 200);
-        }
-
-        // Listen for subtool updates via postMessage
-        window.addEventListener('message', (e) => {
-            const isUpdate = e.data?.type === 'sitkaGit_db_update' && !!e.data.payload;
-            if (!isUpdate && e.data?.type !== 'sitkaGit_ping') return;
-            // Only accept DB updates from subtool windows this page opened (ROADMAP 0.4)
-            if (!openSubtools.some(entry => (entry.win || entry) === e.source)) {
-                // A tool window that outlived the page that opened it (SitkaTools was reloaded): tell it, so it asks
-                // the user to reopen it from here instead of looking as if its changes were kept
-                if (e.source) {
-                    try { e.source.postMessage({ type: 'sitkaGit_not_linked', about: e.data.type }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
-                }
-                if (isUpdate) console.warn('[SitkaTools] Ignored sitkaGit_db_update from a window SitkaTools did not open');
-                return;
-            }
-            if (!isUpdate) return;   // a known window checking its link: nothing to do
-            // 🛡️ Never take a database from a tool that doesn't have the current one (cost audit 2026-10-26): a window that
-            // hasn't said it got the database (sitkaGit_ready) has nothing of ours to send, and an update without some of
-            // our lots, rooms or buildings (tools never remove them) would wipe them. Ignored; the tool is sent the current DB.
-            const from = openSubtools.find(entry => (entry.win || entry) === e.source);
-            if (!from?.ready) { console.warn('[SitkaTools] Ignored sitkaGit_db_update from a tool window that has not received the database yet'); return; }
-            if (toolUpdateWipes(e.data.payload)) {
-                console.warn('[SitkaTools] Refused a tool update with no lots, rooms, buildings or events');
-                showWarningToast(`An update from ${toolDisplayName(toolNameOfUrl(from.url))} was ignored: it had none of the database's lots, rooms, buildings or events. It has the current database now; redo the change there.`);
-                try { e.source.postMessage({ type: 'sitkaGit_db_update', payload: DB.data, view: DeviceView.message() }, SITKA_MSG_ORIGIN); } catch (_) { /* gone */ }
-                return;
-            }
-            // A tool that hadn't seen a lot, room or building made here yet (its copy was a moment behind): its change is
-            // taken, and what it hadn't seen is kept — tools never remove those
-            const restored = keepWhatToolHadntSeen(e.data.payload);
-
-            // Some subtools resync on open (EquipmentWizard); only a real change counts as unsaved
-            keepOwnSaveStamp(e.data.payload);
-            const changed = JSON.stringify(e.data.payload) !== JSON.stringify(DB.data);
-            DB.data = e.data.payload;
-            DB.ensureStructure();
-            if (changed) markUnsaved();
-
-            // Re-render all views with fresh data
-            updateStatusBar();
-            renderLotList();
-            updateLotIdSuggestion();
-            RoomManager.renderRoomList();
-            updateRoomStatusBar();
-            RoomManager.updateRoomDatalist();
-            BuildingManager.renderBuildingList();
-            Calendar.onDbChanged();
-            Calendar.render();
-            updateCalendarStatusBar();
-            updateIOStatusBar();
-
-            // Other open tools get this change now; the sender already has it (unless records it hadn't seen were kept)
-            broadcastToSubtools(restored ? null : e.source);
-
-            showSyncToast('Subtool has updated data — views refreshed automatically');
-        });
 
         // ---- Lot Type Changes ----
         lotTypeSelect.addEventListener('change', () => {
@@ -13809,7 +13387,6 @@
             exportBtn.classList.remove('unsaved');
             updateFolderUi();
             WorkCopy.flush();   // at once, so a save forgets the session even if the tab closes right after
-            if (typeof SaveRequired !== 'undefined' && SaveRequired) SaveRequired.hide();
         }
 
         // Warn before closing if there are unsaved changes
@@ -13858,8 +13435,7 @@
             }
 
             if (result.removedEntry || result.deletedEvents > 0) {
-                markUnsaved();
-                broadcastToSubtools(); // push fresh DB so open CLW windows see the missing TBA-1
+                markUnsaved();   // (markUnsaved's working-copy write hands the open tool the change too)
             }
             if (result.deletedEvents > 0) {
                 // The calendar and terminal still show the deleted events — redraw them
@@ -13922,33 +13498,11 @@
             return `Lot ${m.lotId} cuts clones ${day(m.realCut)}, ${rel(m.realDays)} its harvest ends (${day(m.harvestEnd)}). The projections cut them ${day(m.tbaCut)}, ${rel(m.tbaDays)}.`;
         }
 
-        // What a tool window was last sent (the DB without SitkaTools' save stamp, plus the view)
+        // What the open tool last had (the DB without SitkaTools' save stamp, plus the view): Tools measures its changes by it
         function subtoolSyncKey(payload, view) {
             return JSON.stringify({ db: { ...payload, _meta: undefined }, view });
         }
 
-        // Push the current DB to every open tool window via sitkaGit_db_update, so none keeps an old copy that its
-        // next edit would write back over newer work. Tools re-render without disrupting active editing and never
-        // reply to it. A window that already has exactly this DB is skipped, and so is `except` — the window
-        // whose update was just taken in.
-        function broadcastToSubtools(except) {
-            if (!DB.data) return;
-            const view = DeviceView.message();
-            const key = subtoolSyncKey(DB.data, view);
-            openSubtools.forEach(entry => {
-                const win = entry?.win;
-                if (!win || win.closed) return;
-                if (win === except || entry.sent === key) {
-                    entry.sent = key;
-                    return;
-                }
-                try {
-                    win.postMessage({ type: 'sitkaGit_db_update', payload: DB.data, view }, SITKA_MSG_ORIGIN);
-                    entry.sent = key;
-                } catch (_) { /* window gone */ }
-            });
-            Tools.push();   // and the tool open in this page
-        }
 
         // =====================================================
         // SitkaTools — Room Manager Module
@@ -17817,12 +17371,12 @@
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
-        // True once SitkaTools' DB has arrived (postMessage or the shared working copy).
+        // True once SitkaTools' DB has arrived (receiveDb).
         // Needed because ensureStructure() makes DB.data an empty DB from load time — adding an
         // event to that and sending it back would replace SitkaTools' whole DB.
         let dbLoaded = false;
 
-        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        // ---- The database from SitkaTools (receiveDb), and notifySitkaTools() after a change (root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----
@@ -18060,7 +17614,7 @@
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
             document.querySelector('.emoji-btn[data-emoji="📌"]').classList.add('selected');
 
-            // Notify SitkaTools via postMessage
+            // Tell SitkaTools
             notifySitkaTools();
 
             const hasTime = startTime || endTime;
@@ -18174,7 +17728,7 @@
                 DB.data._GeneralEvent.events = DB.data._GeneralEvent.events.filter(e => e.id !== id);
             }
 
-            // Notify SitkaTools via postMessage
+            // Tell SitkaTools
             notifySitkaTools();
 
             renderEventList();
@@ -18229,7 +17783,7 @@
             // Set default date to today (local)
             eventDateInput.value = todayStr();
 
-            // Wait for postMessage delivery from SitkaTools — render empty state initially
+            // Render the empty state until SitkaTools hands over the DB (receiveDb)
             reconcileLog();
             renderEventList();
             updateStatusBar();
@@ -18372,7 +17926,7 @@
             return localDateStr(new Date(y, m - 1, d + days));
         }
 
-        // ---- postMessage Convention ----
+        // ---- The database from SitkaTools (receiveDb; root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----
@@ -20736,7 +20290,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return n;
         }
 
-        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        // ---- The database from SitkaTools (receiveDb), and notifySitkaTools() after a change (root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----
@@ -22833,7 +22387,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             updateGenerateBtnLabel();
             updateProjectBtnState();
 
-            // Notify SitkaTools via postMessage
+            // Tell SitkaTools
             notifySitkaTools();
 
             // Holiday conflicts — notify only, never auto-reschedule
@@ -23152,7 +22706,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 );
             }
 
-            // Notify SitkaTools via postMessage
+            // Tell SitkaTools
             notifySitkaTools();
 
             populateLotSelector();
@@ -23497,7 +23051,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
         }
 
-        // True once a DB has arrived (postMessage delivery or file import).
+        // True once a DB has arrived (receiveDb, or a file import).
         // Needed because ensureStructure() makes DB.data truthy from load time.
         let dbLoaded = false;
 
@@ -23570,7 +23124,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // "👀 view only" in the building list: on the office only the daily list is view only
         const viewOnlyTag = () => DeviceView.building ? T('👀 view only') : T('👀 daily list view only');
 
-        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        // ---- The database from SitkaTools (receiveDb), and notifySitkaTools() after a change (root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----
@@ -26757,7 +26311,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         const $ = id => document.getElementById(id);
 
-        // True once a DB has arrived (postMessage delivery or file import).
+        // True once a DB has arrived (receiveDb, or a file import).
         // Needed because ensureStructure() makes DB.data truthy from load time.
         let dbLoaded = false;
 
@@ -33659,7 +33213,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             renderConfigure(); // idempotent — skips rebuild when nothing changed
         }
 
-        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        // ---- The database from SitkaTools (receiveDb), and notifySitkaTools() after a change (root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----
@@ -33929,7 +33483,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return roomCodeForName(DB.lots[lotId]?.destRoom);
         }
 
-        // ---- postMessage Convention — receive DB from SitkaTools, send updates back ----
+        // ---- The database from SitkaTools (receiveDb), and notifySitkaTools() after a change (root CLAUDE.md → "Tool Overlays") ----
         DB.ensureStructure();
 
         // ---- Building device view (root CLAUDE.md → "Building Device View") ----

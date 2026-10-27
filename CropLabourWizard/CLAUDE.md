@@ -362,9 +362,10 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 ## Relationship to SitkaTools
 
 - **Office only** (`DeviceView` with `OFFICE_ONLY: true`): on a building device SitkaTools hides the link, and if opened anyway the page is covered with "Office only" before anything loads.
-- Gets the DB and sends changes through the postMessage convention, with the shared `WorkCopy` and `LinkLost` snippets (root `CLAUDE.md` → "Cross-Window Database Workflow" and "Shared Working Copy"). No other browser storage.
-  - `sitkaGit_db`: ack, then full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderScheduleList`, `updateStatusBar`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`) and a toast.
-  - `sitkaGit_db_update` (e.g. SitkaTools' deletion hook): refreshes selectors, schedule list, status bar and buttons only — no offset rebuild, no toast, no reply — so editing isn't interrupted.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL CropLabourWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `CropLabourWizard/CropLabourWizard.html` only points there.
+- Works on SitkaTools' own database (root `CLAUDE.md` → "Tool Overlays"). No browser storage.
+  - `sitkaGit_db` (as it opens): full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderScheduleList`, `updateStatusBar`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`) and a toast.
+  - `sitkaGit_db_update` (SitkaTools changed the DB while it's open): refreshes selectors, schedule list, status bar and buttons only — no offset rebuild, no toast, no notify back — so editing isn't interrupted.
   - `notifySitkaTools()` after every change (generate, clear, delete, recipe save, projections).
 
 ### DB Keys
