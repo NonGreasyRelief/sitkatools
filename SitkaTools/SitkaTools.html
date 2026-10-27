@@ -85,12 +85,14 @@
         .tab {
             padding: 8px 20px;
             border-radius: var(--radius) var(--radius) 0 0;
-            border: none;
+            /* An invisible border to fade from: with none, the border's colour was the text's, and the active tab's border
+               flashed near-white as it faded to dark. It fades in and out slowly too (0.8 s; user request 2026-10-27) */
+            border: 1px solid transparent;
             background: transparent;
             color: var(--text-secondary);
             cursor: pointer;
             font-size: 0.95rem;
-            transition: all 0.2s;
+            transition: color 0.2s, background-color 0.2s, border-color 0.8s ease;
         }
 
         .tab:hover {
@@ -7491,10 +7493,6 @@
     <main class="main">
         <!-- Calendar View Tab (default) -->
         <section class="tab-content active" id="calendar-view">
-            <div class="status-bar empty" id="calendarStatusBar">
-                <span class="status-text">No database loaded. Import a DB file to see calendar events.</span>
-            </div>
-
             <!-- Terminal-style upcoming events panel -->
             <div class="terminal-panel" id="terminalPanel">
                 <div class="terminal-header">
@@ -9311,6 +9309,7 @@
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
+                toastDbLoaded();
                 return true;
             } catch (err) {
                 alert('Failed to parse JSON file: ' + err.message);
@@ -9913,7 +9912,6 @@
             BuildingManager.renderBuildingList();
             Calendar.onDbChanged();
             Calendar.render();
-            updateCalendarStatusBar();
             updateIOStatusBar();
             updateSplitCard();
         }
@@ -11050,6 +11048,7 @@
                 clearUnsaved();
                 refreshAllViews();
                 hideOverlay();
+                toastDbLoaded();
                 if (pickups) this.promptFacility();
                 if (arrived.length) this.promptPickups(arrived);
                 if (closedHere.length) setTimeout(() => showSyncToast(`🗄️ The office closed out lot${closedHere.length === 1 ? '' : 's'} ${closedHere.join(', ')} — ${closedHere.length === 1 ? 'it leaves' : 'they leave'} this building's file with your next save`), 0);
@@ -13397,7 +13396,6 @@
                 // The calendar and terminal still show the deleted events — redraw them
                 Calendar.onDbChanged();
                 Calendar.render();
-                updateCalendarStatusBar();
             }
             return result;
         }
@@ -16412,20 +16410,11 @@
 
 
 
-        function updateCalendarStatusBar() {
-            const bar = $('calendarStatusBar');
-            if (!DB.data) {
-                bar.className = 'status-bar empty';
-                bar.innerHTML = '<span class="status-text">No database loaded. Import a DB file to see calendar events.</span>';
-                return;
-            }
-
-            const eventCount = Calendar.shownEvents.length;
-            bar.className = 'status-bar loaded';
-            bar.innerHTML = `
-                <span class="status-text">Database loaded: <strong>${escapeHtml(DB.fileName || '')}</strong></span>
-                <span class="lot-count">${eventCount} event${eventCount !== 1 ? 's' : ''}</span>
-            `;
+        // The calendar page's "Database loaded" bar is a toast as a database opens now (user request 2026-10-27): the calendar
+        // gets the space. A toast the opening shows after it (a lot picked up, a folder, a restore) takes its place.
+        function toastDbLoaded() {
+            const n = Calendar.shownEvents.length;
+            showSyncToast(`Database loaded: ${DB.fileName || 'database'} · ${n} event${n === 1 ? '' : 's'}`);
         }
 
         // =====================================================
@@ -16568,7 +16557,6 @@
 
                         markUnsaved();
                         Calendar.render();
-                        updateCalendarStatusBar();
 
                         const skipped = imported.length - added;
                         let msg = `Imported ${added} new event${added !== 1 ? 's' : ''} from .ICS file.`;
