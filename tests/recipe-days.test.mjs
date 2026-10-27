@@ -39,8 +39,8 @@ export async function run(b, BASE) {
     // A mother recipe: the life ends at Retire Mothers
     await b.run(clw, `document.getElementById('recipeNewVegBtn').click();`, { user: true });
     ed = await editorDays();
-    check('a mother recipe: Prune Mothers from day 43, the replacement cut on day 167, Retire Mothers on day 195 of the plant\'s life',
-        ed.mother_prune === "day 43 of the plant's life" && ed.clone_cut === "day 167 of the plant's life" && ed.retire === "day 195 of the plant's life", JSON.stringify(ed));
+    check('a mother recipe (the built-in\'s copy): Top Mothers from day 36, the second up-pot on day 90, Retire Mothers on day 125 of the plant\'s life',
+        ed.mother_top === "day 36 of the plant's life" && ed.mother_uppot2 === "day 90 of the plant's life" && ed.retire === "day 125 of the plant's life", JSON.stringify(ed));
     await b.run(clw, `document.getElementById('recipeEditorCancelBtn').click(); closeRecipeManager();`, { user: true });
 
     // ---- Preview: the lot's own dates ----
@@ -92,12 +92,12 @@ export async function run(b, BASE) {
         renderRecipeList(); [...document.querySelectorAll('#recipeList .recipe-row')].find(r => r.textContent.includes('With supplies')).querySelector('.recipe-actions button[title="Print this recipe"]').click();`);
     check('…and a recipe\'s supplies, with quantity and per crop / per plant at a task', JSON.stringify(p2?.supplies) === JSON.stringify(['Coco block 1 block per plant at 🪴 Transplanting to Flower Room', 'Trellis 120 ft per crop']), JSON.stringify(p2?.supplies));
 
-    // A mother recipe: its life ends at Retire Mothers, and its repeats get a column
-    const p3 = await printed(`printRecipe(Object.assign(cloneRecipeData(VEG_STARTER_RECIPE), { id: 'mom1', name: 'Mothers 6 months' }));`);
-    const f3 = (p3?.facts || []).join(' | '), prune = p3?.rows?.find(r => r.Task.includes('Prune Mothers')) || {};
-    check('printing a mother recipe: the plants live 195 days to Retire Mothers, the replacement cut 28 days before; Prune Mothers every 14 days from day 43',
-        f3.includes('the plants live 195 days') && f3.includes('Retire Mothers (day 195)') && f3.includes('28 days before the mothers retire') && p3.heads.includes('Repeats')
-        && prune.Repeats === 'every 14 days' && prune.Day === "day 43 of the plant's life", JSON.stringify({ f3, prune }));
+    // A mother recipe (the built-in): its life ends at Retire Mothers, and its repeats get a column
+    const p3 = await printed(`printRecipe(getRecipeById('sitka-mother'));`);
+    const f3 = (p3?.facts || []).join(' | '), top = p3?.rows?.find(r => r.Task.includes('Top Mothers')) || {};
+    check('printing the built-in mother recipe: the plants live 125 days to Retire Mothers, the replacement cut 27 days before; Top Mothers on day 36, no Repeats column',
+        f3.includes('the plants live 125 days') && f3.includes('Retire Mothers (day 125)') && f3.includes('27 days before the mothers retire') && !p3.heads.includes('Repeats')
+        && top.Day === "day 36 of the plant's life", JSON.stringify({ f3, top, heads: p3?.heads }));
 
     return results;
 }

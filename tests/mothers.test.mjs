@@ -23,6 +23,24 @@ export function motherDb() {
     return db;
 }
 
+// A mother recipe with a replacement cut that starts the next mother lot (clone_cut), so a Mother room can project its next
+// mothers: the generic starter 🌿 New Mother Recipe opened before it started from the built-in mother recipe (2026-10-27)
+const SITKA_MOTHER_RECIPE_TYPES = 'clone_cut_prep,planting,clone_room_clean,transplant,mother_top,mother_pick1,mother_uppot1,mother_pick2,mother_uppot2,clone_cut,retire';
+export const MOTHER_TEST_RECIPE = {
+    kind: 'vegetative',
+    version: 1,
+    tasks: [
+        { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
+        { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
+        { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+        { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+        { name: 'Prune Mothers', emoji: '✂️', taskType: 'mother_prune', reference: 'planting', defaultOffset: 28, every: 14 },
+        { name: 'Top-dress Mothers', emoji: '🧪', taskType: 'mother_topdress', reference: 'planting', defaultOffset: 42, every: 28 },
+        { name: 'Cut Clones to Replace Mothers', emoji: '🌿', taskType: 'clone_cut', reference: 'retire', defaultOffset: -28 },
+        { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 180 }
+    ]
+};
+
 export async function run(b, BASE) {
     const { results, check } = makeChecker();
     const main = await fresh(b);
@@ -30,12 +48,15 @@ export async function run(b, BASE) {
     await loadSingle(b, main, motherDb());
     const clw = await openTool(b, main, 'CropLabourWizard');
 
-    // ---- 🌿 New Mother Recipe: a vegetative starter ----
+    // ---- 🌿 New Mother Recipe: a vegetative recipe (a copy of the built-in mother recipe), here changed to the test's own ----
     await b.run(clw, `openRecipeManager(); document.getElementById('recipeNewVegBtn').click();`, { user: true });
+    const fromBuiltin = await b.run(clw, `return { kind: editorRecipe.kind, types: editorRecipe.tasks.map(t => t.taskType).join() };`);
+    check('🌿 New Mother Recipe starts from the built-in mother recipe', fromBuiltin.kind === 'vegetative' && fromBuiltin.types === SITKA_MOTHER_RECIPE_TYPES, JSON.stringify(fromBuiltin));
+    await b.run(clw, `showRecipeEditor(Object.assign(${JSON.stringify(MOTHER_TEST_RECIPE)}, { id: generateRecipeId(), name: 'New Mother Recipe' }));`);
     const ed = await b.run(clw, `return { kind: document.getElementById('recipeKindLabel').textContent, refs: [...document.querySelector('#recipeTaskBody select.t-ref').options].map(o => o.value),
         rows: [...document.querySelectorAll('#recipeTaskBody tr')].map(tr => [tr.querySelector('input.t-type').value, tr.querySelector('input.t-every').value, tr.querySelector('input.t-every').disabled]),
         box: document.getElementById('recipeTurnaround').textContent };`);
-    check('🌿 New Mother Recipe opens a vegetative recipe: anchors cloning / planting / retire only', ed.kind.includes('Vegetative') && ed.refs.join() === 'cloning,planting,retire', JSON.stringify(ed.refs));
+    check('a mother recipe in the editor: anchors cloning / planting / retire only', ed.kind.includes('Vegetative') && ed.refs.join() === 'cloning,planting,retire', JSON.stringify(ed.refs));
     check('…with Prune every 14 days and Top-dress every 28; anchors and clone cuts can\'t repeat',
         JSON.stringify(ed.rows.find(r => r[0] === 'mother_prune')) === '["mother_prune","14",false]' && ed.rows.find(r => r[0] === 'retire')[2] && ed.rows.find(r => r[0] === 'clone_cut')[2], JSON.stringify(ed.rows));
     check('…and says the mothers are retired 180 days after planting, the replacement cut 28 days before', ed.box.includes('180 days') && ed.box.includes('28 days'), ed.box);
@@ -139,7 +160,7 @@ export async function run(b, BASE) {
     const noCut = await b.run(clw, `const r = JSON.parse(JSON.stringify(DB.data._CropLabourWizard.recipes['${rid}'])); r.id = 'nocut1'; r.name = 'No cut'; r.tasks = r.tasks.filter(t => t.taskType !== 'clone_cut');
         DB.data._CropLabourWizard.recipes.nocut1 = r; DB.lots.M100._tool_CropLabourWizard.recipeId = 'nocut1'; const res = resolveProjectionRoom('M100');
         DB.lots.M100._tool_CropLabourWizard.recipeId = '${rid}'; delete DB.data._CropLabourWizard.recipes.nocut1; return res.disabledReason || '';`);
-    check('a mother recipe with no replacement cut can\'t be projected, and says why', noCut.includes('no "Cut Clones to Replace Mothers"'), noCut);
+    check('a mother recipe with no replacement cut can\'t be projected, and says why', noCut.includes('no replacement cut that starts the next mother lot'), noCut);
 
     await leave(b, clw); await b.send('browsingContext.close', { context: clw });
     // SitkaTools: a new mother lot in the Mother room takes its first projected slot; the Lot Manager has a Mother stage

@@ -1,9 +1,10 @@
-// The three built-in recipes (Sitka Standard, 9-week bloom): 20-day veg with Saturday cuts (the default), 19-day with Sunday
-// cuts, 18-day with Monday cuts. Every room harvests on a Friday, the next lot transplants the Monday after (the day after
-// Tank & Irrigation Clean) and flips on the Friday, a new lot every 70 days.
+// The three built-in bloom recipes (Sitka Standard, 9-week bloom): 20-day veg with Saturday cuts (the default), 19-day with
+// Sunday cuts, 18-day with Monday cuts. Every room harvests on a Friday, the next lot transplants the Monday after (the day after
+// Tank & Irrigation Clean) and flips on the Friday, a new lot every 70 days. Plus the built-in 🌿 mother recipe (the user's own,
+// 2026-10-27): mothers retired 110 days after planting, every task once, the replacement cut off by default.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
 
-export const title = 'built-in recipes: three Sitka Standard recipes, harvest Friday, transplant Monday, every 70 days';
+export const title = 'built-in recipes: three Sitka Standard recipes, harvest Friday, transplant Monday, every 70 days; the Sitka Default mother recipe';
 
 const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekday = s => { const [y, m, d] = s.split('-').map(Number); return DAY[new Date(y, m - 1, d, 12).getDay()]; };
@@ -16,6 +17,11 @@ function db() {
             cloningRoom: 'Clone 1', vegRoom: null, destRoom: 'Grow 1', dryRoom: null, trimRoom: null, currentRoom: 'Clone 1', plantCount: 100 };
         d.rooms.R1G1.assignedLots.push(id);
     }
+    // A Mother room with a mother lot in it, for the built-in mother recipe
+    d.rooms.R1MO = { name: 'Mother 1', description: null, createdDate: '2026-01-01', assignedLots: ['M500'], isFlowering: false, buildingId: 'B1', designation: 'Mother' };
+    d.buildings.B1.assignedRooms.push('R1MO');
+    d.lots.M500 = { name: 'M500', strain: 'Test Kush', stage: 'mother', createdDate: '2026-10-19', closedDate: null, type: 'new-lot', startPlantCount: 12,
+        cloningRoom: 'Clone 1', vegRoom: null, destRoom: 'Mother 1', dryRoom: null, trimRoom: null, currentRoom: 'Clone 1', plantCount: 12 };
     return d;
 }
 
@@ -34,21 +40,23 @@ export async function run(b, BASE) {
     check('the Task Recipe dropdown lists the three built-ins first, the 20-day Saturday-cut recipe on top',
         JSON.stringify(sel.form.slice(0, 3)) === JSON.stringify([['sitka-9week', 'Sitka Standard: 20-day veg, Saturday cuts (built-in)'],
             ['sitka-9week-19veg', 'Sitka Standard: 19-day veg, Sunday cuts (built-in)'], ['sitka-9week-18veg', 'Sitka Standard: 18-day veg, Monday cuts (built-in)']]), JSON.stringify(sel.form));
+    check('…then the built-in mother recipe, marked 🌿', JSON.stringify(sel.form[3]) === JSON.stringify(['sitka-mother', '🌿 Sitka Default mother recipe (built-in)']), JSON.stringify(sel.form));
     check('…and a lot with no schedule starts on the default', sel.formValue === 'sitka-9week', sel.formValue);
-    check('the projection recipe dropdown offers all three, the default picked', sel.projValue === 'sitka-9week' && sel.proj.filter(x => x[1].endsWith('(built-in)')).length === 3, JSON.stringify(sel.proj));
+    check('the projection recipe dropdown offers the three bloom built-ins, not the mother recipe, the default picked',
+        sel.projValue === 'sitka-9week' && sel.proj.filter(x => x[1].endsWith('(built-in)')).length === 3 && !sel.proj.some(x => x[0] === 'sitka-mother'), JSON.stringify(sel.proj));
     await b.run(clw, `openRecipeManager();`, { user: true });
     const rows = await b.run(clw, `return [...document.querySelectorAll('#recipeList .recipe-row')].map(r => ({ name: r.querySelector('.recipe-row-name').textContent, btns: [...r.querySelectorAll('.recipe-actions button')].map(x => x.textContent) }));`);
     const builtinRows = rows.filter(r => r.name.includes('built-in'));
-    check('the Recipe Manager shows three built-ins, each with only Duplicate, Export and Print', builtinRows.length === 3 && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export,🖨️ Print'), JSON.stringify(rows));
+    check('the Recipe Manager shows four built-ins (the mother recipe too), each with only Duplicate, Export and Print', builtinRows.length === 4 && builtinRows.some(r => r.name.includes('Sitka Default mother recipe')) && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export,🖨️ Print'), JSON.stringify(rows));
     await b.run(clw, `closeRecipeManager();`);
 
     // ---- The room turnaround each one gives ----
-    const turn = await b.run(clw, `return BUILTIN_RECIPES.map(r => { const t = recipeTurnaround(r); return [r.id, t.cutBefore, t.plantAfter, t.transplantAfter, t.spare, t.cycle]; });`);
+    const turn = await b.run(clw, `return BUILTIN_RECIPES.filter(r => !isVegRecipe(r)).map(r => { const t = recipeTurnaround(r); return [r.id, t.cutBefore, t.plantAfter, t.transplantAfter, t.spare, t.cycle]; });`);
     check('clones cut 27 / 26 / 25 days before harvest, planted 13 / 12 / 11 before, transplanted 3 days after, the day after Tank & Irrigation Clean, every 70 days',
         JSON.stringify(turn) === JSON.stringify([['sitka-9week', 27, -13, 3, 0, 70], ['sitka-9week-19veg', 26, -12, 3, 0, 70], ['sitka-9week-18veg', 25, -11, 3, 0, 70]]), JSON.stringify(turn));
-    const same = await b.run(clw, `const [a, ...rest] = BUILTIN_RECIPES; const differ = new Set();
+    const same = await b.run(clw, `const bloom = BUILTIN_RECIPES.filter(r => !isVegRecipe(r)), [a, ...rest] = bloom; const differ = new Set();
         for (const r of rest) r.tasks.forEach((t, i) => { const s = a.tasks[i]; if (t.taskType !== s.taskType || t.name !== s.name || t.reference !== s.reference) differ.add('shape:' + t.taskType); else if (t.defaultOffset !== s.defaultOffset) differ.add(t.taskType); });
-        return { n: BUILTIN_RECIPES.map(r => r.tasks.length), differ: [...differ].sort(), valid: BUILTIN_RECIPES.map(r => validateRecipe(r).length) };`);
+        return { n: bloom.map(r => r.tasks.length), differ: [...differ].sort(), valid: bloom.map(r => validateRecipe(r).length) };`);
     check('all three have the same 32 tasks and pass validation; only the transplant-, flip- and clone-cut days differ',
         same.n.join() === '32,32,32' && same.valid.join() === '0,0,0' && same.differ.join() === 'clone_cut,deploy_ipm,flip,hydrate_coco_blocks,ipm_spray_veg_second,layout_coco_blocks,prune,transplant,undercanopy_lights,veg_room_clean', JSON.stringify(same));
 
@@ -117,6 +125,59 @@ export async function run(b, BASE) {
     check('importing an exported built-in saves it under a new id, so the built-in doesn\'t hide it',
         imp.length === 1 && imp[0][0] !== 'sitka-9week-18veg' && imp[0][1] === 'Sitka Standard: 18-day veg, Monday cuts' && toast.includes('copy of the built-in'), JSON.stringify(imp) + ' ' + toast);
     check('…and the built-in is still the built-in', await b.run(clw, `return getRecipeById('sitka-9week-18veg') === BUILTIN_RECIPES[2] && [...document.getElementById('recipeSelect').options].filter(o => o.textContent.startsWith('Sitka Standard: 18-day')).length === 2;`));
+
+
+    // ---- 🌿 The built-in mother recipe (the user's own, 2026-10-27) ----
+    const mr = await b.run(clw, `const r = getRecipeById('sitka-mother'); return { builtin: isBuiltinRecipe(r), kind: r.kind, errs: validateRecipe(r),
+        tasks: r.tasks.map(t => [t.taskType, t.emoji, t.reference, t.defaultOffset, t.every || 0]), cut: r.tasks.find(t => t.taskType === 'clone_cut') };`);
+    check('the mother recipe is a valid built-in 🌿 vegetative recipe', mr.builtin && mr.kind === 'vegetative' && mr.errs.length === 0, JSON.stringify(mr));
+    check('…with the user\'s 11 tasks in date order, each once, 🍃 and 🪣 for the leaf pick and up-pots',
+        JSON.stringify(mr.tasks) === JSON.stringify([['clone_cut_prep', '✂️', 'cloning', 0, 0], ['planting', '🌱', 'cloning', 14, 0], ['clone_room_clean', '🧼', 'planting', 1, 0],
+            ['transplant', '🪴', 'planting', 16, 0], ['mother_top', '✂️', 'planting', 21, 0], ['mother_pick1', '🌿', 'planting', 37, 0], ['mother_uppot1', '🪣', 'planting', 46, 0],
+            ['mother_pick2', '🍃', 'planting', 56, 0], ['mother_uppot2', '🪣', 'planting', 75, 0], ['clone_cut', '🌿', 'retire', -27, 0], ['retire', '🍂', 'planting', 110, 0]]), JSON.stringify(mr.tasks));
+    check('…the replacement cut (the next mothers\' Day 0, 27 days before retiring) can be switched on, and is off by default', mr.cut?.hasToggle === true && mr.cut.defaultEnabled === false, JSON.stringify(mr.cut));
+    // 🌿 New Mother Recipe starts from it
+    await b.run(clw, `openRecipeManager(); document.getElementById('recipeNewVegBtn').click();`, { user: true });
+    const nm = await b.run(clw, `return { name: document.getElementById('recipeNameInput').value, id: editorRecipe.id, kind: editorRecipe.kind,
+        types: [...document.querySelectorAll('#recipeTaskBody tr')].map(tr => tr.querySelector('input.t-type').value) };`);
+    check('🌿 New Mother Recipe opens a copy of it, under a new id', nm.name === 'New Mother Recipe' && nm.id !== 'sitka-mother' && nm.kind === 'vegetative' &&
+        nm.types.join() === mr.tasks.map(t => t[0]).join(), JSON.stringify(nm));
+    await b.run(clw, `document.getElementById('recipeEditorCancelBtn').click(); closeRecipeManager();`, { user: true });
+    // A DB whose task-type list still has the placeholder 📋 for these types (a user recipe saved them so): Generate puts the recipe's in
+    await b.run(clw, `for (const t of ['mother_pick2', 'mother_uppot1', 'mother_uppot2']) DB.data._CropLabourWizard.taskTypes[t] = { name: t, emoji: '📋', roomPhase: null };`);
+    await pickLot('M500');
+    await b.run(clw, `const r = document.getElementById('recipeSelect'); r.value = 'sitka-mother'; r.dispatchEvent(new Event('change'));
+        document.getElementById('plantingDate').value = '2026-10-24'; refreshPreview(); window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    const mev = await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === 'M500').map(e => [e.taskType, e.date, e.repeat || 0]);`);
+    const mcfg = await b.run(main, `return DB.data.lots.M500._tool_CropLabourWizard;`);
+    const from = (t) => mev.filter(e => e[0] === t).map(e => daysBetween('2026-11-07', e[1]));
+    check('generated for a mother lot: saved as a mother lot with its recipe', mcfg?.recipeId === 'sitka-mother' && mcfg.kind === 'vegetative', JSON.stringify(mcfg));
+    check('…planting Day 0 + 14, clone room cleaned the day after, transplanted planting + 16, mothers retired planting + 110',
+        mev.find(e => e[0] === 'planting')?.[1] === '2026-11-07' && from('clone_room_clean').join() === '1' && from('transplant').join() === '16' && from('retire').join() === '110', JSON.stringify(mev));
+    check('…each task once on its day: topped planting + 21, leaves picked + 37 and + 56, up-pots + 46 and + 75; no repeats',
+        !mev.some(e => e[2]) && from('mother_top').join() === '21' && from('mother_pick1').join() === '37' && from('mother_uppot1').join() === '46' && from('mother_uppot2').join() === '75' && from('mother_pick2').join() === '56',
+        JSON.stringify({ top: from('mother_top'), pick1: from('mother_pick1') }));
+    check('…the replacement cut is off, so not generated; no flip, harvest or trim', !mev.some(e => ['flip', 'harvest', 'trim', 'clone_cut'].includes(e[0])), JSON.stringify(mev));
+    const reg = await b.run(main, `const t = DB.data._CropLabourWizard.taskTypes; return ['mother_pick2', 'mother_uppot1', 'mother_uppot2', 'mother_top'].map(k => t[k]?.emoji);`);
+    check('…and the task-type list has the recipe\'s emoji, so the calendar dots match the titles', reg.join() === '🍃,🪣,🪣,✂️', reg.join());
+    check('Project Crop is offered for the Mother room', (await b.run(clw, `return resolveProjectionRoom('M500').disabledReason;`)) === null);
+    // With the cut off, the next mothers start 27 days before the retire day (planting + 83)
+    await b.run(clw, `window.confirm = () => true; generateProjectionsForRoom('R1MO');`);
+    await b.sleep(200);
+    const tba1 = await b.run(main, `return DB.data._CropLabourWizard.projectedLots['R1MO-TBA-01']?.config?.plantingDate || null;`);
+    check('…with the cut off, the next mothers\' Day 0 is 27 days before Retire Mothers', tba1 && daysBetween('2026-11-07', tba1) === 83, String(tba1));
+    // Switched on and moved to line up with a flowering lot's cut (3 days later): generated there, and the next mothers follow it
+    await pickLot('M500');
+    await b.run(clw, `const i = taskOffsets.findIndex(e => e.def.taskType === 'clone_cut'); document.getElementById('check_' + i).click();`, { user: true });
+    await b.run(clw, `const e = taskOffsets.find(e => e.def.taskType === 'clone_cut'); e.offset = -24; refreshPreview(); window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    const cutOn = await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === 'M500' && e.taskType === 'clone_cut').map(e => e.date);`);
+    check('…switched on and moved 3 days later, the cut is generated on its day (planting + 86)', cutOn.length === 1 && daysBetween('2026-11-07', cutOn[0]) === 86, JSON.stringify(cutOn));
+    await b.run(clw, `window.confirm = () => true; generateProjectionsForRoom('R1MO');`);
+    await b.sleep(200);
+    const tba1b = await b.run(main, `return DB.data._CropLabourWizard.projectedLots['R1MO-TBA-01']?.config?.plantingDate || null;`);
+    check('…and Project Crop starts the next mothers on it', tba1b === cutOn[0], `${tba1b} vs ${cutOn[0]}`);
 
     return results;
 }

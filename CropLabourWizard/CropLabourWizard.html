@@ -1309,11 +1309,39 @@
             ]
             };
         }
-        // The default keeps the old built-in's id, so lots scheduled with it still resolve (their dates stay as generated)
+        // ---- Built-in 🌿 mother recipe (user decision 2026-10-27) ----
+        // The user's own mother recipe, made a built-in. Every task happens once. Mothers are replaced by clones cut alongside a
+        // flowering lot's (27 days before that lot's harvest, not the same lot each time), so "Cut Clones to Replace Mothers"
+        // (clone_cut: the next mother lot's Day 0, for Mother-room projections) is off by default: switch it on for a lot and
+        // move it in the preview to line it up with a flowering lot's cut. Off, projections still count the next mothers from
+        // 27 days before Retire Mothers.
+        // Tasks in date order (the room split compares positions with Transplanting: all after it are in the Mother room).
+        const SITKA_MOTHER_RECIPE = {
+            id: 'sitka-mother',
+            name: 'Sitka Default mother recipe',
+            kind: 'vegetative',
+            version: 1,
+            tasks: [
+                { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
+                { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
+                { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+                { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 16 },
+                { name: 'Top Mothers', emoji: '✂️', taskType: 'mother_top', reference: 'planting', defaultOffset: 21 },
+                { name: 'First leaf pick (Mothers)', emoji: '🌿', taskType: 'mother_pick1', reference: 'planting', defaultOffset: 37 },
+                { name: 'Up-Pot to 5-7 Gal', emoji: '🪣', taskType: 'mother_uppot1', reference: 'planting', defaultOffset: 46 },
+                { name: 'Second leaf pick (Mothers)', emoji: '🍃', taskType: 'mother_pick2', reference: 'planting', defaultOffset: 56 },
+                { name: 'Up-Pot to 8-10 Gal', emoji: '🪣', taskType: 'mother_uppot2', reference: 'planting', defaultOffset: 75 },
+                { name: 'Cut Clones to Replace Mothers', emoji: '🌿', taskType: 'clone_cut', reference: 'retire', defaultOffset: -27, hasToggle: true, defaultEnabled: false },
+                { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 110 }
+            ]
+        };
+        // The default keeps the old built-in's id, so lots scheduled with it still resolve (their dates stay as generated).
+        // The bloom built-ins first, then the mother recipe.
         const BUILTIN_RECIPES = [
             sitkaStandardRecipe('sitka-9week', 'Sitka Standard: 20-day veg, Saturday cuts', 20),
             sitkaStandardRecipe('sitka-9week-19veg', 'Sitka Standard: 19-day veg, Sunday cuts', 19),
-            sitkaStandardRecipe('sitka-9week-18veg', 'Sitka Standard: 18-day veg, Monday cuts', 18)
+            sitkaStandardRecipe('sitka-9week-18veg', 'Sitka Standard: 18-day veg, Monday cuts', 18),
+            SITKA_MOTHER_RECIPE
         ];
         // The default: new lots, projections, ＋ New Recipe, and any lot whose recipe is missing
         const BUILTIN_RECIPE = BUILTIN_RECIPES[0];
@@ -1332,20 +1360,6 @@
         const recipeAnchorList = r => isVegRecipe(r) ? VEG_ANCHORS : BLOOM_ANCHORS;
         const mandatoryTasks = r => isVegRecipe(r) ? ['planting', 'retire'] : ['planting', 'flip', 'harvest'];
         const DEFAULT_RETIRE_DAYS = 180;   // planting → Retire Mothers, when a recipe has no retire task
-        const VEG_STARTER_RECIPE = {
-            kind: 'vegetative',
-            version: 1,
-            tasks: [
-                { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
-                { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
-                { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
-                { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
-                { name: 'Prune Mothers', emoji: '✂️', taskType: 'mother_prune', reference: 'planting', defaultOffset: 28, every: 14 },
-                { name: 'Top-dress Mothers', emoji: '🧪', taskType: 'mother_topdress', reference: 'planting', defaultOffset: 42, every: 28 },
-                { name: 'Cut Clones to Replace Mothers', emoji: '🌿', taskType: 'clone_cut', reference: 'retire', defaultOffset: -28 },
-                { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: DEFAULT_RETIRE_DAYS }
-            ]
-        };
 
         // ---- Repeating tasks: "every N days" (user decision 2026-10-23) ----
         // A recipe task may repeat every N days (`every`, 1–365) from its own date until the crop's end — Retire Mothers in a
@@ -1795,7 +1809,7 @@
                 if (!r || !Array.isArray(r.tasks)) continue;
                 const opt = document.createElement('option');
                 opt.value = r.id;
-                opt.textContent = isBuiltinRecipe(r) ? `${r.name} (built-in)` : isVegRecipe(r) ? `🌿 ${r.name}` : r.name;
+                opt.textContent = `${isVegRecipe(r) ? '🌿 ' : ''}${r.name}${isBuiltinRecipe(r) ? ' (built-in)' : ''}`;
                 recipeSelect.appendChild(opt);
             }
             recipeSelect.value = [...recipeSelect.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
@@ -4278,6 +4292,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // Append to calendarEvents
             DB.data.calendarEvents.push(...newEvents);
+            // The task types just used go in the registry with this recipe's names and emoji, so other tools' labels and
+            // calendar dots match these titles. Built-ins are never saved, so this is how their types get in (2026-10-27)
+            mergeTaskTypeRegistry(recipe);
 
             // Store config (real lot: _tool_CropLabourWizard; projected lot: map entry .config).
             // recipeId is additive — lots without it (old DB files) fall back to the built-in.
@@ -4505,9 +4522,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const events = eventsForLot(lotId);
             if (events.length === 0) return null; // newest lot not scheduled yet — gate fails
             const mothers = isMotherRoom(DB.data.rooms?.[roomId]);
-            const cut = events.find(ev => ev.taskType === 'clone_cut');
-            let anchorDate = mothers ? (cut ? cut.date : null) : nextLotDay0(lotId, projectedSlotRecipe(roomId, 1, chainRecipeFor(roomId)));
-            // Mothers: the next mother lot starts on the replacement clone cut — without one there's no next generation to plan
+            // Mothers: the next mother lot starts on the replacement clone cut, or with that task switched off for the lot,
+            // its recipe's clone-cut days before Retire Mothers (nextLotDay0, as for the rest of the chain; 2026-10-27)
+            let anchorDate = mothers ? nextLotDay0(lotId) : nextLotDay0(lotId, projectedSlotRecipe(roomId, 1, chainRecipeFor(roomId)));
             if (!anchorDate && mothers) return null;
             if (!anchorDate) {
                 const cfg = getScheduleConfig(lotId);
@@ -5118,7 +5135,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (isMotherRoom(room) && !isPendingReprojection(roomId)) {
                 const r = chainRecipeFor(roomId);
                 if (!r) return { roomId, room, disabledReason: `${room.name}'s newest lot needs a 🌿 vegetative schedule before its next mothers can be projected.` };
-                if (!r.tasks.some(t => t.taskType === 'clone_cut')) return { roomId, room, disabledReason: `"${r.name}" has no "Cut Clones to Replace Mothers" task, so there's no next generation of mothers to plan.` };
+                if (!r.tasks.some(t => t.taskType === 'clone_cut')) return { roomId, room, disabledReason: `"${r.name}" has no replacement cut that starts the next mother lot (task type clone_cut): new mothers come from another lot's clones, so there's no next generation of mothers to plan.` };
             }
 
             return { roomId, room, disabledReason: null };
@@ -5462,8 +5479,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             base.version = 1;
             showRecipeEditor(base);
         });
+        // 🌿 New Mother Recipe starts from the built-in mother recipe (user decision 2026-10-27), as ＋ New Recipe does from the default
         $('recipeNewVegBtn').addEventListener('click', () => {
-            const base = cloneRecipeData(VEG_STARTER_RECIPE);
+            const base = cloneRecipeData(SITKA_MOTHER_RECIPE);
             base.id = generateRecipeId();
             base.name = 'New Mother Recipe';
             showRecipeEditor(base);

@@ -80,7 +80,7 @@ const clwHtml = fs.readFileSync(path.join(ROOT, 'CropLabourWizard', 'CropLabourW
 let clwScript = clwHtml.slice(clwHtml.indexOf('<script>') + 8, clwHtml.lastIndexOf('</script>'));
 const initAt = clwScript.lastIndexOf('init();');
 clwScript = clwScript.slice(0, initAt) + clwScript.slice(initAt + 'init();'.length);
-const CLW = new Function(clwScript + '\nreturn { DB, BUILTIN_RECIPE, VEG_STARTER_RECIPE, generateLotSchedule, defaultOffsetsSnapshot, mergeTaskTypeRegistry, validateRecipe };')();
+const CLW = new Function(clwScript + '\nreturn { DB, BUILTIN_RECIPE, generateLotSchedule, defaultOffsetsSnapshot, mergeTaskTypeRegistry, validateRecipe };')();
 Object.assign(globalThis, realTimers);
 
 // ---- Rooms and buildings ----
@@ -135,10 +135,25 @@ const bloomRecipe = {
         { inputId: 'inTN', name: 'Trellis net', unit: 'net', qty: IN.trellisQty, per: 'crop' }
     ]
 };
-// Mothers: CropLabourWizard's 🌿 New Mother Recipe starter, retired a year after planting
+// Mothers: the generic starter CropLabourWizard's 🌿 New Mother Recipe opened until 2026-10-27 (it now copies the built-in
+// mother recipe), kept here so the demo and its answer key stay the same; retired a year after planting
+const MOTHER_STARTER = {
+    kind: 'vegetative',
+    version: 1,
+    tasks: [
+        { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
+        { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
+        { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
+        { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 14 },
+        { name: 'Prune Mothers', emoji: '✂️', taskType: 'mother_prune', reference: 'planting', defaultOffset: 28, every: 14 },
+        { name: 'Top-dress Mothers', emoji: '🧪', taskType: 'mother_topdress', reference: 'planting', defaultOffset: 42, every: 28 },
+        { name: 'Cut Clones to Replace Mothers', emoji: '🌿', taskType: 'clone_cut', reference: 'retire', defaultOffset: -28 },
+        { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 180 }
+    ]
+};
 const motherRecipe = {
-    ...CLW.VEG_STARTER_RECIPE, id: 'demo-tens-mothers', name: 'Demo mothers (retired after a year)',
-    tasks: CLW.VEG_STARTER_RECIPE.tasks.map(t => est(t.taskType === 'retire' ? { ...t, defaultOffset: 365 } : t)),
+    ...MOTHER_STARTER, id: 'demo-tens-mothers', name: 'Demo mothers (retired after a year)',
+    tasks: MOTHER_STARTER.tasks.map(t => est(t.taskType === 'retire' ? { ...t, defaultOffset: 365 } : t)),
     inputs: [{ inputId: 'inMP', name: 'Mother pot', unit: 'pot', qty: 1, per: 'plant' }]
 };
 for (const r of [bloomRecipe, motherRecipe]) {
