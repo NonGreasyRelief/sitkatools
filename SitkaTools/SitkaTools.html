@@ -108,7 +108,11 @@
         /* Building device view: office work is hidden on a building device (see DeviceView) */
         body.building-device .office-only,
         body.building-device .terminal-delete-btn,
-        body.building-device .terminal-reschedule-btn { display: none !important; }
+        body.building-device .terminal-reschedule-btn,
+        body.building-device .terminal-complete-btn { display: none !important; }
+        /* A building device marks tasks done in DailyWizard or the Labour & Cost Wizard, with a floor manager's PIN */
+        .terminal-check.readonly, .completed-toggle-row.readonly .completed-checkbox, .completed-toggle-row.readonly .completed-label { cursor: default; pointer-events: none; }
+        .completed-elsewhere { font-size: 0.8rem; color: var(--text-secondary); margin: -4px 0 10px; }
 
 
 
@@ -1707,14 +1711,6 @@
 
         .event-tooltip .tt-row {
             color: var(--text-secondary);
-            word-break: break-word;
-        }
-
-        .event-tooltip .tt-notes {
-            margin-top: 6px;
-            padding-top: 6px;
-            border-top: 1px solid var(--border);
-            white-space: pre-wrap;
             word-break: break-word;
         }
 
@@ -14489,7 +14485,6 @@
                     ['strain', '🌿 Strain'],
                     ['taskType', '🛠️ Task'],
                     ['status', 'Status'],
-                    ['assignedTo', '👤 Assigned To'],
                     ['estimatedHours', '⏱ Est. Hours']
                 ];
                 for (const [key, label] of extra) {
@@ -14507,10 +14502,6 @@
                 const labour = this._labourTooltipText(event);
                 if (labour) html += `<div class="tt-row">${escapeHtml(labour)}</div>`;
 
-                // Notes / description — the long text that usually gets cut off
-                if (event.notes) {
-                    html += `<div class="tt-notes">${escapeHtml(String(event.notes))}</div>`;
-                }
 
                 return html;
             },
@@ -15948,16 +15939,19 @@
             renderEventPanel(event) {
                 const body = $('eventPanelBody');
 
-                // Determine which fields are modifiable. A building device can only mark the event completed —
-                // everything else about an event is office work it couldn't save.
+                // Determine which fields are modifiable. A building device changes nothing here (user request 2026-10-27): it
+                // marks a task done in DailyWizard or the Labour & Cost Wizard, with a floor manager's PIN, and everything else
+                // about an event is office work it couldn't save.
                 const readOnly = !!DeviceView.building;
                 // The title and lot are the tool's (moving an event to another lot would move its hours with it; review E6)
                 // A schedule task's dates are CropLabourWizard's: shown, not edited (user decision 2026-10-26)
                 const datesLocked = !readOnly && isScheduleTask(event);
                 const lockedDates = datesLocked ? ['date', ...(event.endDate ? ['endDate'] : [])] : [];
-                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'notes', 'status', 'assignedTo', 'estimatedHours']
+                const MODIFIABLE_FIELDS = readOnly ? [] : ['date', 'endDate', 'startTime', 'endTime', 'status', 'estimatedHours']
                     .filter(f => !datesLocked || (f !== 'date' && f !== 'endDate'));
-                const HIDDEN_FIELDS = ['type', 'id', 'completedBy'];   // the sign-off shows in the Completed row
+                // The sign-off shows in the Completed row; Notes and Assigned To aren't used (user request 2026-10-27: an
+                // event that has them keeps them, unseen)
+                const HIDDEN_FIELDS = ['type', 'id', 'completedBy', 'notes', 'assignedTo'];
 
                 // Build field list from the event, ensuring all modifiable fields are always present
                 // so users can add missing fields (e.g., add endDate to convert a single-day task to multi-day)
@@ -15966,10 +15960,11 @@
                 // Completed toggle row at top
                 const isCompleted = event.completed === true;
                 let html = `
-                    <div class="completed-toggle-row ${isCompleted ? 'completed' : ''}" id="completedToggleRow">
-                        <div class="completed-checkbox ${isCompleted ? 'checked' : ''}" id="completedCheckbox" title="Toggle completed status">${isCompleted ? '✓' : ''}</div>
+                    <div class="completed-toggle-row ${isCompleted ? 'completed' : ''}${readOnly ? ' readonly' : ''}" id="completedToggleRow">
+                        <div class="completed-checkbox ${isCompleted ? 'checked' : ''}" id="completedCheckbox" title="${readOnly ? "Marked done in DailyWizard (✅ Mark done) or the Labour &amp; Cost Wizard (Mark completed), with a floor manager's PIN" : 'Toggle completed status'}">${isCompleted ? '✓' : ''}</div>
                         <span class="completed-label" id="completedLabel">${isCompleted ? 'Completed' : 'Not Completed'}${isCompleted && event.completedBy?.name ? escapeHtml(` — signed off by ${event.completedBy.name}${event.completedBy.at ? ', ' + new Date(event.completedBy.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}`) : ''}</span>
                     </div>
+                    ${readOnly ? '<div class="completed-elsewhere">Marked done in DailyWizard (✅ Mark done) or the Labour &amp; Cost Wizard (Mark completed), with a floor manager’s PIN.</div>' : ''}
                 `;
 
                 // The real lot's clone cut and TBA-01's on different days
@@ -16034,8 +16029,8 @@
                     this.renderEventPanel(this.selectedEvent);
                     this.render();
                 };
-                if (completedCheckbox) completedCheckbox.addEventListener('click', toggleCompleted);
-                if (completedLabel) completedLabel.addEventListener('click', toggleCompleted);
+                if (completedCheckbox && !DeviceView.building) completedCheckbox.addEventListener('click', toggleCompleted);
+                if (completedLabel && !DeviceView.building) completedLabel.addEventListener('click', toggleCompleted);
 
                 // Live update on input change
                 body.querySelectorAll('.event-detail-input').forEach(input => {
@@ -16246,7 +16241,7 @@
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const event = this.eventById(btn.dataset.eventId);
-                        if (!event) return;
+                        if (!event || DeviceView.building) return;   // the office only (user request 2026-10-27)
                         event.completed = !event.completed;
                         if (!event.completed) delete event.completedBy;   // reopened: the sign-off no longer applies
                         markUnsaved();
@@ -16259,7 +16254,7 @@
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const event = this.eventById(btn.dataset.eventId);
-                        if (!event) return;
+                        if (!event || DeviceView.building) return;
                         event.completed = true;
                         markUnsaved();
                         this.render();
@@ -16385,7 +16380,7 @@
 
                 const isSelected = this.selectedEvent === event;
                 const isCompleted = event.completed === true;
-                const checkClass = isCompleted ? 'terminal-check' : 'terminal-check unchecked';
+                const checkClass = (isCompleted ? 'terminal-check' : 'terminal-check unchecked') + (DeviceView.building ? ' readonly' : '');
                 const checkIcon = isCompleted ? '✓' : '○';
 
                 // Show reschedule button for past-due events (not completed, endDate or date before today)
@@ -16396,7 +16391,7 @@
                 // Rows and their buttons find the event by its stable id (see eventById)
                 const ref = `data-event-id="${escapeHtml(event.id || '')}"`;
                 return `<div class="terminal-line ${proximityClass}${isSelected ? ' selected' : ''}" ${ref}>
-                    <span class="${checkClass}" ${ref} title="${isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
+                    <span class="${checkClass}" ${ref} title="${DeviceView.building ? (isCompleted ? 'Done' : 'Not done') + ' — Marked done in DailyWizard (✅ Mark done) or the Labour &amp; Cost Wizard (Mark completed), with a floor manager\'s PIN' : isCompleted ? 'Mark incomplete' : 'Mark complete'}">${checkIcon}</span>
                     <span class="terminal-date">${escapeHtml(displayDate || '')}${escapeHtml(timeDisplay)}</span>
                     <span class="terminal-title">${title}${lotInfo}</span>
                     ${showReschedule ? `<button class="terminal-complete-btn" ${ref} title="Mark complete">✓</button><button class="terminal-reschedule-btn" ${ref} title="Reschedule">↻ Reschedule</button>` : ''}
