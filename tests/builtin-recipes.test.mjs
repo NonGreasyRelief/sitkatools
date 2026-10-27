@@ -68,10 +68,11 @@ export async function run(b, BASE) {
     check('the default saves its id on the lot', a.cfg?.recipeId === 'sitka-9week', JSON.stringify(a.cfg));
     const plan = [[['clone_cut_prep', 'planting'], 'Sat'], [['layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights'], 'Sun'], [['transplant'], 'Mon'],
         [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri'], [['room_clean'], 'Sat'], [['tank_irrigation_clean'], 'Sun'], [['clone_cut'], 'Sat'],
-        [['tote_prep'], 'Tue'], [['bucking', 'lab_sample', 'trim_room_prep'], 'Wed'], [['trim'], 'Thu'], [['weigh_ship'], 'Fri']];
+        [['tote_prep'], 'Thu'], [['bucking', 'lab_sample', 'trim_room_prep'], 'Wed'], [['trim'], 'Thu'], [['weigh_ship'], 'Fri']];
     for (const [types, d] of plan) check(`20-day veg, cut Saturday: ${types.join(', ')} on ${d}`, days(a.on, types) === want(types, d), days(a.on, types));
     check('…planting Day 0 + 14, transplant planting + 16, flip + 20, harvest 9 weeks after flip',
         daysBetween('2026-10-24', a.on.planting) === 14 && daysBetween(a.on.planting, a.on.transplant) === 16 && daysBetween(a.on.planting, a.on.flip) === 20 && daysBetween(a.on.flip, a.on.harvest) === 63, JSON.stringify(a.on));
+    check('…totes prepared 6 days after harvest, in case the crop dries early', daysBetween(a.on.harvest, a.on.tote_prep) === 6, JSON.stringify([a.on.harvest, a.on.tote_prep]));
     check('…12 days drying: Bucking 12 days after harvest, Trim from day 13 (7 days), Weigh & Ship 21 days after harvest',
         daysBetween(a.on.harvest, a.on.bucking) === 12 && daysBetween(a.on.harvest, a.on.trim) === 13 && daysBetween(a.on.trim, a.end.trim) === 6 && daysBetween(a.on.harvest, a.on.weigh_ship) === 21, JSON.stringify([a.on.harvest, a.on.bucking, a.on.trim, a.end.trim, a.on.weigh_ship]));
     const pick = (l, t) => [daysBetween(l.on.flip, l.on[t]), l.end[t] && daysBetween(l.on.flip, l.end[t]), weekday(l.on[t]), l.end[t] && weekday(l.end[t])].join(' ');

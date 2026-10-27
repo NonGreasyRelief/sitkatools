@@ -47,6 +47,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## CropLabourWizard
 
+- 2026-10-27 · the built-in recipes clean and prepare totes for bucking 6 days after harvest (was 11), in case a crop dries early; lots already scheduled keep their dates
 - 2026-10-26 · built-in drying 2 days longer: 12 days from harvest to Dry Room Take-Down / Bucking (harvest +12, was +10), so tote prep (+11), lab sample and trim-room prep (+12), Trim (+13) and everything after trim move 2 days later (Bucking Wednesday, Trim from Thursday, Weigh & Ship Friday after a Friday harvest); all three built-ins; the room still turns over 70 days apart (the next lot waits only for Tank & Irrigation Clean); lots already generated keep their dates
 - 2026-10-24 · every task shows its day of the plant's life (the clone-cut day is day 1; the life ends with the harvest's last day, or Retire Mothers) and "day N after harvest" after it, in the recipe editor, the preview and the printed recipe; on screen Day 0 is called day 1. 🖨️ Print on each recipe in Manage Recipes opens a print-ready window like the other prints
 - 2026-10-24 · built-in Late Flower Leaf Pick one day later: bloom days 40–41 (flip +40, was +39), Wednesday–Thursday after the Friday flip; Early stays on days 17–18 (Monday–Tuesday); all three built-ins; lots already generated keep their dates
