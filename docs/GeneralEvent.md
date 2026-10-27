@@ -30,7 +30,7 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
 
 ## The Database from SitkaTools (`receiveDb`)
 
-- **As it opens (`sitkaGit_db`) and on every update (`sitkaGit_db_update`, SitkaTools changed the DB while it's open):** rebuild the log and the list, and leave the form alone. No toast.
+- **As it opens (`sitkaGit_db`) and on every update (`sitkaGit_db_update`, SitkaTools changed the DB while it's open):** rebuild the log and the list, and leave the form alone. As it opens, its database line ("Database loaded — N total calendar events") shows as a quick toast; there's no status bar (user request 2026-10-27).
 
 ## BC Civic Holidays (implementation pending)
 

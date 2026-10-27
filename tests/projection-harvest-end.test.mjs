@@ -87,12 +87,13 @@ export async function run(b, BASE) {
         n.closest('.preview-task-item, .task-item').querySelector('.preview-task-name, .task-name').textContent, n.textContent]);`);
     await pickLot('L500');
     let notes = await cwNotes();
-    check('CropLabourWizard: L500\'s Cut Clones to Replace Lot says it doesn\'t match, in the preview and the saved schedule, with the days from harvest end',
-        notes.length === 2 && notes.every(n => n[2].includes(WARN) && n[2].includes('Lot L500 cuts clones Thu Dec 10, 22 days before its harvest ends (Fri Jan 1)') && n[2].includes('Sat Dec 5, 27 days before'))
-        && notes[0][0] === 'preview' && notes[0][1] === 'Cut Clones to Replace Lot' && notes[1][0] === 'saved', JSON.stringify(notes));
+    // One task list (user request 2026-10-27): the Task Schedule shows the saved schedule, and the warning there
+    check('CropLabourWizard: L500\'s Cut Clones to Replace Lot says it doesn\'t match, in the task list, with the days from harvest end',
+        notes.length === 1 && notes.every(n => n[2].includes(WARN) && n[2].includes('Lot L500 cuts clones Thu Dec 10, 22 days before its harvest ends (Fri Jan 1)') && n[2].includes('Sat Dec 5, 27 days before'))
+        && notes[0][0] === 'preview' && notes[0][1] === 'Cut Clones to Replace Lot', JSON.stringify(notes));
     await pickLot('R1G1-TBA-01');
     notes = await cwNotes();
-    check('…and so does TBA-01\'s Cutting Clones', notes.length === 2 && notes[0][1] === 'Cutting Clones' && notes.every(n => n[2].includes(WARN)), JSON.stringify(notes));
+    check('…and so does TBA-01\'s Cutting Clones', notes.length === 1 && notes[0][1] === 'Cutting Clones' && notes.every(n => n[2].includes(WARN)), JSON.stringify(notes));
     await pickLot('R1G1-TBA-02');
     check('…but no other lot or task', (await cwNotes()).length === 0);
     await b.sleep(300);
@@ -111,7 +112,8 @@ export async function run(b, BASE) {
     await b.run(clw, `const row = [...document.querySelectorAll('#previewTaskList .preview-task-item')].find(r => r.querySelector('.preview-task-name').textContent === 'Cut Clones to Replace Lot');
         const inp = row.querySelector('input[type=number]'); inp.value = '-27'; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));`);
     notes = await cwNotes();
-    check('moving L500\'s clone cut to −27 clears the preview\'s warning at once (the saved schedule keeps it until Generate)', notes.length === 1 && notes[0][0] === 'saved', JSON.stringify(notes));
+    check('moving L500\'s clone cut to −27 clears the warning at once, the day shown green (changed from what\'s saved) until Generate', notes.length === 0
+        && await b.run(clw, `return [...document.querySelectorAll('#previewTaskList .preview-task-item')].find(r => r.querySelector('.preview-task-name').textContent === 'Cut Clones to Replace Lot').querySelector('input[type=number]').classList.contains('changed');`), JSON.stringify(notes));
     await b.run(clw, `window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
     await b.sleep(400);
     notes = await cwNotes();

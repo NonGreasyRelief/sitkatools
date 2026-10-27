@@ -6,7 +6,7 @@ Crop schedule calculator. Pick a lot, set its anchor date, adjust day offsets an
 
 ### Day 0, Offsets and Cascade
 
-- The task list is the active recipe's `tasks[]` (`activeRecipe.tasks`). The preview shows one row per task in array order (top → bottom = chronological). The built-in recipes — three bloom recipes (32 tasks each, see "Room Turnaround") and the 🌿 Sitka Default mother recipe (see "🌿 Vegetative Recipes") — live in code and are never written to the DB. The default, `sitka-9week`, is the fallback for any lot whose `recipeId` is missing or no longer resolves.
+- The task list is the active recipe's `tasks[]` (`activeRecipe.tasks`). The preview (the **Task Schedule**) shows one row per task in array order (top → bottom = chronological). **It's the only task list** (user request 2026-10-27: the Crop Schedule list below it, which showed the saved tasks again, is gone): picking a lot with a saved schedule loads it there (`applyStoredScheduleToOffsets`), with a **💾 Saved schedule** line on top (anchor, trim / harvest days, task count, estimated labour; `renderSavedSummary`), and a day, on / off, length or start date that differs from what's saved shows in **green** until Generate saves it (`savedSettings`, `snapshotSavedSettings`). Clear Schedule removes a lot's schedule, as the old list's ✕ did. The built-in recipes — three bloom recipes (32 tasks each, see "Room Turnaround") and the 🌿 Sitka Default mother recipe (see "🌿 Vegetative Recipes") — live in code and are never written to the DB. The default, `sitka-9week`, is the fallback for any lot whose `recipeId` is missing or no longer resolves.
 - **Day 0:** with Cutting Clones (`clone_cut_prep`) on, the top date is the cloning date and Planting is Day 0 + 14 (editable). With it off, Cutting Clones is hidden and the planting date is Day 0. On screen Day 0 is called **day 1** ("Cloning Date (day 1)", "Planting Date (day 1)").
 - **Day of the plant's life** (user request 2026-10-24, `lifeDayLabel`): every task also says which day of the plants' life it lands on, counting the clone-cut day (or the planting day with clones off) as day 1: "days 52–53 of the plant's life". The life ends with the harvest's **last** day (Retire Mothers for a mother recipe). Work after it counts on from there: "day 1 after harvest" is the day after the harvest ends ("after the mothers retire" for mothers). Shown in the preview (after the offset, for switched-off tasks too, from the lot's own dates), the recipe editor's **Day** column (live as you type, for a fresh lot: one-day harvest, 7-day trim; `recipeLifeDays`) and the printed recipe. The default reads: Cutting Clones day 1, Planting 15, Transplant 31, Flip 35, Harvest 98, Grow-Room Clean day 1 after harvest, Bucking day 12 after, Weigh & Ship day 21 after.
 - A task's date = its `reference` anchor (`cloning` / `planting` / `flip` / `harvest` / `trim`) + its offset. Changing an anchor's offset moves every task that references it by the same delta:
@@ -320,7 +320,7 @@ Details:
 
 ### Stale Detection
 
-On load and after every DB update, a projected lot with **no** `CropProjection` events is *stale*. It gets ⚠️ in the lot selector and counts in the status bar's stale total. The map is never auto-pruned; Project Crop regenerates stale lots. Pending-reprojection lots count as stale too (they await renumbering, not regeneration). Nothing is written to the DB.
+On load and after every DB update, a projected lot with **no** `CropProjection` events is *stale*. It gets ⚠️ in the lot selector and counts in the opening toast's stale total. The map is never auto-pruned; Project Crop regenerates stale lots. Pending-reprojection lots count as stale too (they await renumbering, not regeneration). Nothing is written to the DB.
 
 ### Calendar Events — `sourceTool: 'CropProjection'`
 
@@ -337,7 +337,7 @@ On load and after every DB update, a projected lot with **no** `CropProjection` 
 - **Project Crop** resolves the room from the selected lot (projected → its `roomId`; real → `resolveFlowerRoom`). Disabled, with a tooltip, when there is no lot, no flower room, the room isn't flowering, or the room's newest real lot has no schedule (tooltip names it). Re-enables when that changes.
 - **Reproject:** in a pending room the same button reads "🔁 Reproject" and runs `reprojectRoom` instead. Disabled (tooltip) until the active real lot has a schedule.
 - **Clear Projections:** after a confirm, deletes all of the room's projection events and TBA-1…5 entries, so the next Project Crop starts fresh. Enabled only when the room has a projected entry or event.
-- **Status bar:** e.g. `🌸 2 flowering rooms · 🔮 10 projected (3 stale)`.
+- **The toast as it opens** (`statusLine`; there's no status bar, user request 2026-10-27): e.g. `Database loaded — 4 lots, 2 with schedules · 🌸 2 flowering rooms · 🔮 10 projected (3 stale)`.
 
 ### Deletion Hook — SitkaTools (for reference)
 
@@ -364,8 +364,8 @@ Rules, helpers and the verification table: root `CLAUDE.md` → "BC Civic Holida
 - **Office only** (`DeviceView` with `OFFICE_ONLY: true`): on a building device SitkaTools hides the link, and if opened anyway the page is covered with "Office only" before anything loads.
 - **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL CropLabourWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 - Works on SitkaTools' own database (root `CLAUDE.md` → "Tool Overlays"). No browser storage.
-  - `sitkaGit_db` (as it opens): full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderScheduleList`, `updateStatusBar`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`); no toast.
-  - `sitkaGit_db_update` (SitkaTools changed the DB while it's open): refreshes selectors, schedule list, status bar and buttons only — no offset rebuild, no toast — so editing isn't interrupted.
+  - `sitkaGit_db` (as it opens): full rebuild (`buildDefaultOffsets`, `populateLotSelector`, recipe and projection-recipe selectors, `renderSavedSummary`, `refreshPreview`, `updateGenerateBtnLabel`, `updateProjectBtnState`), then its database line as a quick toast.
+  - `sitkaGit_db_update` (SitkaTools changed the DB while it's open): refreshes selectors, the saved-schedule line and buttons only — no offset rebuild, no toast — so editing isn't interrupted.
   - `notifySitkaTools()` after every change (generate, clear, delete, recipe save, projections).
 
 ### DB Keys

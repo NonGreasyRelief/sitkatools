@@ -50,6 +50,9 @@
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
             padding: 12px 24px;
+            /* The same height as every tool's header, to the pixel (user request 2026-10-27) */
+            min-height: 80px;
+            box-sizing: border-box;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -2746,13 +2749,20 @@
            header keeps their width free (Tools.fitBar sets the sizes). */
         .tool-bar { position: absolute; top: 0; right: var(--tool-sb, 0px); z-index: 110; height: var(--tool-head-h, 56px); display: flex; align-items: center; gap: 8px; padding-right: 16px; }
         .tool-bar-name { display: none; }
-        .tool-overlay > .tool-root > header { padding-right: calc(var(--tool-bar-w, 230px) + 8px); flex-wrap: wrap; row-gap: 8px; }
+        /* Every tool's header and footer a size smaller, the same in each (user request 2026-10-27: they took a lot of the screen): drawn at
+           85 % — its text about 2 px smaller, its controls and padding 15 % smaller. Its padding is in its own (zoomed) units, so
+           the room kept for the bar is divided back out */
+        .tool-overlay > .tool-root > header { zoom: 0.85; padding-right: calc((var(--tool-bar-w, 230px) + 8px) / 0.85); flex-wrap: wrap; row-gap: 8px;
+            min-height: calc(80px / 0.85); box-sizing: border-box; }   /* 80 px on screen in every tool, as SitkaTools' own header */
+        /* …and its footer (Close Tool) the same */
+        .tool-overlay > .tool-root > footer { zoom: 0.85; }
         .tool-overlay > .tool-root > header .logo { white-space: nowrap; }
+        .tool-overlay > .tool-root > header .form-group { margin-bottom: 0; }   /* the same height in every tool */
         /* A tool's own full-window view (Hub.subview): the bar on top of it with 💾 Save DB only — the view has its own ‹ Back */
         #toolHost.tool-sub .tool-bar { z-index: 400; }
         #toolHost.tool-sub #toolBarClose { display: none; }
         .tool-overlay .tool-sub-head { padding-right: calc(var(--tool-bar-w, 140px) + 8px); }
-        .tool-bar-btn { min-height: 40px; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; }
+        .tool-bar-btn { min-height: 34px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
         .tool-bar-btn:hover, .tool-bar-btn:focus-visible { border-color: var(--accent); }
         .tool-bar-save { position: relative; }   /* 💾 Save DB's popup drops down from here while a tool is open */
         .tool-overlay { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; position: relative; }
@@ -2825,21 +2835,7 @@
             padding: 24px;
         }
 
-        /* ---- Status Bar ---- */
-        .status-bar {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 10px 16px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
 
-        .status-bar.loaded { border-color: var(--accent); }
 
         /* ---- Card ---- */
         .card {
@@ -3112,21 +3108,7 @@
             padding: 24px;
         }
 
-        /* ---- Status Bar ---- */
-        .status-bar {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 10px 16px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
 
-        .status-bar.loaded { border-color: var(--accent); }
 
         /* ---- Card ---- */
         .card {
@@ -3704,21 +3686,7 @@
             padding: 24px;
         }
 
-        /* ---- Status Bar ---- */
-        .status-bar {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 10px 16px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
 
-        .status-bar.loaded { border-color: var(--accent); }
 
         /* ---- Card ---- */
         .card {
@@ -4153,6 +4121,9 @@
         .preview-offset-group input[type="number"] {
             -moz-appearance: textfield;
         }
+        /* Changed from the lot's saved schedule (user request 2026-10-27): green until Generate saves it */
+        .config-summary .saved-hint { color: var(--text-secondary); } .config-summary .saved-green { color: #4ade80; font-weight: 700; }
+        .preview-offset-group input.changed, #plantingDate.changed { color: #4ade80; font-weight: 700; }
 
         /* ---- Spinbox +/- Buttons ---- */
         .spinbox-btn {
@@ -7186,21 +7157,7 @@
 
         .lf-hours { width: 64px; }
 
-        /* ---- Status Bar ---- */
-        .status-bar {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 10px 16px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
 
-        .status-bar.loaded { border-color: var(--accent); }
         /* 📅 Applies from — a changed wage, rate or price */
         .applies-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 5000; padding: 16px; }
         .applies-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-width: 440px; width: 100%; box-shadow: var(--shadow); }
@@ -7915,10 +7872,6 @@
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Status Bar -->
-        <div class="status-bar" id="statusBar">
-            <span id="statusText"></span>
-        </div>
 
         <!-- Create Event Form -->
         <div class="card">
@@ -8018,10 +7971,6 @@
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Status Bar -->
-        <div class="status-bar" id="statusBar">
-            <span id="statusText"></span>
-        </div>
 
         <!-- Add Equipment Form -->
         <div class="card">
@@ -8139,10 +8088,6 @@
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Status Bar -->
-        <div class="status-bar" id="statusBar">
-            <span id="statusText"></span>
-        </div>
 
         <!-- Config Form -->
         <div class="card">
@@ -8171,6 +8116,8 @@
             <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:14px;">
                 Adjust day offsets below. Dates update automatically.
             </p>
+            <!-- The lot's saved schedule (renderSavedSummary): what Generate saved; changes from it show in green -->
+            <div id="configSummary" class="config-summary" style="display:none;"></div>
             <div id="previewTaskList"></div>
             <div class="form-actions">
                 <button type="button" class="btn btn-danger" id="clearFormBtn">Clear Schedule</button>
@@ -8178,12 +8125,6 @@
             </div>
         </div>
 
-        <!-- Existing Schedule List -->
-        <div class="card" id="scheduleListCard" style="display:none;">
-            <h2 class="card-title">Crop Schedule</h2>
-            <div id="configSummary" class="config-summary" style="display:none;"></div>
-            <div id="scheduleList"></div>
-        </div>
     </main>
 
     <!-- Footer -->
@@ -8644,10 +8585,6 @@
 
     <!-- Main Content: tabs and their panels -->
     <main class="main">
-        <!-- Status Bar -->
-        <div class="status-bar" id="statusBar">
-            <span id="statusText"></span>
-        </div>
 
         <!-- Tabs -->
         <div class="tabs">
@@ -12466,7 +12403,9 @@
                     const top = head.getBoundingClientRect().top, kids = [...head.children].filter(k => k.offsetParent);
                     const first = kids[0].getBoundingClientRect();
                     const row = kids.filter(k => k.getBoundingClientRect().top < first.bottom - 2);
-                    rowH = Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - top + (parseFloat(getComputedStyle(head).paddingBottom) || 0);
+                    // One row: the header's own height (it has a set minimum); wrapped: down to the first row's bottom padding
+                    rowH = row.length === kids.length ? head.getBoundingClientRect().height
+                        : Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - top + (parseFloat(getComputedStyle(head).paddingBottom) || 0) * 0.85;
                 }
                 host.style.setProperty('--tool-head-h', Math.round(rowH) + 'px');
                 host.style.setProperty('--tool-sb', this.subHead ? '0px' : Math.max(0, def.section.offsetWidth - def.section.clientWidth) + 'px');
@@ -17354,7 +17293,7 @@
             // filled in is left alone
             reconcileLog();
             renderEventList();
-            updateStatusBar();
+            if (e.data.type === 'sitkaGit_db') showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
         }
 
         // Reconcile: REBUILD _GeneralEvent.events log ENTIRELY from calendarEvents.
@@ -17416,8 +17355,6 @@
         const clearFormBtn = $('clearFormBtn');
         const eventListCard = $('eventListCard');
         const eventListEl = $('eventList');
-        const statusBar = $('statusBar');
-        const statusText = $('statusText');
 
         // ---- Emoji Picker ----
         document.querySelectorAll('.emoji-btn').forEach(btn => {
@@ -17492,7 +17429,6 @@
 
             // Re-render and clear form
             renderEventList();
-            updateStatusBar();
             eventForm.reset();
             eventDateInput.value = todayStr();
             document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
@@ -17616,24 +17552,13 @@
             notifySitkaTools();
 
             renderEventList();
-            updateStatusBar();
             showToast('Event removed');
         }
 
-        // ---- Update Status Bar ----
-        function updateStatusBar() {
+        // What the database holds, shown as a quick toast as the tool opens (user request 2026-10-27: it was a status bar)
+        function statusLine() {
             const totalCalendar = (DB.data?.calendarEvents || []).length;
-            statusBar.style.borderColor = ''; // the "no events yet" warning border must not outlive a live update
-
-            if (totalCalendar === 0) {
-                statusBar.className = 'status-bar';
-                statusBar.style.borderColor = 'var(--warning)';
-                statusText.textContent = 'Database loaded — no events yet.';
-                return;
-            }
-
-            statusBar.className = 'status-bar loaded';
-            statusText.textContent = `Database loaded — ${totalCalendar} total calendar events`;
+            return totalCalendar === 0 ? 'Database loaded — no events yet.' : `Database loaded — ${totalCalendar} total calendar events`;
         }
 
         // ---- Close Tool ----
@@ -17865,7 +17790,7 @@
                 if (DeviceView.take(e.data)) return; // office only — no resync from a building device
                 populateRoomSelector();
                 renderEquipmentList();
-                updateStatusBar();
+                showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
                 // Each time it opens: purge all EquipmentWizard events and regenerate from ALL rooms (counts as a change
                 // when it changed something: Tools.deliver)
                 syncAllRooms();
@@ -17886,7 +17811,6 @@
                 const after = JSON.stringify(DB.data._EquipmentWizard?.rooms?.[roomNow]?.equipment || []);
                 if (roomNow !== roomId || after !== before) renderEquipmentList();
                 if (roomNow) renderPreview();   // room names show in the event titles
-                updateStatusBar();
             }
         }
 
@@ -18667,22 +18591,10 @@
             autoSyncCalendar();
         });
 
-        // ---- Update Status Bar ----
-        function updateStatusBar() {
-            const statusBar = $('statusBar');
-            const statusText = $('statusText');
-            statusBar.classList.add('loaded');
-
-            const roomId = getActiveRoomId();
-            let eqCount = 0;
-            let taskCount = 0;
-            if (roomId) {
-                const equipment = getRoomEquipment(roomId);
-                eqCount = equipment.length;
-                equipment.forEach(eq => { taskCount += (eq.tasks?.length || 0); });
-            }
-
-            statusText.textContent = `DB loaded · ${Object.keys(DB.rooms).length} rooms · ${eqCount} equipment · ${taskCount} tasks`;
+        // What the database holds, shown as a quick toast as the tool opens (user request 2026-10-27: it was a status bar)
+        function statusLine() {
+            const equipment = Object.values(DB.data?._EquipmentWizard?.rooms || {}).reduce((n, r) => n + (r?.equipment?.length || 0), 0);
+            return `Database loaded · ${Object.keys(DB.rooms).length} rooms · ${equipment} equipment`;
         }
 
         // ---- Toast ----
@@ -20211,11 +20123,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 populateLotSelector();
                 populateRecipeSelector(true);
                 populateProjectionRecipeSelector(true);
-                renderScheduleList();
-                updateStatusBar();
+                renderSavedSummary();
                 refreshPreview();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
+                showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
             }
 
             // SitkaTools changed or replaced the DB while this is open (a load, a restore, the day rolling over): refresh
@@ -20227,8 +20139,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 populateLotSelector();
                 populateRecipeSelector(true);
                 populateProjectionRecipeSelector(true);
-                renderScheduleList();
-                updateStatusBar();
+                renderSavedSummary();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
             }
@@ -20239,8 +20150,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const plantingDateInput = $('plantingDate');
         const clearFormBtn = $('clearFormBtn');
         const generateBtn = $('generateBtn');
-        const scheduleListCard = $('scheduleListCard');
-        const scheduleListEl = $('scheduleList');
         const configSummaryEl = $('configSummary');
         const activeLotSelect = $('activeLot');
         const previewTaskList = $('previewTaskList');
@@ -20936,6 +20845,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             previewTaskList.innerHTML = '';
             const listWrapper = document.createElement('div');
             listWrapper.className = 'preview-task-list';
+            plantingDateInput.classList.toggle('changed', !!savedSettings && plantingDate !== savedSettings.plantingDate);
 
             // Tasks whose computed date lands on an observed BC civic holiday (notify only)
             const holidayConflicts = [];
@@ -21021,11 +20931,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     `;
                 } else {
                     const minVal = offsetMin(def);
+                    // Green when it differs from the lot's saved schedule (its offset, or on / off)
+                    const savedTask = savedSettings?.tasks[def.taskType];
+                    const changed = !!savedSettings && (!savedTask || savedTask.offset !== entry.offset || savedTask.enabled !== isEnabled);
                     offsetGroupHtml = `
                         <div class="preview-offset-group">
                             <label for="${offsetInputId}">Days:</label>
                             <button type="button" class="spinbox-btn minus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Decrease by 1">−</button>
-                            <input type="number" id="${offsetInputId}" value="${entry.offset}" min="${minVal}" max="${offsetMax(def)}" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
+                            <input type="number" id="${offsetInputId}"${changed ? ' class="changed" title="Changed from the saved schedule — Generate saves it"' : ''} value="${entry.offset}" min="${minVal}" max="${offsetMax(def)}" data-idx="${idx}" ${!isEnabled ? 'disabled' : ''} />
                             <button type="button" class="spinbox-btn plus" data-target="${offsetInputId}" ${!isEnabled ? 'disabled' : ''} title="Increase by 1">+</button>
                         </div>
                     `;
@@ -21053,7 +20966,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         <div class="preview-offset-group" title="Trim length in days">
                             <label>Length:</label>
                             <button type="button" class="spinbox-btn minus" data-target="trimDaysInput">−</button>
-                            <input type="number" id="trimDaysInput" value="${trimDays}" min="1" max="30" />
+                            <input type="number" id="trimDaysInput"${savedSettings && trimDays !== savedSettings.trimDays ? ' class="changed"' : ''} value="${trimDays}" min="1" max="30" />
                             <button type="button" class="spinbox-btn plus" data-target="trimDaysInput">+</button>
                         </div>
                     `;
@@ -21065,7 +20978,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         <div class="preview-offset-group" title="Harvest length in days (when multi-day)">
                             <label>Length:</label>
                             <button type="button" class="spinbox-btn minus" data-target="harvestDaysInput" ${!harvestMultiDay ? 'disabled' : ''}>−</button>
-                            <input type="number" id="harvestDaysInput" value="${harvestDays}" min="1" max="30" ${!harvestMultiDay ? 'disabled' : ''} />
+                            <input type="number" id="harvestDaysInput"${savedSettings && (harvestDays !== savedSettings.harvestDays || harvestMultiDay !== savedSettings.harvestMultiDay) ? ' class="changed"' : ''} value="${harvestDays}" min="1" max="30" ${!harvestMultiDay ? 'disabled' : ''} />
                             <button type="button" class="spinbox-btn plus" data-target="harvestDaysInput" ${!harvestMultiDay ? 'disabled' : ''}>+</button>
                         </div>
                     `;
@@ -21258,11 +21171,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // ---- Lot Selector Change Handler ----
         activeLotSelect.addEventListener('change', () => {
-            renderScheduleList();
+            renderSavedSummary();
             syncActiveRecipeToLot(activeLotSelect.value);
             updateFormFromStoredConfig();
             buildDefaultOffsets();
             applyStoredScheduleToOffsets(activeLotSelect.value);
+            snapshotSavedSettings(activeLotSelect.value);
             refreshPreview();
             updateGenerateBtnLabel();
             updateProjectBtnState();
@@ -21734,8 +21648,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
 
             populateLotSelector();
-            renderScheduleList();
-            updateStatusBar();
+            renderSavedSummary();
             updateGenerateBtnLabel();
             updateProjectBtnState();
             refreshPreview();
@@ -21958,8 +21871,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }, projRecipe);
 
             populateLotSelector();
-            renderScheduleList();
-            updateStatusBar();
+            renderSavedSummary();
             updateGenerateBtnLabel();
             updateProjectBtnState();
             refreshPreview();
@@ -22000,8 +21912,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             if (result.deletedEvents > 0 || result.removedEntries > 0) {
                 populateLotSelector();
-                renderScheduleList();
-                updateStatusBar();
+                renderSavedSummary();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
                 refreshPreview();
@@ -22226,9 +22137,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
-            // Re-render
-            renderScheduleList();
-            updateStatusBar();
+            // Re-render: what's saved now is what the preview shows, so nothing is green
+            snapshotSavedSettings(lotId);
+            renderSavedSummary();
+            refreshPreview();
             updateGenerateBtnLabel();
             updateProjectBtnState();
 
@@ -22370,7 +22282,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 buildDefaultOffsets();
                 updateFormFromStoredConfig();
                 refreshPreview();
-                renderScheduleList();
+                renderSavedSummary();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
                 updateClearProjectionsBtnState();
@@ -22405,7 +22317,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Clear stored config (projected lots keep their map entry → flagged stale)
             clearScheduleConfig(lotId);
 
-            // Remove generation record (as ✕ Delete Schedule does)
+            // Remove generation record
             if (DB.data._CropLabourWizard?.generations) {
                 DB.data._CropLabourWizard.generations = DB.data._CropLabourWizard.generations.filter(
                     g => g.lotId !== lotId
@@ -22417,10 +22329,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // Reset form state
             buildDefaultOffsets();
+            snapshotSavedSettings(lotId);   // nothing saved now: nothing green
             refreshPreview();
             populateLotSelector();
-            renderScheduleList();
-            updateStatusBar();
+            renderSavedSummary();
             updateGenerateBtnLabel();
             updateProjectBtnState();
 
@@ -22428,149 +22340,51 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         });
 
         // ---- Render Schedule List ----
-        function renderScheduleList() {
+        // ---- The lot's saved schedule (user request 2026-10-27: one list) ----
+        // The Task Schedule shows the lot's saved schedule (applyStoredScheduleToOffsets); this is what Generate saved, to
+        // compare against: a day, on / off, length or start date that differs from it shows in green until Generate.
+        // null when the lot has no saved schedule. (The old Crop Schedule list below the Task Schedule repeated every task;
+        // Clear Schedule does what its ✕ did.)
+        let savedSettings = null;
+        function snapshotSavedSettings(lotId) {
+            savedSettings = lotId && getScheduleConfig(lotId) && eventsForLot(lotId).length ? {
+                tasks: Object.fromEntries(taskOffsets.map(e => [e.def.taskType, { offset: e.offset, enabled: e.enabled !== false }])),
+                plantingDate: plantingDateInput.value, trimDays, harvestMultiDay, harvestDays
+            } : null;
+        }
+        // The saved schedule's summary at the top of the Task Schedule: its start, lengths, task count and labour estimate
+        function renderSavedSummary() {
             const lotId = activeLotSelect.value;
-
-            if (!lotId) {
-                scheduleListCard.style.display = 'none';
-                return;
-            }
-
-            // Get stored config (real lot or projected lot)
-            const config = getScheduleConfig(lotId);
-
-            if (!config) {
-                scheduleListCard.style.display = 'none';
-                return;
-            }
-
-            scheduleListCard.style.display = 'block';
-
-            // Get calendar events for this lot (sourceTool depends on lot type)
-            const lotEvents = eventsForLot(lotId).sort((a, b) => a.date.localeCompare(b.date));
-
+            const config = lotId ? getScheduleConfig(lotId) : null;
+            if (!config) { configSummaryEl.style.display = 'none'; configSummaryEl.innerHTML = ''; return; }
+            const lotEvents = eventsForLot(lotId);
             // Estimated labour for the saved schedule (person-hours)
             const estHours = lotEvents.reduce((sum, ev) => {
                 const est = eventEstimate(ev);
                 return est ? sum + estimateHours(est, eventSpanDays(ev)) : sum;
             }, 0);
-
-            // Show config summary
+            const retire = lotEvents.find(ev => ev.taskType === 'retire');
             configSummaryEl.style.display = 'flex';
             configSummaryEl.innerHTML = `
+                <span>💾 Saved schedule</span>
                 <span>📅 Anchor: <strong>${config.plantingDate}${config.plantingDate ? ' · ' + weekdayShort(config.plantingDate) : ''}</strong></span>
                 ${config.kind === 'vegetative'
-                    ? `<span>🌿 Mothers${lotEvents.find(ev => ev.taskType === 'retire') ? ` · retire <strong>${lotEvents.find(ev => ev.taskType === 'retire').date}</strong>` : ''}</span>`
+                    ? `<span>🌿 Mothers${retire ? ` · retire <strong>${retire.date}</strong>` : ''}</span>`
                     : `<span>✂️ Trim: <strong>${config.trimDays || DEFAULT_TRIM_DAYS} days</strong></span>
                 ${config.harvestMultiDay ? `<span>🌾 Harvest: <strong>${config.harvestDays || DEFAULT_HARVEST_DAYS} days</strong></span>` : ''}`}
-                <span>📋 Tasks: <strong>${config.taskCount || '?'}</strong></span>
+                <span>📋 Tasks: <strong>${lotEvents.length ? config.taskCount || lotEvents.length : 'none — cleared'}</strong></span>
                 ${estHours > 0 ? `<span>⏱ Est. labour: <strong>≈ ${estHours.toFixed(1)} h</strong></span>` : ''}
+                <span class="saved-hint">Changes from it show in <span class="saved-green">green</span> until you Generate.</span>
             `;
-
-            if (lotEvents.length === 0) {
-                scheduleListEl.innerHTML = '<div class="empty-state">No tasks found. Schedule may have been cleared.</div>';
-                return;
-            }
-
-            scheduleListEl.innerHTML = '';
-            const listWrapper = document.createElement('div');
-            listWrapper.className = 'task-list';
-
-            // The clone-cut task that doesn't match the projections (the real lot's, or TBA-01's)
-            const cutWarn = cloneCutMismatchTask(lotId);
-            const cutWarnHtml = cutWarn.taskType ? cloneCutMismatchHtml(cloneCutMismatch(cutWarn.roomId)) : '';
-
-            lotEvents.forEach((ev, idx) => {
-                const item = document.createElement('div');
-                item.className = 'task-item';
-
-                const displayDate = ev.endDate && ev.endDate !== ev.date
-                    ? `${ev.date} (${weekdayShort(ev.date)}) → ${ev.endDate} (${weekdayShort(ev.endDate)})`
-                    : `${ev.date} · ${weekdayShort(ev.date)}`;
-
-                // Holiday check — notify only, never auto-reschedule
-                const holiday = holidayInRange(ev.date, ev.endDate);
-
-                // Extract emoji from title
-                const emojiMatch = ev.title.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?)\s*/su);
-                const emoji = emojiMatch ? emojiMatch[1] : '📋';
-                const nameWithoutEmoji = ev.title.replace(emoji + ' ', '');
-
-                const est = eventEstimate(ev);
-                const estHtml = est
-                    ? `<span class="task-est-badge" title="Estimated labour${eventSpanDays(ev) > 1 ? ' per day' : ''}">${estimateLabel(est, eventSpanDays(ev) > 1)}</span>`
-                    : '';
-
-                item.innerHTML = `
-                    <span class="task-emoji">${escapeHtml(emoji)}</span>
-                    <div class="task-info">
-                        <div class="task-name">${escapeHtml(nameWithoutEmoji)}</div>
-                        <span class="task-type-badge">${escapeHtml(ev.taskType || '')}</span>
-                        ${estHtml}
-                        ${ev.taskType === cutWarn.taskType ? cutWarnHtml : ''}
-                    </div>
-                    <span class="task-date-badge">${displayDate}</span>
-                    ${holidayFlagHtml(holiday)}
-                    <button class="task-delete-btn" title="Delete entire schedule for this lot">✕</button>
-                `;
-
-                listWrapper.appendChild(item);
-            });
-
-            scheduleListEl.appendChild(listWrapper);
-
-            // Attach delete handlers (deletes ENTIRE schedule for the lot)
-            scheduleListEl.querySelectorAll('.task-delete-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    deleteLotSchedule(lotId);
-                });
-            });
         }
 
-        // ---- Delete Lot Schedule ----
-        function deleteLotSchedule(lotId) {
-            const taskCount = getLotTaskCount(lotId);
-            const recorded = eventsForLot(lotId).filter(hasWorkRecords).length;
-            const recordedNote = recorded > 0
-                ? `\n\n${recorded} of them ${recorded === 1 ? 'has' : 'have'} recorded labour hours or completion, which will be deleted too.`
-                : '';
-            if (!confirm(`Delete the entire crop schedule for ${lotId}?\nThis will remove all ${taskCount} tasks from the calendar.${recordedNote}`)) return;
-
-            DB.ensureStructure();
-
-            // Remove all schedule events for this lot (sourceTool depends on lot type)
-            reconcileLotSchedule(lotId);
-
-            // Clear stored config (projected lots keep their map entry → flagged stale)
-            clearScheduleConfig(lotId);
-
-            // Remove generation record
-            if (DB.data._CropLabourWizard?.generations) {
-                DB.data._CropLabourWizard.generations = DB.data._CropLabourWizard.generations.filter(
-                    g => g.lotId !== lotId
-                );
-            }
-
-            // Tell SitkaTools
-            notifySitkaTools();
-
-            populateLotSelector();
-            renderScheduleList();
-            updateStatusBar();
-            updateGenerateBtnLabel();
-            updateProjectBtnState();
-            showToast(`Schedule deleted for ${lotId}`);
-        }
 
         function getLotTaskCount(lotId) {
             return eventsForLot(lotId).length;
         }
 
-        // ---- Update Status Bar ----
-        function updateStatusBar() {
-            const statusBar = $('statusBar');
-            const statusText = $('statusText');
-            statusBar.className = 'status-bar loaded';
+        // What the database holds, shown as a quick toast as the tool opens (user request 2026-10-27: it was a status bar)
+        function statusLine() {
             const lotCount = Object.keys(DB.lots).length;
             const scheduledLots = Object.values(DB.lots).filter(l => l._tool_CropLabourWizard).length;
             let statusMsg = `Database loaded — ${lotCount} lots, ${scheduledLots} with schedules`;
@@ -22583,7 +22397,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (floweringRooms > 0 || projIds.length > 0) {
                 statusMsg += ` · 🌸 ${floweringRooms} flowering room${floweringRooms === 1 ? '' : 's'} · 🔮 ${projIds.length} projected${staleCount ? ` (${staleCount} stale)` : ''}`;
             }
-            statusText.textContent = statusMsg;
+            return statusMsg;
         }
 
         // ---- Close Tool ----
@@ -33214,11 +33028,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 DB.ensureStructure();
                 DeviceView.take(e.data);
 
-
-                // Reconcile and render with fresh data
                 applyDeviceView();
                 populateLotSelector();
-                updateStatusBar();
+                showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
                 renderEmpList();
                 if (EMP.viewMode === 'workweek') renderWorkweek();
                 else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
@@ -33238,7 +33050,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 applyDeviceView();
                 closeDayPicker();
                 populateLotSelector();
-                updateStatusBar();
                 renderEmpList();
                 if (EMP.viewMode === 'workweek') renderWorkweek();
                 else if (EMP.viewMode === 'timeoff') { renderTimeoffCalendar(); renderTimeoffEventList(); }
@@ -33322,14 +33133,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             updateLotEmptyLabel();
         }
 
-        // ---- Update Status Bar ----
-        function updateStatusBar() {
-            const statusBar = $('statusBar');
-            const statusText = $('statusText');
-            statusBar.className = 'status-bar loaded';
+        // What the database holds, shown as a quick toast as the tool opens (user request 2026-10-27: it was a status bar)
+        function statusLine() {
             const lotCount = Object.keys(DB.lots).length;
             const employeeCount = Object.keys(DB.data._EmployeeWizard?.employees || {}).length;
-            statusText.textContent = `Database loaded — ${lotCount} lots, ${employeeCount} employees`;
+            return `Database loaded — ${lotCount} lots, ${employeeCount} employees`;
         }
 
         // =====================================================
@@ -33533,7 +33341,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             renderEmpList();
             renderWorkweek();
-            updateStatusBar();
             notifySitkaTools();
             showToast(`Deleted ${name}`);
         }
@@ -33562,7 +33369,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             selectEmployee(name);   // highlight the new employee and open the editor
             renderEmpList();
             renderWorkweek();
-            updateStatusBar();
             notifySitkaTools();
             showToast(`Added ${name}`);
         });
@@ -33718,7 +33524,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             showPinRow(emp);
             renderEmpList();
             renderWorkweek();
-            updateStatusBar();
             notifySitkaTools();
             showToast(newPin ? `Saved ${newName} — PIN set` : `Saved ${newName}`);
         });
@@ -33922,7 +33727,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             renderTimeoffCalendar();
             renderTimeoffEventList();
-            updateStatusBar();
             notifySitkaTools();
             showToast(`Booked time off for ${name}`);
         });
@@ -33988,7 +33792,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             renderTimeoffEventList();
             renderTimeoffCalendar();
-            updateStatusBar();
             notifySitkaTools();
             showToast('Time-off event removed');
         }

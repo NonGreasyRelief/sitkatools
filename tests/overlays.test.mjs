@@ -27,10 +27,11 @@ export async function run(b, BASE) {
         return { name: head.textContent.includes('GeneralEvent'), inHeader: save.top >= hr.top && close.bottom <= hr.bottom + 1 && close.right > save.right && close.right >= hr.right - 40,
             under };`);
     check('one header: the tool\'s own, its name on it, 💾 Save DB and ✕ Close at its right end with nothing under them', bar.name && bar.inHeader && !bar.under, JSON.stringify(bar));
+    check('its database line shows as a quick toast as it opens (no status bar; user request 2026-10-27)', (await b.run(ge, `return { t: document.getElementById('toast').textContent, bar: !!document.getElementById('statusBar') };`)).t.startsWith('Database loaded'));
     check('the tool\'s own styles reach it (its text colour on its root)', (await b.run(ge, `return getComputedStyle(document.body).color;`)) === 'rgb(232, 232, 232)');
 
-    const ids = await b.run(ge, `return { tool: !!document.getElementById('statusBar')?.closest('#tool-GeneralEvent'), page: !window.document.getElementById('statusBar')?.closest('.tool-overlay') };`);
-    check('a tool\'s document finds its own #statusBar; the page\'s finds SitkaTools\'', ids.tool && ids.page, JSON.stringify(ids));
+    const ids = await b.run(ge, `return { tool: !!document.getElementById('clearFormBtn')?.closest('#tool-GeneralEvent'), page: !!window.document.getElementById('clearFormBtn') && !window.document.getElementById('clearFormBtn').closest('.tool-overlay') };`);
+    check('a tool\'s document finds its own #clearFormBtn; the page\'s finds SitkaTools\'', ids.tool && ids.page, JSON.stringify(ids));
 
     const before = await b.run(main, `return DB.data.calendarEvents.length;`);
     await b.run(ge, `document.getElementById('eventText').value = 'Overlay check'; document.getElementById('eventDate').value = '${today(1)}';
