@@ -97,9 +97,9 @@ export async function run(b, BASE) {
     await loadSingle(b, main, fixtureDb());
     await change(main, 'Tab copy');
     await setAt(main, Date.now() - 2 * 86400000);
-    const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
+    const tab = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
     await b.waitFor(tab, `return typeof WorkCopy !== 'undefined' && WorkCopy.inUse && !!DB.data?.lots?.L100;`, 6000).catch(() => {});
-    check('a DailyWizard tab loads a 2-day-old copy (no 12-hour limit)', await b.run(tab, `return WorkCopy.inUse && DB.data.lots.L100.name === 'Tab copy' && !document.getElementById('openFromSitka');`));
+    check('a tool tab (EmployeeWizard) loads a 2-day-old copy (no 12-hour limit)', await b.run(tab, `return WorkCopy.inUse && DB.data.lots.L100.name === 'Tab copy' && !document.getElementById('openFromSitka');`));
     await b.send('browsingContext.close', { context: tab, promptUnload: false });
 
     // ---- A second SitkaTools tab on the same device ----

@@ -17,7 +17,7 @@ export async function run(b, BASE) {
     check('an older entry without an id gets the same derived id on every load', /^le_/.test(id1) && id1 === id2, `${id1} / ${id2}`);
 
     const dw = await openTool(b, main, 'DailyWizard');
-    check('DailyWizard got the DB by postMessage', await b.run(dw, 'return WorkCopy.gotDb && !WorkCopy.inUse;'));
+    check('DailyWizard opened over SitkaTools with the DB', await b.run(dw, 'return Hub.open && !!DB.data?.lots?.L100;'));
     await dwBuilding(b, dw, 'B1');
     const r = [
         await logHours(b, dw, 'Water plants', 'Alex', 1, 15),

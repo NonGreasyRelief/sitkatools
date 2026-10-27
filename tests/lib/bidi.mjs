@@ -32,12 +32,23 @@ export async function connect(url = 'ws://127.0.0.1:9333/session') {
     // A tool inside SitkaTools.html is a handle { context, tool } (tests/lib/helpers.mjs openTool): its code runs inside the
     // tool's own scope in the SitkaTools page, and input goes to that page
     const ctxOf = c => (c && typeof c === 'object') ? c.context : c;
+    const isHandle = c => !!c && typeof c === 'object';
     const sendAny = (method, params = {}) => {
-        const handle = params.context && typeof params.context === 'object' ? params.context : null;
+        const handle = isHandle(params.context) ? params.context : isHandle(params.target?.context) ? params.target.context : null;
         if (!handle) return send(method, params);
         if (method === 'browsingContext.close') return api.run(handle.context, `Tools.close(); return null;`);
-        if (method === 'browsingContext.activate') return send(method, { ...params, context: handle.context });
-        return Promise.reject(new Error(`${method} on a tool overlay (${handle.tool}): not a window any more`));
+        if (method === 'browsingContext.reload' || method === 'browsingContext.navigate') {
+            return Promise.reject(new Error(`${method} on a tool overlay (${handle.tool}): not a window any more`));
+        }
+        // An expression evaluated "in the tool" runs in its own scope (its document finds its own elements)
+        if (method === 'script.evaluate') {
+            return send(method, { ...params, target: { ...params.target, context: handle.context }, awaitPromise: true,
+                expression: `Tools.run(${JSON.stringify(handle.tool)}, ${JSON.stringify(`return (${params.expression});`)})` });
+        }
+        const out = { ...params };
+        if (isHandle(out.context)) out.context = handle.context;
+        if (isHandle(out.target?.context)) out.target = { ...out.target, context: handle.context };
+        return send(method, out);
     };
     const api = {
         send: sendAny, logs, ws,

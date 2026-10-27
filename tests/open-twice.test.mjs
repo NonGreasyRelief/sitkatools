@@ -17,9 +17,9 @@ export async function run(b, BASE) {
     const before = (await b.contexts()).length;
     await b.run(main, `document.querySelector('a.module-link[href*="DailyWizard"]').click();`, { user: true });
     await b.sleep(800);
-    const toast = await b.run(main, `return document.getElementById('syncToastText').textContent;`);
     check('clicking DailyWizard\'s link again opens no second window', (await b.contexts()).length === before, String((await b.contexts()).length - before));
-    check('…and says to use the one already open', toast.includes('already open'), toast);
+    // DailyWizard lives in SitkaTools.html: it stays the one open tool, as it was
+    check('…it stays the one tool open, over SitkaTools', await b.run(main, `return Tools.current === 'DailyWizard' && !document.getElementById('toolHost').hidden;`));
     const covered = ctx => b.run(ctx, `const w = document.getElementById('openTwice'); return !!w && w.style.display !== 'none';`);
     check('the open window isn\'t covered', !(await covered(dw)));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
@@ -34,7 +34,7 @@ export async function run(b, BASE) {
     const text = await b.run(t2, `return document.getElementById('openTwice').textContent;`);
     check('…saying it\'s already open and to close this one', text.includes('PaperWizard is already open in another window') && text.includes('Close this one'), text);
     check('the first tab isn\'t covered', !(await covered(t1)));
-    const other = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
+    const other = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
     await b.sleep(800);
     check('another tool\'s tab isn\'t covered', !(await covered(other)));
     await leave(b, t1); await b.send('browsingContext.close', { context: t1, promptUnload: false });

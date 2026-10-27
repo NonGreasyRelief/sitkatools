@@ -76,11 +76,14 @@ globalThis.innerWidth = 1400; globalThis.innerHeight = 900; globalThis.screen = 
 globalThis.alert = () => {}; globalThis.confirm = () => true;
 const realTimers = { setInterval: globalThis.setInterval, setTimeout: globalThis.setTimeout };
 globalThis.setInterval = () => 0; globalThis.setTimeout = () => 0;
-const clwHtml = fs.readFileSync(path.join(ROOT, 'CropLabourWizard', 'CropLabourWizard.html'), 'utf8');
-let clwScript = clwHtml.slice(clwHtml.indexOf('<script>') + 8, clwHtml.lastIndexOf('</script>'));
+// CropLabourWizard's code lives in SitkaTools.html (one file, 2026-10-27): the function given to Tools.register('CropLabourWizard', …)
+const hubHtml = fs.readFileSync(path.join(ROOT, 'SitkaTools', 'SitkaTools.html'), 'utf8');
+const clwStart = hubHtml.indexOf("Tools.register('CropLabourWizard',");
+const clwBodyStart = hubHtml.indexOf('\n', clwStart) + 1;
+let clwScript = hubHtml.slice(clwBodyStart, hubHtml.indexOf('        return { receive: receiveDb', clwBodyStart));
 const initAt = clwScript.lastIndexOf('init();');
 clwScript = clwScript.slice(0, initAt) + clwScript.slice(initAt + 'init();'.length);
-const CLW = new Function(clwScript + '\nreturn { DB, BUILTIN_RECIPE, generateLotSchedule, defaultOffsetsSnapshot, mergeTaskTypeRegistry, validateRecipe };')();
+const CLW = new Function('Hub', clwScript + '\nreturn { DB, BUILTIN_RECIPE, generateLotSchedule, defaultOffsetsSnapshot, mergeTaskTypeRegistry, validateRecipe };')({ changed() {}, close() {}, open: true });
 Object.assign(globalThis, realTimers);
 
 // ---- Rooms and buildings ----

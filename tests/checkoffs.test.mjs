@@ -65,20 +65,18 @@ export async function run(b, BASE) {
     check('Reset Day clears today\'s ticks (and leaves other days)', !c?.[T] && !!c?.[Y]?.scu1, JSON.stringify(c));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
 
-    // Tablet tab: ticks reach SitkaTools through the shared working copy
+    // Tablet: DailyWizard opens over SitkaTools there too (no tab of its own), and its ticks are in SitkaTools' database
+    await b.send('browsingContext.setViewport', { context: main, viewport: { width: 800, height: 1280 } });
     await openSitka(b, main, BASE);
     await loadSingle(b, main, fixtureDb());
-    // SitkaTools' start check (≈400 ms with a session left behind) comes first: a tab opened before it would load
-    // the old session's copy, which SitkaTools rightly ignores
-    await b.waitFor(main, 'return WorkCopy.ready;');
-    await b.run(main, 'await WorkCopy.flush();');
-    const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
-    await b.waitFor(tab, 'return typeof DB !== "undefined" && !!DB.data && Object.keys(DB.data.lots || {}).length > 0;');
+    const contexts = (await b.contexts()).length;
+    const tab = await openTool(b, main, 'DailyWizard');
+    check('tablet: DailyWizard opens over SitkaTools, no tab of its own', (await b.contexts()).length === contexts && typeof tab === 'object');
     await dwBuilding(b, tab, 'B1');
     await dwTick(b, tab, 'Water plants');
-    await b.sleep(1200);
-    check('tablet tab: SitkaTools took the tick in', !!(await checks(b, main, 'B1'))?.[T]?.wat1);
+    check('tablet: the tick is in SitkaTools\' database at once', !!(await checks(b, main, 'B1'))?.[T]?.wat1);
     await leave(b, tab); await b.send('browsingContext.close', { context: tab });
+    await b.send('browsingContext.setViewport', { context: main, viewport: null });
 
     // Split files: a building device saves its ticks in its own file
     const files = await splitFiles(b, main, BASE, fixtureDb());

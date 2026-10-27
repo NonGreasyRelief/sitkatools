@@ -41,30 +41,25 @@ export async function run(b, BASE) {
     check('opening changes nothing (no unsaved changes)', (await b.run(main, 'return hasUnsavedChanges;')) === false);
     await leave(b, main);
 
-    // ---- Tablet tab: DailyWizard as a tab of its own, through the shared working copy ----
+    // ---- Tablet: DailyWizard over SitkaTools, saved from the tool's bar ----
     main = await fresh(b);
+    await b.send('browsingContext.setViewport', { context: main, viewport: { width: 800, height: 1280 } });
     await openSitka(b, main, BASE);
     await loadSingle(b, main, fixtureDb());
-    await b.waitFor(main, 'return WorkCopy.ready;');   // the start check first (see checkoffs)
-    await b.run(main, 'await WorkCopy.flush();');
-    const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
-    await b.waitFor(tab, 'return typeof DB !== "undefined" && !!DB.data && Object.keys(DB.data.lots || {}).length > 0;');
-    check('tablet tab: DailyWizard loaded the shared copy', await b.run(tab, 'return WorkCopy.inUse && !!document.getElementById("workCopyBanner");'));
+    const tab = await openTool(b, main, 'DailyWizard');
+    check('tablet: DailyWizard opens over SitkaTools', typeof tab === 'object' && await b.run(tab, 'return Hub.open;'));
     await dwBuilding(b, tab, 'B1');
     const t1 = await logHours(b, tab, 'Water plants', 'Alex', 0, 50);
-    check('tablet tab: logged Alex 50m', t1.ok, t1.toast);
-    await b.sleep(1200);
+    check('tablet: logged Alex 50m', t1.ok, t1.toast);
     const st = await b.run(main, `return { names: (DB.data._DailyWizard.buildings.B1.labour?.['${T}']?.wat1 || []).map(e => e.employee), unsaved: hasUnsavedChanges };`);
-    check('tablet tab: SitkaTools took the hours in and marked unsaved', st.names.join() === 'Alex' && st.unsaved, JSON.stringify(st));
-    await b.run(tab, 'LinkLost.check();');
-    await b.sleep(300);
-    check('tablet tab: never shows the "lost link" cover', !(await b.run(tab, `return document.getElementById('linkLost')?.style.display === 'flex';`)));
-    await b.run(tab, `document.getElementById('workCopyGoBack').click();`, { user: true });
-    await b.sleep(1000);
-    check('tablet tab: "Go back to SitkaTools to save" asks for a save', await b.run(main, `return document.body.innerText.includes('Save before you continue');`));
+    check('tablet: the hours are in SitkaTools\' database at once, marked unsaved', st.names.join() === 'Alex' && st.unsaved, JSON.stringify(st));
+    await b.run(main, `document.getElementById('toolBarSave').click();`, { user: true });
+    check('tablet: 💾 Save DB in the tool\'s bar opens the save links over the tool', await b.run(main, `const p = document.getElementById('savePopup');
+        return !!p && getComputedStyle(p).display !== 'none' && !!document.getElementById('saveLink');`));
     const saved = JSON.parse(await saveSingle(b, main));
-    check('tablet tab: the saved file holds the entry', saved._DailyWizard.buildings.B1.labour[T].wat1[0].employee === 'Alex');
+    check('tablet: the saved file holds the entry', saved._DailyWizard.buildings.B1.labour[T].wat1[0].employee === 'Alex');
     await leave(b, tab);
+    await b.send('browsingContext.setViewport', { context: main, viewport: null });
     await leave(b, main);
     return results;
 }

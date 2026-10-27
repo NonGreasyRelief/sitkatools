@@ -42,8 +42,8 @@ export async function run(b, BASE) {
 
     // ---- A DailyWizard tab on the shared copy (a tablet) ----
     await b.run(main, `await WorkCopy.flush();`);
-    const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
-    check('DailyWizard opens as a tab on the shared copy', await until(tab, `return typeof DB !== "undefined" && WorkCopy.inUse && Object.keys(DB.data?.lots || {}).length === 2;`));
+    const tab = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
+    check('EmployeeWizard opens as a tab on the shared copy', await until(tab, `return typeof DB !== "undefined" && WorkCopy.inUse && Object.keys(DB.data?.lots || {}).length === 2;`));
 
     // SitkaTools slept through a tool's change: it takes it in when it wakes
     await silentToolWrite(tab, `DB.data._DailyWizard = { ...(DB.data._DailyWizard || {}), probe: { a: 'ticked while SitkaTools slept' } }`);
@@ -89,10 +89,10 @@ export async function run(b, BASE) {
 
     // ---- Go back to SitkaTools to save: kept in the copy too, and resent until SitkaTools answers ----
     await b.run(tab, `const ch = WorkCopy.channel; WorkCopy.channel = null; await WorkCopy.goBackToSave(); WorkCopy.channel = ch;`, { user: true });
-    check('the save request is written into the shared copy', await b.run(tab, `const c = await WorkCopy.read(); return !!c.saveRequest && c.saveRequest.from === 'DailyWizard' && WorkCopy.saveAsk > 0;`));
+    check('the save request is written into the shared copy', await b.run(tab, `const c = await WorkCopy.read(); return !!c.saveRequest && c.saveRequest.from === 'EmployeeWizard' && WorkCopy.saveAsk > 0;`));
     await wake(main);
     check('SitkaTools slept through the request: woken, it finds it in the copy and asks for the save',
-        await until(main, `return !document.getElementById('saveRequired')?.classList.contains('hidden') && /DailyWizard sent you back to save/.test(document.getElementById('saveRequiredText')?.textContent || '');`));
+        await until(main, `return !document.getElementById('saveRequired')?.classList.contains('hidden') && /Labour & Cost Wizard sent you back to save/.test(document.getElementById('saveRequiredText')?.textContent || '');`));
     await b.run(tab, `WorkCopy.askToSave();`);
     check('…and the tool\'s resent request is answered: it stops asking', await until(tab, `return WorkCopy.saveAsk === 0;`));
     await b.run(main, `SaveRequired.hide();`);
@@ -105,7 +105,7 @@ export async function run(b, BASE) {
         await until(main, `return typeof DB !== 'undefined' && DB.data?.lots?.L100?.name === 'Before the reload' && hasUnsavedChanges && document.getElementById('restoreOverlay')?.classList.contains('hidden') !== false;`));
 
     // ---- ♻️ A window that lost SitkaTools hands its changes over ----
-    let ew = await openTool(b, main, 'DailyWizard');
+    let ew = await openTool(b, main, 'EmployeeWizard');
     await b.send('browsingContext.reload', { context: main, wait: 'complete' });   // SitkaTools reloaded under the popup
     await until(main, `return typeof DB !== 'undefined' && !!DB.data && WorkCopy.ready;`);
     await b.run(ew, `DB.data._DailyWizard = { ...(DB.data._DailyWizard || {}), probe: { ...(DB.data._DailyWizard?.probe || {}), g: 'made after SitkaTools reloaded' } }; notifySitkaTools();`);
@@ -126,7 +126,7 @@ export async function run(b, BASE) {
         return ctx;
     };
     let savedText = await saveSingle(b, main);
-    ew = await openTool(b, main, 'DailyWizard');
+    ew = await openTool(b, main, 'EmployeeWizard');
     await b.send('browsingContext.close', { context: main });
     check('SitkaTools closed with everything saved and a tool window open: its copy is kept, marked saved, with its file name',
         await until(ew, `const c = await WorkCopy.read(); return !!c && c.unsaved === false && c.from === 'SitkaTools' && c.fileName === 'DB-26-10-13';`),
@@ -146,7 +146,7 @@ export async function run(b, BASE) {
     // No session left: a SitkaTools that didn't open the window (reloaded since, its window list empty) closes with everything
     // saved and forgets its copy. A new SitkaTools adds the window's changes to the database once it's opened (asked first)
     savedText = await saveSingle(b, hub);
-    ew = await openTool(b, hub, 'DailyWizard');
+    ew = await openTool(b, hub, 'EmployeeWizard');
     await b.run(hub, `openSubtools = []; window.onbeforeunload = null;`);
     await b.send('browsingContext.close', { context: hub });
     check('…a SitkaTools closed with everything saved and no tool window of its own open still forgets its copy',

@@ -55,7 +55,7 @@ export async function run(b, BASE) {
 
     // ---- The shared working copy (a tablet tab): refused too, and the copy put back ----
     await b.run(main, `await WorkCopy.flush();`);
-    const tab = await newTab(b, `${BASE}/DailyWizard/DailyWizard.html`);
+    const tab = await newTab(b, `${BASE}/EmployeeWizard/EmployeeWizard.html`);
     await b.waitFor(tab, `return typeof DB !== "undefined" && WorkCopy.inUse && Object.keys(DB.data?.lots || {}).length === 2;`);
     await b.run(tab, `DB.data = { lots: {}, rooms: {}, buildings: {}, calendarEvents: [] }; notifySitkaTools();`);
     await b.sleep(800);

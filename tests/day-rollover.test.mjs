@@ -65,6 +65,7 @@ export async function run(b, BASE) {
     await b.run(dw, setClock(0, 3, 'focus', true));
     check('a date picked by hand stays put', (await dwDate()).date === today(-3));
     await leave(b, dw); await b.send('browsingContext.close', { context: dw });
+    await b.run(main, `window.Date = window.__RealDate;`);   // the tools share the page's clock: back to the real one
     // A tick made just past midnight, before the once-a-minute check ran, doesn't land on yesterday (review H3)
     const dw2 = await openTool(b, main, 'DailyWizard');
     await b.run(dw2, `const s = document.getElementById('buildingSelect'); s.value = 'B1'; s.dispatchEvent(new Event('change'));`);

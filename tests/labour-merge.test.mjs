@@ -6,6 +6,14 @@ import { today, fixtureDb, withFloorManager, makeChecker, fresh, splitFiles, ope
 export const title = 'office + building hours on the same task (entry-by-entry merge)';
 
 export async function run(b, BASE) {
+    // Two SitkaTools pages in one browser stand in for the office and Building 1. A page opened while the other is open says
+    // "SitkaTools is already open in another tab", and that card covers its tool overlay: OK it, as a person would
+    const openFiles = async (b, ctx, ...args) => {
+        const out = await openSplit(b, ctx, ...args);
+        await b.waitFor(ctx, `return WorkCopy.ready;`);
+        await b.run(ctx, `if (!document.getElementById('restoreOverlay').classList.contains('hidden')) document.getElementById('restoreOkBtn').click(); return null;`, { user: true });
+        return out;
+    };
     const { results, check } = makeChecker();
     const T = today();
     const office = await fresh(b);
@@ -15,11 +23,11 @@ export async function run(b, BASE) {
     let disk = { ...files };   // the files in the shared folder
 
     // A. The office has the files open; Building 1 logs and saves first; then the office logs on the same task and saves
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     let dwO = await openTool(b, office, 'DailyWizard');
     await dwBuilding(b, dwO, 'B1');
     const b1 = (await b.send('browsingContext.create', { type: 'window' })).context;
-    await openSplit(b, b1, BASE, 'B1', disk);
+    await openFiles(b, b1, BASE, 'B1', disk);
     let dwB = await openTool(b, b1, 'DailyWizard');
     await logHours(b, dwB, 'Leaf Pick', 'Casey', 2, 0);
     await b.sleep(300);
@@ -29,7 +37,7 @@ export async function run(b, BASE) {
     const s2 = await saveSplit(b, office);
     check('A. office saves Main.json', !!s2['Main.json'], Object.keys(s2).join(', '));
     Object.assign(disk, s2);
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     check('A. both entries kept: Casey (Building 1) and Drew (office)', (await cropOn(office)) === 'Casey,Drew', await cropOn(office));
 
     // B. The office removes Building 1's entry; Building 1's still-open session then logs more and saves
@@ -45,7 +53,7 @@ export async function run(b, BASE) {
     await logHours(b, dwB, 'Leaf Pick', 'Alex', 0, 30);   // Building 1 never reopened: it still has Casey
     await b.sleep(300);
     Object.assign(disk, await saveSplit(b, b1));
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     check('B. Casey stays removed; Alex (Building 1, later) is added', (await cropOn(office)) === 'Alex,Drew', await cropOn(office));
 
     // C. The office corrects Building 1's signed entry in EmployeeWizard; Building 1's old session saves again
@@ -60,13 +68,13 @@ export async function run(b, BASE) {
     await logHours(b, dwB, 'Water plants', 'Blair', 1, 0);   // any change, from the old session (Alex still 30m there)
     await b.sleep(300);
     Object.assign(disk, await saveSplit(b, b1));
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     const alex2 = await entryOf(office, 'Alex');
     check('C. the office\'s newer correction wins over the old session\'s copy', alex2?.hours === 0.75, JSON.stringify(alex2?.hours));
 
     // D. Building 1 reopens and removes its own entry the same day (Main already holds it)
     await leave(b, dwB);
-    await openSplit(b, b1, BASE, 'B1', disk);
+    await openFiles(b, b1, BASE, 'B1', disk);
     dwB = await openTool(b, b1, 'DailyWizard');
     const rm2 = await removeHoursOf(b, dwB, 'Leaf Pick', 'Alex');
     check('D. Building 1 removed its own entry (same day)', rm2.startsWith('Entry removed'), rm2);
@@ -75,7 +83,7 @@ export async function run(b, BASE) {
     Object.assign(disk, s7);
     const ov7 = JSON.parse(s7['Building-B1.json'])._overlays.events.ev_cropb1?.labour_map;
     check('D. Building-B1.json records the removal', Object.keys(ov7?.removed || {}).length === 1, JSON.stringify(ov7?.removed));
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     check('D. the office no longer sees Alex', (await cropOn(office)) === 'Drew', await cropOn(office));
 
     // E. Once Main holds the result, Building 1's update for the task shrinks away
@@ -85,7 +93,7 @@ export async function run(b, BASE) {
     await b.sleep(300);
     Object.assign(disk, await saveSplit(b, office));
     await leave(b, dwB);
-    await openSplit(b, b1, BASE, 'B1', disk);
+    await openFiles(b, b1, BASE, 'B1', disk);
     dwB = await openTool(b, b1, 'DailyWizard');
     await logHours(b, dwB, 'Scout rooms', 'Casey', 0, 20);
     await b.sleep(300);
@@ -93,7 +101,7 @@ export async function run(b, BASE) {
     Object.assign(disk, s9);
     const ov9 = JSON.parse(s9['Building-B1.json'])._overlays.events;
     check('E. Building-B1.json no longer carries an update for the task', !ov9.ev_cropb1?.labour_map, JSON.stringify(ov9.ev_cropb1));
-    await openSplit(b, office, BASE, 'office', disk);
+    await openFiles(b, office, BASE, 'office', disk);
     check('E. the office still sees just Drew', (await cropOn(office)) === 'Drew', await cropOn(office));
     await leave(b, dwB);
     await b.send('browsingContext.close', { context: b1, promptUnload: false });
@@ -106,7 +114,7 @@ export async function run(b, BASE) {
     bf._overlays.events.ev_cropb2 = { labour_map: old };
     const open = async (officeStamp) => {
         main._fieldStamps = { lots: {}, events: { ev_cropb2: { labour_map: officeStamp } } };
-        await openSplit(b, office, BASE, 'office', { ...files, 'Main.json': JSON.stringify(main), 'Building-B2.json': JSON.stringify(bf) });
+        await openFiles(b, office, BASE, 'office', { ...files, 'Main.json': JSON.stringify(main), 'Building-B2.json': JSON.stringify(bf) });
         return evNames(await b.run(office, 'return DB.data;'), 'ev_cropb2', T).sort().join(',');
     };
     check('F. an older update newer than the office\'s edit: both lists kept', (await open(1000)) === 'Blair,Drew', await open(1000));
