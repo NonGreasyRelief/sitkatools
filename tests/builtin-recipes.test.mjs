@@ -142,7 +142,7 @@ export async function run(b, BASE) {
         types: [...document.querySelectorAll('#recipeTaskBody tr')].map(tr => tr.querySelector('input.t-type').value) };`);
     check('🌿 New Mother Recipe opens a copy of it, under a new id', nm.name === 'New Mother Recipe' && nm.id !== 'sitka-mother' && nm.kind === 'vegetative' &&
         nm.types.join() === mr.tasks.map(t => t[0]).join(), JSON.stringify(nm));
-    await b.run(clw, `document.getElementById('recipeEditorCancelBtn').click(); closeRecipeManager();`, { user: true });
+    await b.run(clw, `document.getElementById('recipeFooterBackBtn').click(); closeRecipeManager();`, { user: true });
     // A DB whose task-type list still has the placeholder 📋 for these types (a user recipe saved them so): Generate puts the recipe's in
     await b.run(clw, `for (const t of ['mother_pick2', 'mother_uppot1', 'mother_uppot2']) DB.data._CropLabourWizard.taskTypes[t] = { name: t, emoji: '📋', roomPhase: null };`);
     await pickLot('M500');

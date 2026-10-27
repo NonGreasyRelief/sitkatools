@@ -170,7 +170,7 @@ Both buttons are in the recipe manager's list view, next to `＋ New Recipe`.
 
 ### ✏️ Manage — Recipe Manager Overlay
 
-**✏️ Manage** (`#manageRecipesBtn`) opens `#recipeManagerOverlay`:
+**✏️ Manage** (`#manageRecipesBtn`) opens `#recipeManagerOverlay`, full window over the tool. Its header has its title and, at the right end, **‹ Back** with SitkaTools' **💾 Save DB** beside it (user request 2026-10-27: `Hub.subview`, which hides ✕ Close while it's open); its footer has **‹ Back** in the middle and, in the editor, **Save Recipe** on the right. ‹ Back goes from a recipe to the list (nothing saved, as Cancel did) and from the list back to CropLabourWizard (as Close did).
 
 - **List view:** `＋ New Recipe` (a copy of the default built-in with a fresh id), ⬆️ Import, ⬇️ Export, then one row per recipe. Built-in rows: **Duplicate / Export / 🖨️ Print**. User rows: **Edit / Duplicate / Export / 🖨️ Print / Delete**. Clicking a row selects that recipe and closes the overlay.
 - **🖨️ Print** (user request 2026-10-24, `printRecipe`): the recipe in a light, print-ready window like the Labour & Cost Wizard's prints (a **🖨️ Print / Save as PDF** bar). It shows the name, kind (bloom or 🌿 mother, built-in), id and task count; veg and bloom lengths, how long the plants live and how far the work after harvest runs, and the room turnaround (or, for mothers, the retire day and replacement cut); then every task in recipe order with when ("+16 days after Planting"), its day of the plant's life or after harvest, how long it runs, repeats and labour (columns only when some task has them) and whether it's optional; then the recipe's supplies (quantity, per crop / per plant at a task), no prices. A recipe has no dates until it's given to a lot, so none are printed.
@@ -178,7 +178,7 @@ Both buttons are in the recipe manager's list view, next to `＋ New Recipe`.
   - **🗓️ Tasks:** the Room turnaround readout and the task table (emoji, name, type, reference, offset, the read-only **Day** of the plant's life, days, every, room phase, minutes, staff, toggleable, on by default, locked; move up/down, delete, `＋ Add Task`).
   - **🧪 Inputs:** see below.
   - **DOM-sync rule:** before any re-render that changes rows, the tables are read back into the working copy (`readTaskTable()` for tasks) so typed values aren't lost. A change updates the hints in place, so tabbing through a row keeps focus.
-- **Save Recipe** re-runs validation, writes the recipe (and the price list) to the DB, merges the task-type registry and notifies SitkaTools. **Cancel** drops both.
+- **Save Recipe** re-runs validation, writes the recipe (and the price list) to the DB, merges the task-type registry and notifies SitkaTools. **‹ Back** drops both.
 - **Delete:** a recipe in use warns with the lot count (`1 lot(s) currently use it — they'll fall back to the built-in recipe.`). Lots with a dangling `recipeId` resolve to the default built-in. If it was the projection recipe, `projectionRecipeId` resets to the default built-in.
 
 ### 🧪 Inputs — Price List and Recipe Supplies

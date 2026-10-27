@@ -2746,6 +2746,10 @@
         .tool-bar-name { display: none; }
         .tool-overlay > .tool-root > header { padding-right: calc(var(--tool-bar-w, 230px) + 8px); flex-wrap: wrap; row-gap: 8px; }
         .tool-overlay > .tool-root > header .logo { white-space: nowrap; }
+        /* A tool's own full-window view (Hub.subview): the bar on top of it with 💾 Save DB only — the view has its own ‹ Back */
+        #toolHost.tool-sub .tool-bar { z-index: 400; }
+        #toolHost.tool-sub #toolBarClose { display: none; }
+        .tool-overlay .tool-sub-head { padding-right: calc(var(--tool-bar-w, 140px) + 8px); }
         .tool-bar-btn { min-height: 40px; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; }
         .tool-bar-btn:hover, .tool-bar-btn:focus-visible { border-color: var(--accent); }
         .tool-bar-save { position: relative; }   /* 💾 Save DB's popup drops down from here while a tool is open */
@@ -4456,6 +4460,10 @@
             border-bottom: 1px solid var(--border);
         }
         .overlay-title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+        /* The recipe screen's footer: ‹ Back in the middle, Save Recipe (editing) on the right */
+        .overlay-footer.recipe-footer { display: grid; grid-template-columns: 1fr auto 1fr; }
+        .recipe-footer #recipeFooterBackBtn { grid-column: 2; }
+        .recipe-footer #recipeEditorSaveBtn { grid-column: 3; justify-self: end; }
         .overlay-body {
             flex: 1;
             overflow-y: auto;
@@ -8196,9 +8204,9 @@
     <!-- Recipe Manager Overlay (Stage 4) — create / edit / duplicate / delete / export recipes -->
     <div class="overlay" id="recipeManagerOverlay">
         <header class="overlay-header">
-            <button type="button" class="btn btn-secondary" id="recipeMgrBackBtn" style="visibility:hidden;">←</button>
             <span class="overlay-title" id="recipeMgrTitle">Manage Recipes</span>
-            <span style="width:44px;"></span>
+            <!-- ‹ Back: from the list back to CropLabourWizard, from a recipe back to the list (💾 Save DB sits beside it: Hub.subview) -->
+            <button type="button" class="btn btn-secondary" id="recipeMgrBackBtn">‹ Back</button>
         </header>
         <div class="overlay-body">
             <!-- List view -->
@@ -8295,10 +8303,8 @@
                 </div>
             </div>
         </div>
-        <footer class="overlay-footer">
-            <button class="btn btn-secondary" id="recipeMgrCloseBtn">Close</button>
-            <span style="flex:1;"></span>
-            <button class="btn btn-secondary" id="recipeEditorCancelBtn" style="display:none;">Cancel</button>
+        <footer class="overlay-footer recipe-footer">
+            <button class="btn btn-secondary" id="recipeFooterBackBtn">‹ Back</button>
             <button class="btn btn-primary" id="recipeEditorSaveBtn" style="display:none;">Save Recipe</button>
         </footer>
     </div>
@@ -12416,6 +12422,9 @@
                 const hub = {
                     changed: () => { if (def.run === run) this.changed(name); },
                     close: () => { if (isOpen()) this.close(); },
+                    // A full-window view of the tool's own (CropLabourWizard's recipes) shows 💾 Save DB over its header, and
+                    // its own ‹ Back in place of ✕ Close; null puts the bar back on the tool's header (user request 2026-10-27)
+                    subview: (head) => { if (isOpen()) this.subview(head); },
                     get open() { return isOpen(); }
                 };
                 const doc = scopedToolDocument(root, isOpen), win = scopedToolWindow(isOpen, hub.close), timers = toolTimers();
@@ -12438,11 +12447,19 @@
             },
             // The bar over the open tool's header: its width kept free in the header, the header's height, and clear of the
             // section's scrollbar
+            subview(head) {
+                this.subHead?.classList.remove('tool-sub-head');
+                this.subHead = head || null;
+                head?.classList.add('tool-sub-head');
+                $('toolHost').classList.toggle('tool-sub', !!head);
+                if (this.barSizes) { this.barSizes.disconnect(); for (const el of [head || this.defs[this.current]?.root.querySelector(':scope > header'), this.defs[this.current]?.section]) if (el) this.barSizes.observe(el); }
+                this.fitBar();
+            },
             fitBar() {
                 const def = this.defs[this.current];
                 if (!def) return;
                 const host = $('toolHost'), bar = host.querySelector('.tool-bar');
-                const head = def.root.querySelector(':scope > header');
+                const head = this.subHead || def.root.querySelector(':scope > header');
                 host.style.setProperty('--tool-bar-w', bar.offsetWidth + 'px');
                 // The header's first row (the items beside its first one), down to its bottom padding
                 let rowH = 56;
@@ -12453,7 +12470,7 @@
                     rowH = Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - top + (parseFloat(getComputedStyle(head).paddingBottom) || 0);
                 }
                 host.style.setProperty('--tool-head-h', Math.round(rowH) + 'px');
-                host.style.setProperty('--tool-sb', Math.max(0, def.section.offsetWidth - def.section.clientWidth) + 'px');
+                host.style.setProperty('--tool-sb', this.subHead ? '0px' : Math.max(0, def.section.offsetWidth - def.section.clientWidth) + 'px');
             },
             close() {
                 const name = this.current;
@@ -12461,6 +12478,7 @@
                 const def = this.defs[name];
                 this.changed(name);   // anything it changed without saying so counts too
                 this.current = null;
+                this.subview(null);
                 this.barSizes?.disconnect();
                 this.barSizes = null;
                 for (const stop of def.run?.stops || []) stop();
@@ -12484,7 +12502,7 @@
                 let live = true;
                 def.run = run;
                 const isLive = () => live && def.run === run;
-                const hub = { changed: () => { if (isLive()) this.changed(name); }, close() {}, get open() { return isLive(); } };
+                const hub = { changed: () => { if (isLive()) this.changed(name); }, close() {}, subview() {}, get open() { return isLive(); } };
                 const doc = scopedToolDocument(def.template.cloneNode(true), isLive), win = scopedToolWindow(isLive, hub.close), timers = toolTimers();
                 run.stops.push(doc.stop, win.stop, timers.stop);
                 try {
@@ -19585,9 +19603,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             renderRecipeList();
             setRecipeMgrView('list');
             $('recipeManagerOverlay').classList.add('open');
+            Hub.subview(document.querySelector('#recipeManagerOverlay > .overlay-header'));   // 💾 Save DB beside its ‹ Back
         }
         function closeRecipeManager() {
             $('recipeManagerOverlay').classList.remove('open');
+            Hub.subview(null);
             editorRecipe = null;
             editorInputs = null;
         }
@@ -19595,10 +19615,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const isList = view === 'list';
             $('recipeListPane').style.display = isList ? '' : 'none';
             $('recipeEditorPane').style.display = isList ? 'none' : '';
-            $('recipeMgrBackBtn').style.visibility = isList ? 'hidden' : 'visible';
             $('recipeMgrTitle').textContent = isList ? 'Manage Recipes' : (editorRecipe?.name || 'Edit Recipe');
-            $('recipeMgrCloseBtn').style.display = isList ? '' : 'none';
-            $('recipeEditorCancelBtn').style.display = isList ? 'none' : '';
             $('recipeEditorSaveBtn').style.display = isList ? 'none' : '';
         }
 
@@ -22591,8 +22608,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // ---- Recipe Manager (Stage 4) ----
         $('manageRecipesBtn').addEventListener('click', openRecipeManager);
-        $('recipeMgrBackBtn').addEventListener('click', () => { renderRecipeList(); setRecipeMgrView('list'); });
-        $('recipeMgrCloseBtn').addEventListener('click', closeRecipeManager);
+        // ‹ Back (top and bottom): a recipe being edited goes back to the list (as Cancel did, nothing saved); the list back to
+        // CropLabourWizard (as Close did)
+        const recipeBack = () => { if ($('recipeEditorPane').style.display !== 'none') { renderRecipeList(); setRecipeMgrView('list'); } else closeRecipeManager(); };
+        $('recipeMgrBackBtn').addEventListener('click', recipeBack);
+        $('recipeFooterBackBtn').addEventListener('click', recipeBack);
         $('recipeNewBtn').addEventListener('click', () => {
             const base = cloneRecipeData(BUILTIN_RECIPE);
             base.id = generateRecipeId();
@@ -22609,7 +22629,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         });
         $('recipeAddTaskBtn').addEventListener('click', addTaskRow);
         wireInputTables();
-        $('recipeEditorCancelBtn').addEventListener('click', () => { renderRecipeList(); setRecipeMgrView('list'); });
         $('recipeEditorSaveBtn').addEventListener('click', saveRecipeFromEditor);
         // Task table: delegated move/remove + live enable/disable of the "on by default" box
         $('recipeTaskBody').addEventListener('click', (e) => {

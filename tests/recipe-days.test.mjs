@@ -35,13 +35,13 @@ export async function run(b, BASE) {
     ed = await editorDays();
     check('typing flip +21 moves flip to day 36, the early leaf pick to 53–54 and harvest to 98 → 99; after harvest stays put',
         ed.flip === "day 36 of the plant's life" && ed.leafpick_early === "days 53–54 of the plant's life" && ed.harvest === "day 99 of the plant's life" && ed.room_clean === 'day 1 after harvest', JSON.stringify(ed));
-    await b.run(clw, `document.getElementById('recipeEditorCancelBtn').click();`, { user: true });
+    await b.run(clw, `document.getElementById('recipeFooterBackBtn').click();`, { user: true });
     // A mother recipe: the life ends at Retire Mothers
     await b.run(clw, `document.getElementById('recipeNewVegBtn').click();`, { user: true });
     ed = await editorDays();
     check('a mother recipe (the built-in\'s copy): Top Mothers from day 36, the second up-pot on day 90, Retire Mothers on day 125 of the plant\'s life',
         ed.mother_top === "day 36 of the plant's life" && ed.mother_uppot2 === "day 90 of the plant's life" && ed.retire === "day 125 of the plant's life", JSON.stringify(ed));
-    await b.run(clw, `document.getElementById('recipeEditorCancelBtn').click(); closeRecipeManager();`, { user: true });
+    await b.run(clw, `document.getElementById('recipeFooterBackBtn').click(); closeRecipeManager();`, { user: true });
 
     // ---- Preview: the lot's own dates ----
     await b.run(clw, `const l = document.getElementById('activeLot'); l.value = 'L300'; l.dispatchEvent(new Event('change'));
