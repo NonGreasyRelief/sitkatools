@@ -18,7 +18,7 @@ Header: tool name on the left, **Active Lot** dropdown on the right (Tasks is lo
   - 7 day buttons, green (works) / red (off): the ongoing work week.
   - **Name** and **Wage** ($/h). Blank (placeholder "not set") leaves the wage unset or clears it. A first wage covers all their hours; **changing** a wage asks **Applies from** (today by default, never later): hours worked before that day keep the old wage (price by date, user decision 2026-10-26). The history is in `_EmployeeWizard.wageHistory[name]` (Wages.json), shown under the box; it follows a rename and goes with a delete.
   - **Floor manager** checkbox: floor managers sign crop and equipment tasks off (DailyWizard's ✅ Mark done, the Tasks tab's Mark completed) with their PIN and drawn initials.
-  - **🔒 Floor manager PIN** (shown when Floor manager is ticked): 4–8 digits, typed twice; blank keeps the PIN they have, and a note says when it was set or that there's none yet. Saved only as a salted SHA-256 hash (`pin`). Unticking Floor manager removes the PIN. Each floor manager's PIN unlocks DailyWizard's ✏️ edit mode and approves deletions there and in the Tasks tab (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
+  - **🔒 Floor manager PIN** (shown when Floor manager is ticked): 4–8 digits, typed twice; blank keeps the PIN they have, and a note says when it was set or that there's none yet. Saved only as a salted SHA-256 hash (`pin`). Unticking Floor manager removes the PIN. Each floor manager's PIN unlocks DailyWizard's ✏️ edit mode and approves deletions there and in the Tasks tab (`docs/DailyWizard.md` → "🔒 Edit Mode and Floor Manager PINs").
   - **Save Changes** and **Request Time Off**.
 - **Time-off view** (Request Time Off): a month calendar showing regular days on and booked-off days (partial days shaded). Bookings can be multi-day or partial (hour ranges per day). Below, the employee's bookings, each with an ✕. Only booked time off creates calendar events, never ongoing shifts.
 
@@ -74,7 +74,7 @@ Inputs for the total cost per gram (root `CLAUDE.md` → "Total Cost per Gram"; 
 
 ### Reports Tab (📊, office only)
 
-Full spec, metrics, definitions and the harvest-log hook-up steps: `EmployeeWizard/REPORTS.md`. The essentials:
+Full spec, metrics, definitions and the harvest-log hook-up steps: `docs/REPORTS.md`. The essentials:
 
 - **Pages:** Overview (8 KPI tiles incl. **Cost / g (all in)**, and Needs attention) · 💲 Costs · 🔍 Cost ledger · Crop Timeline (crop labour and room schedule Gantts) · Labour · Yield & Quality (incl. **What drives yield?**) · Rooms & Environment · Forecast · 📋 CTLS month · ⚙️ Setup & data.
 - **🏢 By building** (💲 Costs page, cost audit 2026-10-26): each building's cost per gram and all buildings together (they add up), what each building costs to run (every $ spent in it, by part and month — the nursery included — on the period's own days), and each lot's costs split between the building it ships from, the nursery and its clones (`REPORTS.md` §6).
@@ -169,7 +169,7 @@ The tool writes `labour_map` and `completed` directly onto Labour-wizard events 
 
 ## Relationship to SitkaTools
 
-- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EmployeeWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `EmployeeWizard/EmployeeWizard.html` only points there.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EmployeeWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 - The database and the view as for every tool: root `CLAUDE.md` → "Tool Overlays" and "Building Device View".
 
 - **Live updates:** on `sitkaGit_db_update` (SitkaTools changed the DB while it's open) it redraws the roster, work week / time-off calendar and task list, keeping the selected lot and task. No form field is reset, and it never calls `notifySitkaTools()` in response.

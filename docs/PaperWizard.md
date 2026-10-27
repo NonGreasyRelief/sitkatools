@@ -162,7 +162,7 @@ The ordered questions that fill a sheet's non-auto-filled boxes: `{ id (4 chars)
 | `sameAsLast` | Offer ⏪ Same as last time. |
 | `mandatory` | While unanswered: Next / Save hidden (Back stays), Enter doesn't advance, a toast names it. Runner and Initialize quiz. |
 | `prefillFrom` | Binding that pre-fills the input on open; the user can edit, and the stored answer is what prints. |
-| `metric` | Report tag (text / number / select) for the Labour & Cost Wizard's Reports, e.g. `harvest.wetWeight`, `env.temp`, `ipm.pests`. Set from **Report metric**; cleared on a type change. PaperWizard never reads it. `REPORT_METRIC_GROUPS` must match EmployeeWizard's `REPORT_METRICS` (`EmployeeWizard/REPORTS.md`). Plant-count questions feed reports untagged. |
+| `metric` | Report tag (text / number / select) for the Labour & Cost Wizard's Reports, e.g. `harvest.wetWeight`, `env.temp`, `ipm.pests`. Set from **Report metric**; cleared on a type change. PaperWizard never reads it. `REPORT_METRIC_GROUPS` must match EmployeeWizard's `REPORT_METRICS` (`docs/REPORTS.md`). Plant-count questions feed reports untagged. |
 | `metricUnit` | `'g' \| 'kg' \| 'lb' \| 'F' \| 'C'` for weight / temperature metrics (**Answered in**); reports convert to g / °F. |
 | `metricProduct` | `feed.nutrient` only: `{ name }` (always this product) or `{ from: questionId }` (that day's answer to another question; a "No" answer leaves it unlinked). The **Product** row shows only for `feed.nutrient`; changing metric or type clears it. The name must match CropLabourWizard's price list. |
 
@@ -322,7 +322,7 @@ For forms like the harvest log: a wet weight per tote on harvest day (often more
 - **Storage:** `inst.rows = [{ id, <questionId>: value, …, void? }]` — every table's entries in one list, table by table, each in entry order. Each entry has an 8-char `id` and a key for **every** question of its table (blank = `''`, initials `{ name, strokes } | null`); that is how a row finds its table (`splitRows`: the first table whose questions it answers). Rows matching no table (their questions were deleted) are kept on save and never printed. Saving replaces the list with the runner's copy. `void` (ISO time) = deleted after it was on file: keeps its slot, prints struck out, counts nowhere.
 - **Print:** a table's entry n goes in row slot n. The table's page prints again for every further *rows-per-page* entries (45 entries on a 20-row page → 3 copies), and a page with several tables prints as often as its fullest table needs. Copies follow each other before any later page (pages 2, 2, 3, 3 …). Header boxes repeat on every copy; unused rows on the last copy print blank; a saved entry's empty answer prints `N/A`.
 - **Completion:** every table needs at least one entry (see "Completion Rules").
-- **Reports:** the Labour & Cost Wizard reads `inst.rows` like other answers (dated by the instance), so a summed metric (`harvest.wetWeight`, `harvest.dryWeight`) adds every entry; a Net column tagged dry weight sums every bin, flower, trim and other alike (`EmployeeWizard/REPORTS.md`).
+- **Reports:** the Labour & Cost Wizard reads `inst.rows` like other answers (dated by the instance), so a summed metric (`harvest.wetWeight`, `harvest.dryWeight`) adds every entry; a Net column tagged dry weight sums every bin, flower, trim and other alike (`docs/REPORTS.md`).
 - SitkaTools' split files treat a page as a whole, so `rows` needs nothing there.
 
 ### Corrections & Change Log (QAP traceability)
@@ -424,7 +424,7 @@ _PaperWizard: {
 
 ## Relationship to SitkaTools
 
-- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL PaperWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `PaperWizard/PaperWizard.html` only points there.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL PaperWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 
 It has no DB import / export of its own — only sheet-configuration import / export and Load document. It calls `notifySitkaTools()` after every `_PaperWizard` change (sheets, wizards, entries, signatures) and after every lot write-back.
 

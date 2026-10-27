@@ -2,9 +2,9 @@
 
 Spec for the **📊 Reports** tab, and the guide for hooking up the harvest log. Every chart is hand-rolled SVG inside `EmployeeWizard.html`: no chart libraries, no network calls, no new browser storage.
 
-**Demo DB:** `node examples/make-example-db.js [out.json] [--today=YYYY-MM-DD]` builds `examples/Example-Reports-DB.json`. It starts from `PaperWizard/Current.json` and adds past crops (1000 g wet per plant), labour, grow and harvest logs, chore and equipment hours, time off and the cost inputs, dated relative to today. Load it with SitkaTools' 📂 Load DB; rerun it on the day of a demo. It is git-ignored because it holds real staff and lot names.
+**Demo DB:** `node examples/make-example-db.js [out.json] [--today=YYYY-MM-DD]` builds `examples/Example-Reports-DB.json`. It starts from `local/Current.json` and adds past crops (1000 g wet per plant), labour, grow and harvest logs, chore and equipment hours, time off and the cost inputs, dated relative to today. Load it with SitkaTools' 📂 Load DB; rerun it on the day of a demo. It is git-ignored because it holds real staff and lot names.
 
-**Checking a change:** run every page against an empty DB, the sample DB (`PaperWizard/Current.json`) and the demo DB, also with no wages and with building and strain filters. `tests/cost-per-gram.test.mjs` checks a hand-worked cost per gram.
+**Checking a change:** run every page against an empty DB, the sample DB (`local/Current.json`) and the demo DB, also with no wages and with building and strain filters. `tests/cost-per-gram.test.mjs` checks a hand-worked cost per gram.
 
 ---
 

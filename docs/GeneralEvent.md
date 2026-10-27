@@ -2,7 +2,7 @@
 
 Puts quick standalone events on the shared calendar: reminders and milestones that aren't tied to a lot or room (e.g. "license renewal due", "team meeting").
 
-- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL GeneralEvent` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `GeneralEvent/GeneralEvent.html` only points there.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL GeneralEvent` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 - **Independent tool:** the header shows only "📌 GeneralEvent", with no selector. The footer and UI follow the root `CLAUDE.md`, and so does the database ("Tool Overlays").
 - **Office only** (`DeviceView.OFFICE_ONLY: true`). On a building device, SitkaTools hides the link. If the tool is opened anyway, it covers the page with "Office only" and stops before loading, because calendar events go in Main.json, which a building device can't save. See root `CLAUDE.md` → "Building Device View".
 

@@ -2,7 +2,7 @@
 
 Schedules recurring maintenance for grow-room equipment, room by room. It writes every occurrence of each maintenance task onto the shared calendar, up to 12 months ahead.
 
-- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EquipmentWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `EquipmentWizard/EquipmentWizard.html` only points there.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL EquipmentWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 - **Room-focused tool:** the header shows "🔧 EquipmentWizard" and an **Active Room** selector. The footer and UI follow the root `CLAUDE.md`, and so does the database ("Tool Overlays").
 - **Office only** (`DeviceView.OFFICE_ONLY: true`). On a building device, SitkaTools hides the link. If the tool is opened anyway, it covers the page with "Office only" and stops before loading, because a building device couldn't save the result. It never resyncs there. See root `CLAUDE.md` → "Building Device View".
 

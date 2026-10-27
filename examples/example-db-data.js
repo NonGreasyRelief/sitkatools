@@ -1,6 +1,6 @@
 // Example DB data — run by make-example-db.js after EmployeeWizard's own script, so the past crops are summarised by
 // rptBuildCrop / rptSaveSummaries (the same path as Reports → Import archived lots) and every page is checked.
-const SRC = JSON.parse(fs.readFileSync(path.join(ROOT, 'PaperWizard', 'Current.json'), 'utf8'));
+const SRC = JSON.parse(fs.readFileSync(path.join(ROOT, 'local', 'Current.json'), 'utf8'));
 const CLW_HTML = fs.readFileSync(path.join(ROOT, 'CropLabourWizard', 'CropLabourWizard.html'), 'utf8');
 const TODAY = rToday();
 let seed = 20261012;

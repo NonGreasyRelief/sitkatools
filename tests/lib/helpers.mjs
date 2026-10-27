@@ -227,7 +227,7 @@ export async function openTool(b, sitka, tool, { ready = 'return typeof DB !== "
     // A tool that lives in SitkaTools.html opens as an overlay there: a handle { context, tool } that tests use like a window
     // (tests/lib/bidi.mjs runs its code inside the tool)
     if (await b.run(sitka, `return typeof Tools !== 'undefined' && Tools.has(${JSON.stringify(tool)});`)) {
-        await b.run(sitka, `document.querySelector('a.module-link[href*="${tool}"]').click();`, { user: true });
+        await b.run(sitka, `document.querySelector('a.module-link[data-tool="${tool}"]').click();`, { user: true });
         // The page has the focus, as a new tool window had it (no blur or change events in a page without it)
         await b.send('browsingContext.activate', { context: sitka }).catch(() => {});
         const handle = { context: sitka, tool };
@@ -235,7 +235,7 @@ export async function openTool(b, sitka, tool, { ready = 'return typeof DB !== "
         return handle;
     }
     const before = new Set((await b.contexts()).map(c => c.context));
-    await b.run(sitka, `document.querySelector('a.module-link[href*="${tool}"]').click();`, { user: true });
+    await b.run(sitka, `document.querySelector('a.module-link[data-tool="${tool}"]').click();`, { user: true });
     let ctx = null;
     for (let i = 0; i < 60 && !ctx; i++) {
         await b.sleep(100);

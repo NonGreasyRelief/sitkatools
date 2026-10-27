@@ -5,11 +5,11 @@ Standalone single-file HTML tools for licensed cannabis cultivation. Every tool 
 - **The hub's own details** (managers, calendar, folder mode, saving, the split-file internals, the working copy): `SitkaTools/CLAUDE.md`.
 - **Multi-user plan:** read `ROADMAP.md` before changing how the DB is loaded, saved or split.
 - **Past decisions**, dated, one line each: `DECISIONS.md` (not loaded by default).
-- Each tool's own rules are in its folder's `CLAUDE.md` (its code is in `SitkaTools/SitkaTools.html`: see "Tool Overlays"). `AGENTS.md` files are symlinks to them.
+- Each tool's own rules are in `docs/<Tool>.md` (the Labour & Cost Wizard's Reports spec in `docs/REPORTS.md`); its code is in `SitkaTools/SitkaTools.html` (see "Tool Overlays"). `AGENTS.md` files are symlinks to the `CLAUDE.md` beside them.
 
 ## Core Principles
 
-- **One file** (user decision 2026-10-27): `SitkaTools/SitkaTools.html` holds the hub and every tool, CSS and JS inside, each tool in its own marked sections (see "Tool Overlays"). It works opened as a local file (`file://`, and Android) or from GitHub Pages. No build step, dependencies, frameworks, bundlers or npm packages. A tool's old `<Tool>/<Tool>.html` only says it now lives inside SitkaTools.
+- **One file** (user decision 2026-10-27): `SitkaTools/SitkaTools.html` holds the hub and every tool, CSS and JS inside, each tool in its own marked sections (see "Tool Overlays"). It works opened as a local file (`file://`, and Android) or from GitHub Pages. No build step, dependencies, frameworks, bundlers or npm packages.
 - **Everything happens in SitkaTools' one page:** a tool opens over it as an overlay, one at a time, on every device (no popups, no tool tabs), works on SitkaTools' own database, and SitkaTools does all saving.
 - **Browser sandbox only:** no `fetch()` to other origins, no WebSocket, no server of our own.
 - **Tools don't talk to each other directly.** Shared state goes through the DB; only one tool is open at a time.
@@ -46,14 +46,14 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
 - Dry rooms double as trim rooms: `dryRoom` and `trimRoom` may name the same room, but each has its own clean form.
 - **Ownership:** a tool reads lots, rooms and buildings, and writes only its own keys (`_tool_<Tool>` on a lot, or top-level `_<Tool>`). The exceptions:
   - **The Labour & Cost Wizard's Reports and Labour Log may read every tool's data.** They write only `_EmployeeWizard.crops / .settings / .costs / .ctls / .overheadCosts`.
-  - **PaperWizard may write exactly `lots.plantCount`, `.stage` and `.currentRoom`** when a log entry records a change, only from the lot's **current** daily log (a lot keeps one daily log at a time: grow, then drying, then trim; the current one is the sheet whose newest page started last; user decision 2026-10-26, `PaperWizard/CLAUDE.md` → "One Daily Log at a Time") or its harvest log. No other tool writes another tool's data.
-  - **🔒 A lot with a grow log is locked to it** (any daily-weekly page in PaperWizard): its plant count, phase and room then change only through PaperWizard (the grow log, and the harvest log after it). SitkaTools shows them read-only, won't delete the lot, and won't delete or re-home a room it's in. Moving it to another building is a grow-log room change too (see "Lot move"). A changed count needs a reason, split by reason (`PaperWizard/CLAUDE.md` → "🌱 Why the Plant Count Changed"). Details: `SitkaTools/CLAUDE.md` → "Lot Manager".
+  - **PaperWizard may write exactly `lots.plantCount`, `.stage` and `.currentRoom`** when a log entry records a change, only from the lot's **current** daily log (a lot keeps one daily log at a time: grow, then drying, then trim; the current one is the sheet whose newest page started last; user decision 2026-10-26, `docs/PaperWizard.md` → "One Daily Log at a Time") or its harvest log. No other tool writes another tool's data.
+  - **🔒 A lot with a grow log is locked to it** (any daily-weekly page in PaperWizard): its plant count, phase and room then change only through PaperWizard (the grow log, and the harvest log after it). SitkaTools shows them read-only, won't delete the lot, and won't delete or re-home a room it's in. Moving it to another building is a grow-log room change too (see "Lot move"). A changed count needs a reason, split by reason (`docs/PaperWizard.md` → "🌱 Why the Plant Count Changed"). Details: `SitkaTools/CLAUDE.md` → "Lot Manager".
   - **Event annotations:** labour tools and SitkaTools add fields to other tools' events in place (see "Event Annotations Survive Regeneration").
   - SitkaTools' deletion hook removes one projected lot (see "Crop Projection").
   - SitkaTools' close-out moves a lot's saved 🔍 cost ledger (`_EmployeeWizard.crops[lot].costs.ledger`, `.cropCosts[lot].ledger`) into its archive and drops those copies.
 - `calendarEvents` are append-only per tool; `sourceTool` names the tool that made each one.
 - **`_meta`:** built when the user saves and committed only once the save link is used, so a cancelled save changes nothing. Two files with the same `parentSaveId` were edited from the same copy. No tool reads it for logic; tools carry it through untouched.
-- **Paperwork tied to no lot** (PaperWizard): **facility forms** (company-wide: destruction logs, inventory logs) in `_PaperWizard.facilityEntries[<sheetId>]`, one record for the whole company that every building adds to; **building forms** (one building's, e.g. its sanitation form) in `_PaperWizard.buildingEntries[<BuildingID>]`. Same entry shape as a lot's `entries[<LotID>][<sheetId>]`. Details: `PaperWizard/CLAUDE.md` → "Facility & Building Paperwork".
+- **Paperwork tied to no lot** (PaperWizard): **facility forms** (company-wide: destruction logs, inventory logs) in `_PaperWizard.facilityEntries[<sheetId>]`, one record for the whole company that every building adds to; **building forms** (one building's, e.g. its sanitation form) in `_PaperWizard.buildingEntries[<BuildingID>]`. Same entry shape as a lot's `entries[<LotID>][<sheetId>]`. Details: `docs/PaperWizard.md` → "Facility & Building Paperwork".
 - PaperWizard's grow logs are the source of truth for a lot's plant count, phase and room once it has one, with every removal's reason (destroyed, culled, sampled, harvested, moved, sold). Long term they also become the source for the rest of a lot's lifecycle (sub-lots), and the lot manager will handle only external lots.
 
 ### Event IDs
@@ -139,13 +139,13 @@ A building device sees only its own building and only what it can save. It appli
 - **SitkaTools:** see `SitkaTools/CLAUDE.md` → "On a Building Device".
 - **Tools get the view with the DB** (`view: { building, split }` with every `receiveDb`; `split` = split files are open). Every tool has the same `DeviceView` snippet (`take(msg)`, `lotVisible`, `roomVisible`); only `OFFICE_ONLY` differs.
   - **Office-only tools** (CropLabourWizard, EquipmentWizard, GeneralEvent) show "Office only" and stop before loading.
-  - **DailyWizard** lists a chore tied to a room only while a lot's current room is that room (`DailyWizard/CLAUDE.md` → "🚪 Room Chores"). It opens on its own building; other buildings and All Buildings can be viewed but not changed (`DailyWizard/CLAUDE.md` → "Other Buildings on a Building Device"). With split files the office views every building's list without changing it. Its floor manager signs tasks off with ✅ Mark done (drawn initials and their PIN, as the Labour & Cost Wizard's Mark completed), and unlocks task editing and approves deletions with their own PIN, on every device (`DailyWizard/CLAUDE.md` → "🔒 Edit Mode and Floor Manager PINs").
-  - **PaperWizard** lists only the building's lots (plus 🏭 Facility and its own 🏢 building's cabinet), hides Configure Sheets, offers the building's rooms (and, on the 🏠 Room question, every other building's, to move a lot there), and shows some lots read-only (`lotElsewhere`, see `PaperWizard/CLAUDE.md`), and adds to the facility forms without changing what's on them. With split files the office views and prints every lot's paperwork and building forms, and fills only the facility forms.
+  - **DailyWizard** lists a chore tied to a room only while a lot's current room is that room (`docs/DailyWizard.md` → "🚪 Room Chores"). It opens on its own building; other buildings and All Buildings can be viewed but not changed (`docs/DailyWizard.md` → "Other Buildings on a Building Device"). With split files the office views every building's list without changing it. Its floor manager signs tasks off with ✅ Mark done (drawn initials and their PIN, as the Labour & Cost Wizard's Mark completed), and unlocks task editing and approves deletions with their own PIN, on every device (`docs/DailyWizard.md` → "🔒 Edit Mode and Floor Manager PINs").
+  - **PaperWizard** lists only the building's lots (plus 🏭 Facility and its own 🏢 building's cabinet), hides Configure Sheets, offers the building's rooms (and, on the 🏠 Room question, every other building's, to move a lot there), and shows some lots read-only (`lotElsewhere`, see `docs/PaperWizard.md`), and adds to the facility forms without changing what's on them. With split files the office views and prints every lot's paperwork and building forms, and fills only the facility forms.
   - **The Labour & Cost Wizard** shows only the Tasks tab and the 📜 Labour Log, limited to work in the building.
 
 ## Crop Projection
 
-CropLabourWizard plans future crops in flowering rooms (`isFlowering`), and the next mother lots in rooms designated **Mother**, as **projected lots**: a 5-lot chain per room, ids `{roomId}-TBA-01`…`-05`. They live in `_CropLabourWizard.projectedLots` (owned by CropLabourWizard), never in `DB.lots`, and their events carry `sourceTool: 'CropProjection'`, `lotId`, and always a `roomId`. Chain rules, reprojection and push-backs: `CropLabourWizard/CLAUDE.md` → "Crop Projection".
+CropLabourWizard plans future crops in flowering rooms (`isFlowering`), and the next mother lots in rooms designated **Mother**, as **projected lots**: a 5-lot chain per room, ids `{roomId}-TBA-01`…`-05`. They live in `_CropLabourWizard.projectedLots` (owned by CropLabourWizard), never in `DB.lots`, and their events carry `sourceTool: 'CropProjection'`, `lotId`, and always a `roomId`. Chain rules, reprojection and push-backs: `docs/CropLabourWizard.md` → "Crop Projection".
 
 - SitkaTools draws projection events dashed and muted (`.day-event.projection`); ICS export adds " (projected)" to their titles.
 - **⚠️ Clone cut vs projections:** projections count from the previous lot's last harvest day, not its own "Cut Clones to Replace Lot" task. When a room's newest real lot cuts on a different day from TBA-01, SitkaTools (both calendar bars, tooltip, event panel) and CropLabourWizard (both tasks) show "Does not match projection schedule. Adjust in real lot to match distance from harvest to projections." Notify only.
@@ -161,7 +161,7 @@ It is a no-op when the room has no TBA-01. No tool regenerates or reprojects aut
 
 ## Task Recipes
 
-CropLabourWizard's tasks come from recipes: four built-ins in code (Sitka Standard, 9-week bloom, with 20, 19 or 18 days of veg, `sitka-9week` the default; and the 🌿 Sitka Default mother recipe, `sitka-mother`), plus user recipes in `_CropLabourWizard.recipes`. Recipe schema, validation, inputs and labour estimates: `CropLabourWizard/CLAUDE.md` → "Task Recipes (Recipe Manager)". What other tools rely on:
+CropLabourWizard's tasks come from recipes: four built-ins in code (Sitka Standard, 9-week bloom, with 20, 19 or 18 days of veg, `sitka-9week` the default; and the 🌿 Sitka Default mother recipe, `sitka-mother`), plus user recipes in `_CropLabourWizard.recipes`. Recipe schema, validation, inputs and labour estimates: `docs/CropLabourWizard.md` → "Task Recipes (Recipe Manager)". What other tools rely on:
 
 - **🌿 Mother lots:** a recipe with `kind: 'vegetative'` schedules mother plants (no flip, harvest or trim; retired on a planned day). A lot scheduled with one is a mother lot, and its `_tool_CropLabourWizard.kind` is `'vegetative'`. Its destination room (`destRoom`) is its Mother room. Nothing else flags mothers.
 - **Repeating tasks:** a recipe task may repeat every N days; each repeat is its own event with `repeat: 1, 2, …`.
@@ -179,7 +179,7 @@ CropLabourWizard events: `{ id, date, endDate?, title, sourceTool: 'CropLabourWi
 
 ## Total Cost per Gram
 
-The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile **Cost / g (all in)**, the **💲 Costs** page, and the **🔍 Cost ledger**: each lot's costs day by day, with the arithmetic). Definitions: `EmployeeWizard/REPORTS.md`.
+The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile **Cost / g (all in)**, the **💲 Costs** page, and the **🔍 Cost ledger**: each lot's costs day by day, with the arithmetic). Definitions: `docs/REPORTS.md`.
 
 | Part | Comes from | Priced with |
 |---|---|---|
@@ -191,7 +191,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 | Property | days each crop spends in a building's rooms | the building's monthly rent + fees, shared each day by its rooms with a lot growing, by their lights (the default, user decision 2026-10-26: a lot drying or trimming pays none, since the dry room is timed to be free for the flower rooms it serves; a day with only lots drying or trimming is an idle day), then by plants within a room; or by the rooms' floor area, or by every lot's plants |
 
 - Electricity is worked out room by room, day by day, using each day's light % from the grow logs of the lots in the room (100 % when not logged). An empty room is dark (a Mother room too); its equipment's kWh goes to the building's crops that day. A lot drying or trimming doesn't light its room.
-- **🌿 Clones:** a mother lot (a lot scheduled with a vegetative recipe) is costed like a crop in its Mother room. Its **cost per clone** = everything spent growing it ÷ the clones cut from it, by part. A lot cut on site from a mother lot carries its clones at that price in every part. **Cutting is the bloom lot's own cost:** log it on the new lot's ✂️ Cutting Clones task; its hours and the supplies charged at Cutting Clones stay in that lot's costs. Bought clones keep the price-list price. Definitions: `EmployeeWizard/REPORTS.md` §6.
+- **🌿 Clones:** a mother lot (a lot scheduled with a vegetative recipe) is costed like a crop in its Mother room. Its **cost per clone** = everything spent growing it ÷ the clones cut from it, by part. A lot cut on site from a mother lot carries its clones at that price in every part. **Cutting is the bloom lot's own cost:** log it on the new lot's ✂️ Cutting Clones task; its hours and the supplies charged at Cutting Clones stay in that lot's costs. Bought clones keep the price-list price. Definitions: `docs/REPORTS.md` §6.
 - **Where a lot is, and its plants, each day** come from its grow log: the room and phase it recorded, and that day's count. The schedule fills the days before the grow log starts, and after the plants reach 0 only the dry and trim rooms count. Rooms, their chores and the building's property are shared by each lot's plants that day. A lot with no grow log follows its schedule and its starting count. **Every lot takes its share**, scheduled or not (a lot with no schedule and no grow log: its current room). A grow log that never records the harvest (0 plants) ends at the scheduled harvest, not today, and Reports name the lot (cost audit 2026-10-26).
 - **Partial = missing** (user decision 2026-10-26): a lot's part counts only when all of it is priced. One unpriced fertilizer product or supply, a room it grew in with no watts per light, days in a building with no property cost set ($0 is a figure), or a part its clones can't be priced in, leaves that part out for the lot, never counted low. "What's missing" says why, and names every crop left out of labour $ with who and how many hours.
 - **🧰 Miscellaneous labour** (DailyWizard's built-in row in every building, code `misc`) counts like a whole-building chore.
@@ -206,7 +206,7 @@ The CEO's key number, shown in the Labour & Cost Wizard's Reports (overview tile
 
 ## Monthly CTLS Numbers
 
-The Labour & Cost Wizard's **📋 CTLS month** (Reports) gives the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. Definitions: `EmployeeWizard/REPORTS.md` → "CTLS month".
+The Labour & Cost Wizard's **📋 CTLS month** (Reports) gives the cultivation numbers for Health Canada's monthly CTLS report, for the whole facility. Definitions: `docs/REPORTS.md` → "CTLS month".
 
 - **Plants:**
   - **In:** only from the Lot Manager. New lots are received (with `receivedFrom`), sub-lots are clones cut.
@@ -243,15 +243,15 @@ Any implementation must reproduce this table. Where holidays are used:
 
 ## Tool Registry
 
-| Tool | Directory | What it does |
+| Tool | Rules | What it does |
 |---|---|---|
-| SitkaTools | `SitkaTools/` | Hub: lots, rooms, buildings, the calendar, load and save |
-| GeneralEvent | `GeneralEvent/` | Standalone calendar events (text, date, emoji) |
-| CropLabourWizard | `CropLabourWizard/` | Crop schedules from task recipes, projections, labour estimates, input price list |
-| EquipmentWizard | `EquipmentWizard/` | Equipment maintenance schedules and equipment power |
-| Labour & Cost Wizard | `EmployeeWizard/` | Roster, time off, hours on tasks, 📜 Labour Log, ⚡ Power & Rates, 📊 Reports, total cost per gram and the monthly CTLS numbers |
-| DailyWizard | `DailyWizard/` | Per-building daily lists with check-offs, ⏲ timers, ⏱ hours (with notes), 🧰 Miscellaneous labour, ⏰ Still open and ✅ Mark done, translations, step pictures and videos |
-| PaperWizard | `PaperWizard/` | Fills controlled paperwork through wizards, prints it over the form's page images, and keeps corrections traceable (struck-out values, initials, 📝 Change log) |
+| SitkaTools | `SitkaTools/CLAUDE.md` | Hub: lots, rooms, buildings, the calendar, load and save |
+| GeneralEvent | `docs/GeneralEvent.md` | Standalone calendar events (text, date, emoji) |
+| CropLabourWizard | `docs/CropLabourWizard.md` | Crop schedules from task recipes, projections, labour estimates, input price list |
+| EquipmentWizard | `docs/EquipmentWizard.md` | Equipment maintenance schedules and equipment power |
+| Labour & Cost Wizard | `docs/EmployeeWizard.md`, `docs/REPORTS.md` | Roster, time off, hours on tasks, 📜 Labour Log, ⚡ Power & Rates, 📊 Reports, total cost per gram and the monthly CTLS numbers |
+| DailyWizard | `docs/DailyWizard.md` | Per-building daily lists with check-offs, ⏲ timers, ⏱ hours (with notes), 🧰 Miscellaneous labour, ⏰ Still open and ✅ Mark done, translations, step pictures and videos |
+| PaperWizard | `docs/PaperWizard.md` | Fills controlled paperwork through wizards, prints it over the form's page images, and keeps corrections traceable (struck-out values, initials, 📝 Change log) |
 
 Don't add details, APIs or schemas for a planned tool until asked.
 
@@ -277,7 +277,7 @@ Don't add details, APIs or schemas for a planned tool until asked.
 
 ### HTML
 - Self-contained; semantic HTML5 where it fits. A header comment names the tool, its purpose and its DB keys.
-- **Cultivation Modules card** (bottom of SitkaTools.html): one `module-link` per tool with a relative `../<Tool>/<Tool>.html` path (never absolute or `file://`; the link names the tool, which opens over SitkaTools), an emoji, the name and a one-line description matching the Tool Registry.
+- **Cultivation Modules card** (bottom of SitkaTools.html): one `module-link` per tool, `<a class="tool-link module-link" href="#<Tool>" data-tool="<Tool>">` (the tool opens over SitkaTools), an emoji, the name and a one-line description matching the Tool Registry.
 
 ### JavaScript
 - `type="module"` scripts are fine. No `async`/`await` on network calls (there are none).

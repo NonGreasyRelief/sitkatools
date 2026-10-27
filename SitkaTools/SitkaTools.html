@@ -7426,7 +7426,7 @@
             z-index: 100;
         }
 
-        /* ---- 📊 Reports tab (office only) — spec: EmployeeWizard/REPORTS.md ----
+        /* ---- 📊 Reports tab (office only) — spec: docs/REPORTS.md ----
            Chart colours were checked for colour-blind separation on --bg-secondary: series in fixed order
            (blue, orange, aqua, yellow, magenta, green, violet, red); scatters use only the first three. */
         :scope {
@@ -8015,31 +8015,31 @@
         <section class="card" id="tools-directory">
             <h2 class="card-title">Calendar Tools</h2>
             <div class="tools-grid">
-                <a class="tool-link module-link office-only" href="../GeneralEvent/GeneralEvent.html">
+                <a class="tool-link module-link office-only" href="#GeneralEvent" data-tool="GeneralEvent">
                     <span class="tool-link-name">📅 General Event</span>
                     <span class="tool-link-desc">Create standalone calendar events with text, date, and emoji</span>
                 </a>
 
-                <a class="tool-link module-link office-only" href="../CropLabourWizard/CropLabourWizard.html">
+                <a class="tool-link module-link office-only" href="#CropLabourWizard" data-tool="CropLabourWizard">
                     <span class="tool-link-name">👷 Crop Labour Wizard</span>
                     <span class="tool-link-desc">Quickly schedule all tasks related to a single lot</span>
                 </a>
-                <a class="tool-link module-link office-only" href="../EquipmentWizard/EquipmentWizard.html">
+                <a class="tool-link module-link office-only" href="#EquipmentWizard" data-tool="EquipmentWizard">
                     <span class="tool-link-name">🔧 Equipment Wizard</span>
                     <span class="tool-link-desc">Equipment maintenance scheduling and tracking</span>
                 </a>
 
-                <a class="tool-link module-link" href="../EmployeeWizard/EmployeeWizard.html">
+                <a class="tool-link module-link" href="#EmployeeWizard" data-tool="EmployeeWizard">
                     <span class="tool-link-name">👥 Labour &amp; Cost Wizard</span>
                     <span class="tool-link-desc">Roster, time off &amp; labour hours · power bills, total cost per gram &amp; monthly CTLS numbers</span>
                 </a>
 
-                <a class="tool-link module-link" href="../DailyWizard/DailyWizard.html">
+                <a class="tool-link module-link" href="#DailyWizard" data-tool="DailyWizard">
                     <span class="tool-link-name">📋 Daily Wizard</span>
                     <span class="tool-link-desc">Per-building daily to-do lists + that day's calendar events, with tablet-friendly check-offs</span>
                 </a>
 
-                <a class="tool-link module-link" href="../PaperWizard/PaperWizard.html">
+                <a class="tool-link module-link" href="#PaperWizard" data-tool="PaperWizard">
                     <span class="tool-link-name">📄 Paper Wizard</span>
                     <span class="tool-link-desc">UNDER CONSTRUCTION. Quickly fill controlled paperwork via wizards — per lot filing cabinets</span>
                 </a>
@@ -9096,7 +9096,7 @@
             </div>
         </div>
 
-        <!-- Reports Tab (office only) — charts and KPIs; spec and hook-up notes in EmployeeWizard/REPORTS.md -->
+        <!-- Reports Tab (office only) — charts and KPIs; spec and hook-up notes in docs/REPORTS.md -->
         <div class="tab-pane" id="paneReports">
             <div class="rpt-filters">
                 <div class="form-group">
@@ -11709,8 +11709,6 @@
 
         // A tool's name as people see it (EmployeeWizard is shown as the Labour & Cost Wizard)
         const toolDisplayName = id => ({ EmployeeWizard: 'Labour & Cost Wizard' })[id] || id;
-        // A tool's name from its link (../EmployeeWizard/EmployeeWizard.html → EmployeeWizard)
-        const toolNameOfUrl = url => (String(url || '').match(/([A-Za-z]+)\.html/) || [])[1] || 'a tool';
 
         // Another SitkaTools tab on this device: one starting up asks whether the session is open here
         if (WorkCopy.channel) {
@@ -12556,7 +12554,7 @@
             },
             // The name people see: its module link's ("📅 General Event")
             label(name) {
-                const link = [...document.querySelectorAll('.module-link')].find(a => toolNameOfUrl(a.getAttribute('href')) === name);
+                const link = document.querySelector(`.module-link[data-tool="${name}"]`);
                 return link?.querySelector('.tool-link-name')?.textContent.trim() || toolDisplayName(name);
             },
             open(name) {
@@ -12759,7 +12757,7 @@
         document.querySelectorAll('.module-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                Tools.open(toolNameOfUrl(link.getAttribute('href')));
+                Tools.open(link.dataset.tool);
             });
         });
 
@@ -32677,7 +32675,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // Report metrics (question.metric, unit in question.metricUnit): tag a question so EmployeeWizard's
         // Reports tab can find its answers. Display-only for PaperWizard — nothing here reads it. The same
-        // keys live in EmployeeWizard (REPORT_METRICS) — keep the two lists in step (EmployeeWizard/REPORTS.md).
+        // keys live in EmployeeWizard (REPORT_METRICS) — keep the two lists in step (docs/REPORTS.md).
         const REPORT_METRIC_GROUPS = [
             ['Harvest & lab — once per lot', [
                 ['harvest.wetWeight', 'Wet weight (drying room, harvest day)', 'weight'],
@@ -35533,7 +35531,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // =====================================================
         // 📊 Reports tab — office only. Spec, metric list and the harvest-log hook-up steps:
-        // EmployeeWizard/REPORTS.md.
+        // docs/REPORTS.md.
         //
         // Everything is read from the DB on each render (it is small) — nothing is cached:
         //   • crop tasks: CropLabourWizard events, their estimate (estStaff / estMinutes) and labour_map

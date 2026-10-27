@@ -5,7 +5,7 @@
 //
 // --today builds it as if it were that day (e.g. the day of a demo) instead of the day it's run.
 //
-// Starts from PaperWizard/Current.json (the real rooms, buildings, lots, schedules, projections, roster, daily chores and
+// Starts from local/Current.json (the real rooms, buildings, lots, schedules, projections, roster, daily chores and
 // grow-log wizard) and adds, dated relative to today:
 //   • 3 years of past crops in the three crop rooms on the 76-day cadence, kept as crop summaries (with frozen labour
 //     costs). Each one is built as if it were a close-out archive and summarised by EmployeeWizard's own code.

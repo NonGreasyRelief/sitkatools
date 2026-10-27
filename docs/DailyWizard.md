@@ -33,7 +33,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 
 ### 🚪 Room Chores
 
-- **What it means:** the Labour & Cost Wizard's Reports give a room chore's hours to the lots in that room on the day the hours were logged (where their grow log puts them; their schedule before it starts), split by their plants that day when lots share the room (the way a room's electricity is split). That share is the lot's own labour: its labour cost, cost per gram, crop Gantt and summary carry it. Whole-building chores, and room-chore hours on a day the room held no crop, stay shared over every crop harvested in the period. Root `CLAUDE.md` → "Total Cost per Gram"; `EmployeeWizard/REPORTS.md` §6.
+- **What it means:** the Labour & Cost Wizard's Reports give a room chore's hours to the lots in that room on the day the hours were logged (where their grow log puts them; their schedule before it starts), split by their plants that day when lots share the room (the way a room's electricity is split). That share is the lot's own labour: its labour cost, cost per gram, crop Gantt and summary carry it. Whole-building chores, and room-chore hours on a day the room held no crop, stay shared over every crop harvested in the period. Root `CLAUDE.md` → "Total Cost per Gram"; `docs/REPORTS.md` §6.
 - **DailyWizard writes only `task.roomId`.** It never works out the split or writes to lots; the hours entries are unchanged.
 - **Editor:** **Room** — "— Whole building (no room) —", then the building's rooms (`id — name`). Saving with the first option removes `roomId`.
 - **Shown as** a `🚪 {room}` chip on the task row, a line in the detail view's summary, and a note in the hours view.
@@ -181,7 +181,7 @@ Each entry is the person's name, the hours and minutes they type (or fill from a
 
 ## 🔒 Edit Mode and Floor Manager PINs
 
-Each floor manager has their own PIN, set by the office in the Labour & Cost Wizard's employee editor (`EmployeeWizard/CLAUDE.md`) and kept in Main.json only as a salted SHA-256 hash (`_EmployeeWizard.employees[name].pin = { salt, hash, setAt }`). The `FloorPin` snippet (checking a PIN and the PIN dialog) is the same in DailyWizard and the Labour & Cost Wizard. It uses Web Crypto, or its own small SHA-256 where a page has no Web Crypto.
+Each floor manager has their own PIN, set by the office in the Labour & Cost Wizard's employee editor (`docs/EmployeeWizard.md`) and kept in Main.json only as a salted SHA-256 hash (`_EmployeeWizard.employees[name].pin = { salt, hash, setAt }`). The `FloorPin` snippet (checking a PIN and the PIN dialog) is the same in DailyWizard and the Labour & Cost Wizard. It uses Web Crypto, or its own small SHA-256 where a page has no Web Crypto.
 
 - **The PIN dialog:** pick a floor manager (only those ticked Floor manager with a PIN; preselected when there's one) and type the PIN. A wrong PIN says so; after 5 wrong in a row, even the right one waits a minute. With no PIN set anywhere it says the office sets them, with only Close.
   - `FloorPin.ask(why, { initials: true })` adds an initials pad ("✍️ Floor manager sign-off") and resolves `{ name, initials: { name, strokes } }`. The Labour & Cost Wizard uses it when hours are added or changed in its Tasks tab; DailyWizard doesn't use it yet.
@@ -235,7 +235,7 @@ Translations cover daily chores only, not crop or equipment task names; the scre
 
 ## SitkaTools Link
 
-- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL DailyWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time. `DailyWizard/DailyWizard.html` only points there.
+- **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL DailyWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
 
 The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overlays"); on every device, tablets included, it opens over SitkaTools. Before the DB arrives: "Waiting for SitkaTools to deliver the database…".
 

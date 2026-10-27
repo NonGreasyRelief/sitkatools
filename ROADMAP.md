@@ -97,7 +97,7 @@ Built:
 - [x] Labour Report (estimated vs. actual).
 - [x] Close Out tool and the restricted wages file (Phase 1).
 - [x] Total cost per gram — root `CLAUDE.md` → "Total Cost per Gram".
-- [x] 📊 Reports tab — `EmployeeWizard/REPORTS.md`.
+- [x] 📊 Reports tab — `docs/REPORTS.md`.
 
 To do:
 
@@ -107,7 +107,7 @@ To do:
   - N/A fill for unanswered questions.
   - The strike-out rule for grow logs that end early.
 - **Voice translator in DailyWizard** (put off). Two microphone buttons, one for the English speaker and one for the worker in the tablet's language, each translated and read aloud.
-  - **For now:** the 🗣️ Talk button links to Google Translate set to the language pair; its Conversation mode does the job (`DailyWizard/CLAUDE.md` → "🌐 Language").
+  - **For now:** the 🗣️ Talk button links to Google Translate set to the language pair; its Conversation mode does the job (`docs/DailyWizard.md` → "🌐 Language").
   - **Speech:** Chrome's Web Speech API does speech to text on Android (through Google's servers). `speechSynthesis` reads aloud, but voices differ by tablet.
   - **Blocker — translation:** Chrome's built-in Translator API is desktop-only. On Android it needs a cloud service (Google Cloud Translation or Microsoft Translator) with billing and a key. A key in the page can be copied, so that needs a server or IT.
   - **Revisit** if the Translator API reaches Android, or once IT sets up Microsoft's translation and speech services in the tenant (Phase 3).
