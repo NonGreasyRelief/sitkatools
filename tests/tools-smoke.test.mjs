@@ -20,7 +20,9 @@ export async function run(b, BASE) {
         try { ctx = await openTool(b, main, tool); } catch (_) { /* reported below */ }
         await b.sleep(600);
         const errors = b.logs.slice(before).filter(l => l.startsWith('[error]'));
-        const linked = ctx ? await b.run(ctx, 'return WorkCopy.gotDb && !WorkCopy.inUse && !LinkLost.openerGone();') : false;
+        // A tool inside SitkaTools.html (a handle) is open over it; a window is linked to the SitkaTools that opened it
+        const linked = !ctx ? false : typeof ctx === 'object' ? await b.run(ctx, 'return Hub.open && !!DB.data;')
+            : await b.run(ctx, 'return WorkCopy.gotDb && !WorkCopy.inUse && !LinkLost.openerGone();');
         check(`${tool}: opened with the DB, linked, no page errors`, ctx && linked && !errors.length, errors.join(' | '));
         if (ctx && tool === 'GeneralEvent') {
             const order = await b.run(ctx, `return [...document.querySelectorAll('.event-item')].map(e => e.textContent.replace(/\\s+/g, ' ').trim());`);
