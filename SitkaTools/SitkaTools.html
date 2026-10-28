@@ -49,9 +49,10 @@
         .header {
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
-            padding: 12px 24px;
-            /* The same height as every tool's header, to the pixel (user request 2026-10-27) */
-            min-height: 80px;
+            /* The same height as every tool's header, to the pixel; 6 px less at the bottom, so the header sits closer around its
+               contents and the page starts higher (user requests 2026-10-27) */
+            padding: 12px 24px 6px;
+            min-height: 74px;
             box-sizing: border-box;
             display: flex;
             align-items: center;
@@ -115,7 +116,7 @@
            border; above phone width (a phone stacks the header and scrolls the tabs) */
         @media (min-width: 641px) {
             .header-left { align-self: stretch; }
-            .tabs { align-self: flex-end; margin-bottom: -13px; }
+            .tabs { align-self: flex-end; margin-bottom: -7px; }
             .tab { padding: 11px 22px 12px; }
         }
 
@@ -2756,13 +2757,14 @@
         /* One header (user request 2026-10-27): the open tool's own header — its name and its lot / room / date pickers — is
            the only one. The bar is just 💾 Save DB and ✕ Close, laid over that header's right end at its height, and the
            header keeps their width free (Tools.fitBar sets the sizes). */
-        .tool-bar { position: absolute; top: 0; right: var(--tool-sb, 0px); z-index: 110; height: var(--tool-head-h, 56px); display: flex; align-items: center; gap: 8px; padding-right: 16px; }
+        .tool-bar { position: absolute; top: var(--tool-head-top, 0px); right: var(--tool-sb, 0px); z-index: 110; height: var(--tool-head-h, 56px); display: flex; align-items: center; gap: 8px; padding-right: 16px; }
         .tool-bar-name { display: none; }
         /* Every tool's header and footer a size smaller, the same in each (user request 2026-10-27: they took a lot of the screen): drawn at
            85 % — its text about 2 px smaller, its controls and padding 15 % smaller. Its padding is in its own (zoomed) units, so
            the room kept for the bar is divided back out */
         .tool-overlay > .tool-root > header { zoom: 0.85; padding-right: calc((var(--tool-bar-w, 230px) + 8px) / 0.85); flex-wrap: wrap; row-gap: 8px;
-            min-height: calc(80px / 0.85); box-sizing: border-box; }   /* 80 px on screen in every tool, as SitkaTools' own header */
+            /* 74 px on screen in every tool, as SitkaTools' own header, with less padding at the bottom (user request 2026-10-27) */
+            min-height: calc(74px / 0.85); padding-bottom: calc(4px / 0.85); box-sizing: border-box; }
         /* …and its footer (Close Tool) the same */
         .tool-overlay > .tool-root > footer { zoom: 0.85; }
         .tool-overlay > .tool-root > header .logo { white-space: nowrap; }
@@ -12406,16 +12408,20 @@
                 const host = $('toolHost'), bar = host.querySelector('.tool-bar');
                 const head = this.subHead || def.root.querySelector(':scope > header');
                 host.style.setProperty('--tool-bar-w', bar.offsetWidth + 'px');
-                // The header's first row (the items beside its first one), down to its bottom padding
-                let rowH = 56;
+                // The bar spans the header's first row inside its padding, so its buttons line up with the header's controls:
+                // one row, the header's content box; wrapped, from its top padding to the first row's bottom (the items beside
+                // its first one). Padding is in the header's own (zoomed) units.
+                let barTop = 0, rowH = 56;
                 if (head?.firstElementChild) {
-                    const top = head.getBoundingClientRect().top, kids = [...head.children].filter(k => k.offsetParent);
+                    const hr = head.getBoundingClientRect(), cs = getComputedStyle(head), z = parseFloat(cs.zoom) || 1;
+                    const pt = (parseFloat(cs.paddingTop) || 0) * z, pb = (parseFloat(cs.paddingBottom) || 0) * z;
+                    const kids = [...head.children].filter(k => k.offsetParent);
                     const first = kids[0].getBoundingClientRect();
                     const row = kids.filter(k => k.getBoundingClientRect().top < first.bottom - 2);
-                    // One row: the header's own height (it has a set minimum); wrapped: down to the first row's bottom padding
-                    rowH = row.length === kids.length ? head.getBoundingClientRect().height
-                        : Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - top + (parseFloat(getComputedStyle(head).paddingBottom) || 0) * 0.85;
+                    barTop = pt;
+                    rowH = row.length === kids.length ? hr.height - pt - pb : Math.max(...row.map(k => k.getBoundingClientRect().bottom)) - hr.top - pt;
                 }
+                host.style.setProperty('--tool-head-top', Math.round(barTop * 10) / 10 + 'px');
                 host.style.setProperty('--tool-head-h', Math.round(rowH) + 'px');
                 host.style.setProperty('--tool-sb', this.subHead ? '0px' : Math.max(0, def.section.offsetWidth - def.section.clientWidth) + 'px');
             },

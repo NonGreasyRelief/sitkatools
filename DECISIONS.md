@@ -18,6 +18,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 - 2026-10-27 · the calendar page's "Database loaded" status bar is gone; opening a database shows it as a toast that fades after a few seconds
 - 2026-10-27 · SitkaTools' header tabs: no white flash on the active tab's border (it faded from the text colour); the border fades in and out over 0.8 s
 - 2026-10-27 · SitkaTools' header tabs sit on the header's bottom edge, a little taller, so the active one joins the page (centred in the 80 px header they floated); phones keep the stacked header
+- 2026-10-27 · every header (SitkaTools' and each tool's) 6 px shorter, 74 px: less padding at the bottom, its contents where they were, the page starting higher; 💾 Save DB and ✕ Close centred on the header's controls
 - 2026-10-27 · GeneralEvent, EquipmentWizard, CropLabourWizard and the Labour & Cost Wizard: no status bar; their "Database loaded…" line is a quick toast as they open (DailyWizard's and PaperWizard's bars stay: live counts, picture buttons, the cabinet)
 - 2026-10-27 · every tool's header and footer drawn at 85 % (text ~2 px smaller, controls 15 % smaller, the same in each), and every header, SitkaTools' included, exactly 80 px when it fits on one row
 - 2026-10-27 · CropLabourWizard shows its tasks once: the Task Schedule loads the lot's saved schedule, with a 💾 Saved schedule line, and a day, on / off, length or start date that differs from what's saved shows green until Generate; the Crop Schedule list below it is gone (Clear Schedule does what its ✕ did)
