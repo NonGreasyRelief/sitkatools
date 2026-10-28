@@ -85,6 +85,20 @@ export async function run(b, BASE) {
         return movedOutUnclaimed('L100');`);
     check('10 moved out, 6 of them in a split lot since closed out: 4 left to split off', claim === 4, claim);
 
+    // ---- Split lots, one move each (user decision 2026-10-27): two moves on two days are two split lots ----
+    const moves = await run(`delete DB.data._EmployeeWizard.crops.S1;
+        DB.data._PaperWizard.entries.L100.gl.instances['${Y}'].days = { '${today(-20)}': { _removed: { moved: 20 } }, '${today(-10)}': { _removed: { moved: 15 } } };
+        const before = splitMoves('L100').map(m => m.day + ':' + m.left);
+        DB.data.lots.SP2 = { name: 'SP2', type: 'split-lot', parentLotId: 'L100', plantsTransferred: 15, plantCount: 15, startPlantCount: 15, splitFromDay: '${today(-10)}', createdDate: '${today(-10)}' };
+        const afterDay = splitMoves('L100').map(m => m.day + ':' + m.left);
+        DB.data.lots.SP1 = { name: 'SP1', type: 'split-lot', parentLotId: 'L100', plantsTransferred: 8, plantCount: 8, startPlantCount: 8, createdDate: '${today(-20)}' };
+        const afterOld = splitMoves('L100').map(m => m.day + ':' + m.left);
+        delete DB.data.lots.SP1; delete DB.data.lots.SP2;
+        return { before, afterDay, afterOld };`);
+    check('two moves (20 and 15 plants, on two days) are two moves to split from', moves.before.join() === `${today(-20)}:20,${today(-10)}:15`, JSON.stringify(moves));
+    check('…a split lot made from the second takes that day\'s 15, leaving the first\'s 20', moves.afterDay.join() === `${today(-20)}:20,${today(-10)}:0`, JSON.stringify(moves));
+    check('…and an older split lot with no move day (8 plants) claims from the oldest move', moves.afterOld.join() === `${today(-20)}:12,${today(-10)}:0`, JSON.stringify(moves));
+
     // ---- E13: locked to its grow log even when the sheet is deleted ----
     check('a lot stays locked to its grow log when the grow-log sheet is deleted', await run(`delete DB.data._PaperWizard.sheets.gl; return lotLocked('L100');`));
 

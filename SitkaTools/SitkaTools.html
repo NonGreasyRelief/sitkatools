@@ -2235,6 +2235,7 @@
         .split-status { font-size: 0.9rem; color: var(--text-secondary); margin: 8px 0 12px; line-height: 1.5; }
         .split-status strong { color: var(--text-primary); }
         .split-subtitle { font-size: 0.95rem; margin: 18px 0 8px; color: var(--text-primary); }
+        .split-move-note { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
         .split-lot-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
         .split-select {
             padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border);
@@ -7622,13 +7623,12 @@
                             <button type="button" class="spinbox-btn plus" data-target="plantCount" title="Increase by 1">+</button>
                         </div>
                     </div>
-                    <div class="form-group" id="plantsTransferredGroup" style="display: none;">
-                        <label for="plantsTransferred">Plants Transferred</label>
-                        <div class="spinbox-group">
-                            <button type="button" class="spinbox-btn minus" data-target="plantsTransferred" title="Decrease by 1">−</button>
-                            <input type="number" id="plantsTransferred" min="0" max="10000" step="any" placeholder="Number of plants transferred">
-                            <button type="button" class="spinbox-btn plus" data-target="plantsTransferred" title="Increase by 1">+</button>
-                        </div>
+                    <!-- A split lot is plants a parent's grow log recorded as moved to another lot (user decision 2026-10-27):
+                         which move, with its plants and day known; no counts typed -->
+                    <div class="form-group" id="splitMoveGroup" style="display: none;">
+                        <label for="splitMove">Plants moved out (parent's grow log)</label>
+                        <select id="splitMove"></select>
+                        <div class="split-move-note" id="splitMoveNote"></div>
                     </div>
                     <div class="form-group">
                         <label for="lotDate">Created Date</label>
@@ -9127,8 +9127,8 @@
         const parentLotSelect = $('parentLot');
         const plantCountGroup = $('plantCountGroup');
         const plantCountInput = $('plantCount');
-        const plantsTransferredGroup = $('plantsTransferredGroup');
-        const plantsTransferredInput = $('plantsTransferred');
+        const splitMoveGroup = $('splitMoveGroup');
+        const splitMoveSelect = $('splitMove');
         const lotDateInput = $('lotDate');
         const lotStageSelect = $('lotStage');
         const clearFormBtn = $('clearFormBtn');
@@ -12677,22 +12677,51 @@
             vegRoomGroup.style.display = isSplitLot ? 'none' : 'flex';
             cloningRoomGroup.style.display = isSplitLot ? 'none' : 'flex';
 
-            // Plant Count is always visible (for all lot types)
-            plantCountGroup.style.display = 'flex';
-
-            // Show/hide plants transferred (only for split lots)
-            plantsTransferredGroup.style.display = isSplitLot ? 'flex' : 'none';
-            plantsTransferredInput.required = isSplitLot;
+            // A split lot's plants, and its start day, come from the parent's grow log (the move it's split from): no plant
+            // count to type, and the date is the move day (user decision 2026-10-27)
+            plantCountGroup.style.display = isSplitLot ? 'none' : 'flex';
+            splitMoveGroup.style.display = isSplitLot ? 'flex' : 'none';
+            lotDateInput.readOnly = isSplitLot;
+            if (!isSplitLot && lotDateInput.dataset.fromMove) { lotDateInput.value = localDate(); delete lotDateInput.dataset.fromMove; }
 
             // Populate parent lot options
             if (isNotNewLot) {
                 populateParentLots();
             }
+            if (isSplitLot) populateSplitMoves();
         });
+
+        // The moves a split lot can be made from: the parent's grow-log moves no split lot has taken yet
+        function populateSplitMoves() {
+            const parentId = parentLotSelect.value;
+            const moves = parentId ? splitMoves(parentId).filter(m => m.left > 0) : [];
+            const when = d => parseLocalDate(d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            splitMoveSelect.innerHTML = moves.length
+                ? moves.map(m => `<option value="${m.day}">${escapeHtml(when(m.day))} — ${m.left} plant${m.left === 1 ? '' : 's'}</option>`).join('')
+                : `<option value="">${parentId ? 'No plants left to split off' : 'Pick the parent lot first'}</option>`;
+            showSplitMove();
+        }
+        function showSplitMove() {
+            const parentId = parentLotSelect.value;
+            const m = parentId ? splitMoves(parentId).find(x => x.day === splitMoveSelect.value && x.left > 0) : null;
+            $('splitMoveNote').textContent = m ? `🌱 ${m.left} plant${m.left === 1 ? '' : 's'}, from ${parentId}'s grow log: the split lot starts on ${m.day}, the day ${m.left === 1 ? 'it' : 'they'} left.` : '';
+            if (m) { lotDateInput.value = m.day; lotDateInput.dataset.fromMove = '1'; }
+        }
+        parentLotSelect.addEventListener('change', () => {
+            if (lotTypeSelect.value !== 'split-lot') return;
+            populateSplitMoves();
+            // The plants are where the parent is: its phase to start with (changeable)
+            const parent = DB.lots[parentLotSelect.value];
+            if (parent?.stage && [...lotStageSelect.options].some(o => o.value === parent.stage)) lotStageSelect.value = parent.stage;
+        });
+        splitMoveSelect.addEventListener('change', showSplitMove);
 
         function populateParentLots() {
             const lots = DB.lots;
-            const lotKeys = Object.keys(lots);
+            // A split lot's parent: only a lot whose grow log has plants moved out that no split lot has yet (user decision
+            // 2026-10-27: a split is only ever made from a move recorded in PaperWizard)
+            const isSplit = lotTypeSelect.value === 'split-lot';
+            const lotKeys = Object.keys(lots).filter(key => !isSplit || movedOutUnclaimed(key) > 0);
 
             // Clear existing options except the first
             parentLotSelect.innerHTML = '<option value="">Select parent lot…</option>';
@@ -12700,7 +12729,8 @@
             if (lotKeys.length === 0) {
                 const opt = document.createElement('option');
                 opt.value = '';
-                opt.textContent = '(no lots available — import a DB with lots first)';
+                opt.textContent = isSplit ? '(no lot has plants moved out in its grow log — lower its count there, reason: Moved to another lot)'
+                    : '(no lots available — import a DB with lots first)';
                 opt.disabled = true;
                 parentLotSelect.appendChild(opt);
                 return;
@@ -12710,7 +12740,8 @@
                 const lot = lots[key];
                 const opt = document.createElement('option');
                 opt.value = key;
-                opt.textContent = (lotPhaseEmoji(key) ? lotPhaseEmoji(key) + ' ' : '') + `${key} — ${lot.name || key}`;
+                const free = isSplit ? movedOutUnclaimed(key) : 0;
+                opt.textContent = (lotPhaseEmoji(key) ? lotPhaseEmoji(key) + ' ' : '') + `${key} — ${lot.name || key}` + (isSplit ? ` · ${free} plant${free === 1 ? '' : 's'} moved out` : '');
                 parentLotSelect.appendChild(opt);
             });
         }
@@ -12727,8 +12758,10 @@
             const destRoom = destRoomInput.value;
             const parentLotId = (type !== 'new-lot') ? parentLotSelect.value : null;
             const plantCountValue = plantCountInput.value ? parseInt(plantCountInput.value, 10) : null;
-            const plantsTransferred = type === 'split-lot' ? parseInt(plantsTransferredInput.value, 10) : null;
-            const createdDate = lotDateInput.value;
+            // A split lot: the move it's split from, with its plants and day (the parent's grow log)
+            const splitMove = type === 'split-lot' && parentLotId ? splitMoves(parentLotId).find(m => m.day === splitMoveSelect.value && m.left > 0) : null;
+            const plantsTransferred = splitMove ? splitMove.left : null;
+            const createdDate = splitMove ? splitMove.day : lotDateInput.value;
             const stage = lotStageSelect.value;
             const receivedFrom = type === 'new-lot' ? $('receivedFrom').value.trim() : '';
             // Veg/Cloning rooms are settable for new lots and sub-lots; split lots inherit their parent's (review E15)
@@ -12764,20 +12797,12 @@
                 return;
             }
 
-            if (type === 'split-lot' && (!plantsTransferred || plantsTransferred < 1)) {
-                alert('Please enter the number of plants transferred for split lots.');
+            // 🔒 A split lot is only ever plants the parent's grow log recorded as moved to another lot, one move each, so
+            // they're never counted in two lots at once (user decision 2026-10-27)
+            if (type === 'split-lot' && !splitMove) {
+                alert(`Lot ${parentLotId}'s grow log has no plants moved out that aren't in a split lot yet.\n\n` +
+                    `Record the plants leaving in its grow log first (lower its plant count; reason: Moved to another lot), then create the split lot from that move.`);
                 return;
-            }
-
-            // 🔒 Plants leaving a parent that has a grow log are recorded there first (plants removed, reason: moved),
-            // so they're never counted in two lots at once
-            if (type === 'split-lot' && lotLocked(parentLotId)) {
-                const free = movedOutUnclaimed(parentLotId);
-                if (plantsTransferred > free) {
-                    alert(`Lot ${parentLotId}'s grow log has ${free} plant${free === 1 ? '' : 's'} recorded as moved out that ${free === 1 ? "isn't" : "aren't"} in a split lot yet.\n\n` +
-                        `Record the plants leaving in ${parentLotId}'s grow log first (lower its plant count; reason: moved to another lot), then create the split with up to that many plants.`);
-                    return;
-                }
             }
 
             if (DB.lots[lotId]) {
@@ -12801,9 +12826,10 @@
                 currentRoom: currentRoom,
                 type: type,
                 parentLotId: parentLotId,
-                plantCount: plantCountValue,
-                startPlantCount: plantCountValue,   // the count it started with (plantCount moves with the grow log)
+                plantCount: splitMove ? splitMove.left : plantCountValue,
+                startPlantCount: splitMove ? splitMove.left : plantCountValue,   // the count it started with (plantCount moves with the grow log)
                 plantsTransferred: plantsTransferred,
+                ...(splitMove ? { splitFromDay: splitMove.day } : {}),           // the parent's grow-log move it was split from
                 ...(receivedFrom ? { receivedFrom } : {}),
                 createdDate: createdDate,
                 closedDate: null,
@@ -12861,7 +12887,10 @@
             $('receivedFromGroup').style.display = 'none';
             vegRoomGroup.style.display = 'none';
             cloningRoomGroup.style.display = 'none';
-            plantsTransferredGroup.style.display = 'none';
+            splitMoveGroup.style.display = 'none';
+            plantCountGroup.style.display = 'flex';
+            lotDateInput.readOnly = false;
+            delete lotDateInput.dataset.fromMove;
             updateStatusBar();
             renderLotList();
             updateLotIdSuggestion();
@@ -12876,7 +12905,10 @@
             $('receivedFromGroup').style.display = 'none';
             vegRoomGroup.style.display = 'none';
             cloningRoomGroup.style.display = 'none';
-            plantsTransferredGroup.style.display = 'none';
+            splitMoveGroup.style.display = 'none';
+            plantCountGroup.style.display = 'flex';
+            lotDateInput.readOnly = false;
+            delete lotDateInput.dataset.fromMove;
         });
 
         // ---- 🔒 Lots locked to their grow log (user decision 2026-10-22) ----
@@ -12944,18 +12976,38 @@
             return true;
         }
 
+        // A parent's grow-log moves (plants removed, reason: moved to another lot), day by day: [{ day, n, left }], oldest
+        // first. A split lot takes one move (user decision 2026-10-27): it claims its own day (splitFromDay). Split lots made
+        // before that, and closed-out ones (their crop summary holds what they started with; review E9), claim by count,
+        // oldest move first. A day saved on two pages (double entry) counts once.
+        function splitMoves(parentId) {
+            const byDay = {};
+            for (const { inst } of lotDailyPages(parentId)) {
+                for (const [day, d] of Object.entries(inst.days || {})) {
+                    const n = Math.max(0, Number(d?._removed?.moved) || 0);
+                    if (n) byDay[day] = Math.max(byDay[day] || 0, n);
+                }
+            }
+            const moves = Object.keys(byDay).sort().map(day => ({ day, n: byDay[day], left: byDay[day] }));
+            let loose = 0;
+            for (const l of Object.values(DB.data?.lots || {})) {
+                if (l?.parentLotId !== parentId || l.type !== 'split-lot') continue;
+                const m = l.splitFromDay ? moves.find(x => x.day === l.splitFromDay) : null;
+                if (m) m.left -= Number(l.plantsTransferred) || 0;
+                else loose += Number(l.plantsTransferred) || 0;
+            }
+            loose += Object.entries(DB.data?._EmployeeWizard?.crops || {}).filter(([id, c]) => !DB.data.lots?.[id] && c?.ctls?.type === 'split-lot' && (c.ctls.parent || c.parentLotId) === parentId)
+                .reduce((n, [, c]) => n + (Number(c.ctls.start) || 0), 0);
+            for (const m of moves) {
+                const take = Math.min(Math.max(0, m.left), loose);
+                m.left = Math.max(0, m.left - take);
+                loose -= take;
+            }
+            return moves;
+        }
         // Plants a parent's grow log has recorded as moved to another lot, less those already in its split lots
         function movedOutUnclaimed(parentId) {
-            let moved = 0;
-            for (const { inst } of lotDailyPages(parentId)) {
-                for (const day of Object.values(inst.days || {})) moved += Math.max(0, Number(day?._removed?.moved) || 0);
-            }
-            const claimed = Object.values(DB.data?.lots || {}).filter(l => l?.parentLotId === parentId && l.type === 'split-lot')
-                .reduce((n, l) => n + (Number(l.plantsTransferred) || 0), 0);
-            // …and split lots already closed out keep their claim (their crop summary holds what they started with; review E9)
-            const closedClaims = Object.entries(DB.data?._EmployeeWizard?.crops || {}).filter(([id, c]) => !DB.data.lots?.[id] && c?.ctls?.type === 'split-lot' && (c.ctls.parent || c.parentLotId) === parentId)
-                .reduce((n, [, c]) => n + (Number(c.ctls.start) || 0), 0);
-            return Math.max(0, moved - claimed - closedClaims);
+            return splitMoves(parentId).reduce((t, m) => t + m.left, 0);
         }
         // 🔒 A lot's data as a fingerprint: its lot record, its crop tasks and its paperwork, as canonical JSON (keys sorted).
         // The same snippet is in the Labour & Cost Wizard, which keeps it with a saved crop summary: close-out needs the summary

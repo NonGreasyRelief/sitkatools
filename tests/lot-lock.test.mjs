@@ -120,23 +120,37 @@ export async function run(b, BASE) {
     check('3 plants moved to another lot, kept with the typed comment', pg.days[D3]._removed?.moved === 3 && pg.days[D3].cmt === 'Thinned out [Removed 3: 3 moved to another lot]', JSON.stringify(pg.days[D3]));
     await b.run(pw, `closeRunner();`);
 
-    // ---- A split lot takes only plants the parent's grow log recorded as moved ----
+    // ---- A split lot is a move recorded in the parent's grow log, its plants and day known (user decision 2026-10-27) ----
     await b.sleep(400);
-    const split = (id, n) => b.run(main, `const v = (el, x) => { const e = document.getElementById(el); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true })); };
-        v('lotType', 'split-lot'); v('parentLot', 'L100'); v('lotId', '${id}'); v('lotStrain', 'Test Kush'); v('destRoom', 'Grow 1'); v('startRoom', 'flower');
-        document.getElementById('plantsTransferred').value = '${n}'; document.getElementById('plantCount').value = '${n}';
-        document.getElementById('lotForm').requestSubmit(); return !!DB.data.lots['${id}'];`, { user: true });
-    let made = await split('L101', 4);
-    al = await alerts();
-    check('a split of 4 is refused: the grow log recorded 3 moved', !made && al[0]?.includes('has 3 plants recorded as moved out'), al.join());
-    made = await split('L101', 3);
-    al = await alerts();
-    check('a split of 3 is made', made && !al.some(a => a.includes('recorded as moved')), al.join());
+    const form = () => b.run(main, `const v = (el, x) => { const e = document.getElementById(el); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true })); };
+        v('lotType', 'split-lot');
+        return { parents: [...document.querySelectorAll('#parentLot option')].filter(o => o.value).map(o => o.value + ': ' + o.textContent),
+            count: document.getElementById('plantCountGroup').style.display, move: document.getElementById('splitMoveGroup').style.display };`, { user: true });
+    let f = await form();
+    check('the split form lists only parents with plants moved out, with how many (L100: 3), and asks no plant count',
+        f.parents.length === 1 && f.parents[0].startsWith('L100:') && f.parents[0].includes('3 plants moved out') && f.count === 'none' && f.move !== 'none', JSON.stringify(f));
+    const picked = await b.run(main, `const v = (el, x) => { const e = document.getElementById(el); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true })); };
+        v('parentLot', 'L100');
+        return { moves: [...document.querySelectorAll('#splitMove option')].map(o => o.value + ': ' + o.textContent), date: document.getElementById('lotDate').value,
+            locked: document.getElementById('lotDate').readOnly, note: document.getElementById('splitMoveNote').textContent };`, { user: true });
+    check('picking L100 offers its move (the day and its 3 plants) and sets the created date to that day, read-only',
+        picked.moves.length === 1 && picked.moves[0].startsWith(D3 + ':') && picked.moves[0].includes('3 plants') && picked.date === D3 && picked.locked && picked.note.includes('3 plants'), JSON.stringify(picked));
+    const split = (id) => b.run(main, `const v = (el, x) => { const e = document.getElementById(el); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true })); };
+        v('lotId', '${id}'); v('lotStrain', 'Test Kush'); v('destRoom', 'Grow 1'); v('startRoom', 'flower');
+        document.getElementById('lotForm').requestSubmit(); return DB.data.lots['${id}'] || null;`, { user: true });
+    const made = await split('L101');
+    check('the split lot is made with the move\'s 3 plants, starting the move day',
+        made?.plantCount === 3 && made.startPlantCount === 3 && made.plantsTransferred === 3 && made.createdDate === D3 && made.splitFromDay === D3 && made.parentLotId === 'L100', JSON.stringify(made));
     const rooms101 = await b.run(main, `const l = DB.data.lots.L101, p = DB.data.lots.L100; return { clone: l.cloningRoom, veg: l.vegRoom, pclone: p.cloningRoom, pveg: p.vegRoom };`);
     check('…with its parent\'s cloning and veg rooms (review E15)', rooms101.clone === rooms101.pclone && rooms101.veg === rooms101.pveg && !!rooms101.pclone, JSON.stringify(rooms101));
-    made = await split('L102', 1);
+    f = await form();
+    check('…and then L100 isn\'t offered any more: its move is in the split', f.parents.length === 0, JSON.stringify(f));
+    const forced = await b.run(main, `const v = (el, x) => { const e = document.getElementById(el); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true })); };
+        const o = document.createElement('option'); o.value = 'L100'; document.getElementById('parentLot').appendChild(o); v('parentLot', 'L100');
+        v('lotId', 'L102'); document.getElementById('lotForm').requestSubmit(); return !!DB.data.lots.L102;`, { user: true });
     al = await alerts();
-    check('…and then no more: those 3 are in the split', !made && al[0]?.includes('has 0 plants recorded as moved out'), al.join());
+    check('…and a split from it is refused, saying to record the move in its grow log first', !forced && al.some(a => a.includes('no plants moved out')), al.join());
+    await b.run(main, `document.getElementById('clearFormBtn').click(); return null;`);
 
     // ---- A higher count asks why ----
     await b.run(pw, `await openRunner('L200', 'glog', '${D3}', '${D3}'); Object.assign(runnerCtx.draft, { cnt: '82', rmq: 'Grow A', cmt: '' });

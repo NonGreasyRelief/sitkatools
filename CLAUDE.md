@@ -27,6 +27,7 @@ One file `DB-YY-MM-DD.json` (2-digit year in file names only; ISO `YYYY-MM-DD` d
     destRoom, vegRoom, cloningRoom, dryRoom, trimRoom,  // room NAMES; only destRoom syncs to rooms.<id>.assignedLots
     currentRoom, plantCount,                            // live, kept up to date by PaperWizard's grow logs (only them, once a lot has one)
     type, plantsTransferred, startPlantCount,           // new-lot | sub-lot | split-lot; a split's plants; the count it started with
+    splitFromDay,                                       // split lots: the parent's grow-log day its plants were moved out (one move each)
     receivedFrom,                                       // new lots: who the plants came from (optional)
     _tool_<Tool>: { … } } },
   rooms: { <RoomID>: {
