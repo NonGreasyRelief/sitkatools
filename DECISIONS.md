@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · a room's building can be changed in its detail panel (a dropdown beside the Building Manager's own assign, refused the same way for a room holding a lot with a grow log)
 - 2026-10-29 · rooms can be designated Dry/Trim; a DailyWizard chore in one is a drying chore, a trimming chore or either: drying shows while a lot in the room dries, trimming once it has moved to trimming (its current daily log is its trim log); a lot with no trim log yet is drying
 - 2026-10-29 · DailyWizard's edit mode buttons are in the footer: ✅ Done editing on the left, + Add Task on the right of Close Tool (✏️ Edit tasks and who is editing stay above the list)
 - 2026-10-28 · CropLabourWizard closing (Close Tool or ✕ Close) with a saved schedule's dates changed and not overwritten asks "Close crop labour wizard without overwriting old values?": red Close and discard, teal Overwrite schedule then close

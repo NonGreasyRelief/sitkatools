@@ -15623,6 +15623,17 @@
                 this.bindRoomEvents();
             },
 
+            // 🏢 The room's building, changeable after the fact (user request 2026-10-29): the Building Manager's own assign,
+            // so a room holding a lot locked to its grow log is refused the same way
+            buildingSelectHtml(roomId, room) {
+                const buildings = DB.data.buildings || {}, cur = room.buildingId || '';
+                const opts = Object.keys(buildings).map(bid =>
+                    `<option value="${escapeHtml(bid)}"${cur === bid ? ' selected' : ''}>🏢 ${escapeHtml(buildings[bid]?.name || bid)} (${escapeHtml(bid)})</option>`).join('');
+                const gone = cur && !buildings[cur] ? `<option value="${escapeHtml(cur)}" selected>⚠️ ${escapeHtml(cur)} — not in the database</option>` : '';
+                return `<select class="room-building" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${escapeHtml(roomId)}" title="The building this room is in. A room is in one building: picking another moves it there.">
+                    <option value=""${cur ? '' : ' selected'}>— No building assigned —</option>${opts}${gone}</select>`;
+            },
+
             renderRoomBody(roomId, room) {
                 const lots = DB.lots;
                 const assignedLots = room.assignedLots || [];
@@ -15678,11 +15689,11 @@
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Building:</span>
-                            <span>${room.buildingId && DB.data.buildings[room.buildingId] ? `🏢 ${escapeHtml(DB.data.buildings[room.buildingId].name)} (${escapeHtml(room.buildingId)})` : '—'}</span>
+                            ${this.buildingSelectHtml(roomId, room)}
                         </div>
                         <div class="room-detail-row">
                             <span class="detail-label">Designation:</span>
-                            <select class="room-designation" data-room-id="${escapeHtml(roomId)}">
+                            <select class="room-designation" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg); color:var(--text-primary);" data-room-id="${escapeHtml(roomId)}">
                                 <option value="">— None —</option>
                                 ${ROOM_DESIGNATIONS.map(d => `<option value="${d}"${room.designation === d ? ' selected' : ''}>${d}</option>`).join('')}
                             </select>
@@ -15917,6 +15928,28 @@
                     });
                 });
 
+                // 🏢 Building select (per-room detail panel): assign, move or take out, as the Building Manager does
+                document.querySelectorAll('.room-building').forEach(sel => {
+                    sel.addEventListener('change', () => {
+                        const roomId = sel.dataset.roomId;
+                        const room = this.rooms[roomId];
+                        if (!room) return;
+                        const to = sel.value, from = room.buildingId || '';
+                        if (to === from) return;
+                        if (to) BuildingManager.assignRoomToBuilding(roomId, to);
+                        else if (DB.data.buildings[from]) BuildingManager.removeRoomFromBuilding(roomId, from);
+                        else {   // a building that isn't in the database any more: nothing to take it out of
+                            room.buildingId = null;
+                            markUnsaved();
+                            this.renderRoomList();
+                            BuildingManager.renderBuildingList();
+                        }
+                        // Refused (a lot locked to its grow log is in it): the dropdown shows where the room still is
+                        const now = this.rooms[roomId]?.buildingId || '';
+                        if (now !== to) sel.value = now;
+                        updateRoomStatusBar();
+                    });
+                });
                 // Room designation select (per-room detail panel)
                 document.querySelectorAll('.room-designation').forEach(sel => {
                     sel.addEventListener('change', () => {
