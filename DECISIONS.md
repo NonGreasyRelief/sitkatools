@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-28 · a floor manager's closing time on a forgotten DailyWizard sign-in (`_EmployeeWizard.closings`, Main.json) is filed as hours only by the sign-in's own building device (or with a single file), which SitkaTools does as it opens the files; elsewhere the hours are shown and counted but never saved, and the office lets the closing go once the building's file no longer holds the sign-in (one writer per file kept)
 - 2026-10-27 · one file: every tool moved into SitkaTools/SitkaTools.html and opens over SitkaTools as an overlay, one at a time, on every device, working on SitkaTools' own database; the popups, tool tabs and everything that kept their copies in step (postMessage, the shared copy between tabs, lost-link covers, open-twice covers, save requests, ♻️ hand-over) are gone. Chosen over keeping separate files in iframes because it must work opened as a local file, on Windows and Android, where a page can't reach its sibling files. Each open starts the tool afresh; a closed tool does nothing; the working copy is crash recovery only and reopens the tool that was open
 - 2026-10-27 · toasts: one look in every tool, white text like SitkaTools' own (the teal bold ones went); no "Database loaded from SitkaTools" or "calendar synced across all rooms" toast when a tool opens. The logo is built into SitkaTools.html and SitkaLogo.png is gone
 - 2026-10-27 · repo cleanup after the one-file move: the six old tool pages, their folders, DailyWizard's testbug.json and the sample recipe files are gone; each tool's rules moved to docs/<Tool>.md (Reports spec docs/REPORTS.md); this computer's own files (sample DB with real data, form page images) live in the git-ignored local/; tool links are href="#<Tool>" data-tool="<Tool>"; index.html and sitkablack.png stay (the GitHub Pages landing page)
@@ -89,6 +90,11 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## DailyWizard
 
+- 2026-10-28 · 🪪 badge sign-ins replace the four ⏲ timers (user's call, over "never replace a workflow"): ＋ Start task and a badge scan sign a person in, their name and time show on the row, and a scan anywhere signs them out (by itself after 5 s), logging the hours to the minute with the badge as signature; under a minute logs nothing; ⏱ Log by hand stays; timers already in use stay until cleared
+- 2026-10-28 · one task at a time: signing in to another task signs a person out of the one they were on (they can sign back in later)
+- 2026-10-28 · a sign-in from an earlier day, or 16 hours old, is forgotten: its own badge can't close it, a floor manager sets its closing time in the Labour & Cost Wizard (from the office too)
+- 2026-10-28 · a 👥 temp crew's badge asks how many are on it at every sign-in, filled in with today's last number; its hours are person-hours
+- 2026-10-28 · a floor manager's badge replaces both the PIN and the drawn initials (✅ Mark done, ✏️ Edit tasks, removals, Tasks-tab hours, closing times); ⏱ Log by hand takes any badge in place of drawn initials
 - 2026-10-28 · emoji picker has every Unicode emoji (18.0, 1,923, no skin-tone variants) in Unicode's groups, searched by name and CLDR keywords plus grow words (🌱 clone); emoji the device's font can't draw are left out; replaces the ~450 hand-picked ones (their keywords kept)
 - 2026-10-25 · 🧰 Miscellaneous labour: a built-in row in every building's list (not a stored task; code `misc`) with ⏱ Log and the four timers; its hours need a note saying what was done, and every other row takes an optional note; Reports count it like a whole-building chore. CTLS plant numbers keep coming from the grow logs (destruction goes through them)
 - 2026-10-23 · a chore tied to a room shows only while a lot's current room is that room (ticked, hour-logged or timed chores stay); "Show N chores for empty rooms" reveals the rest; edit mode lists every chore
@@ -115,6 +121,9 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Labour & Cost Wizard
 
+- 2026-10-28 · 🪪 badges: a Code 128 (set C) barcode of 16 digits (a 4-digit number and 12 secret digits), kept only as a salted hash like PINs; a badge prints only when it's made (reprinting = a new badge, the old one stops working); CR80 cards, portrait, 54 × 86 mm, 9 to a letter page
+- 2026-10-28 · 👥 temp crews: a roster entry with one badge for the whole crew, its wage the rate per person; no work week, time off, floor manager or shifts
+- 2026-10-28 · the Labour Log's ⏰ Still signed in card sets closing times on forgotten sign-ins (a floor manager's PIN and initials, or badge); the log itself stays read-only
 - 2026-10-26 · "What does each building cost to run?" counts only the period's own days (it counted every calendar month the period touched): open lots' costs, labour, shared labour and idle days by the day; a closed-out lot's locked month totals shared out by its days in that month (no change to crop summaries). A grow log's change day on two pages (the double entry) is correct: the receiving page's row leaves water and fertilizer blank
 - 2026-10-23 · shared labour (overhead) is frozen by month automatically, the first time the office opens the Reports after a month ends, kept in Wages.json; the live figure is still compared, a changed month is marked, and re-freezing keeps the earlier copy
 - 2026-10-23 · costs follow the grow log: the room and phase it recorded each day place a lot (the schedule only before the log starts, and the dry and trim rooms after the plants reach 0), and each day's count shares rooms, their chores and property (the starting count only for lots with no grow log)

@@ -88,6 +88,8 @@ One harvested lot with weights fills the yield tiles, strain scorecard, weight c
 | CropProjection events | projected room stays, future labour demand, harvest forecast |
 | Other events with a `labour_map` (EquipmentWizard, …) | "equipment & other" hours and cost |
 | `_EmployeeWizard.employees`: `workDays`, `timeOff`, `wage` (only while Wages.json is open) | capacity, cost |
+| 👥 Temp crews (`employees[name].crew`) and an entry's `crewSize` | a crew's entry holds person-hours (each person's time × the crew size, user decision 2026-10-28), costed at the crew's wage, its rate per person, like any roster employee; a crew has no shifts in capacity |
+| Hours shown for a closing time not filed yet (`_pending`, from `_EmployeeWizard.closings`) | counted like any hours entry while they wait for their building's device (root `CLAUDE.md` → "Split Database") |
 | `_PaperWizard.wizards[*].questions[*].metric` / `metricUnit` + `_PaperWizard.entries` | harvest numbers, grow-log series, plant counts (🌱 plant-count questions need no tag) |
 | `_DailyWizard.buildings[*].tasks` (minutes × staff, recurrence) | chore hours in the demand forecast |
 | `_DailyWizard.buildings[*].labour` | chore hours in the labour mix, labour hours, logged vs scheduled, the chores share of $ per gram. Entries the office removed are gone from it (kept only in `.adjustments`). |

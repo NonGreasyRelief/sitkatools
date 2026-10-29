@@ -1,4 +1,4 @@
-// DailyWizard's 🧰 Miscellaneous labour: a built-in row in every building's list (no tick box, the four timers, ⏱ Log)
+// DailyWizard's 🧰 Miscellaneous labour: a built-in row in every building's list (no tick box, ＋ Start task, ⏱ Log)
 // for hours on anything that isn't on the list. Its hours need a note saying what was done; every other row takes an
 // optional note. The Labour & Cost Wizard names the row and shows the notes.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, dwBuilding, logHours, leave, today } from './lib/helpers.mjs';
@@ -22,10 +22,10 @@ export async function run(b, BASE) {
         const rows = [...document.querySelectorAll('#listContainer .misc-row')];
         const r = rows[0];
         return r ? { n: rows.length, text: r.textContent, check: !!r.querySelector('.task-check input'), log: !!r.querySelector(':scope > .hours-btn'),
-            timers: r.querySelectorAll('.timer-slot').length } : null;`);
+            timers: r.querySelectorAll('.signin-start').length } : null;`);
     let r = await miscRow();
     check('Building 1 lists 🧰 Miscellaneous labour', r?.text.includes('Miscellaneous labour'), JSON.stringify(r));
-    check('…with ⏱ Log and the four timers, and no tick box', r?.log && r.timers === 4 && !r.check, JSON.stringify(r));
+    check('…with ⏱ Log and ＋ Start task, and no tick box', r?.log && r.timers === 1 && !r.check, JSON.stringify(r));
     check('opening it changes nothing', (await b.run(main, 'return hasUnsavedChanges;')) === false);
     check('it isn\'t one of the building\'s tasks', !(await b.run(dw, `return DB.dailyBuildings.B1.tasks.some(t => t.code === 'misc');`)));
 
@@ -50,8 +50,8 @@ export async function run(b, BASE) {
     check('a chore\'s note box says it\'s optional', (await b.run(dw, `const btn = [...document.querySelectorAll('#listContainer .task-row')].find(r => r.textContent.includes('Scout rooms')).querySelector('.hours-btn');
         btn.click(); const l = document.getElementById('hoursCommentLbl').textContent; closeHours(); return l;`, { user: true })).startsWith('Note (optional)'));
 
-    // Its timers are kept like any chore's
-    const kept = await b.run(dw, `timerSlotsFor('B1', 'misc')[1] = { label: 'AB', ms: 60000 }; timersChanged('B1'); return DB.dailyBuildings.B1.timers?.misc?.[1]?.ms;`);
+    // A timer left on it from before sign-ins is kept like any chore's
+    const kept = await b.run(dw, `const tm = DB.dailyBuildings.B1.timers || (DB.dailyBuildings.B1.timers = {}); tm.misc = { 1: { label: 'AB', ms: 60000 } }; timersChanged('B1'); return DB.dailyBuildings.B1.timers?.misc?.[1]?.ms;`);
     check('a timer on Miscellaneous labour isn\'t tidied away', kept === 60000, String(kept));
 
     // All Buildings: every building has the row; a building with no daily tasks too

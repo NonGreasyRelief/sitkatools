@@ -73,6 +73,25 @@ export function withFloorManager(db, name = 'Casey', pin = FM_PIN) {
     return db;
 }
 
+// 🪪 A badge, stored the way the Labour & Cost Wizard stores it: its 4-digit number and a salted hash of the 12 secret
+// digits, never the code itself. badgeOf(name) is the fixture's code for that person (or crew).
+export const badgeOf = name => ({ Alex: '1001', Blair: '1002', Casey: '1003', Drew: '1004', 'Crew A': '1005' }[name] || '1999') + '482916037154';
+export function withBadge(db, name, code = badgeOf(name)) {
+    const salt = `badge${name.toLowerCase().replace(/\W/g, '')}`;
+    db._EmployeeWizard.employees[name].badge = { no: code.slice(0, 4), salt, hash: createHash('sha256').update(`${salt}:${code.slice(4)}`).digest('hex'), madeAt: '2026-10-01' };
+    return db;
+}
+// 👥 A temp crew on the roster (one badge for the whole crew; its wage is per person)
+export function withCrew(db, name = 'Crew A', wage = 18) {
+    db._EmployeeWizard.employees[name] = { crew: true, wage, workDays: [], timeOff: [] };
+    return withBadge(db, name);
+}
+// Scan a badge: the scanner types its 16 digits in a burst, then Enter
+export async function scanBadge(b, ctx, code) {
+    await b.keys(ctx, code + '');
+    await b.sleep(250);
+}
+
 // Answer the open floor manager PIN dialog; resolves once it has closed (or the wrong PIN left it open)
 export async function answerPin(b, ctx, name = 'Casey', pin = FM_PIN) {
     await b.waitFor(ctx, `return document.getElementById('floorPin') && !document.getElementById('floorPin').hidden;`, 3000).catch(() => {});

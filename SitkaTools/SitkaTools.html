@@ -5179,7 +5179,35 @@
         .timer-btn:hover { border-color: var(--accent); }
         .timer-btn.timer-clear { color: var(--danger); }
         .timer-btn.timer-clear.unused { visibility: hidden; }
-        /* The label asked for when a cleared timer starts (or its label is tapped) */
+        /* ---- 🪪 Sign-ins: ＋ Start task, then a chip for everyone signed in (they took the four timers' place) ---- */
+        .signin-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+        .signin-start { min-height: 48px; padding: 6px 16px; border-radius: var(--radius); border: 1px dashed var(--accent); background: var(--bg-primary); color: var(--accent); font-family: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
+        .signin-start:hover { background: rgba(83, 216, 168, 0.12); }
+        .signin-chip { min-height: 48px; max-width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 4px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--bg-primary); color: var(--text-primary); font-family: inherit; text-align: left; cursor: pointer; }
+        .signin-chip .sc-who { font-size: 0.85rem; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .signin-chip .sc-time { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+        .signin-chip.forgot { border-color: var(--warning); }
+        .signin-chip.forgot .sc-time { font-size: 0.8rem; color: var(--warning); }
+        .timer-slot.legacy { padding: 2px 4px 2px 10px; }
+        .timer-slot.legacy .timer-time { font-size: 1rem; }
+        .timer-slot.legacy .timer-head { color: var(--text-secondary); }
+        /* The scan dialog (＋ Start task, signing out) */
+        .scan-card { max-width: 420px; text-align: center; }
+        .scan-big { font-size: 3rem; line-height: 1; }
+        .scan-msg { font-size: 1.1rem; font-weight: 700; line-height: 1.35; white-space: pre-line; }
+        .scan-sub { font-size: 0.9rem; color: var(--text-secondary); white-space: pre-line; }
+        .scan-sub:empty, .scan-err:empty { display: none; }
+        .scan-crew { display: flex; justify-content: center; align-items: center; gap: 10px; }
+        .scan-crew[hidden], #scanNote[hidden], .scan-dialog button[hidden] { display: none; }
+        .scan-step { width: 64px; height: 64px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 1.8rem; font-weight: 700; cursor: pointer; }
+        .scan-card #scanCrewSize { width: 96px; min-height: 64px; font-size: 1.8rem; font-weight: 700; text-align: center; }
+        #scanNote { min-height: 64px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+        .scan-err { color: var(--danger); font-size: 0.9rem; font-weight: 600; }
+        .badge-signed { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-weight: 700; }
+        #hoursBadgeNote[hidden], #hoursPadGroup[hidden], #hoursCrewGroup[hidden] { display: none; }
+        .badge-chip { flex-shrink: 0; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--accent); color: var(--accent); font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+        .badge-hint { margin-top: -4px; }
+        /* The scan dialog sits where the timer label dialog was */
         .timer-dialog { position: fixed; inset: 0; z-index: 250; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
         .timer-dialog[hidden] { display: none; }
         .timer-dialog-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -6481,6 +6509,16 @@
         .log-sig { width: 96px; height: 30px; background: #fff; border-radius: 4px; border: 1px solid var(--border); cursor: zoom-in; display: block; padding: 0; }
         .log-sig svg { width: 100%; height: 100%; display: block; }
         .log-nosig { font-size: 0.75rem; color: var(--warning); }
+        .log-badge { display: inline-block; font-size: 0.78rem; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+        .log-open { margin-bottom: 14px; border-color: rgba(243, 156, 18, 0.55); }
+        .log-open h4 { color: var(--warning); }
+        .log-open .btn { padding: 6px 12px; font-size: 0.8rem; white-space: nowrap; }
+        .log-open .forgot { color: var(--warning); font-weight: 600; }
+        .log-open .pending { color: var(--accent); }
+        .closing-card { max-width: 480px; }
+        .closing-card .applies-label input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 1rem; }
+        .closing-hours { font-weight: 700; color: var(--accent); margin: 4px 0 12px; min-height: 1.3em; }
+        .closing-hours.bad { color: var(--danger); }
         .log-empty { color: var(--text-secondary); font-size: 0.9rem; padding: 24px; text-align: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); }
         .log-sig-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; padding: 20px; }
         .log-sig-overlay[hidden] { display: none; }
@@ -7120,6 +7158,8 @@
 
         .entry-name { flex: 1; font-weight: 600; }
 
+        .te-signins { margin: 6px 0 2px; padding: 6px 10px; border: 1px dashed var(--accent); border-radius: 6px; font-size: 0.82rem; color: var(--accent); }
+        .te-signins[hidden], #lfCrewGroup[hidden] { display: none; }
         .entry-temp-tag {
             font-size: 0.65rem;
             color: var(--warning);
@@ -7179,6 +7219,25 @@
         .applies-note { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 14px; }
         .applies-actions { display: flex; justify-content: flex-end; gap: 10px; }
         .emp-wage-history { color: var(--text-secondary); font-size: 0.85rem; margin: -4px 0 10px; }
+
+        /* 🪪 Badges and 👥 temp crews */
+        .emp-head-btns { display: flex; gap: 6px; }
+        .new-crew-chk { margin-top: 8px; padding-bottom: 0; font-size: 0.8rem; }
+        .new-crew-chk input { width: 16px; height: 16px; accent-color: var(--accent); }
+        .emp-fields .emp-badge { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: var(--radius); }
+        .emp-badge-status { flex: 1; min-width: 200px; font-size: 0.85rem; color: var(--text-secondary); }
+        .emp-badge .btn { padding: 8px 14px; font-size: 0.85rem; }
+        .emp-crew-note { grid-column: 1 / -1; font-size: 0.82rem; color: var(--warning); line-height: 1.4; }
+        .emp-crew-note[hidden], .emp-badge [hidden], #empEditorView [hidden] { display: none !important; }
+        .emp-tag { flex-shrink: 0; font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+        .emp-tag.crew { color: var(--warning); border-color: var(--warning); }
+        .badges-card { max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; }
+        .badges-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 14px; max-height: 50vh; overflow-y: auto; }
+        .badges-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+        .badges-row input { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+        .badges-row .bn { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .badges-row .bs { color: var(--text-secondary); font-size: 0.8rem; white-space: nowrap; }
+        .badges-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 
         /* ---- Buttons ---- */
         .btn {
@@ -8430,6 +8489,13 @@
                         <select id="hoursWho"></select>
                         <input type="text" id="hoursOther" placeholder="Name (not on the roster)" data-t-ph autocomplete="off" hidden>
                         <input type="number" id="hoursWage" placeholder="Their hourly wage, $ (optional — used for labour cost)" data-t-ph min="0" step="0.5" inputmode="decimal" hidden>
+                        <div class="field-hint" data-t>🪪 Or scan your badge: it fills in your name and signs for you.</div>
+                    </div>
+                    <!-- 👥 A temp crew's hours: how many were on it (the hours typed are each person's) -->
+                    <div class="form-group" id="hoursCrewGroup" hidden>
+                        <label for="hoursCrew" data-t>How many were on the crew?</label>
+                        <input type="number" id="hoursCrew" min="1" max="99" step="1" inputmode="numeric" placeholder="0">
+                        <div class="field-hint" data-t>Type the hours each person worked: they count once for everyone on the crew.</div>
                     </div>
                     <!-- ⏲ Fill the hours from one of the row's timers (today only) -->
                     <div class="form-group" id="hoursTimerGroup" hidden>
@@ -8452,10 +8518,15 @@
                         <label for="hoursComment" id="hoursCommentLbl">Note (optional) — what you were doing</label>
                         <textarea id="hoursComment" maxlength="200" rows="2" autocomplete="off" placeholder="e.g. unloaded the soil delivery" data-t-ph></textarea>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="hoursPadGroup">
                         <label for="hoursPad" data-t>Your initials — draw them with your finger</label>
                         <canvas id="hoursPad" class="hours-pad"></canvas>
                         <button type="button" class="btn btn-secondary" id="hoursPadClear" data-t>Clear initials</button>
+                    </div>
+                    <!-- 🪪 A badge scanned here signs the entry instead of drawn initials -->
+                    <div class="form-group badge-signed" id="hoursBadgeNote" hidden>
+                        <span id="hoursBadgeText"></span>
+                        <button type="button" class="btn btn-secondary" id="hoursBadgeDraw" data-t>Draw initials instead</button>
                     </div>
                 </div>
             </div>
@@ -8466,15 +8537,23 @@
         </footer>
     </div>
 
-    <!-- ⏲ A timer's initials or label: asked when a cleared timer starts, or when its label is tapped -->
-    <div class="timer-dialog" id="timerDialog" hidden>
-        <div class="timer-dialog-card" role="dialog" aria-modal="true" aria-labelledby="timerDialogTitle">
-            <div class="timer-dialog-title" id="timerDialogTitle"></div>
-            <label for="timerLabelInput" data-t>Your initials or a label (optional)</label>
-            <input type="text" id="timerLabelInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <!-- 🪪 ＋ Start task and signing out: scan a badge (a temp crew says how many are on it; 🧰 Misc says what it's for) -->
+    <div class="timer-dialog scan-dialog" id="scanDialog" hidden>
+        <div class="timer-dialog-card scan-card" role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+            <div class="timer-dialog-title" id="scanTitle"></div>
+            <div class="scan-big" id="scanBig" aria-hidden="true">🪪</div>
+            <div class="scan-msg" id="scanMsg"></div>
+            <div class="scan-sub" id="scanSub"></div>
+            <div class="scan-crew" id="scanCrew" hidden>
+                <button type="button" class="scan-step" id="scanCrewMinus" aria-label="One fewer">−</button>
+                <input type="number" id="scanCrewSize" min="1" max="99" step="1" inputmode="numeric" aria-labelledby="scanMsg">
+                <button type="button" class="scan-step" id="scanCrewPlus" aria-label="One more">+</button>
+            </div>
+            <textarea id="scanNote" maxlength="200" rows="2" autocomplete="off" aria-labelledby="scanMsg" hidden></textarea>
+            <div class="scan-err" id="scanErr" role="alert"></div>
             <div class="timer-dialog-actions">
-                <button type="button" class="btn btn-secondary" id="timerDialogCancel" data-t>Cancel</button>
-                <button type="button" class="btn btn-primary" id="timerDialogOk"></button>
+                <button type="button" class="btn btn-secondary" id="scanCancel"></button>
+                <button type="button" class="btn btn-primary" id="scanOk" hidden></button>
             </div>
         </div>
     </div>
@@ -8507,6 +8586,7 @@
                         <label for="donePin" data-t>PIN</label>
                         <input type="password" id="donePin" inputmode="numeric" autocomplete="off" maxlength="8">
                     </div>
+                    <div class="field-hint badge-hint" id="doneScanHint" data-t>🪪 Or the floor manager scans their badge: it signs the task off at once.</div>
                 </div>
             </div>
         </div>
@@ -8613,13 +8693,17 @@
                 <div class="panel panel-list">
                     <div class="panel-header">
                         <span>Employees</span>
-                        <button type="button" class="btn btn-secondary" id="addEmpBtn" style="padding:5px 12px; font-size:0.8rem;">+ Add</button>
+                        <span class="emp-head-btns">
+                            <button type="button" class="btn btn-secondary" id="badgesBtn" style="padding:5px 12px; font-size:0.8rem;" title="Make and print badges for the barcode scanner">🪪 Badges</button>
+                            <button type="button" class="btn btn-secondary" id="addEmpBtn" style="padding:5px 12px; font-size:0.8rem;">+ Add</button>
+                        </span>
                     </div>
                     <div class="emp-list" id="empList"></div>
                     <form class="add-emp-form" id="addEmpForm" hidden>
                         <div class="form-group">
                             <label for="newEmpName">Name</label>
                             <input type="text" id="newEmpName" placeholder="Employee name" autocomplete="off">
+                            <label class="report-chk new-crew-chk" title="One badge for a whole crew: each sign-in asks how many are on it. Its wage is per person."><input type="checkbox" id="newEmpCrew"> 👥 Temp crew</label>
                         </div>
                         <button type="submit" class="btn btn-primary" style="padding:9px 16px; font-size:0.85rem;">Add</button>
                     </form>
@@ -8647,7 +8731,7 @@
                                     <input type="text" id="empNameInput" autocomplete="off">
                                 </div>
                                 <div class="form-group">
-                                    <label for="empWageInput">Wage ($/hr)</label>
+                                    <label for="empWageInput" id="empWageLabel">Wage ($/hr)</label>
                                     <input type="number" id="empWageInput" min="0" step="0.5" placeholder="not set">
                                 </div>
                                 <div class="emp-wage-history" id="empWageHistory" hidden title="A changed wage applies from the day picked: hours before it keep the old wage"></div>
@@ -8664,6 +8748,13 @@
                                     </div>
                                     <div class="emp-pin-status" id="empPinStatus"></div>
                                 </div>
+                                <!-- 🪪 Their badge for DailyWizard's barcode scanner (only its hash is kept) -->
+                                <div class="emp-badge" id="empBadgeRow">
+                                    <span class="emp-badge-status" id="empBadgeStatus"></span>
+                                    <button type="button" class="btn btn-secondary" id="empBadgeMake"></button>
+                                    <button type="button" class="btn btn-secondary" id="empBadgePrint" hidden>🖨️ Print badge</button>
+                                </div>
+                                <div class="emp-crew-note" id="empCrewNote" hidden>👥 A temp crew: one badge for the whole crew. Each sign-in in DailyWizard asks how many are on it, and its hours count for each of them at this wage.</div>
                             </div>
                             <div class="emp-actions">
                                 <button type="button" class="btn btn-primary" id="saveEmpBtn">Save Changes</button>
@@ -8765,6 +8856,7 @@
                             <div>
                                 <div class="te-section-label">Labour — <span id="teEditDateLabel"></span></div>
                                 <div class="entry-list" id="teEntryList"></div>
+                                <div class="te-signins" id="teSignIns" hidden></div>
                                 <div class="te-day-total" id="teDayTotal"></div>
                             </div>
 
@@ -8773,6 +8865,10 @@
                                     <div class="form-group" style="flex:1;">
                                         <label for="lfEmpSelect">Employee</label>
                                         <select id="lfEmpSelect"></select>
+                                    </div>
+                                    <div class="form-group" id="lfCrewGroup" hidden title="👥 A temp crew: the hours are each person's, and count once for everyone on it">
+                                        <label for="lfCrewSize">Crew</label>
+                                        <input type="number" id="lfCrewSize" class="lf-hours" min="1" max="99" step="1" placeholder="0">
                                     </div>
                                     <div class="form-group">
                                         <label for="lfHours">Hrs</label>
@@ -8844,6 +8940,8 @@
                 <label class="report-chk"><input type="checkbox" id="logRemoved" checked> Show removed entries</label>
                 <button type="button" class="btn btn-secondary rpt-pack log-print" id="logPrintBtn" title="Open this log, with these filters, as a page to print or save as PDF">🖨️ Print</button>
             </div>
+            <!-- ⏰ Still signed in: DailyWizard sign-ins not closed yet, and a floor manager's closing time for a forgotten one -->
+            <div id="logOpen"></div>
             <div id="logBody"></div>
         </div>
         <div class="log-sig-overlay" id="logSigOverlay" hidden>
@@ -9065,6 +9163,144 @@
             for (const ev of events) if (ev?.labour_map) ensureLabourMapIds(ev.id, ev.labour_map);
         }
 
+        // ---- 🪪 Sign-ins closed by a floor manager (user decision 2026-10-28) ----
+        // A DailyWizard sign-in lives in its building's file: _DailyWizard.buildings[<id>].signIns[<si_…>] = { item, title,
+        // employee, crewSize?, since, by, badge, note? }. One its person forgot to close gets a closing time from a floor
+        // manager in the Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in):
+        //   _EmployeeWizard.closings[<si_…>] = { bid, out, setBy: { name, strokes? | badge? }, at, by }
+        // settle() turns each into the sign-in's hours entry, with an id derived from the sign-in's, so every device builds
+        // the same one. It's real only where the sign-in's file is saved — its own building's device, or a single-file DB:
+        // the entry goes in and the sign-in goes. Everywhere else it's shown (marked _pending: the Labour Log and Reports
+        // count it now) but never saved (withoutPending, in DbSplit.split, plan and snapshot), and the sign-in stays until
+        // its building files it. The office drops a closing from Main once that building's file no longer holds the
+        // sign-in; a building device never removes the office's.
+        const SignIns = {
+            entryId: sid => 'le_' + contentHash('signin|' + sid),
+            role: () => typeof DbSplit !== 'undefined' && DbSplit.active ? DbSplit.role : null,
+            hasPending(db) {
+                const any = list => Array.isArray(list) && list.some(e => e?._pending);
+                for (const ev of db?.calendarEvents || []) for (const list of Object.values(ev?.labour_map || {})) if (any(list)) return true;
+                for (const b of Object.values(db?._DailyWizard?.buildings || {})) for (const day of Object.values(b?.labour || {})) for (const list of Object.values(day || {})) if (any(list)) return true;
+                return false;
+            },
+            // Take the _pending entries out of holder[key]; a list, day or map they made goes with them
+            _stripList(holder, key) {
+                const list = holder?.[key];
+                if (!Array.isArray(list) || !list.some(e => e?._pending)) return null;
+                const made = {};
+                for (const e of list) if (e?._pending) Object.assign(made, e._made || {});
+                const kept = list.filter(e => !e?._pending);
+                if (kept.length || !made.list) holder[key] = kept; else delete holder[key];
+                return made;
+            },
+            strip(db) {
+                for (const ev of db?.calendarEvents || []) {
+                    const lm = ev?.labour_map;
+                    if (!lm || typeof lm !== 'object') continue;
+                    let mapMade = false;
+                    for (const day of Object.keys(lm)) if (this._stripList(lm, day)?.map) mapMade = true;
+                    if (mapMade && !Object.keys(lm).length) delete ev.labour_map;
+                }
+                for (const b of Object.values(db?._DailyWizard?.buildings || {})) {
+                    const labour = b?.labour;
+                    if (!labour || typeof labour !== 'object') continue;
+                    let labourMade = false;
+                    for (const [date, day] of Object.entries(labour)) {
+                        if (!day || typeof day !== 'object') continue;
+                        let dayMade = false;
+                        for (const code of Object.keys(day)) {
+                            const m = this._stripList(day, code);
+                            if (m?.date) dayMade = true;
+                            if (m?.labour) labourMade = true;
+                        }
+                        if (dayMade && !Object.keys(day).length) delete labour[date];
+                    }
+                    if (labourMade && !Object.keys(labour).length) delete b.labour;
+                }
+            },
+            // The DB as it's saved: without the entries shown for closings a building hasn't filed yet
+            withoutPending(db) {
+                if (!db || !this.hasPending(db)) return db;
+                const copy = JSON.parse(JSON.stringify(db));
+                this.strip(copy);
+                return copy;
+            },
+            // A sign-in closed at its closing time → its hours entry (null when under a minute)
+            entryFor(sid, s, c) {
+                const inMs = Date.parse(s?.since), outMs = Date.parse(c?.out);
+                if (!Number.isFinite(inMs) || !Number.isFinite(outMs) || outMs - inMs < 60000) return null;
+                const minutes = Math.round((outMs - inMs) / 60000);
+                const size = Number.isInteger(s.crewSize) && s.crewSize > 0 ? s.crewSize : null;
+                const setBy = c.setBy || {};
+                return {
+                    id: this.entryId(sid),
+                    employee: s.employee,
+                    ...(size ? { crewSize: size } : {}),
+                    hours: Math.round(minutes * (size || 1) / 60 * 1000) / 1000,
+                    ...(s.note ? { note: s.note } : {}),
+                    initials: { name: s.employee, badge: s.badge || '' },
+                    scan: { in: s.since, out: new Date(outMs).toISOString() },
+                    closedBy: { name: setBy.name || '?', ...(setBy.badge ? { badge: setBy.badge } : Array.isArray(setBy.strokes) ? { strokes: setBy.strokes } : {}), at: c.at || null, by: c.by || null },
+                    at: c.at || null,
+                    by: c.by || null
+                };
+            },
+            // Put the entry where DailyWizard would: the sign-in's row (a crop or equipment task's labour_map, or the chore's
+            // hours), on the day it started; a task deleted since → 🧰 Miscellaneous labour, saying which
+            place(db, bid, s, entry, pending) {
+                const d = new Date(s.since), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const e = pending ? { ...entry, _pending: true, _made: {} } : { ...entry };
+                const evId = String(s.item || '').startsWith('ev:') ? s.item.slice(3) : null;
+                const ev = evId ? (db.calendarEvents || []).find(x => x?.id === evId) : null;
+                const b = db._DailyWizard.buildings[bid];
+                let code = evId ? null : s.item;
+                if (!ev && (evId || !(code === 'misc' || (b.tasks || []).some(t => t?.code === code)))) {
+                    code = 'misc';
+                    e.note = (`Task removed: ${s.title || s.item}` + (s.note ? ' — ' + s.note : '')).slice(0, 200);
+                }
+                let list;
+                if (ev) {
+                    if (!ev.labour_map || typeof ev.labour_map !== 'object') { ev.labour_map = {}; if (pending) e._made.map = true; }
+                    if (!Array.isArray(ev.labour_map[day])) { ev.labour_map[day] = []; if (pending) e._made.list = true; }
+                    list = ev.labour_map[day];
+                } else {
+                    if (!b.labour || typeof b.labour !== 'object') { b.labour = {}; if (pending) e._made.labour = true; }
+                    if (!b.labour[day] || typeof b.labour[day] !== 'object') { b.labour[day] = {}; if (pending) e._made.date = true; }
+                    if (!Array.isArray(b.labour[day][code])) { b.labour[day][code] = []; if (pending) e._made.list = true; }
+                    list = b.labour[day][code];
+                }
+                if (!list.some(x => x?.id === e.id)) list.push(e);
+            },
+            // Every closing → its entry (see above). Returns { filed }: sign-ins this device filed for real.
+            settle(db, role = this.role()) {
+                const out = { filed: 0 };
+                if (!db) return out;
+                this.strip(db);
+                const closings = db._EmployeeWizard?.closings;
+                if (!closings || typeof closings !== 'object') return out;
+                for (const [sid, c] of Object.entries(closings)) {
+                    const b = db._DailyWizard?.buildings?.[c?.bid], s = b?.signIns?.[sid];
+                    if (!s) {
+                        // Filed (or closed by its own badge first): the device that keeps the closing lets it go — the office
+                        // once it has that building's file; a building only one made on it; a single file at once
+                        const officeMay = role === 'office' && (!db.buildings?.[c?.bid] || DbSplit.loaded?.has(buildingFileName(c.bid)));
+                        if (!role || c?.by === role && role !== 'office' || officeMay) delete closings[sid];
+                        continue;
+                    }
+                    const entry = this.entryFor(sid, s, c);
+                    if (!role || role === c.bid) {
+                        delete b.signIns[sid];
+                        if (!Object.keys(b.signIns).length) delete b.signIns;
+                        if (entry) this.place(db, c.bid, s, entry, false);
+                        if (!role || c.by === role) delete closings[sid];   // made here: it's done (an office one stays in Main)
+                        out.filed++;
+                    } else if (entry) this.place(db, c.bid, s, entry, true);
+                }
+                if (!Object.keys(closings).length) delete db._EmployeeWizard.closings;
+                return out;
+            }
+        };
+
         // An event's labour entries by id → { day, entry } (ids are derived on a copy when missing)
         function labourIndex(evId, map) {
             const out = new Map();
@@ -9254,7 +9490,9 @@
                 DB.ensureStructure();
                 DB.fileName = fileName.replace('.json', '');
                 DbSplit.reset(); // a single-file DB: legacy save flow
+                const settled = SignIns.settle(DB.data);   // 🪪 closing times not filed yet (one file: filed now)
                 clearUnsaved();
+                if (settled.filed) markUnsaved();
                 refreshAllViews();
                 hideOverlay();
                 toastDbLoaded();
@@ -10604,6 +10842,7 @@
 
             // ---- Split: one DB → { file name: part } ----
             split(db) {
+                db = SignIns.withoutPending(db);   // hours shown for closings a building hasn't filed yet are never saved
                 const buildingIds = Object.keys(db.buildings || {});
                 const parts = {};
 
@@ -10992,8 +11231,15 @@
                 // Facility pages taken in from building queues: Main is saved even with no other change
                 const pickups = this.role === 'office' && this.facilityPickups.length > 0;
                 if (pickups) this.baseParts[SPLIT_MAIN] = '';
+                // 🪪 Closing times on forgotten sign-ins: filed in their own building's file (after the baseline, so it saves),
+                // shown everywhere else; the office lets go of the ones its buildings have filed
+                const settled = SignIns.settle(DB.data);
 
                 clearUnsaved();
+                if (settled.filed && this.role !== 'office') {
+                    markUnsaved();
+                    setTimeout(() => showSyncToast(`⏰ ${settled.filed} closing time${settled.filed === 1 ? '' : 's'} from the office filed as hours — 💾 Save DB to keep ${settled.filed === 1 ? 'it' : 'them'} in this building's file`), 0);
+                }
                 refreshAllViews();
                 hideOverlay();
                 toastDbLoaded();
@@ -11094,7 +11340,7 @@
             // open folder (Save to folder) or offers one right-click link per file.
             plan() {
                 const now = Date.now();
-                const db = DB.data;
+                const db = SignIns.withoutPending(DB.data);   // as it's saved (no closings shown that a building hasn't filed)
                 if (this.role === 'office') this.stampOfficeChanges(db, now);
                 else {
                     this.overlays[this.role] = this.buildingOverlays(db, this.role, now);
@@ -11150,7 +11396,7 @@
 
             // The DB as JSON without the save stamp (which changes on every save)
             snapshot(db) {
-                return JSON.stringify({ ...db, _meta: undefined });
+                return JSON.stringify(SignIns.withoutPending({ ...db, _meta: undefined }));
             },
 
             finish(plan) {
@@ -12505,6 +12751,7 @@
                 if (run?.delivering) { run.notified = true; return; }   // while it takes the DB: counted once it has (deliver)
                 if (!run?.received) return;   // nothing counts before it has the database
                 if (run.data !== DB.data) { console.warn(`[SitkaTools] ${name} changed a database that's no longer open — ignored`); return; }
+                SignIns.settle(DB.data);   // 🪪 a closing time set on a forgotten sign-in becomes its hours
                 const key = toolSyncKey(DB.data, DeviceView.message());
                 if (key === run.sent) return;
                 run.sent = key;
@@ -22696,9 +22943,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
             if (doneCtx) {
                 if ($('doneWho').options[0]) $('doneWho').options[0].textContent = T('— Pick the floor manager —');
-                $('doneWhoNote').textContent = floorManagers().names.length ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
+                $('doneWhoNote').textContent = floorManagers().any ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
                 renderDone();
             }
+            if (scanState) renderScanDialog();
         }
 
         // ---- Date helpers (local time, YYYY-MM-DD) ----
@@ -22874,6 +23122,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             syncOpenDetail();             // an open detail view stays consistent
             if (hoursCtx) renderHours();
             if (doneCtx) renderDone();    // the floor manager's name and initials being drawn are left alone
+            if (scanState) renderScanDialog();   // a sign-in signed out meanwhile closes it
         }
 
         // ---- Rendering ----
@@ -22979,6 +23228,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (isChecked(checkSpotForTask(buildingId, task.code), dateStr)) return false;
             if ((DB.dailyBuildings[buildingId]?.labour?.[dateStr]?.[task.code] || []).length) return false;
             if (Object.values(DB.dailyBuildings[buildingId]?.timers?.[task.code] || {}).some(t => t && (t.since || Number(t.ms) > 0))) return false;
+            if (Object.values(DB.dailyBuildings[buildingId]?.signIns || {}).some(x => x?.item === task.code)) return false;   // someone's signed in to it
             return true;
         }
         // The day's chores to show, and the room chores hidden because their room is empty
@@ -23203,7 +23453,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             if (timersShown(buildingId)) {
                 row.classList.add('with-timers');
-                row.appendChild(makeTimerStrip(buildingId, task.code, `${task.emoji || '📋'} ${taskName(task)}`));
+                row.appendChild(makeSignInStrip(buildingId, task.code, `${task.emoji || '📋'} ${taskName(task)}`));
             }
 
             return row;
@@ -23228,7 +23478,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             row.append(spacer, emoji, name, chip, makeHoursButton({ kind: 'chore', buildingId, code: MISC_CODE, date: selectedDateStr() }));
             if (timersShown(buildingId)) {
                 row.classList.add('with-timers');
-                row.appendChild(makeTimerStrip(buildingId, MISC_CODE, `${MISC_TASK.emoji} ${taskName(MISC_TASK)}`));
+                row.appendChild(makeSignInStrip(buildingId, MISC_CODE, `${MISC_TASK.emoji} ${taskName(MISC_TASK)}`));
             }
             return row;
         }
@@ -23329,7 +23579,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     row.appendChild(makeDoneButton(ev, buildingId));
                     if (timersShown(buildingId)) {
                         row.classList.add('with-timers');
-                        row.appendChild(makeTimerStrip(buildingId, 'ev:' + ev.id, `${emoji} ${text || ev.title || T('Task')}`));
+                        row.appendChild(makeSignInStrip(buildingId, 'ev:' + ev.id, `${emoji} ${text || ev.title || T('Task')}`));
                     }
                 }
             }
@@ -25082,8 +25332,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
         // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
         // normalized 0–1, like DailyWizard's hours entries.
+        // 🪪 Badges (user decision 2026-10-28): every employee and temp crew may have a badge, a Code 128 barcode of 16
+        // digits — a 4-digit badge number (printed on the card) then 12 secret digits. Main.json keeps only
+        //   employees[name].badge = { no, salt, hash, madeAt }   hash: SHA-256 of `${salt}:${secret}`, like a PIN
+        //   employees[name].badgeRetired = [{ no, until }]       badges replaced since (a scan of one says so)
+        // A floor manager's badge stands in for both their PIN and their initials, wherever ask() is used: it resolves
+        // { name, badge: no } (with { initials: true }: plus initials = { name, badge: no }, a signature with no strokes).
         var FloorPin = {
-            WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
+            WAIT_AFTER: 5,          // wrong PINs (or badges not recognized) in a row before a one-minute wait
             WAIT_MS: 60 * 1000,
             _fails: 0,
             _waitUntil: 0,
@@ -25091,16 +25347,58 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             _done: null,
             _wantInitials: false,
             _strokes: [],
+            _unscan: null,
             tr(s, v) {
                 if (typeof T === 'function') return T(s, v);
                 return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
             },
-            // Floor managers who have a PIN, by name
+            _emps() { return (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {}; },
+            // Floor managers who can sign off — with a PIN, or with a badge — by name (temp crews never are)
             managers() {
-                const emps = (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {};
-                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.pin?.hash && emps[n]?.pin?.salt)
-                    .sort((a, b) => a.localeCompare(b));
+                const emps = this._emps();
+                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.crew !== true &&
+                    ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || this.hasBadge(emps[n]))).sort((a, b) => a.localeCompare(b));
             },
+            // …the ones who have a PIN (the name list next to the PIN box)
+            pinManagers() {
+                const emps = this._emps();
+                return this.managers().filter(n => emps[n]?.pin?.hash && emps[n]?.pin?.salt);
+            },
+            hasBadge: emp => !!(emp?.badge?.no && emp.badge.salt && emp.badge.hash),
+            // A scanned (or typed) badge code → { name, no, crew, floorManager }, or { error: 'unknown' | 'replaced', name? }
+            BADGE_RE: /^\d{16}$/,
+            async verifyBadge(code) {
+                code = String(code || '').trim();
+                if (!this.BADGE_RE.test(code)) return { error: 'unknown' };
+                const no = code.slice(0, 4), secret = code.slice(4), emps = this._emps();
+                for (const [name, e] of Object.entries(emps)) {
+                    if (!this.hasBadge(e) || e.badge.no !== no) continue;
+                    if ((await this.hash(e.badge.salt, secret)) === e.badge.hash) return { name, no, crew: e.crew === true, floorManager: e.floorManager === true && e.crew !== true };
+                }
+                for (const [name, e] of Object.entries(emps)) {
+                    const r = (Array.isArray(e?.badgeRetired) ? e.badgeRetired : []).find(x => x?.no === no);
+                    if (r) return { error: 'replaced', name, until: r.until || '' };
+                }
+                return { error: 'unknown' };
+            },
+            // A new badge: a number no badge has had (current or replaced), 12 secret digits, and the record to keep.
+            // The code itself is never stored: it's printed once (the Labour & Cost Wizard keeps it while it's open).
+            async makeBadge() {
+                const used = new Set();
+                for (const e of Object.values(this._emps())) {
+                    if (e?.badge?.no) used.add(e.badge.no);
+                    for (const r of Array.isArray(e?.badgeRetired) ? e.badgeRetired : []) if (r?.no) used.add(r.no);
+                }
+                const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => String(v % 10)).join('');
+                let no = '';
+                for (let i = 0; i < 200 && (!no || used.has(no)); i++) no = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+                if (used.has(no)) for (let v = 1000; v <= 9999; v++) if (!used.has(String(v))) { no = String(v); break; }
+                const secret = digits(12);
+                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                return { code: no + secret, record: { no, salt, hash: await this.hash(salt, secret) } };
+            },
+            // A signature: drawn initials ({ name, strokes }) or a badge scan ({ name, badge })
+            signed: sig => !!(sig && ((Array.isArray(sig.strokes) && sig.strokes.length) || sig.badge)),
             // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
             async hash(salt, pin) {
                 const text = `${salt}:${pin}`;
@@ -25179,12 +25477,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
                 return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
             },
-            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials). Resolves { name }
-            // (plus initials) once it's right, or null (cancelled).
+            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials) — or a scan of their
+            // badge. Resolves { name } (plus initials, or badge) once it's right, or null (cancelled).
             ask(why, opts = {}) {
                 if (this._done) this._finish(null);
                 this._build();
-                const el = this._el, names = this.managers();
+                const el = this._el, names = this.pinManagers(), emps = this._emps();
+                const badges = this.managers().some(n => this.hasBadge(emps[n]));
                 const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
                 this._wantInitials = !!opts.initials;
                 this._strokes = [];
@@ -25198,27 +25497,50 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
                 el.querySelector('[data-fpin-why]').textContent = why || '';
                 el.querySelector('[data-fpin-err]').textContent = '';
-                const none = !names.length;
+                // 🪪 Scanning a floor manager's badge is the whole sign-off (no PIN, no initials)
+                const scan = el.querySelector('[data-fpin-scan]');
+                scan.textContent = this.tr(names.length ? '🪪 Scan your badge — or pick your name and type your PIN' : '🪪 Scan your floor manager badge');
+                scan.hidden = !badges;
+                const none = !names.length && !badges, pinOff = !names.length;
                 el.querySelector('[data-fpin-none]').hidden = !none;
-                el.querySelector('[data-fpin-fields]').hidden = none;
-                el.querySelector('[data-fpin-ok]').hidden = none;
+                el.querySelector('[data-fpin-fields]').hidden = pinOff;
+                el.querySelector('[data-fpin-ok]').hidden = pinOff;
                 el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
                 const sign = el.querySelector('[data-fpin-sign]');
-                sign.hidden = none || !this._wantInitials;
+                sign.hidden = pinOff || !this._wantInitials;
                 who.innerHTML = '';
                 if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
                 for (const n of names) who.appendChild(new Option(n, n));
                 pin.value = '';
                 el.hidden = false;
                 if (!sign.hidden) this._sizePad();
-                (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                (pinOff ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                if (this._unscan) this._unscan();
+                this._unscan = typeof BadgeScan !== 'undefined' ? BadgeScan.push(code => this._scanned(code)) : null;   // a scan never reaches what's under the dialog
                 return new Promise(resolve => { this._done = resolve; });
             },
             _finish(result) {
                 const done = this._done;
                 this._done = null;
+                if (this._unscan) { this._unscan(); this._unscan = null; }
                 if (this._el) this._el.hidden = true;
                 if (done) done(result);
+            },
+            // A badge scanned while the dialog is open: a floor manager's signs off at once
+            async _scanned(code) {
+                const el = this._el, err = el.querySelector('[data-fpin-err]'), asking = this._done;
+                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                const r = await this.verifyBadge(code);
+                if (!asking || this._done !== asking) return;   // closed meanwhile
+                if (r.error) {
+                    if (++this._fails >= this.WAIT_AFTER) { this._fails = 0; this._waitUntil = Date.now() + this.WAIT_MS; err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); }
+                    else err.textContent = r.error === 'replaced' ? this.tr('That badge was replaced — use the new one') : this.tr('Badge not recognized — try again');
+                    return;
+                }
+                if (!r.floorManager) { err.textContent = this.tr('Only a floor manager can approve this — {name} isn’t one', { name: r.name }); return; }
+                this._fails = 0;
+                const sig = { name: r.name, badge: r.no };
+                this._finish(this._wantInitials ? { name: r.name, badge: r.no, initials: sig } : { name: r.name, badge: r.no });
             },
             async _submit() {
                 const el = this._el, err = el.querySelector('[data-fpin-err]');
@@ -25263,7 +25585,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
                     .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
                     .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
-                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }`;
+                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }
+                    .fpin-scan { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-size: 0.9rem; font-weight: 600; text-align: center; }
+                    .fpin-scan[hidden] { display: none; }`;
                 document.head.appendChild(css);
                 const el = document.createElement('div');
                 el.className = 'fpin';
@@ -25276,6 +25600,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         <div class="fpin-title"></div>
                         <div class="fpin-why" data-fpin-why></div>
                         <div class="fpin-none" data-fpin-none></div>
+                        <div class="fpin-scan" data-fpin-scan hidden></div>
                         <div class="fpin-fields" data-fpin-fields>
                             <label for="floorPinWho"></label>
                             <select id="floorPinWho" data-fpin-who></select>
@@ -25352,6 +25677,70 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
         };
 
+        // ---- 🪪 Badge scans (user decision 2026-10-28) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
+        // A barcode scanner is a keyboard: it "types" a badge's 16 digits in a burst, then Enter (or Tab). A capture-phase
+        // keydown on this tool's document collects digits that come in a burst (each within GAP_MS of the last); 16 of
+        // them then Enter or Tab is a scan. It goes to the newest handler pushed (the dialog on top, else the tool's own).
+        //  • The Enter or Tab is swallowed: it doesn't press a focused button or move the focus on.
+        //  • Digits outside a text box are swallowed too, so a scan can't pick an option in a focused list.
+        //  • A scan that went into a text box (a PIN, a note, a date) is taken back out of it.
+        // Nobody types 16 digits at that pace, so typing by hand is never taken for a scan.
+        var BadgeScan = {
+            GAP_MS: 100,
+            _buf: '',
+            _last: 0,
+            _field: null,
+            _value: null,
+            _handlers: [],
+            _on: false,
+            install() {
+                if (this._on) return;
+                this._on = true;
+                document.addEventListener('keydown', e => this._key(e), true);
+            },
+            // The newest handler gets each scan; the function returned takes it off again
+            push(fn) {
+                this.install();
+                this._handlers.push(fn);
+                return () => { const i = this._handlers.lastIndexOf(fn); if (i >= 0) this._handlers.splice(i, 1); };
+            },
+            _editable(el) {
+                if (!el || el.disabled || el.readOnly) return false;
+                if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+                return el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|color|range|image)$/i.test(el.type || '');
+            },
+            _key(e) {
+                if (e.ctrlKey || e.metaKey || e.altKey) { this._buf = ''; return; }
+                const now = Date.now(), t = e.target;
+                if (/^[0-9]$/.test(e.key)) {
+                    if (!this._buf || now - this._last > this.GAP_MS) {
+                        this._buf = '';
+                        this._field = this._editable(t) ? t : null;
+                        this._value = this._field ? this._field.value : null;
+                    }
+                    this._buf += e.key;
+                    this._last = now;
+                    if (!this._editable(t)) e.preventDefault();
+                    return;
+                }
+                if ((e.key === 'Enter' || e.key === 'Tab') && this._buf.length === 16 && now - this._last <= this.GAP_MS) {
+                    const code = this._buf, field = this._field, value = this._value;
+                    this._buf = '';
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (field && field.value !== value) {
+                        field.value = value;
+                        field.dispatchEvent(new Event('input', { bubbles: true }));
+                        field.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    const fn = this._handlers[this._handlers.length - 1];
+                    if (fn) { try { fn(code); } catch (err) { console.error(err); } }
+                    return;
+                }
+                if (e.key !== 'Shift') this._buf = '';
+            }
+        };
+
         // ---- ✏️ Edit mode: changing the daily task lists needs a floor manager's PIN (user decision 2026-10-22) ----
         // Adding, editing, reordering and deleting tasks, and their steps and translations, happen only in edit mode,
         // which a floor manager unlocks with their PIN (✏️ Edit tasks). Deleting a whole task asks for a PIN again. It
@@ -25413,6 +25802,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const isMisc = ctx => ctx?.kind === 'chore' && ctx.code === MISC_CODE;
         let hoursCtx = null;   // { kind: 'chore' | 'event', buildingId, date, code | eventId } while the hours view is open
         let padStrokes = [];   // the initials being drawn: [[x, y, x, y, …], …], normalized 0–1
+        let hoursBadge = null; // 🪪 { name, no } once a badge was scanned in the hours view: it signs the entry instead of initials
+        let hoursUnscan = null;
 
         const ctxEvent = ctx => ctx?.kind === 'event' ? DB.calendarEvents.find(e => e.id === ctx.eventId) || null : null;
         const ctxTask = ctx => ctx?.kind === 'chore' ? (ctx.code === MISC_CODE ? MISC_TASK : (DB.dailyBuildings[ctx.buildingId]?.tasks || []).find(t => t.code === ctx.code) || null) : null;
@@ -25482,23 +25873,54 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             who.innerHTML = '';
             const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; who.appendChild(o); };
             add('', T('— Pick your name —'));
-            for (const n of rosterNames()) add(n, n);
+            for (const n of rosterNames()) add(n, isCrewName(n) ? '👥 ' + n : n);
             add('__other', T('Someone else (not on the roster)…'));
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursCrew').value = '';
             $('hoursComment').value = '';
             $('hoursTimerPicks').innerHTML = '';
             padStrokes = [];
+            hoursBadge = null;
+            if (hoursUnscan) hoursUnscan();
+            hoursUnscan = BadgeScan.push(code => hoursScanned(code));   // 🪪 a badge fills in Who and signs the entry
             renderHours();
             $('hoursOverlay').classList.add('open');
-            sizePad();
+            showHoursSign();
         }
 
         function closeHours() {
             $('hoursOverlay').classList.remove('open');
             hoursCtx = null;
             padStrokes = [];
+            hoursBadge = null;
+            if (hoursUnscan) { hoursUnscan(); hoursUnscan = null; }
+        }
+        // A badge scanned in the hours view: Who is that person (or crew), and the badge signs instead of drawn initials
+        async function hoursScanned(code) {
+            const ctx = hoursCtx;
+            if (!ctx) return;
+            const r = await FloorPin.verifyBadge(code);
+            if (hoursCtx !== ctx) return;
+            if (r.error) { showToast(r.error === 'replaced' ? T('That badge was replaced — use the new one') : T('Badge not recognized — try again')); return; }
+            const who = $('hoursWho');
+            if (![...who.options].some(o => o.value === r.name)) who.add(new Option(r.name, r.name), who.options[who.options.length - 1]);
+            who.value = r.name;
+            for (const id of ['hoursOther', 'hoursWage']) $(id).hidden = true;
+            hoursBadge = { name: r.name, no: r.no };
+            showHoursSign();
+            if (isCrewName(r.name) && !$('hoursCrew').value) $('hoursCrew').value = String(lastCrewSize(r.name) || '');
+        }
+        // The initials pad, or "🪪 Badge #… scanned" when the badge of whoever is picked signed it; the crew size for a crew
+        function showHoursSign() {
+            const name = $('hoursWho').value;
+            const badge = hoursBadge && hoursBadge.name === name ? hoursBadge : null;
+            $('hoursBadgeNote').hidden = !badge;
+            $('hoursPadGroup').hidden = !!badge;
+            if (badge) $('hoursBadgeText').textContent = T('🪪 Badge #{no} scanned — {name} signs with it', { no: badge.no, name });
+            $('hoursCrewGroup').hidden = !isCrewName(name);
+            if (!badge && hoursCtx) sizePad();
         }
 
         function renderHours() {
@@ -25543,10 +25965,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             row.className = 'hours-entry' + (removal || e.removedAt ? ' removed' : '');
             const who = document.createElement('span');
             who.className = 'who';
-            who.textContent = `${e.employee || e.temp || '?'}${e.temp != null ? T(' (not on roster)') : ''}`;
+            const size = Number.isInteger(e.crewSize) && e.crewSize > 0 ? e.crewSize : null;
+            who.textContent = `${size ? crewWho(e.employee || e.temp || '?', size) : e.employee || e.temp || '?'}${e.temp != null ? T(' (not on roster)') : ''}`;
             const hrs = document.createElement('span');
             hrs.className = 'hrs';
-            hrs.textContent = fmtHoursShort(Number(e.hours) || 0);
+            hrs.textContent = fmtHoursShort(Number(e.hours) || 0) + (size ? ` (${T('{time} each', { time: fmtHoursShort((Number(e.hours) || 0) / size) })})` : '');
             row.append(who, hrs);
             if (e.note) {
                 const note = document.createElement('span');
@@ -25555,8 +25978,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 row.appendChild(note);
             }
             // The worker's own initials, or the floor manager who entered the hours in the Labour & Cost Wizard
-            const ini = e.initials?.strokes?.length ? e.initials : e.enteredBy?.strokes?.length ? e.enteredBy : null;
-            if (ini) row.appendChild(initialsSvg(ini));
+            const ini = FloorPin.signed(e.initials) ? e.initials : FloorPin.signed(e.enteredBy) ? e.enteredBy : null;
+            if (ini) row.appendChild(ini.strokes?.length ? initialsSvg(ini) : badgeChip(ini));
             if (!removal && index >= 0 && canRemoveEntry(e)) {
                 const del = document.createElement('button');
                 del.type = 'button';
@@ -25570,7 +25993,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             when.className = 'when';
             const stamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
             const parts = [e.enteredBy ? T('Entered in the Labour & Cost Wizard by {name}, {when}', { name: e.enteredBy.name || '?', when: e.at ? stamp(e.at) : '' })
+                : e.scan?.in && e.scan?.out ? T('🪪 Signed in {from}, out {to}', { from: stamp(e.scan.in), to: clockStamp(e.scan.out) })
                 : e.at ? T('Logged {when}', { when: stamp(e.at) }) : T('Entered in the Labour & Cost Wizard')];
+            if (e.closedBy?.name) parts.push(T('⏰ closing time set by {name}', { name: e.closedBy.name }));
             if (e.editedAt) parts.push(e.signedHours !== undefined ? T('signed for {h}, changed in the Labour & Cost Wizard {when}', { h: fmtHoursShort(Number(e.signedHours) || 0), when: stamp(e.editedAt) })
                 : T('changed in the Labour & Cost Wizard {when}', { when: stamp(e.editedAt) }));
             if (e.editedSignoff?.name) parts.push(T('change approved by {name}', { name: e.editedSignoff.name }));
@@ -25582,6 +26007,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return row;
         }
 
+        // 🪪 A badge signature where drawn initials would be: "🪪 #0417" (a sign-in's times are on the line below)
+        function badgeChip(sig) {
+            const chip = document.createElement('span');
+            chip.className = 'badge-chip';
+            chip.textContent = `🪪 #${sig.badge}`;
+            chip.title = T('Signed with badge #{no} ({name})', { no: sig.badge, name: sig.name || '?' });
+            return chip;
+        }
         function initialsSvg(ini) {
             const ns = 'http://www.w3.org/2000/svg';
             const svg = document.createElementNS(ns, 'svg');
@@ -25664,13 +26097,17 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const whoVal = $('hoursWho').value, isTemp = whoVal === '__other';
             const name = isTemp ? $('hoursOther').value.trim() : whoVal;
             if (!name) { showToast(isTemp ? T('Type the name of who worked on it') : T('Pick who worked on it')); return; }
+            // 👥 A temp crew: how many were on it; the hours typed are each person's
+            const crewSize = !isTemp && isCrewName(name) ? parseInt($('hoursCrew').value, 10) : null;
+            if (crewSize !== null && !(crewSize >= 1 && crewSize <= 99)) { showToast(T('Enter how many were on the crew')); $('hoursCrew').focus(); return; }
+            const badge = !isTemp && hoursBadge && hoursBadge.name === name ? hoursBadge : null;
             const h = Math.max(0, parseInt($('hoursH').value, 10) || 0), m = Math.max(0, parseInt($('hoursM').value, 10) || 0);
             const hours = h + m / 60;
             if (hours <= 0) { showToast(T('Enter the hours and minutes worked')); return; }
             if (hours > 16) { showToast(T('That’s more than 16 hours — check the entry')); return; }
             const note = $('hoursComment').value.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
             if (!note && isMisc(ctx)) { showToast(T('Say what you were doing')); $('hoursComment').focus(); return; }
-            if (!padStrokes.length) { showToast(T('Draw your initials to sign the entry')); return; }
+            if (!badge && !padStrokes.length) { showToast(T('Draw your initials to sign the entry')); return; }
             const wage = isTemp ? parseFloat($('hoursWage').value) : NaN;
             if (ctx.kind === 'chore') {
                 const buildings = DB.ensureStructure()._DailyWizard.buildings;
@@ -25683,9 +26120,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             ctxEntries(ctx, true).push({
                 id: newLabourId(),
                 ...(isTemp ? { temp: name, ...(wage > 0 ? { wage: Math.round(wage * 100) / 100 } : {}) } : { employee: name }),
-                hours: Math.round(hours * 1000) / 1000,
+                ...(crewSize ? { crewSize } : {}),
+                hours: Math.round(hours * (crewSize || 1) * 1000) / 1000,   // a crew's are person-hours
                 ...(note ? { note } : {}),
-                initials: { name, strokes: padStrokes.map(st => st.slice()) },
+                initials: badge ? { name, badge: badge.no } : { name, strokes: padStrokes.map(st => st.slice()) },
                 at: new Date().toISOString(),
                 by: DeviceView.building || 'office'
             });
@@ -25694,13 +26132,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             for (const id of ['hoursOther', 'hoursWage']) { $(id).value = ''; $(id).hidden = true; }
             $('hoursH').value = '';
             $('hoursM').value = '';
+            $('hoursCrew').value = '';
             $('hoursComment').value = '';
-            $('hoursTimerPicks').innerHTML = '';   // back to "None"; the timer itself is left running for the others
+            $('hoursTimerPicks').innerHTML = '';   // back to "None"; a timer left from before keeps going
             padStrokes = [];
+            hoursBadge = null;
+            showHoursSign();
             drawPad();
             renderHours();
             renderAll();
-            showToast(T('Logged {h} for {name}', { h: fmtHoursShort(hours), name }));
+            showToast(T('Logged {h} for {name}', { h: crewSize ? T('{time} each', { time: fmtHoursShort(hours) }) : fmtHoursShort(hours), name: crewSize ? crewWho(name, crewSize) : name }));
         }
 
         // Removing an entry needs a floor manager's PIN, on every device (user decision 2026-10-22). It's always kept on
@@ -25727,7 +26168,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             (b.adjustments || (b.adjustments = [])).push({
                 at: new Date().toISOString(), by: DeviceView.building || 'office', date: ctx.date,
                 ...(ctx.kind === 'event' ? { eventId: ctx.eventId, title: ctxEvent(ctx)?.title || '' } : { code: ctx.code }),
-                entry: removed, approvedBy: ok.name
+                entry: removed, approvedBy: ok.name, ...(ok.badge ? { approvedWith: 'badge' } : {})
             });
             ctxTidy(ctx);
             notifySitkaTools();
@@ -25736,16 +26177,289 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             showToast(T('Entry removed — kept on record'));
         }
 
-        // ---- ⏲ Timers — four pausable stopwatches on every row that takes hours (user decision 2026-10-22) ----
-        // Shown on a second line in each chore and crop / equipment row while the date on screen is today, in the
-        // buildings this device can change. Starting a cleared timer asks for initials or a label (optional). ⏱ Log can
-        // fill its hours from one, rounded to the nearest 5 minutes; that doesn't pause or clear it, so everyone who
-        // worked together logs from the same timer. Kept with the building's list, so they save in its own file:
+        // ---- 🪪 Sign-ins: ＋ Start task and a badge scan (user decision 2026-10-28: they replaced the four ⏲ timers) ----
+        // Every row that takes hours (chores, 🧰 Miscellaneous labour, crop and equipment tasks under Scheduled today and
+        // Still open) has ＋ Start task on a second line, then a chip for everyone signed in to it. ＋ Start task and a badge
+        // scan signs that person in (a temp crew says how many are on it; 🧰 Misc says what it's for); scanning the badge
+        // again, anywhere in DailyWizard, signs them out and logs the hours by itself. Shown while the date on screen is
+        // today, in the buildings this device can change (timersShown). Kept with the building's list, in its own file:
+        //   _DailyWizard.buildings[<id>].signIns[<si_…>] = { item, title, employee, crewSize?, since, by, badge, note? }
+        //   item: a chore's code, 'misc' or 'ev:<event id>'; since: ISO time signed in; badge: the badge number scanned
+        //  • One task at a time: signing in to another task signs them out of the one they were on (in this building).
+        //  • Signing out logs an ordinary hours entry on the day signed in, to the minute:
+        //      { id, employee, crewSize?, hours, initials: { name, badge }, scan: { in, out }, note?, at, by }
+        //    A crew's hours are person-hours (minutes × crew size, costed at its rate per person). Under a minute logs nothing.
+        //  • ⏰ Forgotten: signed in on an earlier day, or for 16 hours or more. It stops counting and its own badge can't
+        //    close it: a floor manager sets its closing time in the Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).
+        //  • Never dropped silently: a sign-in whose task was deleted closes into 🧰 Miscellaneous labour, with a note.
+        const SIGNIN_FORGET_MS = 16 * 3600 * 1000;
+        const signInsOf = bid => DB.dailyBuildings[bid]?.signIns || {};
+        function newSignInId() {
+            const bytes = crypto.getRandomValues(new Uint8Array(10));
+            return 'si_' + Array.from(bytes, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+        }
+        const signInForgotten = (s, now = Date.now()) => !Number.isFinite(Date.parse(s?.since)) || dateToStr(new Date(s.since)) < todayStr() || now - Date.parse(s.since) >= SIGNIN_FORGET_MS;
+        const signInMs = (s, now = Date.now()) => Math.max(0, now - Date.parse(s.since));
+        const isCrewName = name => DB.data?._EmployeeWizard?.employees?.[name]?.crew === true;
+        const crewWho = (name, n) => T('👥 {name} × {n}', { name, n });
+        const signInWho = s => s.crewSize ? crewWho(s.employee, s.crewSize) : s.employee;
+        const signInStamp = iso => new Date(iso).toLocaleString(uiLocale(), { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+        const clockStamp = iso => new Date(iso).toLocaleTimeString(uiLocale(), { hour: 'numeric', minute: '2-digit' });
+        // A person's (or crew's) sign-ins in the buildings this device changes: [{ bid, sid, s }], live ones first
+        function signInsOfPerson(name) {
+            const out = [];
+            for (const bid of Object.keys(DB.dailyBuildings || {})) {
+                if (!canEditBuilding(bid)) continue;
+                for (const [sid, s] of Object.entries(signInsOf(bid))) if (s?.employee === name) out.push({ bid, sid, s });
+            }
+            return out.sort((a, b) => signInForgotten(a.s) - signInForgotten(b.s) || String(b.s.since).localeCompare(String(a.s.since)));
+        }
+        // …in other buildings, as this device last opened their files (it can't change them): a note only
+        function signInsElsewhere(name) {
+            const out = [];
+            for (const bid of Object.keys(DB.dailyBuildings || {})) {
+                if (canEditBuilding(bid)) continue;
+                for (const s of Object.values(signInsOf(bid))) if (s?.employee === name && !signInForgotten(s)) out.push({ bid, s });
+            }
+            return out;
+        }
+        // Where a sign-in's hours go: its row, on the day it started
+        function signInCtx(bid, s) {
+            const date = dateToStr(new Date(s.since));
+            return String(s.item).startsWith('ev:') ? { kind: 'event', buildingId: bid, eventId: s.item.slice(3), date } : { kind: 'chore', buildingId: bid, code: s.item, date };
+        }
+        // Close a sign-in at `out`: its hours are logged (unless it was under a minute) and it's removed. Returns
+        // { name, minutes, hours } (hours: person-hours), or null when it's gone. The caller notifies SitkaTools.
+        function closeSignIn(bid, sid, out = new Date()) {
+            const b = DB.dailyBuildings[bid], s = b?.signIns?.[sid];
+            if (!s) return null;
+            delete b.signIns[sid];
+            if (!Object.keys(b.signIns).length) delete b.signIns;
+            const ms = out.getTime() - Date.parse(s.since);
+            const size = Number.isInteger(s.crewSize) && s.crewSize > 0 ? s.crewSize : null;
+            if (!(ms >= 60000)) return { name: s.employee, minutes: 0, hours: 0, size };
+            const minutes = Math.round(ms / 60000), hours = Math.round(minutes * (size || 1) / 60 * 1000) / 1000;
+            let ctx = signInCtx(bid, s), note = s.note || '';
+            if (ctx.kind === 'event' ? !ctxEvent(ctx) : !ctxTask(ctx)) {
+                // The task was deleted meanwhile: the hours go to 🧰 Miscellaneous labour, saying where they were
+                note = (T('Task removed: {task}', { task: s.title || s.item }) + (note ? ' — ' + note : '')).slice(0, NOTE_MAX);
+                ctx = { kind: 'chore', buildingId: bid, code: MISC_CODE, date: ctx.date };
+            }
+            ctxEntries(ctx, true).push({
+                id: newLabourId(),
+                employee: s.employee,
+                ...(size ? { crewSize: size } : {}),
+                hours,
+                ...(note ? { note } : {}),
+                initials: { name: s.employee, badge: s.badge || '' },
+                scan: { in: s.since, out: out.toISOString() },
+                at: new Date().toISOString(),
+                by: DeviceView.building || 'office'
+            });
+            return { name: s.employee, minutes, hours, size };
+        }
+        // "1h 05m", or for a crew "1h 05m each"
+        const signInTime = r => r.size ? T('{time} each', { time: fmtHoursShort(r.minutes / 60) }) : fmtHoursShort(r.minutes / 60);
+        function signInChanged() {
+            notifySitkaTools();
+            renderAll();
+            if (hoursCtx) renderHours();
+        }
+
+        // Sign `person` ({ name, no, crew }) in to the dialog's row
+        function startSignIn(st, person, crewSize, note) {
+            const { bid, item, title } = st;
+            if (!timersShown(bid) || newDayPending(selectedDateStr())) return;
+            // One task at a time: their sign-in on another task is closed first (a forgotten one waits for its closing time)
+            const parts = [];
+            for (const p of signInsOfPerson(person.name)) {
+                if (signInForgotten(p.s) || (p.bid === bid && p.s.item === item)) continue;
+                const r = closeSignIn(p.bid, p.sid);
+                if (r) parts.push(r.minutes ? T('{task} {time} logged', { task: p.s.title || '', time: signInTime(r) }) : T('{task}: under a minute, nothing logged', { task: p.s.title || '' }));
+            }
+            const buildings = DB.ensureStructure()._DailyWizard.buildings;
+            const b = buildings[bid] || (buildings[bid] = { tasks: [] });
+            (b.signIns || (b.signIns = {}))[newSignInId()] = {
+                item, title, employee: person.name, ...(crewSize ? { crewSize } : {}),
+                since: new Date().toISOString(), by: DeviceView.building || 'office', badge: person.no || '', ...(note ? { note } : {})
+            };
+            signInChanged();
+            const who = crewSize ? crewWho(person.name, crewSize) : person.name;
+            const msg = [parts.length ? T('{who}: {what} — now on {task}', { who, what: parts.join(' · '), task: title }) : T('{who} signed in to {task}', { who, task: title })];
+            for (const e of signInsElsewhere(person.name)) msg.push(T('still shown as signed in at {building} ({task}): that one needs a closing time', { building: DB.buildings[e.bid]?.name || e.bid, task: e.s.title || '' }));
+            showToast(msg.join(' · '));
+        }
+        // Sign out by their own scan (not a forgotten one: that takes a floor manager's closing time)
+        function signOut(bid, sid) {
+            const s = signInsOf(bid)[sid];
+            if (!s || !canEditBuilding(bid) || signInForgotten(s)) return;
+            const r = closeSignIn(bid, sid);
+            signInChanged();
+            showToast(r.minutes ? T('{who} signed out of {task} — {time} logged', { who: signInWho(s), task: s.title || '', time: signInTime(r) }) : T('Under a minute — nothing logged'));
+        }
+        // A crew's size the last time it signed in or logged hours today, to fill in the next sign-in
+        function lastCrewSize(name) {
+            const today = todayStr();
+            let best = null;
+            const see = (at, n) => { if (Number.isInteger(n) && n > 0 && (!best || String(at) > best.at)) best = { at: String(at), n }; };
+            for (const b of Object.values(DB.dailyBuildings || {})) {
+                for (const s of Object.values(b?.signIns || {})) if (s?.employee === name && dateToStr(new Date(s.since)) === today) see(s.since, s.crewSize);
+                for (const list of Object.values(b?.labour?.[today] || {})) for (const e of list || []) if (e?.employee === name) see(e.scan?.in || e.at, e.crewSize);
+            }
+            for (const ev of DB.calendarEvents) for (const e of ev.labour_map?.[today] || []) if (e?.employee === name) see(e.scan?.in || e.at, e.crewSize);
+            return best?.n || null;
+        }
+
+        // ---- The scan dialog: { mode: 'start' | 'crew' | 'note' | 'out' | 'chip', bid, item?, title?, sid?, person?, auto? } ----
+        let scanState = null, scanUnhook = null, scanTimer = null, scanLeft = 0;
+        const SCAN_AUTO_S = 5;   // a sign-out asked by a scan anywhere goes ahead by itself after 5 s
+        function openScanDialog(state) {
+            closeScanDialog();
+            scanState = state;
+            scanUnhook = BadgeScan.push(code => scannedInDialog(code));
+            $('scanErr').textContent = '';
+            $('scanDialog').hidden = false;
+            if (state.mode === 'out' && state.auto) {
+                scanLeft = SCAN_AUTO_S;
+                scanTimer = setInterval(() => {
+                    if (!scanState || scanState.mode !== 'out') return;
+                    if (--scanLeft <= 0) { const st = scanState; closeScanDialog(); signOut(st.bid, st.sid); return; }
+                    renderScanDialog();
+                }, 1000);
+            }
+            renderScanDialog();
+        }
+        function closeScanDialog() {
+            if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+            if (scanUnhook) { scanUnhook(); scanUnhook = null; }
+            scanState = null;
+            $('scanDialog').hidden = true;
+        }
+        function renderScanDialog() {
+            const st = scanState;
+            if (!st) return;
+            const s = st.sid ? signInsOf(st.bid)[st.sid] : null;
+            if ((st.mode === 'out' || st.mode === 'chip') && !s) { closeScanDialog(); return; }   // closed meanwhile (a live update)
+            const task = s?.title || st.title || '';
+            $('scanTitle').textContent = task;
+            let big = '🪪', msg = '', sub = '', ok = '', cancel = T('Cancel');
+            $('scanCrew').hidden = st.mode !== 'crew';
+            $('scanNote').hidden = st.mode !== 'note';
+            if (st.mode === 'start') {
+                msg = T('Scan your badge to start this task');
+                sub = T('A temp crew’s badge asks how many are on it. No badge? Use ⏱ Log.');
+            } else if (st.mode === 'crew') {
+                big = '👥';
+                msg = T('How many on {crew} today?', { crew: st.person.name });
+                ok = T('▶ Start');
+            } else if (st.mode === 'note') {
+                big = '🧰';
+                msg = T('What are you working on? (needed)');
+                ok = T('▶ Start');
+            } else if (st.mode === 'out') {
+                big = '⏹';
+                msg = T('Sign {who} out of this task?', { who: signInWho(s) });
+                sub = T('Signed in at {when} · {time}', { when: clockStamp(s.since), time: fmtClock(signInMs(s)) }) +
+                    (st.auto ? '\n' + T('Signing out in {n} s…', { n: scanLeft }) : '');
+                ok = T('⏹ Sign out');
+                cancel = T('Stay signed in');
+            } else if (st.mode === 'chip') {
+                if (signInForgotten(s)) {
+                    big = '⏰';
+                    msg = T('{who} forgot to sign out', { who: signInWho(s) });
+                    sub = T('Signed in {when}. A floor manager sets the closing time in the Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).', { when: signInStamp(s.since) });
+                    cancel = T('Close');
+                } else {
+                    msg = T('Scan {who}’s badge to sign out', { who: s.employee });
+                    sub = T('Signed in at {when} · {time}', { when: clockStamp(s.since), time: fmtClock(signInMs(s)) });
+                }
+            }
+            $('scanBig').textContent = big;
+            $('scanMsg').textContent = msg;
+            $('scanSub').textContent = sub;
+            $('scanOk').textContent = ok;
+            $('scanOk').hidden = !ok;
+            $('scanCancel').textContent = cancel;
+        }
+        // A badge scanned while the dialog is open
+        async function scannedInDialog(code) {
+            const st = scanState;
+            if (!st) return;
+            const r = await FloorPin.verifyBadge(code);
+            if (scanState !== st) return;
+            if (r.error) { $('scanErr').textContent = r.error === 'replaced' ? T('That badge was replaced — use the new one') : T('Badge not recognized — try again, or use ⏱ Log'); return; }
+            $('scanErr').textContent = '';
+            if (st.mode === 'start') { beginSignIn(st, r); return; }
+            const s = st.sid ? signInsOf(st.bid)[st.sid] : null;
+            if ((st.mode === 'chip' || st.mode === 'out') && s) {
+                if (r.name !== s.employee) { $('scanErr').textContent = T('That’s {name}’s badge — {who} signs out with their own', { name: r.name, who: s.employee }); return; }
+                if (signInForgotten(s)) return;
+                closeScanDialog();
+                signOut(st.bid, st.sid);   // their own badge: signed out at once
+            }
+        }
+        // The badge on ＋ Start task: a crew says how many, 🧰 Misc says what for, then they're signed in
+        function beginSignIn(st, person) {
+            const same = signInsOfPerson(person.name).find(p => p.bid === st.bid && p.s.item === st.item && !signInForgotten(p.s));
+            if (same) { openScanDialog({ mode: 'out', bid: st.bid, sid: same.sid, auto: false }); return; }   // already on it: sign out?
+            if (person.crew) {
+                scanState = { ...st, mode: 'crew', person };
+                $('scanCrewSize').value = String(lastCrewSize(person.name) || '');
+                renderScanDialog();
+                $('scanCrewSize').focus();
+                return;
+            }
+            if (st.item === MISC_CODE) { askScanNote({ ...st, person }); return; }
+            closeScanDialog();
+            startSignIn(st, person, null, '');
+        }
+        function askScanNote(st) {
+            scanState = { ...st, mode: 'note' };
+            $('scanNote').value = '';
+            renderScanDialog();
+            $('scanNote').focus();
+        }
+        function confirmScanDialog() {
+            const st = scanState;
+            if (!st) return;
+            if (st.mode === 'crew') {
+                const n = parseInt($('scanCrewSize').value, 10);
+                if (!(n >= 1 && n <= 99)) { $('scanErr').textContent = T('Enter how many are on the crew'); $('scanCrewSize').focus(); return; }
+                if (st.item === MISC_CODE) { askScanNote({ ...st, crewSize: n }); return; }
+                closeScanDialog();
+                startSignIn(st, st.person, n, '');
+            } else if (st.mode === 'note') {
+                const note = $('scanNote').value.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
+                if (!note) { $('scanErr').textContent = T('Say what you were doing'); $('scanNote').focus(); return; }
+                closeScanDialog();
+                startSignIn(st, st.person, st.crewSize || null, note);
+            } else if (st.mode === 'out') {
+                closeScanDialog();
+                signOut(st.bid, st.sid);
+            }
+        }
+        function stepCrewSize(d) {
+            const n = Math.min(99, Math.max(1, (parseInt($('scanCrewSize').value, 10) || 0) + d));
+            $('scanCrewSize').value = String(n);
+        }
+        // A badge scanned on the list (no dialog open): it signs that person out of the task they're on
+        async function scanAnywhere(code) {
+            const r = await FloorPin.verifyBadge(code);
+            if (scanState) return;
+            if (r.error) { showToast(r.error === 'replaced' ? T('That badge was replaced — use the new one') : T('Badge not recognized — try again')); return; }
+            const mine = signInsOfPerson(r.name), live = mine.find(p => !signInForgotten(p.s));
+            if (live) { openScanDialog({ mode: 'out', bid: live.bid, sid: live.sid, auto: true }); return; }
+            if (mine.length) {
+                showToast(T('{name} is still signed in to {task} since {when} — a floor manager sets the closing time in the Labour & Cost Wizard', { name: r.name, task: mine[0].s.title || '', when: signInStamp(mine[0].s.since) }));
+                return;
+            }
+            showToast(T('{name} isn’t signed in to a task — tap ＋ Start task on the task first', { name: r.name }));
+        }
+
+        // ---- ⏲ Timers left from before sign-ins (user decision 2026-10-22, replaced 2026-10-28) ----
+        // No new timers start. One that was in use stays on its row (running or paused) until it's cleared, and ⏱ Log can
+        // still fill its hours from it, rounded to the nearest 5 minutes:
         //   _DailyWizard.buildings[<id>].timers[<item>][<1–4>] = { label?, ms, since? }
-        //   item: a chore's code or 'ev:<event id>' (as for ticks); ms: time banked by earlier runs; since: ISO time
-        //   the run in progress started (absent while paused). A running timer counts from `since`, so nothing is
-        //   written while it runs, and it keeps counting while DailyWizard is closed and through a reload. Timers belong to the
-        //   row, not the day: one left running shows the next day until someone clears it.
         const TIMER_SLOTS = [1, 2, 3, 4];
         const timerItem = ctx => ctx.kind === 'event' ? 'ev:' + ctx.eventId : ctx.code;
         const timersShown = bid => !!bid && selectedDateStr() === todayStr() && canEditBuilding(bid);
@@ -25764,64 +26478,68 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const timerLogMinutes = ms => Math.max(5, Math.round(ms / 300000) * 5);
         const timerName = (n, label) => label ? T('Timer {n} ({label})', { n, label }) : T('Timer {n}', { n });
 
-        // A row's four timers: number and label above the time, ▶ / ⏸, and ✕ (only once the timer is in use)
-        function makeTimerStrip(bid, item, title) {
+        // A row's second line: ＋ Start task, everyone signed in, and any timer left from before
+        function makeSignInStrip(bid, item, title) {
             const strip = document.createElement('div');
-            strip.className = 'timer-strip';
+            strip.className = 'timer-strip signin-strip';
             const grid = document.createElement('div');
-            grid.className = 'timer-grid';
+            grid.className = 'signin-grid';
+            const start = document.createElement('button');
+            start.type = 'button';
+            start.className = 'signin-start';
+            start.textContent = T('＋ Start task');
+            start.title = T('Scan your badge to start this task');
+            start.addEventListener('click', () => openScanDialog({ mode: 'start', bid, item, title }));
+            grid.appendChild(start);
+            const now = Date.now();
+            const list = Object.entries(signInsOf(bid)).filter(([, s]) => s?.item === item).sort(([, a], [, b]) => String(a.since).localeCompare(String(b.since)));
+            for (const [sid, s] of list) {
+                const forgot = signInForgotten(s, now);
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'signin-chip ' + (forgot ? 'forgot' : 'running');
+                Object.assign(chip.dataset, { building: bid, sid });
+                const who = document.createElement('span');
+                who.className = 'sc-who';
+                who.textContent = signInWho(s);
+                const time = document.createElement('span');
+                time.className = 'sc-time';
+                time.textContent = forgot ? T('⏰ since {when} · forgot to sign out', { when: signInStamp(s.since) }) : fmtClock(signInMs(s, now));
+                chip.append(who, time);
+                chip.title = forgot ? T('A floor manager sets the closing time in the Labour & Cost Wizard') : T('Signed in at {when} — tap, then scan the badge to sign out', { when: clockStamp(s.since) });
+                chip.addEventListener('click', () => openScanDialog({ mode: 'chip', bid, sid }));
+                grid.appendChild(chip);
+            }
             for (const n of TIMER_SLOTS) {
-                const t = timerOf(bid, item, n), ms = timerMs(t);
+                const t = timerOf(bid, item, n);
+                if (!t) continue;
+                const ms = timerMs(t, now);
                 const slot = document.createElement('div');
-                slot.className = 'timer-slot' + (t?.since ? ' running' : ms > 0 ? ' paused' : '');
+                slot.className = 'timer-slot legacy' + (t.since ? ' running' : ms > 0 ? ' paused' : '');
                 Object.assign(slot.dataset, { building: bid, item, slot: n });
-                const label = document.createElement('button');
-                label.type = 'button';
+                const label = document.createElement('span');
                 label.className = 'timer-label';
-                label.title = T('Timer {n} — tap to label it', { n });
-                const num = document.createElement('span');
-                num.className = 'timer-num';
-                num.textContent = n;
-                const name = document.createElement('span');
-                name.className = 'timer-name';
-                name.textContent = t?.label || '';
                 const head = document.createElement('span');
                 head.className = 'timer-head';
-                head.append(num, name);
-                const time = document.createElement('span');
-                time.className = 'timer-time';
-                time.textContent = fmtClock(ms);
-                label.append(head, time);
-                label.addEventListener('click', () => openTimerDialog('label', bid, item, n, title));
-                const go = document.createElement('button');
-                go.type = 'button';
-                go.className = 'timer-btn timer-go';
-                go.textContent = t?.since ? '⏸' : '▶';
-                go.title = t?.since ? T('Pause') : ms > 0 ? T('Resume') : T('Start');
-                go.setAttribute('aria-label', go.title);
-                go.addEventListener('click', () => toggleTimer(bid, item, n, title));
+                head.textContent = `⏲ ${timerName(n, t.label)}`;
+                const tm = document.createElement('span');
+                tm.className = 'timer-time';
+                tm.textContent = fmtClock(ms);
+                label.append(head, tm);
                 const clear = document.createElement('button');
                 clear.type = 'button';
-                clear.className = 'timer-btn timer-clear' + (t ? '' : ' unused');
+                clear.className = 'timer-btn timer-clear';
                 clear.textContent = '✕';
                 clear.title = T('Clear this timer');
                 clear.setAttribute('aria-label', clear.title);
-                clear.disabled = !t;
                 clear.addEventListener('click', () => clearTimer(bid, item, n));
-                slot.append(label, go, clear);
+                slot.append(label, clear);
                 grid.appendChild(slot);
             }
             strip.appendChild(grid);
             return strip;
         }
 
-        // A row's timers, made when missing
-        function timerSlotsFor(bid, item) {
-            const buildings = DB.ensureStructure()._DailyWizard.buildings;
-            const b = buildings[bid] || (buildings[bid] = { tasks: [] });
-            const all = b.timers || (b.timers = {});
-            return all[item] || (all[item] = {});
-        }
         // Drop empty slots and rows, and the timers of chores and events that are gone (or done and past)
         function tidyTimers(bid) {
             const b = DB.dailyBuildings[bid];
@@ -25844,20 +26562,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             renderAll();
             if (hoursCtx) renderHourTimers();
         }
-
-        // ▶ starts (asking for a label first when the timer is cleared) or resumes; ⏸ banks the run
-        function toggleTimer(bid, item, n, title) {
-            if (!timersShown(bid)) return;
-            const t = timerOf(bid, item, n);
-            if (t?.since) {
-                t.ms = timerMs(t);
-                delete t.since;
-            } else if (!t || (!t.label && !(t.ms > 0))) {
-                openTimerDialog('start', bid, item, n, title);
-                return;
-            } else t.since = new Date().toISOString();
-            timersChanged(bid);
-        }
         function clearTimer(bid, item, n) {
             if (!timersShown(bid)) return;
             const t = timerOf(bid, item, n);
@@ -25868,43 +26572,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             timersChanged(bid);
         }
 
-        // The label box: 'start' (a cleared timer's ▶) or 'label' (its label tapped)
-        let timerDialog = null;   // { mode, bid, item, n } while open
-        function openTimerDialog(mode, bid, item, n, title) {
-            if (!timersShown(bid)) return;
-            timerDialog = { mode, bid, item, n };
-            $('timerDialogTitle').textContent = `⏲ ${T('Timer {n}', { n })} · ${title}`;
-            $('timerLabelInput').value = timerOf(bid, item, n)?.label || '';
-            $('timerDialogOk').textContent = mode === 'start' ? T('▶ Start') : T('Save');
-            $('timerDialog').hidden = false;
-            $('timerLabelInput').focus();
-        }
-        function closeTimerDialog() {
-            $('timerDialog').hidden = true;
-            timerDialog = null;
-        }
-        function confirmTimerDialog() {
-            const d = timerDialog;
-            if (!d) return;
-            const label = $('timerLabelInput').value.trim().slice(0, 12);
-            closeTimerDialog();
-            if (!timersShown(d.bid)) return;
-            let t = timerOf(d.bid, d.item, d.n);
-            if (d.mode === 'start' && t?.since) return;   // started meanwhile (a live update)
-            if (!t) {
-                if (d.mode !== 'start' && !label) return;
-                t = timerSlotsFor(d.bid, d.item)[d.n] = { ms: 0 };
-            }
-            if (label) t.label = label; else delete t.label;
-            if (d.mode === 'start') t.since = new Date().toISOString();
-            else if (!t.label && !t.since && !(t.ms > 0)) delete DB.dailyBuildings[d.bid].timers[d.item][d.n];
-            timersChanged(d.bid);
-        }
-
-        // ⏱ Log: one radio per timer of the row (greyed when it has no time) and "None — type the time". Today only.
+        // ⏱ Log: one radio per timer left on the row and "None — type the time". Today only, and only while there's one.
         function renderHourTimers() {
             const ctx = hoursCtx, box = $('hoursTimerPicks');
-            const shown = !!ctx && ctx.date === todayStr() && canEditBuilding(ctx.buildingId);
+            const slots = ctx ? TIMER_SLOTS.filter(n => timerOf(ctx.buildingId, timerItem(ctx), n)) : [];
+            const shown = !!ctx && ctx.date === todayStr() && canEditBuilding(ctx.buildingId) && slots.length > 0;
             $('hoursTimerGroup').hidden = !shown;
             const picked = box.querySelector('input:checked')?.value || '';
             box.innerHTML = '';
@@ -25935,7 +26607,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
                 box.appendChild(lbl);
             };
-            for (const n of TIMER_SLOTS) add(String(n), timerOf(ctx.buildingId, item, n));
+            for (const n of slots) add(String(n), timerOf(ctx.buildingId, item, n));
             add('', null);
             if (!box.querySelector('input:checked')) box.querySelector('input[value=""]').checked = true;
         }
@@ -25953,15 +26625,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('hoursM').value = String(min % 60);
         }
 
-        // Once a second: running timers' times, on the rows and in the ⏱ Log view
+        // Once a second: the signed-in chips' times, timers left running, and the scan dialog's clock
         function tickTimers() {
             const now = Date.now();
+            let stale = false;
+            for (const el of document.querySelectorAll('.signin-chip.running')) {
+                const s = signInsOf(el.dataset.building)[el.dataset.sid];
+                if (!s) continue;
+                if (signInForgotten(s, now)) { stale = true; continue; }
+                el.querySelector('.sc-time').textContent = fmtClock(signInMs(s, now));
+            }
+            if (stale) renderAll();   // a sign-in just turned 16 hours old: it shows as forgotten
             for (const el of document.querySelectorAll('.timer-slot.running')) {
                 el.querySelector('.timer-time').textContent = fmtClock(timerMs(timerOf(el.dataset.building, el.dataset.item, el.dataset.slot), now));
             }
             if (hoursCtx) for (const el of document.querySelectorAll('#hoursTimerPicks .timer-pick.running')) {
                 setPickTime(el, timerMs(timerOf(hoursCtx.buildingId, timerItem(hoursCtx), el.dataset.slot), now));
             }
+            if (scanState && (scanState.mode === 'out' || scanState.mode === 'chip') && !scanState.auto) renderScanDialog();
         }
 
         // ---- ✅ Mark done — the floor manager signs a crop / equipment task off as done ----
@@ -25979,10 +26660,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const deviceName = by => by === 'office' ? T('the office') : T('the {name} device', { name: DB.buildings[by]?.name || by });
         const doneStamp = iso => new Date(iso).toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-        // The floor managers who can sign off: ticked in the Labour & Cost Wizard, with a PIN
+        // The floor managers who can sign off: ticked in the Labour & Cost Wizard, with a PIN (names: the list by the PIN
+        // box) or a badge (any: someone can sign off at all)
         function floorManagers() {
-            return { names: FloorPin.managers() };
+            return { names: FloorPin.pinManagers(), any: FloorPin.managers().length > 0 };
         }
+        let doneUnscan = null;
         const canReopen = ev => !DeviceView.building ||
             (!!ev.completedBy?.at && dateToStr(new Date(ev.completedBy.at)) === todayStr() && ev.completedBy.by === DeviceView.building);
 
@@ -26013,7 +26696,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             for (const n of fm.names) add(n, n);
             if (fm.names.length === 1) who.value = fm.names[0];
             $('donePin').value = '';
-            $('doneWhoNote').textContent = fm.names.length ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
+            $('doneWhoNote').textContent = fm.any ? '' : T('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
+            if (doneUnscan) doneUnscan();
+            doneUnscan = BadgeScan.push(code => doneScanned(code));   // 🪪 a floor manager's badge signs it off at once
             renderDone();
             $('doneOverlay').classList.add('open');
             sizePad('donePad');
@@ -26023,6 +26708,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('doneOverlay').classList.remove('open');
             doneCtx = null;
             doneStrokes = [];
+            if (doneUnscan) { doneUnscan(); doneUnscan = null; }
+        }
+        async function doneScanned(code) {
+            const ctx = doneCtx;
+            if (!ctx) return;
+            const r = await FloorPin.verifyBadge(code);
+            if (doneCtx !== ctx) return;
+            if (r.error) { showToast(r.error === 'replaced' ? T('That badge was replaced — use the new one') : T('Badge not recognized — try again')); return; }
+            if (!r.floorManager) { showToast(T('Only a floor manager can sign this off — {name} isn’t one', { name: r.name })); return; }
+            await markDone({ name: r.name, badge: r.no });
         }
 
         function renderDone() {
@@ -26038,6 +26733,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('doneForm').hidden = done;
             $('doneBtn').hidden = done;
             $('doneBtn').disabled = !done && !floorManagers().names.length;
+            $('doneScanHint').hidden = done || !FloorPin.managers().some(n => FloorPin.hasBadge(DB.data?._EmployeeWizard?.employees?.[n]));
             if (!done) {
                 status.appendChild(mutedLine(T('Not done yet. The floor manager picks their name, draws their initials and enters their PIN to sign it off.')));
                 $('doneNote').textContent = T('Signing it off takes it off ⏰ Still open. Hours can still be logged on it.');
@@ -26051,6 +26747,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             who.textContent = sign?.name ? T('✅ Signed off by {name}', { name: sign.name }) : T('✅ Marked done in SitkaTools or the Labour & Cost Wizard');
             row.appendChild(who);
             if (sign?.initials?.strokes?.length) row.appendChild(initialsSvg(sign.initials));
+            else if (sign?.initials?.badge) row.appendChild(badgeChip(sign.initials));
             if (canReopen(ev)) {
                 const reopen = document.createElement('button');
                 reopen.type = 'button';
@@ -26071,34 +26768,42 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         let doneChecking = false;   // one PIN check at a time (Enter or a second tap while it hashes)
-        async function markDone() {
+        // `scanned` = { name, badge }: a floor manager's badge, which signs off without the PIN and initials
+        async function markDone(scanned = null) {
             if (doneChecking) return;
             let ev = doneEvent();
             if (!ev || ev.completed === true || selectedDateStr() > todayStr()) return;
-            const name = $('doneWho').value, pinEl = $('donePin'), ctx = doneCtx;
-            if (!name) { showToast(T('Pick the floor manager')); return; }
-            if (!doneStrokes.length) { showToast(T('The floor manager draws their initials to sign it off')); return; }
-            if (!pinEl.value) { showToast(T('Enter your PIN')); pinEl.focus(); return; }
-            // The PIN, with FloorPin's wait after too many wrong ones
-            if (Date.now() < FloorPin._waitUntil) { showToast(T('Too many wrong PINs — wait a minute, then try again')); return; }
-            doneChecking = true;
-            let right;
-            try { right = await FloorPin.check(name, pinEl.value); } finally { doneChecking = false; }
-            if (!right) {
-                pinEl.value = '';
-                if (++FloorPin._fails >= FloorPin.WAIT_AFTER) { FloorPin._fails = 0; FloorPin._waitUntil = Date.now() + FloorPin.WAIT_MS; showToast(T('Too many wrong PINs — wait a minute, then try again')); }
-                else showToast(T('Wrong PIN — try again'));
-                pinEl.focus();
-                return;
+            const ctx = doneCtx, pinEl = $('donePin');
+            const name = scanned ? scanned.name : $('doneWho').value;
+            if (!scanned) {
+                if (!name) { showToast(T('Pick the floor manager')); return; }
+                if (!doneStrokes.length) { showToast(T('The floor manager draws their initials to sign it off')); return; }
+                if (!pinEl.value) { showToast(T('Enter your PIN')); pinEl.focus(); return; }
+                // The PIN, with FloorPin's wait after too many wrong ones
+                if (Date.now() < FloorPin._waitUntil) { showToast(T('Too many wrong PINs — wait a minute, then try again')); return; }
+                doneChecking = true;
+                let right;
+                try { right = await FloorPin.check(name, pinEl.value); } finally { doneChecking = false; }
+                if (!right) {
+                    pinEl.value = '';
+                    if (++FloorPin._fails >= FloorPin.WAIT_AFTER) { FloorPin._fails = 0; FloorPin._waitUntil = Date.now() + FloorPin.WAIT_MS; showToast(T('Too many wrong PINs — wait a minute, then try again')); }
+                    else showToast(T('Wrong PIN — try again'));
+                    pinEl.focus();
+                    return;
+                }
             }
             FloorPin._fails = 0;
             // The DB may have changed while the PIN was checked: sign off the task as it is now
             if (doneCtx !== ctx) return;
             ev = doneEvent();
             if (!ev || ev.completed === true) { closeDone(); renderAll(); return; }
+            // 🪪 People still signed in to it: sign them out now (their hours are logged), or leave them signed in
+            const open = canEditBuilding(ctx.buildingId) ? Object.entries(signInsOf(ctx.buildingId)).filter(([, x]) => x?.item === 'ev:' + ev.id && !signInForgotten(x)) : [];
+            if (open.length && confirm(T(open.length === 1 ? '{names} is still signed in to this task. Sign them out now?' : '{n} are still signed in to this task ({names}). Sign them out now?',
+                { n: open.length, names: open.map(([, x]) => signInWho(x)).join(', ') }))) for (const [sid] of open) closeSignIn(ctx.buildingId, sid);
             ev.completed = true;
             ev.completedBy = {
-                name, initials: { name, strokes: doneStrokes.map(st => st.slice()) },
+                name, initials: scanned ? { name, badge: scanned.badge } : { name, strokes: doneStrokes.map(st => st.slice()) },
                 at: new Date().toISOString(), by: DeviceView.building || 'office', day: selectedDateStr()
             };
             notifySitkaTools();
@@ -26568,7 +27273,57 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "Save": { fr: "Enregistrer", es: "Guardar", vi: "Lưu", zh: "保存" },
             "Time from a timer": { fr: "Temps d’un chrono", es: "Tiempo de un cronómetro", vi: "Thời gian từ đồng hồ", zh: "使用计时器的时间" },
             "None — type the time": { fr: "Aucun — saisir le temps", es: "Ninguno — escribir el tiempo", vi: "Không — tự nhập thời gian", zh: "不用 — 手动输入时间" },
-            "Fills in the hours and minutes, to the nearest 5 minutes. The timer keeps going, so everyone who worked on it can log from it.": { fr: "Remplit les heures et les minutes, arrondies aux 5 minutes. Le chrono continue, pour que chaque personne qui a travaillé puisse s’en servir.", es: "Rellena las horas y los minutos, redondeados a 5 minutos. El cronómetro sigue, para que todos los que trabajaron puedan usarlo.", vi: "Tự điền giờ và phút, làm tròn đến 5 phút. Đồng hồ vẫn chạy, để mọi người cùng làm có thể ghi giờ từ đó.", zh: "自动填入小时和分钟，四舍五入到 5 分钟。计时器继续运行，所有参与的人都可以用它记录。" }
+            "Fills in the hours and minutes, to the nearest 5 minutes. The timer keeps going, so everyone who worked on it can log from it.": { fr: "Remplit les heures et les minutes, arrondies aux 5 minutes. Le chrono continue, pour que chaque personne qui a travaillé puisse s’en servir.", es: "Rellena las horas y los minutos, redondeados a 5 minutos. El cronómetro sigue, para que todos los que trabajaron puedan usarlo.", vi: "Tự điền giờ và phút, làm tròn đến 5 phút. Đồng hồ vẫn chạy, để mọi người cùng làm có thể ghi giờ từ đó.", zh: "自动填入小时和分钟，四舍五入到 5 分钟。计时器继续运行，所有参与的人都可以用它记录。" },
+            // 🪪 Sign-ins and badges (2026-10-28)
+            "＋ Start task": { fr: "＋ Commencer une tâche", es: "＋ Empezar tarea", vi: "＋ Bắt đầu việc", zh: "＋ 开始任务" },
+            "Scan your badge to start this task": { fr: "Scannez votre badge pour commencer cette tâche", es: "Escanee su credencial para empezar esta tarea", vi: "Quét thẻ của bạn để bắt đầu việc này", zh: "扫描您的工牌以开始此任务" },
+            "A temp crew’s badge asks how many are on it. No badge? Use ⏱ Log.": { fr: "Le badge d’une équipe temporaire demande combien elle compte de personnes. Pas de badge ? Utilisez ⏱ Heures.", es: "La credencial de una cuadrilla temporal pregunta cuántos son. ¿Sin credencial? Use ⏱ Registrar.", vi: "Thẻ của tổ thời vụ sẽ hỏi có bao nhiêu người. Không có thẻ? Dùng ⏱ Ghi giờ.", zh: "临时班组的工牌会询问人数。没有工牌？请用 ⏱ 记录。" },
+            "How many on {crew} today?": { fr: "Combien de personnes dans {crew} aujourd’hui ?", es: "¿Cuántos hay hoy en {crew}?", vi: "Hôm nay {crew} có bao nhiêu người?", zh: "{crew} 今天有几人？" },
+            "What are you working on? (needed)": { fr: "Sur quoi travaillez-vous ? (obligatoire)", es: "¿En qué está trabajando? (obligatorio)", vi: "Bạn đang làm việc gì? (bắt buộc)", zh: "您在做什么工作？（必填）" },
+            "Sign {who} out of this task?": { fr: "Terminer la tâche pour {who} ?", es: "¿Terminar esta tarea para {who}?", vi: "Cho {who} kết thúc việc này?", zh: "让 {who} 结束此任务？" },
+            "Signed in at {when} · {time}": { fr: "Commencé à {when} · {time}", es: "Empezó a las {when} · {time}", vi: "Bắt đầu lúc {when} · {time}", zh: "开始于 {when} · {time}" },
+            "Signing out in {n} s…": { fr: "Fin dans {n} s…", es: "Terminando en {n} s…", vi: "Kết thúc sau {n} giây…", zh: "{n} 秒后结束…" },
+            "⏹ Sign out": { fr: "⏹ Terminer", es: "⏹ Terminar", vi: "⏹ Kết thúc", zh: "⏹ 结束" },
+            "Stay signed in": { fr: "Continuer", es: "Seguir trabajando", vi: "Tiếp tục làm", zh: "继续" },
+            "{who} forgot to sign out": { fr: "{who} a oublié de terminer", es: "{who} olvidó terminar", vi: "{who} quên kết thúc", zh: "{who} 忘记结束了" },
+            "Signed in {when}. A floor manager sets the closing time in the Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).": { fr: "Commencé {when}. Un chef de plancher fixe l’heure de fin dans le Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).", es: "Empezó {when}. Un jefe de piso pone la hora de fin en el Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).", vi: "Bắt đầu {when}. Quản lý ca sẽ đặt giờ kết thúc trong Labour & Cost Wizard (📜 Labour Log → ⏰ Still signed in).", zh: "开始于 {when}。由现场主管在 Labour & Cost Wizard 中设置结束时间（📜 Labour Log → ⏰ Still signed in）。" },
+            "Scan {who}’s badge to sign out": { fr: "Scannez le badge de {who} pour terminer", es: "Escanee la credencial de {who} para terminar", vi: "Quét thẻ của {who} để kết thúc", zh: "扫描 {who} 的工牌以结束" },
+            "That badge was replaced — use the new one": { fr: "Ce badge a été remplacé — utilisez le nouveau", es: "Esa credencial fue reemplazada — use la nueva", vi: "Thẻ này đã được thay — hãy dùng thẻ mới", zh: "该工牌已更换——请用新工牌" },
+            "Badge not recognized — try again": { fr: "Badge non reconnu — réessayez", es: "Credencial no reconocida — inténtelo de nuevo", vi: "Không nhận ra thẻ — thử lại", zh: "无法识别工牌——请重试" },
+            "Badge not recognized — try again, or use ⏱ Log": { fr: "Badge non reconnu — réessayez, ou utilisez ⏱ Heures", es: "Credencial no reconocida — inténtelo de nuevo o use ⏱ Registrar", vi: "Không nhận ra thẻ — thử lại, hoặc dùng ⏱ Ghi giờ", zh: "无法识别工牌——请重试，或用 ⏱ 记录" },
+            "That’s {name}’s badge — {who} signs out with their own": { fr: "C’est le badge de {name} — {who} termine avec le sien", es: "Esa es la credencial de {name} — {who} termina con la suya", vi: "Đó là thẻ của {name} — {who} phải dùng thẻ của mình để kết thúc", zh: "这是 {name} 的工牌——{who} 需用自己的工牌结束" },
+            "Enter how many are on the crew": { fr: "Indiquez combien de personnes compte l’équipe", es: "Escriba cuántos son en la cuadrilla", vi: "Nhập số người trong tổ", zh: "请输入班组人数" },
+            "Enter how many were on the crew": { fr: "Indiquez combien de personnes comptait l’équipe", es: "Escriba cuántos había en la cuadrilla", vi: "Nhập số người đã có trong tổ", zh: "请输入班组当时的人数" },
+            "{name} is still signed in to {task} since {when} — a floor manager sets the closing time in the Labour & Cost Wizard": { fr: "{name} est encore sur {task} depuis {when} — un chef de plancher fixe l’heure de fin dans le Labour & Cost Wizard", es: "{name} sigue en {task} desde {when} — un jefe de piso pone la hora de fin en el Labour & Cost Wizard", vi: "{name} vẫn đang làm {task} từ {when} — quản lý ca sẽ đặt giờ kết thúc trong Labour & Cost Wizard", zh: "{name} 自 {when} 起仍在 {task} 中——由现场主管在 Labour & Cost Wizard 中设置结束时间" },
+            "{name} isn’t signed in to a task — tap ＋ Start task on the task first": { fr: "{name} n’est sur aucune tâche — touchez d’abord ＋ Commencer une tâche sur la tâche", es: "{name} no está en ninguna tarea — toque primero ＋ Empezar tarea en la tarea", vi: "{name} chưa bắt đầu việc nào — hãy chạm ＋ Bắt đầu việc trên việc đó trước", zh: "{name} 未在任何任务中——请先在任务上点 ＋ 开始任务" },
+            "{who} signed in to {task}": { fr: "{who} a commencé {task}", es: "{who} empezó {task}", vi: "{who} đã bắt đầu {task}", zh: "{who} 已开始 {task}" },
+            "{who} signed out of {task} — {time} logged": { fr: "{who} a terminé {task} — {time} inscrit", es: "{who} terminó {task} — {time} registrado", vi: "{who} đã kết thúc {task} — đã ghi {time}", zh: "{who} 已结束 {task}——记录了 {time}" },
+            "{who}: {what} — now on {task}": { fr: "{who} : {what} — maintenant sur {task}", es: "{who}: {what} — ahora en {task}", vi: "{who}: {what} — giờ làm {task}", zh: "{who}：{what}——现在做 {task}" },
+            "{task} {time} logged": { fr: "{task} : {time} inscrit", es: "{task}: {time} registrado", vi: "{task}: đã ghi {time}", zh: "{task}：记录了 {time}" },
+            "{task}: under a minute, nothing logged": { fr: "{task} : moins d’une minute, rien d’inscrit", es: "{task}: menos de un minuto, no se registró nada", vi: "{task}: chưa tới một phút, không ghi gì", zh: "{task}：不足一分钟，未记录" },
+            "Under a minute — nothing logged": { fr: "Moins d’une minute — rien d’inscrit", es: "Menos de un minuto — no se registró nada", vi: "Chưa tới một phút — không ghi gì", zh: "不足一分钟——未记录" },
+            "still shown as signed in at {building} ({task}): that one needs a closing time": { fr: "encore indiqué sur une tâche à {building} ({task}) : il faut y fixer une heure de fin", es: "aún figura en una tarea en {building} ({task}): necesita una hora de fin", vi: "vẫn còn ghi đang làm ở {building} ({task}): việc đó cần giờ kết thúc", zh: "在 {building} 仍显示在任务中（{task}）：那条需要设置结束时间" },
+            "{time} each": { fr: "{time} chacun", es: "{time} cada uno", vi: "mỗi người {time}", zh: "每人 {time}" },
+            "👥 {name} × {n}": { fr: "👥 {name} × {n}", es: "👥 {name} × {n}", vi: "👥 {name} × {n}", zh: "👥 {name} × {n}" },
+            "⏰ since {when} · forgot to sign out": { fr: "⏰ depuis {when} · fin oubliée", es: "⏰ desde {when} · olvidó terminar", vi: "⏰ từ {when} · quên kết thúc", zh: "⏰ 自 {when} · 忘记结束" },
+            "A floor manager sets the closing time in the Labour & Cost Wizard": { fr: "Un chef de plancher fixe l’heure de fin dans le Labour & Cost Wizard", es: "Un jefe de piso pone la hora de fin en el Labour & Cost Wizard", vi: "Quản lý ca sẽ đặt giờ kết thúc trong Labour & Cost Wizard", zh: "由现场主管在 Labour & Cost Wizard 中设置结束时间" },
+            "Signed in at {when} — tap, then scan the badge to sign out": { fr: "Commencé à {when} — touchez, puis scannez le badge pour terminer", es: "Empezó a las {when} — toque y luego escanee la credencial para terminar", vi: "Bắt đầu lúc {when} — chạm rồi quét thẻ để kết thúc", zh: "开始于 {when}——点一下，再扫描工牌以结束" },
+            "Task removed: {task}": { fr: "Tâche supprimée : {task}", es: "Tarea eliminada: {task}", vi: "Việc đã bị xóa: {task}", zh: "任务已删除：{task}" },
+            "⏰ closing time set by {name}": { fr: "⏰ heure de fin fixée par {name}", es: "⏰ hora de fin puesta por {name}", vi: "⏰ giờ kết thúc do {name} đặt", zh: "⏰ 结束时间由 {name} 设置" },
+            "🪪 Signed in {from}, out {to}": { fr: "🪪 Commencé {from}, fini {to}", es: "🪪 Empezó {from}, terminó {to}", vi: "🪪 Bắt đầu {from}, kết thúc {to}", zh: "🪪 开始 {from}，结束 {to}" },
+            "Signed with badge #{no} ({name})": { fr: "Signé avec le badge n° {no} ({name})", es: "Firmado con la credencial n.º {no} ({name})", vi: "Ký bằng thẻ số {no} ({name})", zh: "用 {no} 号工牌签名（{name}）" },
+            "🪪 Badge #{no} scanned — {name} signs with it": { fr: "🪪 Badge n° {no} scanné — {name} signe avec", es: "🪪 Credencial n.º {no} escaneada — {name} firma con ella", vi: "🪪 Đã quét thẻ số {no} — {name} ký bằng thẻ này", zh: "🪪 已扫描 {no} 号工牌——{name} 以此签名" },
+            "Draw initials instead": { fr: "Dessiner les initiales à la place", es: "Dibujar las iniciales en su lugar", vi: "Vẽ chữ viết tắt thay vào đó", zh: "改为手写缩写" },
+            "🪪 Or scan your badge: it fills in your name and signs for you.": { fr: "🪪 Ou scannez votre badge : il remplit votre nom et signe pour vous.", es: "🪪 O escanee su credencial: pone su nombre y firma por usted.", vi: "🪪 Hoặc quét thẻ: thẻ sẽ điền tên và ký thay bạn.", zh: "🪪 或扫描您的工牌：它会填好您的名字并替您签名。" },
+            "How many were on the crew?": { fr: "Combien de personnes comptait l’équipe ?", es: "¿Cuántos había en la cuadrilla?", vi: "Tổ có bao nhiêu người?", zh: "班组有几人？" },
+            "Type the hours each person worked: they count once for everyone on the crew.": { fr: "Saisissez les heures de chaque personne : elles comptent pour chacun dans l’équipe.", es: "Escriba las horas de cada persona: cuentan para cada uno de la cuadrilla.", vi: "Nhập số giờ mỗi người làm: số giờ được tính cho từng người trong tổ.", zh: "填写每人工作的时长：会为班组每个人各计一次。" },
+            "🪪 Or the floor manager scans their badge: it signs the task off at once.": { fr: "🪪 Ou le chef de plancher scanne son badge : la tâche est approuvée tout de suite.", es: "🪪 O el jefe de piso escanea su credencial: la tarea queda aprobada al instante.", vi: "🪪 Hoặc quản lý ca quét thẻ: việc được ký xác nhận ngay.", zh: "🪪 或由现场主管扫描工牌：任务立即签核完成。" },
+            "Only a floor manager can sign this off — {name} isn’t one": { fr: "Seul un chef de plancher peut approuver ceci — {name} n’en est pas un", es: "Solo un jefe de piso puede aprobar esto — {name} no lo es", vi: "Chỉ quản lý ca mới ký xác nhận được — {name} không phải", zh: "只有现场主管才能签核——{name} 不是" },
+            "Only a floor manager can approve this — {name} isn’t one": { fr: "Seul un chef de plancher peut approuver ceci — {name} n’en est pas un", es: "Solo un jefe de piso puede aprobar esto — {name} no lo es", vi: "Chỉ quản lý ca mới duyệt được — {name} không phải", zh: "只有现场主管才能批准——{name} 不是" },
+            "🪪 Scan your badge — or pick your name and type your PIN": { fr: "🪪 Scannez votre badge — ou choisissez votre nom et entrez votre NIP", es: "🪪 Escanee su credencial, o elija su nombre y escriba su PIN", vi: "🪪 Quét thẻ — hoặc chọn tên và nhập mã PIN", zh: "🪪 扫描工牌——或选择您的名字并输入 PIN" },
+            "🪪 Scan your floor manager badge": { fr: "🪪 Scannez votre badge de chef de plancher", es: "🪪 Escanee su credencial de jefe de piso", vi: "🪪 Quét thẻ quản lý ca của bạn", zh: "🪪 扫描您的现场主管工牌" },
+            "{names} is still signed in to this task. Sign them out now?": { fr: "{names} est encore sur cette tâche. Terminer maintenant ?", es: "{names} sigue en esta tarea. ¿Terminar ahora?", vi: "{names} vẫn đang làm việc này. Kết thúc ngay?", zh: "{names} 仍在此任务中。现在结束吗？" },
+            "{n} are still signed in to this task ({names}). Sign them out now?": { fr: "{n} personnes sont encore sur cette tâche ({names}). Terminer maintenant ?", es: "{n} siguen en esta tarea ({names}). ¿Terminar ahora?", vi: "{n} người vẫn đang làm việc này ({names}). Kết thúc ngay?", zh: "{n} 人仍在此任务中（{names}）。现在结束吗？" },
         };
 
         // ---- Init ----
@@ -26638,26 +27393,31 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const other = $('hoursWho').value === '__other';
                 $('hoursOther').hidden = !other;
                 $('hoursWage').hidden = !other;
+                showHoursSign();
                 if (other) $('hoursOther').focus();
             });
+            $('hoursBadgeDraw').addEventListener('click', () => { hoursBadge = null; showHoursSign(); });
             window.addEventListener('resize', () => { if (hoursCtx) sizePad(); });
             $('hoursTimerPicks').addEventListener('change', (e) => { if (e.target.name === 'hoursTimer') pickHourTimer(e.target.value); });
 
-            // ⏲ Timers
-            $('timerDialogOk').addEventListener('click', confirmTimerDialog);
-            $('timerDialogCancel').addEventListener('click', closeTimerDialog);
-            $('timerDialog').addEventListener('click', (e) => { if (e.target === $('timerDialog')) closeTimerDialog(); });
-            $('timerLabelInput').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); confirmTimerDialog(); }
-                else if (e.key === 'Escape') closeTimerDialog();
+            // 🪪 Sign-ins: the scan dialog, and a badge scanned on the list signs its person out
+            $('scanOk').addEventListener('click', confirmScanDialog);
+            $('scanCancel').addEventListener('click', closeScanDialog);
+            $('scanDialog').addEventListener('click', (e) => { if (e.target === $('scanDialog')) closeScanDialog(); });
+            $('scanDialog').addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeScanDialog();
+                else if (e.key === 'Enter' && e.target.id === 'scanCrewSize') { e.preventDefault(); confirmScanDialog(); }
             });
+            $('scanCrewMinus').addEventListener('click', () => stepCrewSize(-1));
+            $('scanCrewPlus').addEventListener('click', () => stepCrewSize(1));
+            BadgeScan.push(code => scanAnywhere(code));
             setInterval(tickTimers, 1000);
             setInterval(() => EditMode.tick(), 15000);   // ✏️ edit mode locks again after 10 minutes without an edit
 
             // ✅ Mark done
             wirePad('donePad');
             $('doneBackBtn').addEventListener('click', closeDone);
-            $('doneBtn').addEventListener('click', markDone);
+            $('doneBtn').addEventListener('click', () => markDone());
             $('donePin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); markDone(); } });
             $('donePadClear').addEventListener('click', () => { doneStrokes = []; drawPad('donePad'); });
             window.addEventListener('resize', () => { if (doneCtx) sizePad('donePad'); });
@@ -34021,6 +34781,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             toMonth: null,           // {y, m} month shown in the time-off calendar
             toRangeStart: null,      // ISO date string — booking range start
             toRangeEnd: null,        // ISO date string — booking range end
+            badgeCodes: {},          // 🪪 name → the code of a badge made while this tool is open (never stored: printing only)
         };
 
         const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -34146,7 +34907,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 row.className = 'emp-row' + (name === EMP.selectedName ? ' selected' : '');
                 row.innerHTML = `
                     <span class="emp-name">${escapeHtml(name)}</span>
-                    <span class="emp-days" title="Work days (Mon–Sun)">${dots}</span>
+                    ${isCrew(e) ? '<span class="emp-tag crew" title="Temp crew: one badge for the whole crew">👥 crew</span>' : ''}
+                    ${FloorPin.hasBadge(e) ? `<span class="emp-tag" title="Badge #${escapeHtml(e.badge.no)}">🪪 ${escapeHtml(e.badge.no)}</span>` : ''}
+                    ${isCrew(e) ? '' : `<span class="emp-days" title="Work days (Mon–Sun)">${dots}</span>`}
                     <button type="button" class="emp-del" title="Delete employee">✕</button>`;
                 row.addEventListener('click', (ev) => {
                     if (ev.target.closest('.emp-del')) return;
@@ -34178,8 +34941,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('empNameInput').value = name;
             $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
             showWageHistory(name);
-            $('empFloorManager').checked = e?.floorManager === true;
+            $('empFloorManager').checked = e?.floorManager === true && !isCrew(e);
             showPinRow(e);
+            showCrewMode(e);
+            showBadgeRow(name);
             setViewMode('editor');
         }
 
@@ -34231,8 +34996,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const was = formerNameOf(name);
             if (was) { showToast(`"${name}" is ${was}'s former name — hours logged under it are ${was}'s. Use another name.`); return; }
 
-            emps[name] = { workDays: [1, 2, 3, 4, 5], timeOff: [] }; // Mon–Fri by default; no wage until one is entered
+            const crew = $('newEmpCrew').checked;
+            // Mon–Fri by default; no wage until one is entered. A 👥 temp crew has no work week (and no shifts in Reports).
+            emps[name] = crew ? { crew: true, workDays: [], timeOff: [] } : { workDays: [1, 2, 3, 4, 5], timeOff: [] };
             $('newEmpName').value = '';
+            $('newEmpCrew').checked = false;
             toggleAddForm(false);
             selectEmployee(name);   // highlight the new employee and open the editor
             renderEmpList();
@@ -34258,7 +35026,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const emps = getEmployees();
             const today = new Date();
             const mon = mondayOf(today);
-            const names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
+            const names = Object.keys(emps).filter(n => !isCrew(emps[n])).sort((a, b) => a.localeCompare(b));   // 👥 temp crews have no work week
 
             // Pre-compute each employee's booked-off days (ISO date -> {full, ranges})
             const offMaps = {};
@@ -34375,10 +35143,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             const ew = DB.data._EmployeeWizard, WH = ew.wageHistory;
             if (newName !== oldName && WH?.[oldName]) { WH[newName] = WH[oldName]; delete WH[oldName]; }   // the history follows a rename
+            if (newName !== oldName && EMP.badgeCodes[oldName]) { EMP.badgeCodes[newName] = EMP.badgeCodes[oldName]; delete EMP.badgeCodes[oldName]; }   // so does a badge not printed yet
             if (wageFrom) (ew.wageHistory || (ew.wageHistory = {}))[newName] = recordChange(ew.wageHistory?.[newName], 'wage', prevWage, wageRaw, wageFrom);
             if (wageRaw === null) delete emp.wage;
             else emp.wage = wageRaw;
-            if ($('empFloorManager').checked) {
+            if ($('empFloorManager').checked && !isCrew(emp)) {
                 emp.floorManager = true;
                 if (newPin) emp.pin = newPin;
             } else {
@@ -34390,6 +35159,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             EMP.selectedName = newName;
             showWageHistory(newName);
             showPinRow(emp);
+            showBadgeRow(newName);
             renderEmpList();
             renderWorkweek();
             notifySitkaTools();
@@ -34408,7 +35178,215 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
         $('empFloorManager').addEventListener('change', () => {
             $('empPinRow').hidden = !$('empFloorManager').checked;
+            if (EMP.selectedName) showBadgeRow(EMP.selectedName);
         });
+
+        // ---- 🪪 Badges and 👥 temp crews (user decision 2026-10-28) ----
+        // A badge is a Code 128 barcode (set C) of 16 digits: its 4-digit number, then 12 secret digits. Only the number
+        // and a salted hash of the secret are saved (employees[name].badge = { no, salt, hash, madeAt }, Main.json), so a
+        // badge prints only while this tool is still open from making it (EMP.badgeCodes, never stored). Making a new one
+        // replaces the old (kept in badgeRetired, so a scan of it says so). DailyWizard's barcode scanner signs people in
+        // and out of tasks with it, and a floor manager's badge stands in for their PIN and initials (FloorPin).
+        // A temp crew is a roster entry with crew: true: one badge for a whole crew. Each sign-in asks how many are on it,
+        // and its hours are person-hours, costed at its wage (the rate per person). It has no work week or time off.
+        const isCrew = e => e?.crew === true;
+        const badgeDay = iso => iso ? parseISO(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        // The code of a badge made while this tool is open (and still that person's badge), else null
+        const badgeCodeOf = name => {
+            const code = EMP.badgeCodes[name], emp = getEmployees()[name];
+            return code && FloorPin.hasBadge(emp) && code.slice(0, 4) === emp.badge.no ? code : null;
+        };
+        async function makeBadges(names) {
+            const made = [];
+            for (const name of names) {
+                const { code, record } = await FloorPin.makeBadge();
+                const emp = getEmployees()[name];   // the roster as it is now: a live update may have replaced the DB
+                if (!emp) continue;
+                const today = localDateStr(new Date());
+                if (FloorPin.hasBadge(emp)) emp.badgeRetired = [...(Array.isArray(emp.badgeRetired) ? emp.badgeRetired : []), { no: emp.badge.no, until: today }];
+                emp.badge = { ...record, madeAt: today };
+                EMP.badgeCodes[name] = code;
+                made.push(name);
+            }
+            if (made.length) notifySitkaTools();
+            return made;
+        }
+        function showBadgeRow(name) {
+            const emp = getEmployees()[name];
+            if (!emp) return;
+            const has = FloorPin.hasBadge(emp), code = badgeCodeOf(name);
+            const fm = !isCrew(emp) && $('empFloorManager').checked;
+            $('empBadgeStatus').textContent = has
+                ? `🪪 Badge #${emp.badge.no}${emp.badge.madeAt ? `, made ${badgeDay(emp.badge.madeAt)}` : ''}. ` + (code
+                    ? 'Print it before closing this tool: its code isn’t saved, so it can’t be printed later.'
+                    : 'Lost or damaged? Replace it: the old badge stops working.')
+                : `🪪 No badge yet. With one, ${isCrew(emp) ? 'the crew starts and finishes' : 'they start and finish'} tasks in DailyWizard with the barcode scanner` + (fm ? ', and signs off as floor manager without a PIN.' : '.');
+            $('empBadgeMake').textContent = has ? '🔄 Replace badge' : '🪪 Make badge';
+            $('empBadgePrint').hidden = !code;
+        }
+        // The editor for a temp crew: no work week, time off or floor manager; the wage is per person
+        function showCrewMode(emp) {
+            const crew = isCrew(emp);
+            $('dayToggleRow').hidden = crew;
+            $('empFloorManager').closest('label').hidden = crew;
+            if (crew) $('empPinRow').hidden = true;
+            $('requestTimeOffBtn').hidden = crew;
+            $('empWageLabel').textContent = crew ? 'Rate ($/hr per person)' : 'Wage ($/hr)';
+            $('empCrewNote').hidden = !crew;
+        }
+        $('empBadgeMake').addEventListener('click', async () => {
+            const name = EMP.selectedName, emp = getEmployees()[name];
+            if (!emp || DeviceView.building) return;
+            if (FloorPin.hasBadge(emp) && !confirm(`Replace ${name}'s badge #${emp.badge.no}?\n\nThe old badge stops working once this is saved and each tablet reopens the files. Print the new one before closing this tool.`)) return;
+            const made = await makeBadges([name]);
+            renderEmpList();
+            if (!made.length) return;
+            if (EMP.selectedName === name) showBadgeRow(name);
+            showToast(`🪪 Badge #${getEmployees()[name].badge.no} made for ${name} — 🖨️ print it now, then 💾 Save DB and reopen the files on each tablet so it knows the badge`);
+        });
+        $('empBadgePrint').addEventListener('click', () => printBadges([EMP.selectedName]));
+
+        // 🪪 Badges…: tick who gets a new badge, make them and print the sheet (or print again the ones made since opening)
+        function openBadgesDialog() {
+            if (DeviceView.building) return;
+            const emps = getEmployees(), names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
+            if (!names.length) { showToast('Add employees first'); return; }
+            document.getElementById('badgesDialog')?.remove();
+            const wrap = document.createElement('div');
+            wrap.className = 'applies-overlay';
+            wrap.id = 'badgesDialog';
+            wrap.innerHTML = `<div class="applies-card badges-card" role="dialog" aria-modal="true">
+                <div class="applies-title">🪪 Badges for the barcode scanner</div>
+                <div class="applies-note">Tick who gets a new badge. Its code isn’t saved, so print the sheet before closing this tool. A new badge for someone who has one replaces it: the old one stops working. Print at 100 % (Actual size) on letter paper — 9 cards a page, 54 × 86 mm, for standard ID card holders.</div>
+                <div class="badges-list"></div>
+                <div class="badges-actions">
+                    <button type="button" class="btn btn-secondary" data-act="close">Close</button>
+                    <button type="button" class="btn btn-secondary" data-act="print"></button>
+                    <button type="button" class="btn" data-act="make">🪪 Make &amp; print</button>
+                </div></div>`;
+            const list = wrap.querySelector('.badges-list');
+            for (const n of names) {
+                const e = emps[n], has = FloorPin.hasBadge(e);
+                const row = document.createElement('label');
+                row.className = 'badges-row';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.checked = !has;
+                box.dataset.name = n;
+                const bn = document.createElement('span');
+                bn.className = 'bn';
+                bn.textContent = (isCrew(e) ? '👥 ' : '') + n;
+                const bs = document.createElement('span');
+                bs.className = 'bs';
+                bs.textContent = has ? `#${e.badge.no}${badgeCodeOf(n) ? ' · ready to print' : ''}` : 'no badge';
+                row.append(box, bn, bs);
+                list.appendChild(row);
+            }
+            const printable = () => names.filter(badgeCodeOf);
+            const printBtn = wrap.querySelector('[data-act="print"]');
+            printBtn.textContent = `🖨️ Print again (${printable().length})`;
+            printBtn.hidden = !printable().length;
+            wrap.addEventListener('click', async (ev) => {
+                const act = ev.target.closest('[data-act]')?.dataset.act;
+                if (act === 'close') wrap.remove();
+                else if (act === 'print') printBadges(printable());
+                else if (act === 'make') {
+                    const picked = [...list.querySelectorAll('input:checked')].map(x => x.dataset.name).filter(n => getEmployees()[n]);
+                    if (!picked.length) { showToast('Tick who gets a badge'); return; }
+                    const replacing = picked.filter(n => FloorPin.hasBadge(getEmployees()[n]));
+                    if (replacing.length && !confirm(`Replace the badge${replacing.length > 1 ? 's' : ''} of ${replacing.join(', ')}?\n\nThe old one${replacing.length > 1 ? 's stop' : ' stops'} working once this is saved and each tablet reopens the files.`)) return;
+                    const win = window.open('', '_blank', 'width=900,height=1000');   // opened on the tap, before the codes are made, so it isn't blocked
+                    if (win) win.document.write('<p style="font-family: sans-serif">Making badges…</p>');
+                    const made = await makeBadges(picked);
+                    wrap.remove();
+                    renderEmpList();
+                    if (EMP.selectedName) showBadgeRow(EMP.selectedName);
+                    printBadges(made, win);
+                    showToast(`🪪 ${made.length} badge${made.length === 1 ? '' : 's'} made — print the sheet, then 💾 Save DB and reopen the files on each tablet so it knows them`);
+                }
+            });
+            document.body.appendChild(wrap);
+        }
+        $('badgesBtn').addEventListener('click', openBadgesDialog);
+
+        // Code 128, set C (pairs of digits): each symbol's bar and space widths, in modules (values 0–102, then Start A, B,
+        // C and Stop). The widths of a symbol add up to 11 (the Stop to 13).
+        const CODE128 = ('212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 ' +
+            '123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 ' +
+            '131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 ' +
+            '213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 ' +
+            '112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 ' +
+            '421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112').split(' ');
+        // An even number of digits → the widths of every bar and space, Start C to Stop (bar first)
+        function code128C(digits) {
+            if (!/^(\d\d)+$/.test(digits)) throw new Error('Code 128 C needs an even number of digits');
+            const values = digits.match(/\d\d/g).map(Number);
+            const check = values.reduce((sum, v, i) => sum + v * (i + 1), 105) % 103;
+            return [105, ...values, check, 106].flatMap(v => CODE128[v].split('').map(Number));
+        }
+        // The barcode as an SVG, `widthMm` wide with its 10-module quiet zones, bars black on white
+        function barcodeSvg(digits, widthMm, heightMm) {
+            const widths = code128C(digits), quiet = 10, total = widths.reduce((s, w) => s + w, 0) + 2 * quiet;
+            let x = quiet, bars = '';
+            widths.forEach((w, i) => { if (i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="100"/>`; x += w; });
+            return `<svg class="bc" xmlns="http://www.w3.org/2000/svg" width="${widthMm}mm" height="${heightMm}mm" viewBox="0 0 ${total} 100" preserveAspectRatio="none" shape-rendering="crispEdges" role="img" aria-label="Barcode ${digits.slice(0, 4)}"><rect width="${total}" height="100" fill="#fff"/><g fill="#000">${bars}</g></svg>`;
+        }
+
+        // 🖨️ The badge sheet, in a print window: 54 × 86 mm cards (CR80, portrait), 9 to a letter page, with cut lines
+        function printBadges(names, win = null) {
+            const emps = getEmployees();
+            const cards = (names || []).map(n => ({ name: n, code: badgeCodeOf(n), emp: emps[n] })).filter(c => c.code);
+            if (!cards.length) {
+                if (win) win.close();
+                showToast('No badge to print — a badge prints only from the tool it was made in, while it’s still open');
+                return;
+            }
+            win = win || window.open('', '_blank', 'width=900,height=1000');
+            if (!win) { alert('The badge sheet opens in a new window — allow pop-ups for this page, then tap 🖨️ Print again.'); return; }
+            const logo = window.document.querySelector('header .logo img')?.src || '';
+            const nameSize = n => n.length <= 9 ? 6.4 : n.length <= 14 ? 5 : n.length <= 20 ? 4 : 3.2;
+            const card = c => {
+                const role = isCrew(c.emp) ? '<div class="band crew">👥 Temp crew</div>' : c.emp?.floorManager === true ? '<div class="band fm">Floor manager</div>' : '<div class="band none"></div>';
+                return `<div class="card" data-badge="${c.code.slice(0, 4)}">
+                    <div class="slot"></div>
+                    <div class="brand">${logo ? `<img src="${logo}" alt="S">` : 'S'}itka</div>
+                    <div class="name" style="font-size:${nameSize(c.name)}mm">${escapeHtml(c.name)}</div>
+                    ${role}
+                    <div class="code">${barcodeSvg(c.code, 46, 14)}</div>
+                    <div class="no">#${c.code.slice(0, 4)}</div>
+                    <div class="hint">Scan to start or finish a task</div>
+                </div>`;
+            };
+            const pages = [];
+            for (let i = 0; i < cards.length; i += 9) pages.push(`<div class="sheet">${cards.slice(i, i + 9).map(card).join('')}</div>`);
+            win.document.open();
+            win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>SitkaTools — Badges</title><style>
+                @page { size: letter portrait; margin: 0.3in; }
+                html, body { margin: 0; background: #fff; color: #111; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+                .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: #f2f2f2; border-bottom: 1px solid #ccc; font-size: 14px; }
+                .bar button { padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+                .sheet { display: grid; grid-template-columns: repeat(3, 54mm); grid-auto-rows: 86mm; gap: 2mm; justify-content: center; padding: 4mm 0; break-after: page; }
+                .sheet:last-child { break-after: auto; }
+                .card { box-sizing: border-box; width: 54mm; height: 86mm; border: 0.3mm dashed #999; display: flex; flex-direction: column; align-items: center; padding: 3mm 3mm 3mm; overflow: hidden; }
+                .slot { width: 14mm; height: 3mm; border: 0.25mm solid #ccc; border-radius: 1.5mm; margin-bottom: 5mm; }
+                .brand { display: flex; align-items: center; font-weight: 700; font-size: 5mm; letter-spacing: 0.2mm; color: #1a1a2e; }
+                .brand img { height: 6mm; margin-right: 0.3mm; }
+                .name { margin-top: 5mm; min-height: 15mm; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+                .band { align-self: stretch; margin: 1mm -3mm 0; height: 6mm; display: flex; align-items: center; justify-content: center; font-size: 3.2mm; font-weight: 700; }
+                .band.fm { background: #53d8a8; color: #08301f; }
+                .band.crew { background: #f39c12; color: #2b1a00; }
+                .code { margin-top: auto; }
+                .bc { display: block; }
+                .no { margin-top: 1mm; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 4mm; font-weight: 700; letter-spacing: 0.5mm; }
+                .hint { margin-top: 0.5mm; font-size: 2.4mm; color: #555; }
+                @media print { .bar { display: none; } .sheet { padding: 0; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style></head><body>
+                <div class="bar"><span>🪪 ${cards.length} badge${cards.length === 1 ? '' : 's'} · print at 100 % (Actual size), not “Fit to page” · cut on the dashed lines</span><button type="button" id="bpPrint">🖨️ Print / Save as PDF</button></div>
+                ${pages.join('')}
+                <script>document.getElementById('bpPrint').addEventListener('click', () => window.print());<\/script>
+            </body></html>`);
+            win.document.close();
+        }
 
         // ---- Time-off view ----
         function initTimeoffView() {
@@ -34981,19 +35959,27 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (!entries.length) {
                 list.innerHTML = '<div class="task-empty" style="padding:8px 4px;">No labour recorded for this day yet.</div>';
             } else {
+                const clock = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
                 list.innerHTML = entries.map((en, i) => {
                     const who = (en.temp != null
                         ? `${escapeHtml(en.temp)}<span class="entry-temp-tag">temp · ${Number(en.wage) > 0 ? `$${Number(en.wage)}/hr` : 'no wage'}</span>`
                         : escapeHtml(en.employee)) +
+                        (en.crewSize > 0 ? `<span class="entry-temp-tag" title="A temp crew: ${fmtHours(en.hours / en.crewSize)} each">👥 × ${en.crewSize}</span>` : '') +
                         (en.note ? `<span class="entry-temp-tag" title="${escapeHtml(en.note)}">📝 ${escapeHtml(en.note.length > 40 ? en.note.slice(0, 40) + '…' : en.note)}</span>` : '') +
+                        (en._pending ? '<span class="entry-temp-tag" title="Its building\u2019s device files these hours when it next opens the files">⏳ waiting for its building</span>' : '') +
+                        (en.closedBy ? `<span class="entry-temp-tag" title="Forgot to sign out: closing time set by ${escapeHtml(en.closedBy.name || '?')} (floor manager)">⏰ ${escapeHtml(en.closedBy.name || '?')}</span>` : '') +
+                        // 🪪 Signed in and out with their badge in DailyWizard, or a badge in place of initials
+                        (en.scan?.in && en.scan?.out ? `<span class="entry-temp-tag" title="Signed in and out with badge #${escapeHtml(en.initials?.badge || '?')} in DailyWizard">🪪 ${escapeHtml(clock(en.scan.in))}–${escapeHtml(clock(en.scan.out))}</span>`
+                        : en.initials?.badge ? `<span class="entry-temp-tag" title="Logged in DailyWizard, signed with badge #${escapeHtml(en.initials.badge)}">🪪 signed</span>`
+                        : en.enteredBy?.badge ? `<span class="entry-temp-tag" title="Entered here, signed off with ${escapeHtml(en.enteredBy.name || '?')}'s badge (floor manager)">🪪 ${escapeHtml(en.enteredBy.name || '?')}</span>`
                         // Logged on the floor in DailyWizard, signed with drawn initials — or entered here, signed off by a floor manager
-                        (en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}${en.editedSignoff?.name ? ` · change approved by ${escapeHtml(en.editedSignoff.name)}` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>`
+                        : en.initials ? `<span class="entry-temp-tag" title="Logged and signed in DailyWizard${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.signedHours !== undefined ? ` · signed for ${fmtHours(en.signedHours)}, changed here` : ''}${en.editedSignoff?.name ? ` · change approved by ${escapeHtml(en.editedSignoff.name)}` : ''}">✍️ signed${en.signedHours !== undefined ? ' · changed' : ''}</span>`
                         : en.enteredBy ? `<span class="entry-temp-tag" title="Entered here and signed off by ${escapeHtml(en.enteredBy.name || '?')} (floor manager)${en.at ? ' · ' + escapeHtml(new Date(en.at).toLocaleString()) : ''}${en.editedAt ? ` · changed${en.signedHours !== undefined ? ` from ${fmtHours(en.signedHours)}` : ''}${en.editedSignoff?.name ? `, approved by ${escapeHtml(en.editedSignoff.name)}` : ''}` : ''}">✍️ ${escapeHtml(en.enteredBy.name || '?')}${en.editedAt ? ' · changed' : ''}</span>`
                         : en.editedSignoff ? `<span class="entry-temp-tag" title="Changed here, approved by ${escapeHtml(en.editedSignoff.name || '?')}">✏️ changed · ${escapeHtml(en.editedSignoff.name || '?')}</span>` : '');
                     return `<div class="entry-row">
                         <span class="entry-name">${who}</span>
                         <span class="entry-hours">${fmtHours(en.hours)}</span>
-                        ${DeviceView.building ? '' : `<button type="button" class="emp-del" data-idx="${i}" title="Remove entry (floor manager PIN)">✕</button>`}
+                        ${DeviceView.building || en._pending ? '' : `<button type="button" class="emp-del" data-idx="${i}" title="Remove entry (floor manager PIN)">✕</button>`}
                     </div>`;
                 }).join('') + (DeviceView.building ? '<div class="task-empty" style="padding:6px 4px;">To remove hours, use the task\u2019s ⏱ in DailyWizard (floor manager PIN).</div>' : '');
                 list.querySelectorAll('[data-idx]').forEach(b => {
@@ -35009,14 +35995,27 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 `Task total: ${fmtHours(taskHours(ev))}` + money(taskCost(ev)) +
                 (est ? ` · estimated ${fmtHours(est.hours)}` : '');
 
-            // Employee dropdown (roster names)
+            // 🪪 Who's signed in to it in DailyWizard right now (read-only: they sign out with their badge, or a floor manager
+            // sets a closing time in the 📜 Labour Log)
+            const ins = [];
+            for (const [bid, bd] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                if (DeviceView.building && bid !== DeviceView.building) continue;
+                for (const si of Object.values(bd?.signIns || {})) if (si?.item === 'ev:' + ev.id && si.since) ins.push(si);
+            }
+            $('teSignIns').hidden = !ins.length;
+            $('teSignIns').textContent = ins.length ? `🪪 Signed in: ${ins.map(si => `${si.crewSize > 0 ? `👥 ${si.employee} × ${si.crewSize}` : si.employee} since ${new Date(si.since).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`).join(' · ')}` : '';
+
+            // Employee dropdown (roster names; 👥 temp crews say how many were on them)
             const sel = $('lfEmpSelect');
             const prev = sel.value;
-            const names = Object.keys(getEmployees()).sort((a, b) => a.localeCompare(b));
+            const emps = getEmployees();
+            const names = Object.keys(emps).sort((a, b) => a.localeCompare(b));
             sel.innerHTML = '<option value="">— Select employee —</option>' +
-                names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+                names.map(n => `<option value="${escapeHtml(n)}">${isCrew(emps[n]) ? '👥 ' : ''}${escapeHtml(n)}</option>`).join('');
             if (names.includes(prev)) sel.value = prev;
+            $('lfCrewGroup').hidden = !isCrew(emps[sel.value]);
         }
+        $('lfEmpSelect').addEventListener('change', () => { $('lfCrewGroup').hidden = !isCrew(getEmployees()[$('lfEmpSelect').value]); });
 
         // Every task change (labour, completion, lot switch, DB load/update) comes through here, so the
         // labour report below is redrawn with it
@@ -35407,29 +36406,37 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (!ev0) return;
             const name = $('lfEmpSelect').value;
             if (!name) { showToast('Pick an employee from the roster'); return; }
-            const hours = parseHm($('lfHours'), $('lfMinutes'));
-            if (hours == null) return;
+            const each = parseHm($('lfHours'), $('lfMinutes'));
+            if (each == null) return;
+            // 👥 A temp crew: the hours typed are each person's; it keeps person-hours and its size
+            const crewSize = isCrew(getEmployees()[name]) ? parseInt($('lfCrewSize').value, 10) : null;
+            if (crewSize !== null && !(crewSize >= 1 && crewSize <= 99)) { showToast('Enter how many were on the crew'); $('lfCrewSize').focus(); return; }
+            const hours = Math.round(each * (crewSize || 1) * 1000) / 1000;
+            const what = crewSize ? `👥 ${name} × ${crewSize}: ${fmtHours(each)} each` : `${fmtHours(hours)} for ${name}`;
             const day = TASK.editDate;
-            const had = (ev0.labour_map?.[day] || []).find(en => en.employee === name);
-            if (had && Number(had.hours) === hours) { showToast(`${name} already has ${fmtHours(hours)} on this day`); return; }
-            const sign = await askHoursSignoff(ev0, day, had ? `Change ${name}'s hours: ${fmtHours(had.hours)} → ${fmtHours(hours)}` : `Add ${fmtHours(hours)} for ${name}`);
+            // A badge sign-in's entry records its in and out times: it's never the one changed here (a new entry is added)
+            const had = (ev0.labour_map?.[day] || []).find(en => en.employee === name && !en.scan && !en._pending);
+            if (had && Number(had.hours) === hours && (had.crewSize || null) === crewSize) { showToast(`${name} already has ${fmtHours(hours)} on this day`); return; }
+            const sign = await askHoursSignoff(ev0, day, had ? `Change ${name}'s hours: ${fmtHours(had.hours)} → ${crewSize ? what : fmtHours(hours)}` : `Add ${what}`);
             if (!sign) return;
             const ev = taskById(ev0.id);
             if (!ev) { showToast('That task is no longer in the database'); return; }
 
             const entries = dayEntryList(ev, day);
-            const idx = entries.findIndex(en => en.employee === name);
+            const idx = entries.findIndex(en => en.employee === name && !en.scan && !en._pending);
             if (idx >= 0) {
                 noteEdit(entries[idx], sign);
                 entries[idx].hours = hours;
+                if (crewSize) entries[idx].crewSize = crewSize; else delete entries[idx].crewSize;
                 showToast(`Updated ${name} — ${fmtHours(hours)} · approved by ${sign.name}`);
             } else {
-                entries.push({ id: newLabourId(), employee: name, hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
+                entries.push({ id: newLabourId(), employee: name, ...(crewSize ? { crewSize } : {}), hours, at: new Date().toISOString(), by: DeviceView.building || 'office', enteredBy: sign.initials });
                 showToast(`Added ${name} — ${fmtHours(hours)} · signed by ${sign.name}`);
             }
 
             $('lfHours').value = '';
             $('lfMinutes').value = '';
+            $('lfCrewSize').value = '';
             notifySitkaTools();
             renderTasksTab();
         });
@@ -35488,8 +36495,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
         // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
         // normalized 0–1, like DailyWizard's hours entries.
+        // 🪪 Badges (user decision 2026-10-28): every employee and temp crew may have a badge, a Code 128 barcode of 16
+        // digits — a 4-digit badge number (printed on the card) then 12 secret digits. Main.json keeps only
+        //   employees[name].badge = { no, salt, hash, madeAt }   hash: SHA-256 of `${salt}:${secret}`, like a PIN
+        //   employees[name].badgeRetired = [{ no, until }]       badges replaced since (a scan of one says so)
+        // A floor manager's badge stands in for both their PIN and their initials, wherever ask() is used: it resolves
+        // { name, badge: no } (with { initials: true }: plus initials = { name, badge: no }, a signature with no strokes).
         var FloorPin = {
-            WAIT_AFTER: 5,          // wrong PINs in a row before a one-minute wait
+            WAIT_AFTER: 5,          // wrong PINs (or badges not recognized) in a row before a one-minute wait
             WAIT_MS: 60 * 1000,
             _fails: 0,
             _waitUntil: 0,
@@ -35497,16 +36510,58 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             _done: null,
             _wantInitials: false,
             _strokes: [],
+            _unscan: null,
             tr(s, v) {
                 if (typeof T === 'function') return T(s, v);
                 return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
             },
-            // Floor managers who have a PIN, by name
+            _emps() { return (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {}; },
+            // Floor managers who can sign off — with a PIN, or with a badge — by name (temp crews never are)
             managers() {
-                const emps = (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {};
-                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.pin?.hash && emps[n]?.pin?.salt)
-                    .sort((a, b) => a.localeCompare(b));
+                const emps = this._emps();
+                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.crew !== true &&
+                    ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || this.hasBadge(emps[n]))).sort((a, b) => a.localeCompare(b));
             },
+            // …the ones who have a PIN (the name list next to the PIN box)
+            pinManagers() {
+                const emps = this._emps();
+                return this.managers().filter(n => emps[n]?.pin?.hash && emps[n]?.pin?.salt);
+            },
+            hasBadge: emp => !!(emp?.badge?.no && emp.badge.salt && emp.badge.hash),
+            // A scanned (or typed) badge code → { name, no, crew, floorManager }, or { error: 'unknown' | 'replaced', name? }
+            BADGE_RE: /^\d{16}$/,
+            async verifyBadge(code) {
+                code = String(code || '').trim();
+                if (!this.BADGE_RE.test(code)) return { error: 'unknown' };
+                const no = code.slice(0, 4), secret = code.slice(4), emps = this._emps();
+                for (const [name, e] of Object.entries(emps)) {
+                    if (!this.hasBadge(e) || e.badge.no !== no) continue;
+                    if ((await this.hash(e.badge.salt, secret)) === e.badge.hash) return { name, no, crew: e.crew === true, floorManager: e.floorManager === true && e.crew !== true };
+                }
+                for (const [name, e] of Object.entries(emps)) {
+                    const r = (Array.isArray(e?.badgeRetired) ? e.badgeRetired : []).find(x => x?.no === no);
+                    if (r) return { error: 'replaced', name, until: r.until || '' };
+                }
+                return { error: 'unknown' };
+            },
+            // A new badge: a number no badge has had (current or replaced), 12 secret digits, and the record to keep.
+            // The code itself is never stored: it's printed once (the Labour & Cost Wizard keeps it while it's open).
+            async makeBadge() {
+                const used = new Set();
+                for (const e of Object.values(this._emps())) {
+                    if (e?.badge?.no) used.add(e.badge.no);
+                    for (const r of Array.isArray(e?.badgeRetired) ? e.badgeRetired : []) if (r?.no) used.add(r.no);
+                }
+                const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => String(v % 10)).join('');
+                let no = '';
+                for (let i = 0; i < 200 && (!no || used.has(no)); i++) no = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+                if (used.has(no)) for (let v = 1000; v <= 9999; v++) if (!used.has(String(v))) { no = String(v); break; }
+                const secret = digits(12);
+                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                return { code: no + secret, record: { no, salt, hash: await this.hash(salt, secret) } };
+            },
+            // A signature: drawn initials ({ name, strokes }) or a badge scan ({ name, badge })
+            signed: sig => !!(sig && ((Array.isArray(sig.strokes) && sig.strokes.length) || sig.badge)),
             // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
             async hash(salt, pin) {
                 const text = `${salt}:${pin}`;
@@ -35585,12 +36640,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
                 return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
             },
-            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials). Resolves { name }
-            // (plus initials) once it's right, or null (cancelled).
+            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials) — or a scan of their
+            // badge. Resolves { name } (plus initials, or badge) once it's right, or null (cancelled).
             ask(why, opts = {}) {
                 if (this._done) this._finish(null);
                 this._build();
-                const el = this._el, names = this.managers();
+                const el = this._el, names = this.pinManagers(), emps = this._emps();
+                const badges = this.managers().some(n => this.hasBadge(emps[n]));
                 const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
                 this._wantInitials = !!opts.initials;
                 this._strokes = [];
@@ -35604,27 +36660,50 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
                 el.querySelector('[data-fpin-why]').textContent = why || '';
                 el.querySelector('[data-fpin-err]').textContent = '';
-                const none = !names.length;
+                // 🪪 Scanning a floor manager's badge is the whole sign-off (no PIN, no initials)
+                const scan = el.querySelector('[data-fpin-scan]');
+                scan.textContent = this.tr(names.length ? '🪪 Scan your badge — or pick your name and type your PIN' : '🪪 Scan your floor manager badge');
+                scan.hidden = !badges;
+                const none = !names.length && !badges, pinOff = !names.length;
                 el.querySelector('[data-fpin-none]').hidden = !none;
-                el.querySelector('[data-fpin-fields]').hidden = none;
-                el.querySelector('[data-fpin-ok]').hidden = none;
+                el.querySelector('[data-fpin-fields]').hidden = pinOff;
+                el.querySelector('[data-fpin-ok]').hidden = pinOff;
                 el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
                 const sign = el.querySelector('[data-fpin-sign]');
-                sign.hidden = none || !this._wantInitials;
+                sign.hidden = pinOff || !this._wantInitials;
                 who.innerHTML = '';
                 if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
                 for (const n of names) who.appendChild(new Option(n, n));
                 pin.value = '';
                 el.hidden = false;
                 if (!sign.hidden) this._sizePad();
-                (none ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                (pinOff ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                if (this._unscan) this._unscan();
+                this._unscan = typeof BadgeScan !== 'undefined' ? BadgeScan.push(code => this._scanned(code)) : null;   // a scan never reaches what's under the dialog
                 return new Promise(resolve => { this._done = resolve; });
             },
             _finish(result) {
                 const done = this._done;
                 this._done = null;
+                if (this._unscan) { this._unscan(); this._unscan = null; }
                 if (this._el) this._el.hidden = true;
                 if (done) done(result);
+            },
+            // A badge scanned while the dialog is open: a floor manager's signs off at once
+            async _scanned(code) {
+                const el = this._el, err = el.querySelector('[data-fpin-err]'), asking = this._done;
+                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                const r = await this.verifyBadge(code);
+                if (!asking || this._done !== asking) return;   // closed meanwhile
+                if (r.error) {
+                    if (++this._fails >= this.WAIT_AFTER) { this._fails = 0; this._waitUntil = Date.now() + this.WAIT_MS; err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); }
+                    else err.textContent = r.error === 'replaced' ? this.tr('That badge was replaced — use the new one') : this.tr('Badge not recognized — try again');
+                    return;
+                }
+                if (!r.floorManager) { err.textContent = this.tr('Only a floor manager can approve this — {name} isn’t one', { name: r.name }); return; }
+                this._fails = 0;
+                const sig = { name: r.name, badge: r.no };
+                this._finish(this._wantInitials ? { name: r.name, badge: r.no, initials: sig } : { name: r.name, badge: r.no });
             },
             async _submit() {
                 const el = this._el, err = el.querySelector('[data-fpin-err]');
@@ -35669,7 +36748,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
                     .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
                     .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
-                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }`;
+                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }
+                    .fpin-scan { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-size: 0.9rem; font-weight: 600; text-align: center; }
+                    .fpin-scan[hidden] { display: none; }`;
                 document.head.appendChild(css);
                 const el = document.createElement('div');
                 el.className = 'fpin';
@@ -35682,6 +36763,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         <div class="fpin-title"></div>
                         <div class="fpin-why" data-fpin-why></div>
                         <div class="fpin-none" data-fpin-none></div>
+                        <div class="fpin-scan" data-fpin-scan hidden></div>
                         <div class="fpin-fields" data-fpin-fields>
                             <label for="floorPinWho"></label>
                             <select id="floorPinWho" data-fpin-who></select>
@@ -35755,6 +36837,70 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
                     ctx.stroke();
                 }
+            }
+        };
+
+        // ---- 🪪 Badge scans (user decision 2026-10-28) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
+        // A barcode scanner is a keyboard: it "types" a badge's 16 digits in a burst, then Enter (or Tab). A capture-phase
+        // keydown on this tool's document collects digits that come in a burst (each within GAP_MS of the last); 16 of
+        // them then Enter or Tab is a scan. It goes to the newest handler pushed (the dialog on top, else the tool's own).
+        //  • The Enter or Tab is swallowed: it doesn't press a focused button or move the focus on.
+        //  • Digits outside a text box are swallowed too, so a scan can't pick an option in a focused list.
+        //  • A scan that went into a text box (a PIN, a note, a date) is taken back out of it.
+        // Nobody types 16 digits at that pace, so typing by hand is never taken for a scan.
+        var BadgeScan = {
+            GAP_MS: 100,
+            _buf: '',
+            _last: 0,
+            _field: null,
+            _value: null,
+            _handlers: [],
+            _on: false,
+            install() {
+                if (this._on) return;
+                this._on = true;
+                document.addEventListener('keydown', e => this._key(e), true);
+            },
+            // The newest handler gets each scan; the function returned takes it off again
+            push(fn) {
+                this.install();
+                this._handlers.push(fn);
+                return () => { const i = this._handlers.lastIndexOf(fn); if (i >= 0) this._handlers.splice(i, 1); };
+            },
+            _editable(el) {
+                if (!el || el.disabled || el.readOnly) return false;
+                if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+                return el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|color|range|image)$/i.test(el.type || '');
+            },
+            _key(e) {
+                if (e.ctrlKey || e.metaKey || e.altKey) { this._buf = ''; return; }
+                const now = Date.now(), t = e.target;
+                if (/^[0-9]$/.test(e.key)) {
+                    if (!this._buf || now - this._last > this.GAP_MS) {
+                        this._buf = '';
+                        this._field = this._editable(t) ? t : null;
+                        this._value = this._field ? this._field.value : null;
+                    }
+                    this._buf += e.key;
+                    this._last = now;
+                    if (!this._editable(t)) e.preventDefault();
+                    return;
+                }
+                if ((e.key === 'Enter' || e.key === 'Tab') && this._buf.length === 16 && now - this._last <= this.GAP_MS) {
+                    const code = this._buf, field = this._field, value = this._value;
+                    this._buf = '';
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (field && field.value !== value) {
+                        field.value = value;
+                        field.dispatchEvent(new Event('input', { bubbles: true }));
+                        field.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    const fn = this._handlers[this._handlers.length - 1];
+                    if (fn) { try { fn(code); } catch (err) { console.error(err); } }
+                    return;
+                }
+                if (e.key !== 'Shift') this._buf = '';
             }
         };
 
@@ -38235,6 +39381,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function rptCapacity(from, to) {
             const shift = rptShiftHours(), hol = rptHolidayMap(from, to), byDay = {};
             for (const emp of Object.values(rptEmployees())) {
+                if (emp?.crew === true) continue;   // 👥 a temp crew has no shifts
                 const off = {};
                 for (const t of emp?.timeOff || []) {
                     if (!isDay(t.date)) continue;
@@ -40304,8 +41451,11 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
         }
 
         // Drawn initials (PaperWizard's normalized strokes) as an SVG string
-        // The drawn initials an entry carries: the worker's own (DailyWizard), else the floor manager who entered it in the Tasks tab
-        const logSignature = en => en.initials?.strokes?.length ? en.initials : en.enteredBy?.strokes?.length ? en.enteredBy : null;
+        // The signature an entry carries: the worker's own (DailyWizard: drawn, or their 🪪 badge), else the floor manager
+        // who entered it in the Tasks tab
+        const logSignature = en => FloorPin.signed(en.initials) ? en.initials : FloorPin.signed(en.enteredBy) ? en.enteredBy : null;
+        const logWho = en => Number.isInteger(en.crewSize) && en.crewSize > 0 ? `👥 ${logName(en)} × ${en.crewSize}` : logName(en);
+        const logClock = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         function logInitialsSvg(ini) {
             const lines = (ini?.strokes || []).map(st => {
                 const pts = [];
@@ -40320,13 +41470,16 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
         function logModel() {
             const all = logCollect().filter(r => !DeviceView.building || r.building === DeviceView.building);
             const live = all.filter(r => !r.removed);
-            // A person's day across all their work, and a task's day across everyone (live entries only)
-            const personDay = new Map(), taskDay = new Map();
+            // A person's day across all their work (a crew's per person), and a task's day across everyone (live entries only)
+            const personDay = new Map(), taskDay = new Map(), scans = new Map();
             for (const r of live) {
                 const p = `${logName(r.en)}|${r.day}`, t = `${r.key}|${r.day}`;
-                personDay.set(p, (personDay.get(p) || 0) + logHours(r.en));
+                personDay.set(p, (personDay.get(p) || 0) + logHours(r.en) / (r.en.crewSize > 0 ? r.en.crewSize : 1));
                 taskDay.set(t, (taskDay.get(t) || 0) + logHours(r.en));
+                if (r.en.scan?.in && r.en.scan?.out) (scans.get(logName(r.en)) || scans.set(logName(r.en), []).get(logName(r.en))).push(r.en);
             }
+            // 🪪 Two sign-ins of one person at the same time (signed in at two buildings' tablets)
+            const overlaps = en => (scans.get(logName(en)) || []).some(o => o !== en && Date.parse(o.scan.in) < Date.parse(en.scan.out) && Date.parse(en.scan.in) < Date.parse(o.scan.out));
             const rows = all.filter(r => (!LOG.from || r.day >= LOG.from) && (!LOG.to || r.day <= LOG.to) &&
                 (!LOG.person || logName(r.en) === LOG.person) &&
                 (!LOG.building || (LOG.building === '__none' ? !r.building : r.building === LOG.building)) &&
@@ -40335,9 +41488,13 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 const out = [], en = r.en;
                 if (r.removed) out.push(['bad', `🗑️ removed by ${logDevice(r.removed.by) || 'the office'} ${logStamp(r.removed.at)}${r.removed.approvedBy ? ` · approved by ${r.removed.approvedBy}` : ''}`]);
                 if (en.note) out.push(['note', `📝 ${en.note}`]);   // what they were doing, in their words (DailyWizard)
-                if (!en.initials?.strokes?.length) out.push(en.enteredBy?.strokes?.length ? ['', `🏢 entered in the Tasks tab by ${en.enteredBy.name || '?'} (floor manager)`]
+                if (!FloorPin.signed(en.initials)) out.push(FloorPin.signed(en.enteredBy) ? ['', `🏢 entered in the Tasks tab by ${en.enteredBy.name || '?'} (floor manager${en.enteredBy.badge ? ', 🪪 badge' : ''})`]
                     : ['warn', en.at ? '✍️ no initials' : '⌨️ typed in the Tasks tab — not signed']);
-                if (en.at) {
+                if (en.crewSize > 0) out.push(['', `👥 crew of ${en.crewSize} · ${logFmt(logHours(en) / en.crewSize)} each`]);
+                if (en.closedBy) out.push(['warn', `⏰ forgot to sign out — closing time set by ${en.closedBy.name || '?'} (floor manager${en.closedBy.badge ? ', 🪪 badge' : ''})`]);
+                if (en._pending) out.push(['warn', `⏳ ${DB.data.buildings?.[r.building]?.name || r.building || 'its building'}'s device files these hours when it next opens the files`]);
+                if (!r.removed && en.scan?.in && en.scan?.out && overlaps(en)) out.push(['warn', '⚠️ overlaps another sign-in of theirs']);
+                if (en.at && !en.closedBy) {
                     const loggedDay = localDateStr(new Date(en.at));
                     const late = Math.round((parseISO(loggedDay) - parseISO(r.day)) / 86400000);
                     if (late > 0) out.push(['warn', `⏰ logged ${late} day${late === 1 ? '' : 's'} later`]);
@@ -40361,7 +41518,9 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 hours: shownLive.reduce((s, r) => s + logHours(r.en), 0),
                 people: new Set(shownLive.map(r => logName(r.en))).size,
                 signed: shownLive.filter(r => logSignature(r.en)).length,
-                late: shownLive.filter(r => r.en.at && localDateStr(new Date(r.en.at)) > r.day).length,
+                scanned: shownLive.filter(r => r.en.scan?.in).length,
+                forgot: shownLive.filter(r => r.en.closedBy).length,
+                late: shownLive.filter(r => r.en.at && !r.en.closedBy && localDateStr(new Date(r.en.at)) > r.day).length,
                 changed: shownLive.filter(r => r.en.editedAt && r.en.signedHours !== undefined).length,
                 removed: rows.length - shownLive.length,
                 longDays: new Set(shownLive.filter(r => (personDay.get(`${logName(r.en)}|${r.day}`) || 0) > LOG_LONG_DAY).map(r => `${logName(r.en)}|${r.day}`)).size
@@ -40402,7 +41561,8 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const S = M.summary;
             const chip = (label, value, warn) => `<span class="log-chip${warn ? ' warn' : ''}">${label} <strong>${value}</strong></span>`;
             let html = `<div class="log-chips">${chip('Entries', S.entries)}${chip('Hours', logFmt(S.hours))}${chip('People', S.people)}` +
-                chip('✍️ Signed', S.signed) + chip('⌨️ Not signed', S.entries - S.signed, S.entries - S.signed > 0) +
+                chip('✍️ Signed', S.signed) + chip('🪪 Scanned', S.scanned) + chip('⌨️ Not signed', S.entries - S.signed, S.entries - S.signed > 0) +
+                chip('⏰ Forgot to sign out', S.forgot, S.forgot > 0) +
                 chip('⏰ Logged late', S.late, S.late > 0) + chip('✏️ Changed after signing', S.changed, S.changed > 0) +
                 chip(`⚠️ Days over ${LOG_LONG_DAY}h`, S.longDays, S.longDays > 0) + (LOG.removed ? chip('🗑️ Removed', S.removed, S.removed > 0) : '') + '</div>';
             if (!M.rows.length) return html + '<div class="log-empty">No hours logged for these filters.</div>';
@@ -40448,13 +41608,15 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                     const i = LOG.shown.push(r) - 1, en = r.en;
                     const bName = r.building ? (DB.data.buildings?.[r.building]?.name || r.building) : 'No building known';
                     const ini = logSignature(en);
-                    const sig = ini
-                        ? `<button type="button" class="log-sig" data-sig="${i}" title="Show the initials larger">${logInitialsSvg(ini)}</button>${ini === en.enteredBy ? `<span class="log-sub">${escapeHtml(ini.name || '?')} · office</span>` : ''}`
-                        : '<span class="log-nosig">not signed</span>';
+                    const sig = !ini ? '<span class="log-nosig">not signed</span>'
+                        : !ini.strokes?.length
+                            // 🪪 a badge: a sign-in shows its times; a badge sign-off its number
+                            ? `<span class="log-badge" title="Signed with badge #${escapeHtml(ini.badge || '?')} (${escapeHtml(ini.name || '?')})">🪪 ${en.scan?.in && en.scan?.out && ini === en.initials ? `${escapeHtml(logClock(en.scan.in))} → ${escapeHtml(logClock(en.scan.out))}` : '#' + escapeHtml(ini.badge || '?')}</span>${ini === en.enteredBy ? `<span class="log-sub">${escapeHtml(ini.name || '?')} · office</span>` : ''}`
+                            : `<button type="button" class="log-sig" data-sig="${i}" title="Show the initials larger">${logInitialsSvg(ini)}</button>${ini === en.enteredBy ? `<span class="log-sub">${escapeHtml(ini.name || '?')} · office</span>` : ''}`;
                     const logged = en.at ? `${escapeHtml(logStamp(en.at))}<span class="log-sub">on ${escapeHtml(logDevice(en.by) || 'unknown device')}</span>` : '—<span class="log-sub">Tasks tab</span>';
                     html += `<tr${r.removed ? ' class="removed"' : ''}>` +
                         (LOG.group !== 'day' ? `<td style="white-space:nowrap">${escapeHtml(logDayTitle(r.day))}</td>` : '') +
-                        (LOG.group !== 'person' ? `<td><strong>${escapeHtml(logName(en))}</strong></td>` : '') +
+                        (LOG.group !== 'person' ? `<td><strong>${escapeHtml(logWho(en))}</strong></td>` : '') +
                         (LOG.group !== 'task' ? `<td><span class="log-what">${escapeHtml(r.label)}</span><span class="log-sub">${escapeHtml([LOG_KIND_LABEL[r.kind], bName, r.where].filter(Boolean).join(' · '))}</span></td>` : '') +
                         `<td class="num">${logFmt(logHours(en))}</td><td>${sig}</td><td>${logged}</td>` +
                         `<td class="log-notes">${M.flags(r).map(([cls, t]) => `<span class="log-flag${cls ? ' ' + cls : ''}">${escapeHtml(t)}</span>`).join('')}</td></tr>`;
@@ -40471,6 +41633,117 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
             const M = logModel();
             logFillFilters(M.all);
             $('logBody').innerHTML = logHtml(M);
+            $('logOpen').innerHTML = logOpenHtml(true);
+        }
+
+        // ---- ⏰ Still signed in (user decision 2026-10-28) ----
+        // DailyWizard's sign-ins not closed yet (_DailyWizard.buildings[<id>].signIns), across every building on the office
+        // and this building's on a building device. One someone forgot to close (signed in on an earlier day, or for 16
+        // hours or more) can't be closed by their own badge: a floor manager sets its closing time here, with their PIN and
+        // initials or their badge. It's kept as
+        //   _EmployeeWizard.closings[<si_…>] = { bid, out, setBy: { name, strokes | badge }, at, by }
+        // and SitkaTools turns it into the sign-in's hours (SignIns.settle): at once on the building's own device or with a
+        // single file; from the office, in Main.json until that building's device next opens the files and files them.
+        // The only thing on this tab that writes; the log below stays read-only.
+        const LOG_FORGET_MS = 16 * 3600 * 1000;
+        const logSignInForgotten = s => !Number.isFinite(Date.parse(s?.since)) || localDateStr(new Date(s.since)) < localDateStr(new Date()) || Date.now() - Date.parse(s.since) >= LOG_FORGET_MS;
+        function logOpenSignIns() {
+            const out = [];
+            for (const [bid, b] of Object.entries(DB.data._DailyWizard?.buildings || {})) {
+                if (DeviceView.building && bid !== DeviceView.building) continue;
+                for (const [sid, s] of Object.entries(b?.signIns || {})) if (s?.since) out.push({ bid, sid, s, closing: DB.data._EmployeeWizard?.closings?.[sid] || null });
+            }
+            return out.sort((a, b) => String(a.s.since).localeCompare(String(b.s.since)));
+        }
+        const logSignInWho = s => s.crewSize > 0 ? `👥 ${s.employee} × ${s.crewSize}` : s.employee;
+        function logOpenHtml(interactive) {
+            const list = logOpenSignIns();
+            if (!list.length) return '';
+            const rows = list.map(({ bid, sid, s, closing }) => {
+                const forgot = logSignInForgotten(s);
+                const bName = DB.data.buildings?.[bid]?.name || bid;
+                const status = closing
+                    ? `<span class="pending">⏳ closing time ${escapeHtml(logStamp(closing.out))} set by ${escapeHtml(closing.setBy?.name || '?')} — ${escapeHtml(bName)}'s device files the hours when it next opens the files</span>`
+                    : forgot ? '<span class="forgot">⏰ forgot to sign out</span>'
+                    : `on now · ${escapeHtml(logFmt((Date.now() - Date.parse(s.since)) / 3600000))}`;
+                const btn = interactive ? `<button type="button" class="btn btn-secondary" data-closing="${escapeHtml(sid)}">${closing ? 'Change closing time' : 'Set closing time'}</button>` : '';
+                return `<tr><td><strong>${escapeHtml(logSignInWho(s))}</strong></td><td><span class="log-what">${escapeHtml(s.title || s.item || '')}</span><span class="log-sub">${escapeHtml(bName)}</span></td>` +
+                    `<td style="white-space:nowrap">${escapeHtml(logStamp(s.since))}</td><td>${status}</td><td>${btn}</td></tr>`;
+            }).join('');
+            const forgotten = list.filter(x => !x.closing && logSignInForgotten(x.s)).length;
+            return `<div class="log-section log-open"><h4>⏰ Still signed in<span>${list.length} sign-in${list.length === 1 ? '' : 's'}${forgotten ? ` · ${forgotten} forgot to sign out` : ''}</span></h4>` +
+                `<table class="log-table"><thead><tr><th>Who</th><th>Work</th><th>Since</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        }
+        $('logOpen').addEventListener('click', (e) => {
+            const sid = e.target.closest('[data-closing]')?.dataset.closing;
+            if (sid) openClosingDialog(sid);
+        });
+        // Set a forgotten (or still running) sign-in's closing time: the day and time, then a floor manager's sign-off
+        function openClosingDialog(sid) {
+            const found = logOpenSignIns().find(x => x.sid === sid);
+            if (!found) { renderLabourLog(); return; }
+            const { bid, s } = found;
+            document.getElementById('closingDialog')?.remove();
+            const since = new Date(s.since), size = s.crewSize > 0 ? s.crewSize : null;
+            const today = localDateStr(new Date()), sinceDay = localDateStr(since);
+            const wrap = document.createElement('div');
+            wrap.className = 'applies-overlay';
+            wrap.id = 'closingDialog';
+            wrap.innerHTML = `<div class="applies-card closing-card" role="dialog" aria-modal="true">
+                <div class="applies-title">⏰ Closing time — ${escapeHtml(logSignInWho(s))}</div>
+                <div class="applies-note">${escapeHtml(s.title || s.item || '')} · ${escapeHtml(DB.data.buildings?.[bid]?.name || bid)}<br>Signed in ${escapeHtml(logStamp(s.since))}. When did they stop? A floor manager signs it off.</div>
+                <label class="applies-label">Day <input type="date" class="cl-day" min="${sinceDay}" max="${today}" value="${sinceDay}"></label>
+                <label class="applies-label">Time <input type="time" class="cl-time"></label>
+                <div class="closing-hours"></div>
+                <div class="applies-actions"><button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button><button type="button" class="btn" data-act="ok">Save</button></div></div>`;
+            const out = () => {
+                const day = wrap.querySelector('.cl-day').value, time = wrap.querySelector('.cl-time').value;
+                return /^\d{4}-\d{2}-\d{2}$/.test(day) && /^\d{2}:\d{2}/.test(time) ? new Date(`${day}T${time}`) : null;
+            };
+            // What the closing time makes, or why it can't be used
+            const check = () => {
+                const t = out();
+                if (!t) return { error: 'Pick the day and the time they stopped' };
+                const ms = t - since;
+                if (ms < 60000) return { error: 'That’s before they signed in (or under a minute after)' };
+                if (t > new Date()) return { error: 'That’s later than now' };
+                if (ms > LOG_FORGET_MS) return { error: 'That’s more than 16 hours after they signed in — check the time' };
+                const minutes = Math.round(ms / 60000);
+                return { t, minutes, text: `→ ${logFmt(minutes / 60)}${size ? ` each × ${size} = ${logFmt(minutes * size / 60)}` : ''}` };
+            };
+            const show = () => {
+                const c = check(), el = wrap.querySelector('.closing-hours');
+                el.textContent = c.error || c.text;
+                el.classList.toggle('bad', !!c.error);
+            };
+            wrap.addEventListener('input', show);
+            wrap.addEventListener('click', async (ev) => {
+                const act = ev.target.closest('[data-act]')?.dataset.act;
+                if (act === 'cancel') { wrap.remove(); return; }
+                if (act !== 'ok') return;
+                const c = check();
+                if (c.error) { show(); return; }
+                wrap.remove();
+                const sign = await FloorPin.ask(`Closing time for ${logSignInWho(s)} on ${s.title || 'the task'}: ${logStamp(c.t.toISOString())} (${c.text.replace('→ ', '')})`, { initials: true });
+                if (!sign) return;
+                // The DB as it is now: the sign-in may have been closed meanwhile (a live update)
+                const still = DB.data._DailyWizard?.buildings?.[bid]?.signIns?.[sid];
+                if (!still) { showToast('That sign-in was closed meanwhile — nothing was changed'); renderLabourLog(); return; }
+                const ew = DB.data._EmployeeWizard || (DB.data._EmployeeWizard = { employees: {} });
+                (ew.closings || (ew.closings = {}))[sid] = {
+                    bid, out: c.t.toISOString(),
+                    setBy: { name: sign.name, ...(sign.badge ? { badge: sign.badge } : { strokes: (sign.initials?.strokes || []).map(st => st.slice()) }) },
+                    at: new Date().toISOString(), by: DeviceView.building || 'office'
+                };
+                notifySitkaTools();   // SitkaTools files it as hours (its own building's device, or one file) or shows it until then
+                renderLabourLog();
+                const filed = !DB.data._DailyWizard?.buildings?.[bid]?.signIns?.[sid];
+                showToast(filed ? `⏰ ${logSignInWho(s)}: ${c.text.replace('→ ', '')} logged on ${s.title || 'the task'}`
+                    : `⏰ Closing time saved — ${DB.data.buildings?.[bid]?.name || bid}'s device files the hours the next time it opens the files (💾 Save DB first)`);
+            });
+            document.body.appendChild(wrap);
+            show();
+            wrap.querySelector('.cl-time').focus();
         }
 
         // Filters
@@ -40508,7 +41781,7 @@ document.getElementById('bpPrint').addEventListener('click', () => window.print(
                 .log-sig { cursor: default; } .log-table tr { break-inside: avoid; } @media print { .log-section { overflow: visible; } }`)}</head><body>${rptPrintBody(`
 <div class="bp-bar"><span>Labour Log</span><button type="button" id="bpPrint">🖨️ Print / Save as PDF</button></div>
 <header class="bp-head"><h1>SitkaTools — Labour Log</h1><p>${escapeHtml(scope)}</p><p>Printed ${escapeHtml(new Date().toLocaleString())}</p></header>
-${logHtml(M)}
+${logOpenHtml(false)}${logHtml(M)}
 `)}
 <script>document.getElementById('bpPrint').addEventListener('click', () => window.print());<\/script></body></html>`);
             win.document.close();
