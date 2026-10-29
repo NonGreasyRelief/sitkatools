@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · SitkaTools' calendar gets a 4th view, 🚀 Launch windows: the 10 weekly flip windows of the default recipe's 70-day cycle as a staircase timeline, one row per week, oldest crop in bloom first; real lots with a flip scheduled and CropLabourWizard's projected lots take their week; one set of 10 for the whole facility (the building filter or a building device narrows it)
 - 2026-10-29 · the lot dropdowns' phase emoji is 🍂 for a lot whose current room is designated Dry/Trim (after ✂️ / 🍂 for its trim or drying log, before its stage)
 - 2026-10-29 · the Lot Manager lists the lots for flower rooms first and the 🌿 mother lots under them, each by lot number, lowest first (it was newest first)
 - 2026-10-29 · the recipe editor shows the weekday each task lands on, from a "Day 1 (clones cut) is a …" picker that opens on the weekday putting the harvest on a Friday; a guide only, not saved with the recipe

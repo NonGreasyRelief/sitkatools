@@ -1583,7 +1583,10 @@
         .launch-panel.warn h3 { color: var(--warning); }
         .launch-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; line-height: 1.4; }
         .launch-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .launch-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .launch-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.85rem; }
+        .launch-table td:first-child { white-space: nowrap; }
+        .launch-table td.free { min-width: 9rem; }
+        .launch-table td.notes { min-width: 15rem; }
         .launch-table th, .launch-table td { padding: 6px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
         .launch-table th { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); white-space: nowrap; }
         .launch-table td.date { white-space: nowrap; }
@@ -1599,6 +1602,8 @@
 
         .view-toggle-group {
             display: flex;
+            flex-wrap: wrap;   /* four views: they wrap on a phone rather than widen the page */
+            justify-content: center;
             gap: 6px;
             margin-left: 16px;
         }
@@ -2429,7 +2434,8 @@
                 max-width: 100%;
             }
 
-            /* 🚀 Launch windows: a narrower label column; the timeline scrolls in its own box */
+            /* 🚀 Launch windows: a narrower label column; the timeline and table scroll in their own boxes */
+            .view-toggle-group { margin-left: 0; }
             .launch-row { grid-template-columns: 5.25rem minmax(0, 1fr); }
             .launch-chart { padding: 4px 6px 8px; }
 
@@ -7873,7 +7879,7 @@
                         <select id="startRoom">
                             <option value="clone" selected>Clone room</option>
                             <option value="veg">Veg room (purchased clones go straight to veg)</option>
-                            <option value="flower">Flower room (final destination)</option>
+                            <option value="flower">Final destination (Flower/Mother room)</option>
                         </select>
                     </div>
                     <div class="form-group" id="receivedFromGroup" style="display: none;">
@@ -14841,7 +14847,8 @@
             const dryRoom = dryRoomInput.value;
             const trimRoom = trimRoomInput.value;
             // Starting room: where the lot physically begins — clone room, straight to veg
-            // when purchased clones skip cloning, or the final destination flower room.
+            // when purchased clones skip cloning, or its final destination (destRoom: a flower room, or a mother lot's
+            // Mother room; the option reads "Final destination (Flower/Mother room)", user request 2026-10-29).
             // PaperWizard's grow logs overwrite this as the lot actually moves (currentRoom write-back).
             const startRoomValue = $('startRoom') ? $('startRoom').value : 'clone';
             let currentRoom;
@@ -17509,12 +17516,12 @@
                 const open = M.rows.filter(r => !r.taken).sort((a, b) => a.next.flip.localeCompare(b.next.flip));
                 const tableRows = open.map(r => {
                     const n = r.next, notes = [];
-                    if (n.cutPassed) notes.push(`<span class="warn">Clone-cut day has passed: needs rooted clones, or the next window, ${escapeHtml(fmtY(n.again))}</span>`);
+                    if (n.cutPassed) notes.push(`<span class="warn">Clone-cut day passed: rooted clones only · next window ${escapeHtml(fmtY(n.again))}</span>`);
                     for (const h of n.holidays) notes.push(`🏛️ ${escapeHtml(h.what)} on ${escapeHtml(h.holiday.name)}`);
                     const free = n.freeRooms.length ? n.freeRooms.map(rm => escapeHtml(rm.name)).join(', ') : '<span class="muted">none free</span>';
                     return `<tr data-row="${r.k + 1}"><td>Wk ${r.k + 1}</td><td class="date"><b>${escapeHtml(fmtY(n.flip))}</b></td>
                         <td class="date${n.cutPassed ? ' muted' : ''}">${escapeHtml(fmtY(n.cut))}</td><td class="date">${escapeHtml(fmtY(n.harvest))}</td>
-                        <td class="free">${free}</td><td>${notes.join('<br>') || '<span class="muted">—</span>'}</td></tr>`;
+                        <td class="free">${free}</td><td class="notes">${notes.join('<br>') || '<span class="muted">—</span>'}</td></tr>`;
                 }).join('');
                 const openPanel = `<section class="launch-panel">
                     <h3>🚀 Open launch windows</h3>
