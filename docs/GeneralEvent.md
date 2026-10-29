@@ -9,6 +9,7 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
 ## The Form
 
 - **Fields:** event text, date (today's local date by default) and an opening emoji (📌 by default). End date and start / end time are optional.
+- **Emoji:** twelve quick picks, then **＋ More…** for every emoji (user request 2026-10-28): DailyWizard's picker (`EmojiKit`: search, Unicode's groups, only what the device can draw; `docs/DailyWizard.md` → "Emoji Picker"), in a panel under the row that a click outside closes. One picked there gets a button of its own before ＋ More…, picked; adding the event or Clear puts the form back to 📌.
 - The end date must be on or after the start date. `endDate` is written only when it differs from `date`. Changing the start time clears an end time before it only on a one-day event (review H8).
 
 ## Calendar Events
@@ -23,7 +24,7 @@ Puts quick standalone events on the shared calendar: reminders and milestones th
 ## `_GeneralEvent.events` Log
 
 - **Rows:** one per GeneralEvent calendar event, `{ id, text, date, endDate, startTime, endTime, emoji, createdAt }`. A row's `id` is its calendar event's `id`.
-- **Rebuild:** `reconcileLog()` rebuilds the whole log from `calendarEvents` every time a DB arrives, both on open and on live updates. It splits the emoji and text back out of each title.
+- **Rebuild:** `reconcileLog()` rebuilds the whole log from `calendarEvents` every time a DB arrives, both on open and on live updates. It splits the emoji and text back out of each title — the whole emoji, a flag or people joined with ZWJ too (`EmojiKit.split`).
   - The rebuild replaces the log; it never merges. Old rows keyed `date|text` disappear.
   - A row keeps the `createdAt` it was first logged with; the rebuild doesn't re-stamp it (review H8).
 - **✕ Delete** asks first, then removes exactly that one event by id. Another event with the same text on the same day stays.
