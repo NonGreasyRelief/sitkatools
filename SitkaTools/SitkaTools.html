@@ -3808,6 +3808,15 @@
 
         .btn-danger:hover { background: var(--danger-hover); }
 
+        /* ---- Closing with changed dates not saved (user request 2026-10-28) ---- */
+        .close-ask { position: fixed; inset: 0; z-index: 500; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .close-ask[hidden] { display: none; }
+        .close-ask-card { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; padding: 20px; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+        .close-ask-title { font-size: 1.1rem; font-weight: 700; line-height: 1.35; }
+        .close-ask-text { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
+        .close-ask-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+        .close-ask-actions .btn { min-height: 48px; flex: 1 1 180px; }
+
         /* ---- Footer ---- */
         .footer {
             background: var(--bg-secondary);
@@ -3819,6 +3828,22 @@
             position: sticky;
             bottom: 0;
             z-index: 100;
+        }
+
+        /* ---- Footer actions (user request 2026-10-28): delete / clear on the left, Close Tool (or ‹ Back) in the middle,
+           the main action on the right — the same shape in CropLabourWizard's schedule and recipe editor and PaperWizard's
+           sheet editor ---- */
+        .footer.foot-actions, .overlay-footer.foot-actions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+        .foot-actions .foot-left { justify-self: start; display: flex; gap: 10px; }
+        .foot-actions .foot-mid { justify-self: center; }
+        .foot-actions .foot-right { justify-self: end; display: flex; gap: 10px; }
+        .foot-actions .foot-btn { min-height: 44px; padding: 0 22px; border-radius: var(--radius); font-size: 0.9rem; font-weight: 600; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 180px; }
+        .foot-actions [hidden] { display: none !important; }
+        @media (max-width: 640px) {
+            .footer.foot-actions, .overlay-footer.foot-actions { grid-template-columns: 1fr 1fr; }
+            .foot-actions .foot-mid { grid-column: 1 / -1; grid-row: 2; }
+            .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 0; }
         }
 
         /* 📅 Applies from — changed prices */
@@ -4458,10 +4483,9 @@
             border-bottom: 1px solid var(--border);
         }
         .overlay-title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
-        /* The recipe screen's footer: ‹ Back in the middle, Save Recipe (editing) on the right */
-        .overlay-footer.recipe-footer { display: grid; grid-template-columns: 1fr auto 1fr; }
-        .recipe-footer #recipeFooterBackBtn { grid-column: 2; }
-        .recipe-footer #recipeEditorSaveBtn { grid-column: 3; justify-self: end; }
+        /* The recipe screen's footer: ‹ Back in the middle, Save Recipe (editing) on the right (.foot-actions), drawn like the
+           tool's own footer (85 %) */
+        .overlay-footer.recipe-footer { zoom: 0.85; padding: 12px 24px; }
         .overlay-body {
             flex: 1;
             overflow-y: auto;
@@ -5605,6 +5629,22 @@
             z-index: 100;
         }
 
+        /* ---- Footer actions (user request 2026-10-28): delete / clear on the left, Close Tool (or ‹ Back) in the middle,
+           the main action on the right — the same shape in CropLabourWizard's schedule and recipe editor and PaperWizard's
+           sheet editor ---- */
+        .footer.foot-actions, .overlay-footer.foot-actions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+        .foot-actions .foot-left { justify-self: start; display: flex; gap: 10px; }
+        .foot-actions .foot-mid { justify-self: center; }
+        .foot-actions .foot-right { justify-self: end; display: flex; gap: 10px; }
+        .foot-actions .foot-btn { min-height: 44px; padding: 0 22px; border-radius: var(--radius); font-size: 0.9rem; font-weight: 600; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 180px; }
+        .foot-actions [hidden] { display: none !important; }
+        @media (max-width: 640px) {
+            .footer.foot-actions, .overlay-footer.foot-actions { grid-template-columns: 1fr 1fr; }
+            .foot-actions .foot-mid { grid-column: 1 / -1; grid-row: 2; }
+            .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 0; }
+        }
+
         /* ---- Configure Sheets tab (Step 2) ---- */
         .cfg-toolbar {
             display: flex;
@@ -5989,8 +6029,6 @@
         }
         .q-check input { width: 16px; height: 16px; min-height: 0; margin: 0; }
 
-        .save-row { display: flex; gap: 10px; grid-column: 1 / -1; }
-        .save-row .btn { flex: 1; min-height: 42px; }
 
         /* ---- Filing Cabinet tree (Step 5) ---- */
         .cab-head {
@@ -8226,20 +8264,28 @@
             <!-- The lot's saved schedule (renderSavedSummary): what Generate saved; changes from it show in green -->
             <div id="configSummary" class="config-summary" style="display:none;"></div>
             <div id="previewTaskList"></div>
-            <div class="form-actions">
-                <button type="button" class="btn btn-danger" id="clearFormBtn">Clear Schedule</button>
-                <button type="submit" form="scheduleForm" class="btn btn-primary" id="generateBtn">Generate Schedule</button>
-            </div>
         </div>
 
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div style="display:flex; gap:8px; align-items:center;">
-            <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
-        </div>
+    <!-- Footer: Clear Schedule, Close Tool, Generate Schedule (user request 2026-10-28: they were under the task list) -->
+    <footer class="footer foot-actions">
+        <div class="foot-left"><button type="button" class="btn btn-danger foot-btn" id="clearFormBtn">Clear Schedule</button></div>
+        <div class="foot-mid"><button class="btn btn-secondary foot-btn" id="closeToolBtn">Close Tool</button></div>
+        <div class="foot-right"><button type="submit" form="scheduleForm" class="btn btn-primary foot-btn" id="generateBtn">Generate Schedule</button></div>
     </footer>
+
+    <!-- Closing with changed dates not saved (user request 2026-10-28): Close and discard, or Overwrite schedule then close -->
+    <div class="close-ask" id="closeAsk" hidden role="dialog" aria-modal="true" aria-labelledby="closeAskTitle">
+        <div class="close-ask-card">
+            <div class="close-ask-title" id="closeAskTitle">Close crop labour wizard without overwriting old values?</div>
+            <div class="close-ask-text" id="closeAskText"></div>
+            <div class="close-ask-actions">
+                <button type="button" class="btn btn-danger" id="closeAskDiscard">Close and discard</button>
+                <button type="button" class="btn btn-primary" id="closeAskOverwrite">Overwrite schedule then close</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
@@ -8357,9 +8403,10 @@
                 </div>
             </div>
         </div>
-        <footer class="overlay-footer recipe-footer">
-            <button class="btn btn-secondary" id="recipeFooterBackBtn">‹ Back</button>
-            <button class="btn btn-primary" id="recipeEditorSaveBtn" style="display:none;">Save Recipe</button>
+        <footer class="overlay-footer recipe-footer foot-actions">
+            <div class="foot-left"></div>
+            <div class="foot-mid"><button class="btn btn-secondary foot-btn" id="recipeFooterBackBtn">‹ Back</button></div>
+            <div class="foot-right"><button class="btn btn-primary foot-btn" id="recipeEditorSaveBtn" style="display:none;">Save Recipe</button></div>
         </footer>
     </div>
         </div></section>
@@ -8693,9 +8740,12 @@
         <section class="tab-panel" id="configurePanel"></section>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <button class="btn btn-secondary" id="closeToolBtn">Close Tool</button>
+    <!-- Footer: on Configure Sheets, 🗑 Delete sheet, Close Tool, 💾 Save sheet (user request 2026-10-28: they were under the
+         sheet editor) -->
+    <footer class="footer foot-actions">
+        <div class="foot-left"><button type="button" class="btn btn-danger foot-btn" id="deleteSheetBtn" hidden disabled>🗑 Delete sheet</button></div>
+        <div class="foot-mid"><button class="btn btn-secondary foot-btn" id="closeToolBtn">Close Tool</button></div>
+        <div class="foot-right"><button type="button" class="btn btn-primary foot-btn" id="saveSheetBtn" hidden disabled title="Save the sheet + wizard to the database">💾 Save sheet</button></div>
     </footer>
 
     <!-- Toast -->
@@ -8781,10 +8831,12 @@
                                 </div>
                                 <div class="emp-wage-history" id="empWageHistory" hidden title="A changed wage applies from the day picked: hours before it keep the old wage"></div>
                                 <label class="report-chk emp-fm" title="Floor managers sign crop and equipment tasks off as done in DailyWizard"><input type="checkbox" id="empFloorManager"> Floor manager — signs tasks off as done in DailyWizard</label>
-                                <!-- 🔒 Each floor manager's own PIN: DailyWizard's edit mode and deletions, deletions in the Tasks tab -->
+                                <!-- 🏢 Office access (user decision 2026-10-28): only these people's badge or PIN opens SitkaTools as the office -->
+                                <label class="report-chk emp-fm" title="Opening the files as the office (and bringing an office session back) asks for the badge or PIN of someone with office access"><input type="checkbox" id="empOfficeAccess"> 🏢 Office access — opens SitkaTools as the office with their badge or PIN</label>
+                                <!-- 🔒 Each floor manager's and office person's own PIN: DailyWizard's edit mode and deletions, deletions in the Tasks tab, the office -->
                                 <div class="emp-pin" id="empPinRow" hidden>
                                     <div class="form-group">
-                                        <label for="empPinInput">🔒 Floor manager PIN (4–8 digits)</label>
+                                        <label for="empPinInput">🔒 PIN (4–8 digits)</label>
                                         <input type="password" id="empPinInput" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
                                     </div>
                                     <div class="form-group">
@@ -9591,6 +9643,7 @@
                 }
                 if (!confirmDiscard()) return;
                 if (await DbSplit.open(set)) DbFolder.deactivate();
+                else if (!DB.fileName) showOverlay();   // not opened (the office gate cancelled) and nothing open: the start screen
                 return;
             }
             if (!file) {
@@ -10273,6 +10326,12 @@
                     this.role = before;
                     return false;
                 }
+                // 🔒 A restored session has no files to reopen, so open() can't ask: it becomes the office only with office
+                // access (OfficeGate), as reopening the files would
+                if (!set && role === 'office' && !await OfficeGate.ask(DB.data)) {
+                    this.role = before;
+                    return false;
+                }
                 // open() takes the device from the page link first; the address then says the device it is now
                 this.linkRole = role;
                 try { history.replaceState(history.state, '', this.linkFor(role)); } catch (_) { /* file:// may refuse: the link card shows it */ }
@@ -10283,8 +10342,13 @@
                 if (await this.open(set)) {
                     showSyncToast(`Reopened the files as ${this.roleLabel()}`);
                     WorkCopy.schedule();
+                    return true;
                 }
-                return true;
+                // Not reopened (the office gate was cancelled): this device stays as it was, and so does its link
+                this.role = before;
+                this.linkRole = before;
+                try { history.replaceState(history.state, '', this.linkFor(before)); } catch (_) { /* file:// may refuse */ }
+                return false;
             },
 
             // The files as this session opened or last saved them (memory only). Null unless it holds every file opened:
@@ -11231,7 +11295,13 @@
                     }
                 }
                 buildings = [...byBuilding.values()];
+                const roleBefore = this.role;
                 await this.ensureRole(main.buildings);
+                // 🔒 The office needs the badge or PIN of someone with office access, when Main's roster has one (OfficeGate)
+                if (this.role === 'office' && !await OfficeGate.ask(main)) {
+                    this.role = this.active ? roleBefore : null;   // nothing opened: the open session keeps its device, or the next open asks again
+                    return false;
+                }
                 if (this.role === 'office' && files.wages) {
                     try { wages = JSON.parse(files.wages.text); } catch (_) { alert('Wages.json could not be read — wages are not loaded.'); }
                 }
@@ -11778,6 +11848,498 @@
 
         // A tool's name as people see it (EmployeeWizard is shown as the Labour & Cost Wizard)
         const toolDisplayName = id => ({ EmployeeWizard: 'Labour & Cost Wizard' })[id] || id;
+        // ---- 🔒 Floor manager PINs and 🪪 badge scans: one kit (user decisions 2026-10-22, 2026-10-28) ----
+        // makeFloorPinKit(document, data, tr, kind) → { FloorPin, BadgeScan }, an instance each for DailyWizard, the Labour &
+        // Cost Wizard and SitkaTools' office gate: `document` is where the dialog and the scan listener go (a tool's own, or
+        // the page's), data() the database (its _EmployeeWizard roster), tr a translation (DailyWizard's T) or null.
+        // kind 'floor' (the default) asks a floor manager; 'office' (the office gate) asks someone with office access
+        // (employees[name].officeAccess, user decision 2026-10-28): a floor manager's PIN or badge doesn't open the office.
+        function makeFloorPinKit(document, data = () => null, tr = null, kind = 'floor') {
+            const OFFICE = kind === 'office';
+            // Who may answer this kit's dialog (temp crews never)
+            const eligible = e => !!e && e.crew !== true && (OFFICE ? e.officeAccess === true : e.floorManager === true);
+            // The dialog's words that differ (the floor ones are DailyWizard's translation keys: keep them as they are)
+            const WORDS = OFFICE ? {
+                title: '🔒 Office access',
+                none: 'No one has office access yet. The office sets it in the Labour & Cost Wizard: Employees → tick Office access → PIN or badge.',
+                who: 'Your name',
+                scanOnly: '🪪 Scan your office badge',
+                notOne: 'Only office staff can open the office — {name} doesn’t have office access'
+            } : {
+                title: '🔒 Floor manager PIN',
+                none: 'No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.',
+                who: 'Floor manager',
+                scanOnly: '🪪 Scan your floor manager badge',
+                notOne: 'Only a floor manager can approve this — {name} isn’t one'
+            };
+            // Each floor manager (_EmployeeWizard.employees[name].floorManager) has their own PIN, set by the office in the
+            // Labour & Cost Wizard's employee editor and kept in Main.json only as a salted SHA-256 hash:
+            //   employees[name].pin = { salt, hash, setAt }
+            // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
+            // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
+            // developer tools: the drawn initials and the removal records are the real control.
+            // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
+            // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
+            // normalized 0–1, like DailyWizard's hours entries.
+            // 🪪 Badges (user decision 2026-10-28): every employee and temp crew may have a badge, a Code 128 barcode of 16
+            // digits — a 4-digit badge number (printed on the card) then 12 secret digits. Main.json keeps only
+            //   employees[name].badge = { no, salt, hash, madeAt }   hash: SHA-256 of `${salt}:${secret}`, like a PIN
+            //   employees[name].badgeRetired = [{ no, until }]       badges replaced since (a scan of one says so)
+            // A floor manager's badge stands in for both their PIN and their initials, wherever ask() is used: it resolves
+            // { name, badge: no } (with { initials: true }: plus initials = { name, badge: no }, a signature with no strokes).
+            const FloorPin = {
+                WAIT_AFTER: 5,          // wrong PINs (or badges not recognized) in a row before a one-minute wait
+                WAIT_MS: 60 * 1000,
+                _fails: 0,
+                _waitUntil: 0,
+                _el: null,
+                _done: null,
+                _wantInitials: false,
+                _strokes: [],
+                _unscan: null,
+                tr(s, v) {
+                    if (tr) return tr(s, v);
+                    return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
+                },
+                _emps() { return data()?._EmployeeWizard?.employees || {}; },
+                // Floor managers who can sign off — with a PIN, or with a badge — by name (temp crews never are); for the
+                // office gate, the people with office access instead
+                managers() {
+                    const emps = this._emps();
+                    return Object.keys(emps).filter(n => eligible(emps[n]) &&
+                        ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || this.hasBadge(emps[n]))).sort((a, b) => a.localeCompare(b));
+                },
+                // …the ones who have a PIN (the name list next to the PIN box)
+                pinManagers() {
+                    const emps = this._emps();
+                    return this.managers().filter(n => emps[n]?.pin?.hash && emps[n]?.pin?.salt);
+                },
+                hasBadge: emp => !!(emp?.badge?.no && emp.badge.salt && emp.badge.hash),
+                // A scanned (or typed) badge code → { name, no, crew, floorManager }, or { error: 'unknown' | 'replaced', name? }
+                BADGE_RE: /^\d{16}$/,
+                async verifyBadge(code) {
+                    code = String(code || '').trim();
+                    if (!this.BADGE_RE.test(code)) return { error: 'unknown' };
+                    const no = code.slice(0, 4), secret = code.slice(4), emps = this._emps();
+                    for (const [name, e] of Object.entries(emps)) {
+                        if (!this.hasBadge(e) || e.badge.no !== no) continue;
+                        if ((await this.hash(e.badge.salt, secret)) === e.badge.hash) return { name, no, crew: e.crew === true, floorManager: e.floorManager === true && e.crew !== true, office: e.officeAccess === true && e.crew !== true };
+                    }
+                    for (const [name, e] of Object.entries(emps)) {
+                        const r = (Array.isArray(e?.badgeRetired) ? e.badgeRetired : []).find(x => x?.no === no);
+                        if (r) return { error: 'replaced', name, until: r.until || '' };
+                    }
+                    return { error: 'unknown' };
+                },
+                // A new badge: a number no badge has had (current or replaced), 12 secret digits, and the record to keep.
+                // The code itself is never stored: it's printed once (the Labour & Cost Wizard keeps it while it's open).
+                async makeBadge() {
+                    const used = new Set();
+                    for (const e of Object.values(this._emps())) {
+                        if (e?.badge?.no) used.add(e.badge.no);
+                        for (const r of Array.isArray(e?.badgeRetired) ? e.badgeRetired : []) if (r?.no) used.add(r.no);
+                    }
+                    const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => String(v % 10)).join('');
+                    let no = '';
+                    for (let i = 0; i < 200 && (!no || used.has(no)); i++) no = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+                    if (used.has(no)) for (let v = 1000; v <= 9999; v++) if (!used.has(String(v))) { no = String(v); break; }
+                    const secret = digits(12);
+                    const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                    return { code: no + secret, record: { no, salt, hash: await this.hash(salt, secret) } };
+                },
+                // A signature: drawn initials ({ name, strokes }) or a badge scan ({ name, badge })
+                signed: sig => !!(sig && ((Array.isArray(sig.strokes) && sig.strokes.length) || sig.badge)),
+                // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
+                async hash(salt, pin) {
+                    const text = `${salt}:${pin}`;
+                    try {
+                        if (window.crypto?.subtle) {
+                            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+                            return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+                        }
+                    } catch (_) { /* fall back */ }
+                    return this.sha256(text);
+                },
+                sha256(text) {
+                    const K = [], H = [];
+                    const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
+                    for (let n = 2, c = 0; c < 64; n++) {
+                        let prime = true;
+                        for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+                        if (!prime) continue;
+                        if (c < 8) H[c] = frac(Math.sqrt(n));
+                        K[c++] = frac(Math.cbrt(n));
+                    }
+                    const bytes = Array.from(new TextEncoder().encode(text));
+                    const bits = bytes.length * 8;
+                    bytes.push(0x80);
+                    while (bytes.length % 64 !== 56) bytes.push(0);
+                    for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
+                    const rot = (x, r) => (x >>> r) | (x << (32 - r));
+                    const w = new Array(64);
+                    for (let o = 0; o < bytes.length; o += 64) {
+                        for (let j = 0; j < 16; j++) w[j] = (bytes[o + 4 * j] << 24) | (bytes[o + 4 * j + 1] << 16) | (bytes[o + 4 * j + 2] << 8) | bytes[o + 4 * j + 3];
+                        for (let j = 16; j < 64; j++) {
+                            const s0 = rot(w[j - 15], 7) ^ rot(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+                            const s1 = rot(w[j - 2], 17) ^ rot(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+                            w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+                        }
+                        let [a, b, c, d, e, f, g, h] = H;
+                        for (let j = 0; j < 64; j++) {
+                            const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[j] + w[j]) | 0;
+                            const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+                            h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+                        }
+                        [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
+                    }
+                    return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+                },
+                // A new PIN's record (4–8 digits; the caller checks the format)
+                // Drawn initials, smaller (review H2): when the pen lifts, the points that don't change the line's shape are
+                // dropped (Ramer–Douglas–Peucker, within 0.003 of the pad: under a pixel at the pad's size). The stroke is
+                // [x0, y0, x1, y1, …] with 3 decimals; it looks the same and takes a fraction of the space.
+                slimStroke(pts, eps = 0.003) {
+                    const n = Math.floor((pts || []).length / 2);
+                    if (n <= 2) return (pts || []).slice();
+                    const keep = new Uint8Array(n);
+                    keep[0] = keep[n - 1] = 1;
+                    const stack = [[0, n - 1]];
+                    while (stack.length) {
+                        const [a, z] = stack.pop();
+                        const ax = pts[2 * a], ay = pts[2 * a + 1], dx = pts[2 * z] - ax, dy = pts[2 * z + 1] - ay, len = Math.hypot(dx, dy);
+                        let far = -1, dmax = eps;
+                        for (let i = a + 1; i < z; i++) {
+                            const px = pts[2 * i] - ax, py = pts[2 * i + 1] - ay;
+                            const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(dy * px - dx * py) / len;
+                            if (d > dmax) { dmax = d; far = i; }
+                        }
+                        if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, z]); }
+                    }
+                    const out = [];
+                    for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[2 * i], pts[2 * i + 1]);
+                    return out;
+                },
+                async make(pin) {
+                    const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
+                    return { salt, hash: await this.hash(salt, pin) };
+                },
+                // Only the PIN of someone this kit asks counts: an office person's PIN signs nothing off as floor manager,
+                // and a floor manager's doesn't open the office
+                async check(name, pin) {
+                    const emp = data()?._EmployeeWizard?.employees?.[name], rec = emp?.pin;
+                    return eligible(emp) && !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
+                },
+                // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials) — or a scan of their
+                // badge. Resolves { name } (plus initials, or badge) once it's right, or null (cancelled).
+                ask(why, opts = {}) {
+                    if (this._done) this._finish(null);
+                    this._build();
+                    const el = this._el, names = this.pinManagers(), emps = this._emps();
+                    const badges = this.managers().some(n => this.hasBadge(emps[n]));
+                    const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
+                    this._wantInitials = !!opts.initials;
+                    this._strokes = [];
+                    // The words are set on every ask, so they follow DailyWizard's language
+                    el.querySelector('.fpin-title').textContent = this.tr(this._wantInitials ? '✍️ Floor manager sign-off' : WORDS.title);
+                    el.querySelector('[data-fpin-sign-label]').textContent = this.tr('Your initials — draw them');
+                    el.querySelector('[data-fpin-clear]').textContent = this.tr('Clear initials');
+                    el.querySelector('[data-fpin-none]').textContent = this.tr(WORDS.none);
+                    el.querySelector('label[for="floorPinWho"]').textContent = this.tr(WORDS.who);
+                    el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
+                    el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
+                    el.querySelector('[data-fpin-why]').textContent = why || '';
+                    el.querySelector('[data-fpin-err]').textContent = '';
+                    // 🪪 Scanning a floor manager's badge is the whole sign-off (no PIN, no initials)
+                    const scan = el.querySelector('[data-fpin-scan]');
+                    scan.textContent = this.tr(names.length ? '🪪 Scan your badge — or pick your name and type your PIN' : WORDS.scanOnly);
+                    scan.hidden = !badges;
+                    const none = !names.length && !badges, pinOff = !names.length;
+                    el.querySelector('[data-fpin-none]').hidden = !none;
+                    el.querySelector('[data-fpin-fields]').hidden = pinOff;
+                    el.querySelector('[data-fpin-ok]').hidden = pinOff;
+                    el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
+                    const sign = el.querySelector('[data-fpin-sign]');
+                    sign.hidden = pinOff || !this._wantInitials;
+                    who.innerHTML = '';
+                    if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
+                    for (const n of names) who.appendChild(new Option(n, n));
+                    pin.value = '';
+                    el.hidden = false;
+                    if (!sign.hidden) this._sizePad();
+                    (pinOff ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
+                    if (this._unscan) this._unscan();
+                    this._unscan = BadgeScan.push(code => this._scanned(code));   // a scan never reaches what's under the dialog
+                    return new Promise(resolve => { this._done = resolve; });
+                },
+                _finish(result) {
+                    const done = this._done;
+                    this._done = null;
+                    if (this._unscan) { this._unscan(); this._unscan = null; }
+                    if (this._el) this._el.hidden = true;
+                    if (done) done(result);
+                },
+                // A badge scanned while the dialog is open: a floor manager's signs off at once
+                async _scanned(code) {
+                    const el = this._el, err = el.querySelector('[data-fpin-err]'), asking = this._done;
+                    if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                    const r = await this.verifyBadge(code);
+                    if (!asking || this._done !== asking) return;   // closed meanwhile
+                    if (r.error) {
+                        if (++this._fails >= this.WAIT_AFTER) { this._fails = 0; this._waitUntil = Date.now() + this.WAIT_MS; err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); }
+                        else err.textContent = r.error === 'replaced' ? this.tr('That badge was replaced — use the new one') : this.tr('Badge not recognized — try again');
+                        return;
+                    }
+                    if (!(OFFICE ? r.office : r.floorManager)) { err.textContent = this.tr(WORDS.notOne, { name: r.name }); return; }
+                    this._fails = 0;
+                    const sig = { name: r.name, badge: r.no };
+                    this._finish(this._wantInitials ? { name: r.name, badge: r.no, initials: sig } : { name: r.name, badge: r.no });
+                },
+                async _submit() {
+                    const el = this._el, err = el.querySelector('[data-fpin-err]');
+                    const name = el.querySelector('[data-fpin-who]').value, pinEl = el.querySelector('[data-fpin-pin]');
+                    if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
+                    if (!name) { err.textContent = this.tr('Pick your name'); return; }
+                    if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
+                    if (this._wantInitials && !this._strokes.length) { err.textContent = this.tr('Draw your initials'); return; }
+                    if (await this.check(name, pinEl.value)) {
+                        this._fails = 0;
+                        this._finish(this._wantInitials ? { name, initials: { name, strokes: this._strokes.map(st => st.slice()) } } : { name });
+                        return;
+                    }
+                    pinEl.value = '';
+                    pinEl.focus();
+                    if (++this._fails >= this.WAIT_AFTER) {
+                        this._fails = 0;
+                        this._waitUntil = Date.now() + this.WAIT_MS;
+                        err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again');
+                    } else err.textContent = this.tr('Wrong PIN — try again');
+                },
+                _build() {
+                    if (this._el) return;
+                    const css = document.createElement('style');
+                    css.textContent = `
+                        .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+                        .fpin[hidden] { display: none; }
+                        .fpin-card { width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+                        .fpin-title { font-size: 1.1rem; font-weight: 700; }
+                        .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
+                        .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
+                        .fpin-fields[hidden], .fpin-none[hidden], .fpin button[hidden] { display: none; }
+                        .fpin label { font-size: 0.8rem; color: var(--text-secondary); }
+                        .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+                        .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
+                        .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
+                        .fpin-sign { display: flex; flex-direction: column; gap: 6px; }
+                        .fpin-sign[hidden] { display: none; }
+                        .fpin-sign span { font-size: 0.8rem; color: var(--text-secondary); }
+                        .fpin-pad { width: 100%; height: 120px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
+                        .fpin .fpin-clear { align-self: flex-start; min-height: 40px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
+                        .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
+                        .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+                        .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
+                        .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }
+                        .fpin-scan { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-size: 0.9rem; font-weight: 600; text-align: center; }
+                        .fpin-scan[hidden] { display: none; }`;
+                    document.head.appendChild(css);
+                    const el = document.createElement('div');
+                    el.className = 'fpin';
+                    el.id = 'floorPin';
+                    el.hidden = true;
+                    el.setAttribute('role', 'dialog');
+                    el.setAttribute('aria-modal', 'true');
+                    el.innerHTML = `
+                        <div class="fpin-card">
+                            <div class="fpin-title"></div>
+                            <div class="fpin-why" data-fpin-why></div>
+                            <div class="fpin-none" data-fpin-none></div>
+                            <div class="fpin-scan" data-fpin-scan hidden></div>
+                            <div class="fpin-fields" data-fpin-fields>
+                                <label for="floorPinWho"></label>
+                                <select id="floorPinWho" data-fpin-who></select>
+                                <label for="floorPinInput"></label>
+                                <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
+                            </div>
+                            <div class="fpin-sign" data-fpin-sign hidden>
+                                <span data-fpin-sign-label></span>
+                                <canvas class="fpin-pad" data-fpin-pad></canvas>
+                                <button type="button" class="fpin-clear" data-fpin-clear></button>
+                            </div>
+                            <div class="fpin-err" data-fpin-err role="alert"></div>
+                            <div class="fpin-actions">
+                                <button type="button" class="fpin-cancel" data-fpin-cancel></button>
+                                <button type="button" class="fpin-ok" data-fpin-ok></button>
+                            </div>
+                        </div>`;
+                    el.querySelector('[data-fpin-ok]').addEventListener('click', () => this._submit());
+                    el.querySelector('[data-fpin-cancel]').addEventListener('click', () => this._finish(null));
+                    el.querySelector('[data-fpin-pin]').addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
+                    });
+                    el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
+                    // The initials pad: pointer strokes, normalized 0–1
+                    const pad = el.querySelector('[data-fpin-pad]');
+                    let stroke = null;
+                    const at = (e) => {
+                        const r = pad.getBoundingClientRect();
+                        return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+                    };
+                    pad.addEventListener('pointerdown', (e) => {
+                        e.preventDefault();
+                        try { pad.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
+                        const [x, y] = at(e);
+                        stroke = [+x.toFixed(3), +y.toFixed(3)];
+                        this._strokes.push(stroke);
+                        this._drawPad();
+                    });
+                    pad.addEventListener('pointermove', (e) => {
+                        if (!stroke) return;
+                        const [x, y] = at(e);
+                        if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;
+                        stroke.push(+x.toFixed(3), +y.toFixed(3));
+                        this._drawPad();
+                    });
+                    const end = () => { if (stroke) { stroke.splice(0, stroke.length, ...this.slimStroke(stroke)); this._drawPad(); } stroke = null; };
+                    pad.addEventListener('pointerup', end);
+                    pad.addEventListener('pointercancel', end);
+                    el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
+                    document.body.appendChild(el);
+                    this._el = el;
+                },
+                _sizePad() {
+                    const c = this._el.querySelector('[data-fpin-pad]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+                    c.width = Math.max(1, Math.round(r.width * dpr));
+                    c.height = Math.max(1, Math.round(r.height * dpr));
+                    this._drawPad();
+                },
+                _drawPad() {
+                    const c = this._el.querySelector('[data-fpin-pad]'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+                    ctx.clearRect(0, 0, c.width, c.height);
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2.5 * dpr;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    for (const st of this._strokes) {
+                        if (st.length < 2) continue;
+                        ctx.beginPath();
+                        ctx.moveTo(st[0] * c.width, st[1] * c.height);
+                        for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
+                        if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
+                        ctx.stroke();
+                    }
+                }
+            };
+
+            // ---- 🪪 Badge scans (user decision 2026-10-28) ----
+            // A barcode scanner is a keyboard: it "types" a badge's 16 digits in a burst, then Enter (or Tab). A capture-phase
+            // keydown on this tool's document collects digits that come in a burst (each within GAP_MS of the last); 16 of
+            // them then Enter or Tab is a scan. It goes to the newest handler pushed (the dialog on top, else the tool's own).
+            //  • The Enter or Tab is swallowed: it doesn't press a focused button or move the focus on.
+            //  • Digits outside a text box are swallowed too, so a scan can't pick an option in a focused list.
+            //  • A scan that went into a text box (a PIN, a note, a date) is taken back out of it.
+            // Nobody types 16 digits at that pace, so typing by hand is never taken for a scan.
+            const BadgeScan = {
+                GAP_MS: 100,
+                _buf: '',
+                _last: 0,
+                _field: null,
+                _value: null,
+                _handlers: [],
+                _on: null,
+                transient: false,   // true: listen only while someone is waiting for a scan (SitkaTools' office gate on the page itself)
+                install() {
+                    if (this._on) return;
+                    this._on = e => this._key(e);
+                    document.addEventListener('keydown', this._on, true);
+                },
+                uninstall() {
+                    if (this._on) document.removeEventListener('keydown', this._on, true);
+                    this._on = null;
+                    this._buf = '';
+                },
+                // The newest handler gets each scan; the function returned takes it off again
+                push(fn) {
+                    this.install();
+                    this._handlers.push(fn);
+                    return () => {
+                        const i = this._handlers.lastIndexOf(fn);
+                        if (i >= 0) this._handlers.splice(i, 1);
+                        if (this.transient && !this._handlers.length) this.uninstall();
+                    };
+                },
+                _editable(el) {
+                    if (!el || el.disabled || el.readOnly) return false;
+                    if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+                    return el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|color|range|image)$/i.test(el.type || '');
+                },
+                _key(e) {
+                    if (e.ctrlKey || e.metaKey || e.altKey) { this._buf = ''; return; }
+                    const now = Date.now(), t = e.target;
+                    if (/^[0-9]$/.test(e.key)) {
+                        if (!this._buf || now - this._last > this.GAP_MS) {
+                            this._buf = '';
+                            this._field = this._editable(t) ? t : null;
+                            this._value = this._field ? this._field.value : null;
+                        }
+                        this._buf += e.key;
+                        this._last = now;
+                        if (!this._editable(t)) e.preventDefault();
+                        return;
+                    }
+                    if ((e.key === 'Enter' || e.key === 'Tab') && this._buf.length === 16 && now - this._last <= this.GAP_MS) {
+                        const code = this._buf, field = this._field, value = this._value;
+                        this._buf = '';
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (field && field.value !== value) {
+                            field.value = value;
+                            field.dispatchEvent(new Event('input', { bubbles: true }));
+                            field.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                        const fn = this._handlers[this._handlers.length - 1];
+                        if (fn) { try { fn(code); } catch (err) { console.error(err); } }
+                        return;
+                    }
+                    if (e.key !== 'Shift') this._buf = '';
+                }
+            };
+            return { FloorPin, BadgeScan };
+        }
+
+        // ---- 🔒 The office gate (user decision 2026-10-28) ----
+        // Opening the split files as the office — from the page link, the device question or 🏷️ Set this device… (a
+        // restored session switching too, before its files are reopened) — needs the badge or PIN of someone with office
+        // access (employees[name].officeAccess, ticked in the Labour & Cost Wizard's employee editor), once Main's roster
+        // has someone with office access and a PIN or a badge. A floor manager's doesn't do. So does an office session
+        // coming back (a reload, or the "Session closed without saving" card). A single-file DB opens as before (user
+        // decision 2026-10-28). It stops someone at a building tablet using the office's screens; it can't stop someone
+        // who has the files themselves: who may write Main.json and read Wages.json is set in SharePoint.
+        const OfficeGate = {
+            _db: null,
+            _kit: null,
+            kit() {
+                if (!this._kit) {
+                    this._kit = makeFloorPinKit(document, () => this._db, null, 'office');
+                    this._kit.BadgeScan.transient = true;   // the page listens for a scan only while the gate is up
+                }
+                return this._kit;
+            },
+            // Does this database's roster have someone with office access and a PIN or a badge?
+            needed(db) {
+                this._db = db;
+                return this.kit().FloorPin.managers().length > 0;
+            },
+            // Resolves true when the office may open (or nothing is needed), false when it was cancelled
+            async ask(db, why = 'Opening the files as the office needs office access: scan your badge, or pick your name and type your PIN.') {
+                if (!this.needed(db)) return true;
+                const pin = this.kit().FloorPin;
+                const asked = pin.ask(why);
+                if (pin._el) pin._el.style.zIndex = '10050';   // above the start screen and the restore card
+                const ok = await asked;
+                this._db = null;
+                return !!ok;
+            }
+        };
+
         // ---- 😀 The emoji picker kit: DailyWizard's task editor, GeneralEvent and CropLabourWizard's recipe editor ----
         // (user request 2026-10-28). Embedded, no network. Every emoji in Unicode 18.0 (emoji-test.txt, fully-qualified,
         // without the skin-tone variants), grouped as Unicode groups them. Each is [emoji, 'name|search words']: the name
@@ -12904,10 +13466,19 @@
                 // 😴 The same tab, reloaded — the browser putting it away to save memory and bringing it back
                 // (document.wasDiscarded), a pull-to-refresh: the session comes back by itself, with nothing to answer
                 const nav = (performance.getEntriesByType?.('navigation') || [])[0];
-                if (document.wasDiscarded === true || nav?.type === 'reload') { restoreWorkCopy(copy); return; }
-                const choice = await RestoreCard.ask(copy);
-                if (choice === 'restore') restoreWorkCopy(copy);
-                else if (choice === 'discard') await WorkCopy.clear();
+                // 🔒 An office session coming back needs office access too (OfficeGate); cancelled, it
+                // waits on its card instead
+                const office = copy.split?.role === 'office';
+                const gate = () => !office || OfficeGate.ask(copy.db, 'Bringing back the office session needs office access: scan your badge, or pick your name and type your PIN.');
+                if ((document.wasDiscarded === true || nav?.type === 'reload') && await gate()) { restoreWorkCopy(copy); return; }
+                for (;;) {
+                    const choice = await RestoreCard.ask(copy);
+                    if (choice === 'restore') {
+                        if (!await gate()) continue;   // cancelled: the card again
+                        restoreWorkCopy(copy);
+                    } else if (choice === 'discard') await WorkCopy.clear();
+                    break;
+                }
             } finally {
                 WorkCopy.ready = true;
             }
@@ -13734,6 +14305,17 @@
                 if (this.stale) { this.stale = false; refreshAllViews(); }
                 WorkCopy.schedule();
             },
+            // ✕ Close in the bar: the tool may ask first. Its beforeClose() returning false means it's asking (CropLabourWizard
+            // with changed dates not saved, user request 2026-10-28): it then closes itself (Hub.close) or stays open. Every
+            // other close (the tool's own Hub.close, another tool opening, a test) closes at once.
+            requestClose() {
+                const def = this.defs[this.current];
+                if (!def) return;
+                let go = true;
+                try { if (typeof def.run?.api?.beforeClose === 'function') go = def.run.api.beforeClose() !== false; }
+                catch (err) { console.error(`[SitkaTools] ${this.current}: beforeClose failed`, err); }
+                if (go) this.close();
+            },
             // Do something only a tool's own code can, without showing it (close-out saving a lot's crop summary in the Labour &
             // Cost Wizard, user request 2026-10-27): its code runs on a fresh copy of its markup that never goes in the page,
             // gets the DB as on an open, does api[method](...args) and stops again, as on a close. Its notifySitkaTools()
@@ -13907,7 +14489,7 @@
             };
             return { api, stop };
         }
-        $('toolBarClose').addEventListener('click', () => Tools.close());
+        $('toolBarClose').addEventListener('click', () => Tools.requestClose());
         // 💾 Save DB in the bar: the hub's own save popup, dropping down from the bar over the tool (it goes back under the
         // hub's button when the tool closes). The click stops here: the page's click-anywhere handler would close it again.
         $('toolBarSave').addEventListener('click', (e) => {
@@ -23780,7 +24362,41 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // ---- Close Tool ----
-        $('closeToolBtn').addEventListener('click', () => Hub.close());
+        // A lot with a saved schedule whose dates were changed here (the green ones: start date, a task's day or on / off,
+        // the trim or harvest length) and not saved with Overwrite Schedule: closing (Close Tool, or ✕ Close in the bar)
+        // asks "Close crop labour wizard without overwriting old values?" (user request 2026-10-28). Close and discard
+        // closes; Overwrite schedule then close runs Overwrite Schedule, its own questions included, and closes once it
+        // saved (a question cancelled there keeps the tool open). Esc or a tap outside the box goes back to the tool.
+        function scheduleChangesUnsaved() {
+            if (!savedSettings || !activeLotSelect.value) return false;
+            if (plantingDateInput.value !== savedSettings.plantingDate || trimDays !== savedSettings.trimDays ||
+                harvestDays !== savedSettings.harvestDays || harvestMultiDay !== savedSettings.harvestMultiDay) return true;
+            const now = new Set();
+            for (const e of taskOffsets) {
+                const saved = savedSettings.tasks[e.def.taskType];
+                now.add(e.def.taskType);
+                if (!saved || saved.offset !== e.offset || saved.enabled !== (e.enabled !== false)) return true;
+            }
+            return Object.keys(savedSettings.tasks).some(t => !now.has(t));
+        }
+        // true: nothing to ask, close now; false: the question is up
+        function askBeforeClose() {
+            if (!scheduleChangesUnsaved()) return true;
+            $('closeAskText').textContent = `${activeLotSelect.value}'s saved schedule stays as it was if you close now: the changes in green aren't saved.`;
+            $('closeAsk').hidden = false;
+            $('closeAskOverwrite').focus();
+            return false;
+        }
+        const closeAskBack = () => { $('closeAsk').hidden = true; };
+        $('closeAskDiscard').addEventListener('click', () => { closeAskBack(); Hub.close(); });
+        $('closeAskOverwrite').addEventListener('click', () => {
+            closeAskBack();
+            scheduleForm.requestSubmit(generateBtn);   // Overwrite Schedule, with its checks and questions
+            if (!scheduleChangesUnsaved()) Hub.close();
+        });
+        $('closeAsk').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAskBack(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('closeAsk').hidden) { e.preventDefault(); closeAskBack(); } });
+        $('closeToolBtn').addEventListener('click', () => { if (askBeforeClose()) Hub.close(); });
 
         // ---- Recipe Import / Export (all platforms) ----
         importRecipeBtn.addEventListener('click', () => recipeImportInput.click());
@@ -23888,7 +24504,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
         init();
 
-        return { receive: receiveDb, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
+        // beforeClose: ✕ Close in the bar asks first, as Close Tool does (Tools.requestClose)
+        return { receive: receiveDb, beforeClose: askBeforeClose, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
     });
     </script>
     <!-- ═══ TOOL DailyWizard: script ═══ -->
@@ -25441,424 +26058,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             showToast(T('Task deleted'));
         }
 
-        // ---- 🔒 Floor manager PINs (user decision 2026-10-22) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
-        // Each floor manager (_EmployeeWizard.employees[name].floorManager) has their own PIN, set by the office in the
-        // Labour & Cost Wizard's employee editor and kept in Main.json only as a salted SHA-256 hash:
-        //   employees[name].pin = { salt, hash, setAt }
-        // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
-        // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
-        // developer tools: the drawn initials and the removal records are the real control.
-        // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
-        // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
-        // normalized 0–1, like DailyWizard's hours entries.
-        // 🪪 Badges (user decision 2026-10-28): every employee and temp crew may have a badge, a Code 128 barcode of 16
-        // digits — a 4-digit badge number (printed on the card) then 12 secret digits. Main.json keeps only
-        //   employees[name].badge = { no, salt, hash, madeAt }   hash: SHA-256 of `${salt}:${secret}`, like a PIN
-        //   employees[name].badgeRetired = [{ no, until }]       badges replaced since (a scan of one says so)
-        // A floor manager's badge stands in for both their PIN and their initials, wherever ask() is used: it resolves
-        // { name, badge: no } (with { initials: true }: plus initials = { name, badge: no }, a signature with no strokes).
-        var FloorPin = {
-            WAIT_AFTER: 5,          // wrong PINs (or badges not recognized) in a row before a one-minute wait
-            WAIT_MS: 60 * 1000,
-            _fails: 0,
-            _waitUntil: 0,
-            _el: null,
-            _done: null,
-            _wantInitials: false,
-            _strokes: [],
-            _unscan: null,
-            tr(s, v) {
-                if (typeof T === 'function') return T(s, v);
-                return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
-            },
-            _emps() { return (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {}; },
-            // Floor managers who can sign off — with a PIN, or with a badge — by name (temp crews never are)
-            managers() {
-                const emps = this._emps();
-                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.crew !== true &&
-                    ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || this.hasBadge(emps[n]))).sort((a, b) => a.localeCompare(b));
-            },
-            // …the ones who have a PIN (the name list next to the PIN box)
-            pinManagers() {
-                const emps = this._emps();
-                return this.managers().filter(n => emps[n]?.pin?.hash && emps[n]?.pin?.salt);
-            },
-            hasBadge: emp => !!(emp?.badge?.no && emp.badge.salt && emp.badge.hash),
-            // A scanned (or typed) badge code → { name, no, crew, floorManager }, or { error: 'unknown' | 'replaced', name? }
-            BADGE_RE: /^\d{16}$/,
-            async verifyBadge(code) {
-                code = String(code || '').trim();
-                if (!this.BADGE_RE.test(code)) return { error: 'unknown' };
-                const no = code.slice(0, 4), secret = code.slice(4), emps = this._emps();
-                for (const [name, e] of Object.entries(emps)) {
-                    if (!this.hasBadge(e) || e.badge.no !== no) continue;
-                    if ((await this.hash(e.badge.salt, secret)) === e.badge.hash) return { name, no, crew: e.crew === true, floorManager: e.floorManager === true && e.crew !== true };
-                }
-                for (const [name, e] of Object.entries(emps)) {
-                    const r = (Array.isArray(e?.badgeRetired) ? e.badgeRetired : []).find(x => x?.no === no);
-                    if (r) return { error: 'replaced', name, until: r.until || '' };
-                }
-                return { error: 'unknown' };
-            },
-            // A new badge: a number no badge has had (current or replaced), 12 secret digits, and the record to keep.
-            // The code itself is never stored: it's printed once (the Labour & Cost Wizard keeps it while it's open).
-            async makeBadge() {
-                const used = new Set();
-                for (const e of Object.values(this._emps())) {
-                    if (e?.badge?.no) used.add(e.badge.no);
-                    for (const r of Array.isArray(e?.badgeRetired) ? e.badgeRetired : []) if (r?.no) used.add(r.no);
-                }
-                const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => String(v % 10)).join('');
-                let no = '';
-                for (let i = 0; i < 200 && (!no || used.has(no)); i++) no = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
-                if (used.has(no)) for (let v = 1000; v <= 9999; v++) if (!used.has(String(v))) { no = String(v); break; }
-                const secret = digits(12);
-                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
-                return { code: no + secret, record: { no, salt, hash: await this.hash(salt, secret) } };
-            },
-            // A signature: drawn initials ({ name, strokes }) or a badge scan ({ name, badge })
-            signed: sig => !!(sig && ((Array.isArray(sig.strokes) && sig.strokes.length) || sig.badge)),
-            // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
-            async hash(salt, pin) {
-                const text = `${salt}:${pin}`;
-                try {
-                    if (window.crypto?.subtle) {
-                        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-                        return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
-                    }
-                } catch (_) { /* fall back */ }
-                return this.sha256(text);
-            },
-            sha256(text) {
-                const K = [], H = [];
-                const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
-                for (let n = 2, c = 0; c < 64; n++) {
-                    let prime = true;
-                    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
-                    if (!prime) continue;
-                    if (c < 8) H[c] = frac(Math.sqrt(n));
-                    K[c++] = frac(Math.cbrt(n));
-                }
-                const bytes = Array.from(new TextEncoder().encode(text));
-                const bits = bytes.length * 8;
-                bytes.push(0x80);
-                while (bytes.length % 64 !== 56) bytes.push(0);
-                for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
-                const rot = (x, r) => (x >>> r) | (x << (32 - r));
-                const w = new Array(64);
-                for (let o = 0; o < bytes.length; o += 64) {
-                    for (let j = 0; j < 16; j++) w[j] = (bytes[o + 4 * j] << 24) | (bytes[o + 4 * j + 1] << 16) | (bytes[o + 4 * j + 2] << 8) | bytes[o + 4 * j + 3];
-                    for (let j = 16; j < 64; j++) {
-                        const s0 = rot(w[j - 15], 7) ^ rot(w[j - 15], 18) ^ (w[j - 15] >>> 3);
-                        const s1 = rot(w[j - 2], 17) ^ rot(w[j - 2], 19) ^ (w[j - 2] >>> 10);
-                        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
-                    }
-                    let [a, b, c, d, e, f, g, h] = H;
-                    for (let j = 0; j < 64; j++) {
-                        const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[j] + w[j]) | 0;
-                        const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-                        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
-                    }
-                    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
-                }
-                return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
-            },
-            // A new PIN's record (4–8 digits; the caller checks the format)
-            // Drawn initials, smaller (review H2): when the pen lifts, the points that don't change the line's shape are
-            // dropped (Ramer–Douglas–Peucker, within 0.003 of the pad: under a pixel at the pad's size). The stroke is
-            // [x0, y0, x1, y1, …] with 3 decimals; it looks the same and takes a fraction of the space.
-            slimStroke(pts, eps = 0.003) {
-                const n = Math.floor((pts || []).length / 2);
-                if (n <= 2) return (pts || []).slice();
-                const keep = new Uint8Array(n);
-                keep[0] = keep[n - 1] = 1;
-                const stack = [[0, n - 1]];
-                while (stack.length) {
-                    const [a, z] = stack.pop();
-                    const ax = pts[2 * a], ay = pts[2 * a + 1], dx = pts[2 * z] - ax, dy = pts[2 * z + 1] - ay, len = Math.hypot(dx, dy);
-                    let far = -1, dmax = eps;
-                    for (let i = a + 1; i < z; i++) {
-                        const px = pts[2 * i] - ax, py = pts[2 * i + 1] - ay;
-                        const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(dy * px - dx * py) / len;
-                        if (d > dmax) { dmax = d; far = i; }
-                    }
-                    if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, z]); }
-                }
-                const out = [];
-                for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[2 * i], pts[2 * i + 1]);
-                return out;
-            },
-            async make(pin) {
-                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
-                return { salt, hash: await this.hash(salt, pin) };
-            },
-            async check(name, pin) {
-                const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
-                return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
-            },
-            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials) — or a scan of their
-            // badge. Resolves { name } (plus initials, or badge) once it's right, or null (cancelled).
-            ask(why, opts = {}) {
-                if (this._done) this._finish(null);
-                this._build();
-                const el = this._el, names = this.pinManagers(), emps = this._emps();
-                const badges = this.managers().some(n => this.hasBadge(emps[n]));
-                const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
-                this._wantInitials = !!opts.initials;
-                this._strokes = [];
-                // The words are set on every ask, so they follow DailyWizard's language
-                el.querySelector('.fpin-title').textContent = this.tr(this._wantInitials ? '✍️ Floor manager sign-off' : '🔒 Floor manager PIN');
-                el.querySelector('[data-fpin-sign-label]').textContent = this.tr('Your initials — draw them');
-                el.querySelector('[data-fpin-clear]').textContent = this.tr('Clear initials');
-                el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
-                el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
-                el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
-                el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
-                el.querySelector('[data-fpin-why]').textContent = why || '';
-                el.querySelector('[data-fpin-err]').textContent = '';
-                // 🪪 Scanning a floor manager's badge is the whole sign-off (no PIN, no initials)
-                const scan = el.querySelector('[data-fpin-scan]');
-                scan.textContent = this.tr(names.length ? '🪪 Scan your badge — or pick your name and type your PIN' : '🪪 Scan your floor manager badge');
-                scan.hidden = !badges;
-                const none = !names.length && !badges, pinOff = !names.length;
-                el.querySelector('[data-fpin-none]').hidden = !none;
-                el.querySelector('[data-fpin-fields]').hidden = pinOff;
-                el.querySelector('[data-fpin-ok]').hidden = pinOff;
-                el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
-                const sign = el.querySelector('[data-fpin-sign]');
-                sign.hidden = pinOff || !this._wantInitials;
-                who.innerHTML = '';
-                if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
-                for (const n of names) who.appendChild(new Option(n, n));
-                pin.value = '';
-                el.hidden = false;
-                if (!sign.hidden) this._sizePad();
-                (pinOff ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
-                if (this._unscan) this._unscan();
-                this._unscan = typeof BadgeScan !== 'undefined' ? BadgeScan.push(code => this._scanned(code)) : null;   // a scan never reaches what's under the dialog
-                return new Promise(resolve => { this._done = resolve; });
-            },
-            _finish(result) {
-                const done = this._done;
-                this._done = null;
-                if (this._unscan) { this._unscan(); this._unscan = null; }
-                if (this._el) this._el.hidden = true;
-                if (done) done(result);
-            },
-            // A badge scanned while the dialog is open: a floor manager's signs off at once
-            async _scanned(code) {
-                const el = this._el, err = el.querySelector('[data-fpin-err]'), asking = this._done;
-                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
-                const r = await this.verifyBadge(code);
-                if (!asking || this._done !== asking) return;   // closed meanwhile
-                if (r.error) {
-                    if (++this._fails >= this.WAIT_AFTER) { this._fails = 0; this._waitUntil = Date.now() + this.WAIT_MS; err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); }
-                    else err.textContent = r.error === 'replaced' ? this.tr('That badge was replaced — use the new one') : this.tr('Badge not recognized — try again');
-                    return;
-                }
-                if (!r.floorManager) { err.textContent = this.tr('Only a floor manager can approve this — {name} isn’t one', { name: r.name }); return; }
-                this._fails = 0;
-                const sig = { name: r.name, badge: r.no };
-                this._finish(this._wantInitials ? { name: r.name, badge: r.no, initials: sig } : { name: r.name, badge: r.no });
-            },
-            async _submit() {
-                const el = this._el, err = el.querySelector('[data-fpin-err]');
-                const name = el.querySelector('[data-fpin-who]').value, pinEl = el.querySelector('[data-fpin-pin]');
-                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
-                if (!name) { err.textContent = this.tr('Pick your name'); return; }
-                if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
-                if (this._wantInitials && !this._strokes.length) { err.textContent = this.tr('Draw your initials'); return; }
-                if (await this.check(name, pinEl.value)) {
-                    this._fails = 0;
-                    this._finish(this._wantInitials ? { name, initials: { name, strokes: this._strokes.map(st => st.slice()) } } : { name });
-                    return;
-                }
-                pinEl.value = '';
-                pinEl.focus();
-                if (++this._fails >= this.WAIT_AFTER) {
-                    this._fails = 0;
-                    this._waitUntil = Date.now() + this.WAIT_MS;
-                    err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again');
-                } else err.textContent = this.tr('Wrong PIN — try again');
-            },
-            _build() {
-                if (this._el) return;
-                const css = document.createElement('style');
-                css.textContent = `
-                    .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
-                    .fpin[hidden] { display: none; }
-                    .fpin-card { width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
-                    .fpin-title { font-size: 1.1rem; font-weight: 700; }
-                    .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
-                    .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
-                    .fpin-fields[hidden], .fpin-none[hidden], .fpin button[hidden] { display: none; }
-                    .fpin label { font-size: 0.8rem; color: var(--text-secondary); }
-                    .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
-                    .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
-                    .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
-                    .fpin-sign { display: flex; flex-direction: column; gap: 6px; }
-                    .fpin-sign[hidden] { display: none; }
-                    .fpin-sign span { font-size: 0.8rem; color: var(--text-secondary); }
-                    .fpin-pad { width: 100%; height: 120px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
-                    .fpin .fpin-clear { align-self: flex-start; min-height: 40px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
-                    .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
-                    .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
-                    .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
-                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }
-                    .fpin-scan { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-size: 0.9rem; font-weight: 600; text-align: center; }
-                    .fpin-scan[hidden] { display: none; }`;
-                document.head.appendChild(css);
-                const el = document.createElement('div');
-                el.className = 'fpin';
-                el.id = 'floorPin';
-                el.hidden = true;
-                el.setAttribute('role', 'dialog');
-                el.setAttribute('aria-modal', 'true');
-                el.innerHTML = `
-                    <div class="fpin-card">
-                        <div class="fpin-title"></div>
-                        <div class="fpin-why" data-fpin-why></div>
-                        <div class="fpin-none" data-fpin-none></div>
-                        <div class="fpin-scan" data-fpin-scan hidden></div>
-                        <div class="fpin-fields" data-fpin-fields>
-                            <label for="floorPinWho"></label>
-                            <select id="floorPinWho" data-fpin-who></select>
-                            <label for="floorPinInput"></label>
-                            <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
-                        </div>
-                        <div class="fpin-sign" data-fpin-sign hidden>
-                            <span data-fpin-sign-label></span>
-                            <canvas class="fpin-pad" data-fpin-pad></canvas>
-                            <button type="button" class="fpin-clear" data-fpin-clear></button>
-                        </div>
-                        <div class="fpin-err" data-fpin-err role="alert"></div>
-                        <div class="fpin-actions">
-                            <button type="button" class="fpin-cancel" data-fpin-cancel></button>
-                            <button type="button" class="fpin-ok" data-fpin-ok></button>
-                        </div>
-                    </div>`;
-                el.querySelector('[data-fpin-ok]').addEventListener('click', () => this._submit());
-                el.querySelector('[data-fpin-cancel]').addEventListener('click', () => this._finish(null));
-                el.querySelector('[data-fpin-pin]').addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
-                });
-                el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
-                // The initials pad: pointer strokes, normalized 0–1
-                const pad = el.querySelector('[data-fpin-pad]');
-                let stroke = null;
-                const at = (e) => {
-                    const r = pad.getBoundingClientRect();
-                    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
-                };
-                pad.addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    try { pad.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
-                    const [x, y] = at(e);
-                    stroke = [+x.toFixed(3), +y.toFixed(3)];
-                    this._strokes.push(stroke);
-                    this._drawPad();
-                });
-                pad.addEventListener('pointermove', (e) => {
-                    if (!stroke) return;
-                    const [x, y] = at(e);
-                    if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;
-                    stroke.push(+x.toFixed(3), +y.toFixed(3));
-                    this._drawPad();
-                });
-                const end = () => { if (stroke) { stroke.splice(0, stroke.length, ...this.slimStroke(stroke)); this._drawPad(); } stroke = null; };
-                pad.addEventListener('pointerup', end);
-                pad.addEventListener('pointercancel', end);
-                el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
-                document.body.appendChild(el);
-                this._el = el;
-            },
-            _sizePad() {
-                const c = this._el.querySelector('[data-fpin-pad]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-                c.width = Math.max(1, Math.round(r.width * dpr));
-                c.height = Math.max(1, Math.round(r.height * dpr));
-                this._drawPad();
-            },
-            _drawPad() {
-                const c = this._el.querySelector('[data-fpin-pad]'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
-                ctx.clearRect(0, 0, c.width, c.height);
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2.5 * dpr;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                for (const st of this._strokes) {
-                    if (st.length < 2) continue;
-                    ctx.beginPath();
-                    ctx.moveTo(st[0] * c.width, st[1] * c.height);
-                    for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
-                    if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
-                    ctx.stroke();
-                }
-            }
-        };
-
-        // ---- 🪪 Badge scans (user decision 2026-10-28) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
-        // A barcode scanner is a keyboard: it "types" a badge's 16 digits in a burst, then Enter (or Tab). A capture-phase
-        // keydown on this tool's document collects digits that come in a burst (each within GAP_MS of the last); 16 of
-        // them then Enter or Tab is a scan. It goes to the newest handler pushed (the dialog on top, else the tool's own).
-        //  • The Enter or Tab is swallowed: it doesn't press a focused button or move the focus on.
-        //  • Digits outside a text box are swallowed too, so a scan can't pick an option in a focused list.
-        //  • A scan that went into a text box (a PIN, a note, a date) is taken back out of it.
-        // Nobody types 16 digits at that pace, so typing by hand is never taken for a scan.
-        var BadgeScan = {
-            GAP_MS: 100,
-            _buf: '',
-            _last: 0,
-            _field: null,
-            _value: null,
-            _handlers: [],
-            _on: false,
-            install() {
-                if (this._on) return;
-                this._on = true;
-                document.addEventListener('keydown', e => this._key(e), true);
-            },
-            // The newest handler gets each scan; the function returned takes it off again
-            push(fn) {
-                this.install();
-                this._handlers.push(fn);
-                return () => { const i = this._handlers.lastIndexOf(fn); if (i >= 0) this._handlers.splice(i, 1); };
-            },
-            _editable(el) {
-                if (!el || el.disabled || el.readOnly) return false;
-                if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
-                return el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|color|range|image)$/i.test(el.type || '');
-            },
-            _key(e) {
-                if (e.ctrlKey || e.metaKey || e.altKey) { this._buf = ''; return; }
-                const now = Date.now(), t = e.target;
-                if (/^[0-9]$/.test(e.key)) {
-                    if (!this._buf || now - this._last > this.GAP_MS) {
-                        this._buf = '';
-                        this._field = this._editable(t) ? t : null;
-                        this._value = this._field ? this._field.value : null;
-                    }
-                    this._buf += e.key;
-                    this._last = now;
-                    if (!this._editable(t)) e.preventDefault();
-                    return;
-                }
-                if ((e.key === 'Enter' || e.key === 'Tab') && this._buf.length === 16 && now - this._last <= this.GAP_MS) {
-                    const code = this._buf, field = this._field, value = this._value;
-                    this._buf = '';
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (field && field.value !== value) {
-                        field.value = value;
-                        field.dispatchEvent(new Event('input', { bubbles: true }));
-                        field.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    const fn = this._handlers[this._handlers.length - 1];
-                    if (fn) { try { fn(code); } catch (err) { console.error(err); } }
-                    return;
-                }
-                if (e.key !== 'Shift') this._buf = '';
-            }
-        };
+        // ---- 🔒 Floor manager PINs and 🪪 badge scans: SitkaTools' makeFloorPinKit (the Labour & Cost Wizard and the office gate
+        // have an instance each). FloorPin: the PIN / badge dialog; BadgeScan: the scanner's keystrokes. ----
+        var { FloorPin, BadgeScan } = makeFloorPinKit(document, () => DB.data, (s, v) => T(s, v));
 
         // ---- ✏️ Edit mode: changing the daily task lists needs a floor manager's PIN (user decision 2026-10-22) ----
         // Adding, editing, reordering and deleting tasks, and their steps and translations, happen only in edit mode,
@@ -27832,6 +28034,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('tabConfigureBtn').classList.toggle('active', tab === 'configure');
             $('cabinetPanel').classList.toggle('active', tab === 'cabinet');
             $('configurePanel').classList.toggle('active', tab === 'configure');
+            // 💾 Save sheet and 🗑 Delete sheet, in the footer, are the sheet editor's
+            $('saveSheetBtn').hidden = $('deleteSheetBtn').hidden = tab !== 'configure';
             // Configuration is lot-independent — disable the lot selector on this tab.
             const lotSel = $('lotSelect');
             lotSel.disabled = (tab === 'configure');
@@ -33802,12 +34006,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                             <button type="button" class="btn btn-secondary" id="addQuestionBtn" style="width:100%; min-height:40px;">＋ Add question</button>
                             <div class="q-list" id="wizBody" style="margin-top:12px;"></div>
                         </div>
-                        <div class="save-row">
-                            <button type="button" class="btn btn-primary" id="saveSheetBtn"${loaded ? '' : ' disabled'} title="Save the sheet + wizard to the database">💾 Save sheet</button>
-                            <button type="button" class="btn btn-danger" id="deleteSheetBtn"${loaded ? '' : ' disabled'}>🗑 Delete sheet</button>
-                        </div>
                     </div>
                 </div>`;
+            // 💾 Save sheet and 🗑 Delete sheet are in the footer (wired once, in init): on once a document is loaded
+            $('saveSheetBtn').disabled = !loaded;
+            $('deleteSheetBtn').disabled = !loaded;
 
             $('loadDocBtn').addEventListener('click', () => $('pageImportInput').click());
             // Saved-sheet dropdown: open a configured sheet's working copies. Page images
@@ -33859,8 +34062,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             refreshWizardBuilder();
             $('wizNameInput').addEventListener('change', () => { if (cfgWizard) cfgWizard.name = $('wizNameInput').value.trim(); });
             $('addQuestionBtn').addEventListener('click', addCfgQuestion);
-            $('saveSheetBtn').addEventListener('click', saveSheet);
-            $('deleteSheetBtn').addEventListener('click', deleteSheet);
 
             if (loaded) {
                 attachBoxEditor($('pageStage'));
@@ -34561,6 +34762,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // ---- Close Tool ----
             $('closeToolBtn').addEventListener('click', () => Hub.close());
+            // 💾 Save sheet and 🗑 Delete sheet, in the footer (shown on Configure Sheets)
+            $('saveSheetBtn').addEventListener('click', saveSheet);
+            $('deleteSheetBtn').addEventListener('click', deleteSheet);
 
             // Page-image blob lifecycle: revoke both the Configure doc and the print doc on close.
             window.addEventListener('beforeunload', () => {
@@ -35018,6 +35222,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <span class="emp-name">${escapeHtml(name)}</span>
                     ${isCrew(e) ? '<span class="emp-tag crew" title="Temp crew: one badge for the whole crew">👥 crew</span>' : ''}
                     ${FloorPin.hasBadge(e) ? `<span class="emp-tag" title="Badge #${escapeHtml(e.badge.no)}">🪪 ${escapeHtml(e.badge.no)}</span>` : ''}
+                    ${!isCrew(e) && e.officeAccess === true ? '<span class="emp-tag" title="Office access: their badge or PIN opens SitkaTools as the office">🏢 office</span>' : ''}
                     ${isCrew(e) ? '' : `<span class="emp-days" title="Work days (Mon–Sun)">${dots}</span>`}
                     <button type="button" class="emp-del" title="Delete employee">✕</button>`;
                 row.addEventListener('click', (ev) => {
@@ -35051,6 +35256,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('empWageInput').value = e?.wage ?? '';   // blank when no wage is loaded (Wages.json not opened) — never a made-up one
             showWageHistory(name);
             $('empFloorManager').checked = e?.floorManager === true && !isCrew(e);
+            $('empOfficeAccess').checked = e?.officeAccess === true && !isCrew(e);
             showPinRow(e);
             showCrewMode(e);
             showBadgeRow(name);
@@ -35189,10 +35395,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const oldName = EMP.selectedName;
             if (!oldName || !getEmployees()[oldName]) return;
 
-            // A new floor manager PIN (blank = keep the one they have): 4–8 digits, typed twice, kept only as a hash
+            // A new PIN for a floor manager or someone with office access (blank = keep the one they have): 4–8 digits,
+            // typed twice, kept only as a hash
             let newPin = null;
             const pin1 = $('empPinInput').value.trim(), pin2 = $('empPin2Input').value.trim();
-            if ($('empFloorManager').checked && (pin1 || pin2)) {
+            if (pinWanted() && (pin1 || pin2)) {
                 if (!/^\d{4,8}$/.test(pin1)) { showToast('The PIN must be 4 to 8 digits'); return; }
                 if (pin1 !== pin2) { showToast('The two PINs don\u2019t match'); return; }
                 newPin = { ...(await FloorPin.make(pin1)), setAt: localDateStr(new Date()) };
@@ -35256,13 +35463,15 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (wageFrom) (ew.wageHistory || (ew.wageHistory = {}))[newName] = recordChange(ew.wageHistory?.[newName], 'wage', prevWage, wageRaw, wageFrom);
             if (wageRaw === null) delete emp.wage;
             else emp.wage = wageRaw;
-            if ($('empFloorManager').checked && !isCrew(emp)) {
-                emp.floorManager = true;
+            const officeBefore = emp.officeAccess === true;
+            const fm = $('empFloorManager').checked && !isCrew(emp), office = $('empOfficeAccess').checked && !isCrew(emp);
+            if (fm) emp.floorManager = true;
+            else delete emp.floorManager;
+            if (office) emp.officeAccess = true;
+            else delete emp.officeAccess;
+            if (fm || office) {
                 if (newPin) emp.pin = newPin;
-            } else {
-                delete emp.floorManager;
-                delete emp.pin;   // only floor managers have a PIN
-            }
+            } else delete emp.pin;   // only floor managers and office staff have a PIN
             emp.workDays = [...EMP.editorDays].sort((a, b) => a - b);
 
             EMP.selectedName = newName;
@@ -35272,23 +35481,42 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             renderEmpList();
             renderWorkweek();
             notifySitkaTools();
-            showToast(newPin ? `Saved ${newName} — PIN set` : `Saved ${newName}`);
+            showToast((newPin ? `Saved ${newName} — PIN set` : `Saved ${newName}`) + (office && !officeBefore
+                ? ' · 🏢 office access: once Main.json is saved, opening the files as the office asks for their badge or PIN'
+                : !office && officeBefore ? ' · 🏢 office access removed' : ''));
         });
 
-        // 🔒 The PIN fields show for floor managers; blank keeps the PIN they have
+        // 🔒 The PIN fields show for floor managers and office staff; blank keeps the PIN they have
+        const pinWanted = () => $('empFloorManager').checked || $('empOfficeAccess').checked;
         function showPinRow(emp) {
-            $('empPinRow').hidden = !$('empFloorManager').checked;
+            $('empPinRow').hidden = !pinWanted();
             $('empPinInput').value = '';
             $('empPin2Input').value = '';
-            const has = !!emp?.pin?.hash, set = emp?.pin?.setAt;
-            $('empPinStatus').textContent = has
-                ? `PIN set${set ? ' ' + parseISO(set).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Type a new one to change it; leave blank to keep it.`
-                : 'No PIN yet: this floor manager can\u2019t unlock DailyWizard\u2019s edit mode or approve deletions until one is set.';
+            showPinStatus(emp);
         }
-        $('empFloorManager').addEventListener('change', () => {
-            $('empPinRow').hidden = !$('empFloorManager').checked;
-            if (EMP.selectedName) showBadgeRow(EMP.selectedName);
-        });
+        function showPinStatus(emp) {
+            const has = !!emp?.pin?.hash, set = emp?.pin?.setAt, fm = $('empFloorManager').checked, office = $('empOfficeAccess').checked;
+            let text = has
+                ? `PIN set${set ? ' ' + parseISO(set).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Type a new one to change it; leave blank to keep it.`
+                : fm ? 'No PIN yet: this floor manager can\u2019t unlock DailyWizard\u2019s edit mode or approve deletions until one is set.'
+                : 'No PIN yet: they can open the office only with their badge until one is set.';
+            // 🏢 The only one who can open the office: a forgotten PIN or a lost badge would lock it out
+            if (office && !isCrew(emp)) {
+                const emps = getEmployees(), me = EMP.selectedName;
+                const others = Object.keys(emps).filter(n => n !== me && emps[n]?.officeAccess === true && !isCrew(emps[n]) &&
+                    ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || FloorPin.hasBadge(emps[n])));
+                if (!others.length) text += ' 🏢 No one else has office access: tick a second person, so a forgotten PIN or a lost badge can\u2019t lock the office out.';
+            }
+            $('empPinStatus').textContent = text;
+        }
+        for (const id of ['empFloorManager', 'empOfficeAccess']) {
+            $(id).addEventListener('change', () => {
+                $('empPinRow').hidden = !pinWanted();
+                const emp = getEmployees()[EMP.selectedName];
+                if (emp) showPinStatus(emp);
+                if (EMP.selectedName) showBadgeRow(EMP.selectedName);
+            });
+        }
 
         // ---- 🪪 Badges and 👥 temp crews (user decision 2026-10-28) ----
         // A badge is a Code 128 barcode (set C) of 16 digits: its 4-digit number, then 12 secret digits. Only the number
@@ -35324,12 +35552,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const emp = getEmployees()[name];
             if (!emp) return;
             const has = FloorPin.hasBadge(emp), code = badgeCodeOf(name);
-            const fm = !isCrew(emp) && $('empFloorManager').checked;
+            const fm = !isCrew(emp) && $('empFloorManager').checked, office = !isCrew(emp) && $('empOfficeAccess').checked;
+            const also = [fm && 'sign off as floor manager without a PIN', office && 'open the office'].filter(Boolean).join(', and ');
             $('empBadgeStatus').textContent = has
                 ? `🪪 Badge #${emp.badge.no}${emp.badge.madeAt ? `, made ${badgeDay(emp.badge.madeAt)}` : ''}. ` + (code
                     ? 'Print it before closing this tool: its code isn’t saved, so it can’t be printed later.'
                     : 'Lost or damaged? Replace it: the old badge stops working.')
-                : `🪪 No badge yet. With one, ${isCrew(emp) ? 'the crew starts and finishes' : 'they start and finish'} tasks in DailyWizard with the barcode scanner` + (fm ? ', and signs off as floor manager without a PIN.' : '.');
+                : `🪪 No badge yet. With one, ${isCrew(emp) ? 'the crew starts and finishes' : 'they start and finish'} tasks in DailyWizard with the barcode scanner` + (also ? `, and ${also}.` : '.');
             $('empBadgeMake').textContent = has ? '🔄 Replace badge' : '🪪 Make badge';
             $('empBadgePrint').hidden = !code;
         }
@@ -35338,6 +35567,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const crew = isCrew(emp);
             $('dayToggleRow').hidden = crew;
             $('empFloorManager').closest('label').hidden = crew;
+            $('empOfficeAccess').closest('label').hidden = crew;
             if (crew) $('empPinRow').hidden = true;
             $('requestTimeOffBtn').hidden = crew;
             $('empWageLabel').textContent = crew ? 'Rate ($/hr per person)' : 'Wage ($/hr)';
@@ -36594,424 +36824,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             renderTasksTab();
         });
 
-        // ---- 🔒 Floor manager PINs (user decision 2026-10-22) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
-        // Each floor manager (_EmployeeWizard.employees[name].floorManager) has their own PIN, set by the office in the
-        // Labour & Cost Wizard's employee editor and kept in Main.json only as a salted SHA-256 hash:
-        //   employees[name].pin = { salt, hash, setAt }
-        // DailyWizard asks for one to go into edit mode and for every deletion; the Labour & Cost Wizard for every
-        // deletion in its Tasks tab. A PIN slows people down but can't stop someone with the files or the browser's
-        // developer tools: the drawn initials and the removal records are the real control.
-        // ask(why, { initials: true }) also has them draw their initials (the Labour & Cost Wizard, when hours are added
-        // or changed in its Tasks tab): it resolves { name, initials: { name, strokes } }, strokes as [[x, y, x, y, …], …]
-        // normalized 0–1, like DailyWizard's hours entries.
-        // 🪪 Badges (user decision 2026-10-28): every employee and temp crew may have a badge, a Code 128 barcode of 16
-        // digits — a 4-digit badge number (printed on the card) then 12 secret digits. Main.json keeps only
-        //   employees[name].badge = { no, salt, hash, madeAt }   hash: SHA-256 of `${salt}:${secret}`, like a PIN
-        //   employees[name].badgeRetired = [{ no, until }]       badges replaced since (a scan of one says so)
-        // A floor manager's badge stands in for both their PIN and their initials, wherever ask() is used: it resolves
-        // { name, badge: no } (with { initials: true }: plus initials = { name, badge: no }, a signature with no strokes).
-        var FloorPin = {
-            WAIT_AFTER: 5,          // wrong PINs (or badges not recognized) in a row before a one-minute wait
-            WAIT_MS: 60 * 1000,
-            _fails: 0,
-            _waitUntil: 0,
-            _el: null,
-            _done: null,
-            _wantInitials: false,
-            _strokes: [],
-            _unscan: null,
-            tr(s, v) {
-                if (typeof T === 'function') return T(s, v);
-                return v ? s.replace(/\{(\w+)\}/g, (m, k) => v[k] != null ? String(v[k]) : m) : s;
-            },
-            _emps() { return (typeof DB !== 'undefined' && DB.data?._EmployeeWizard?.employees) || {}; },
-            // Floor managers who can sign off — with a PIN, or with a badge — by name (temp crews never are)
-            managers() {
-                const emps = this._emps();
-                return Object.keys(emps).filter(n => emps[n]?.floorManager === true && emps[n]?.crew !== true &&
-                    ((emps[n]?.pin?.hash && emps[n]?.pin?.salt) || this.hasBadge(emps[n]))).sort((a, b) => a.localeCompare(b));
-            },
-            // …the ones who have a PIN (the name list next to the PIN box)
-            pinManagers() {
-                const emps = this._emps();
-                return this.managers().filter(n => emps[n]?.pin?.hash && emps[n]?.pin?.salt);
-            },
-            hasBadge: emp => !!(emp?.badge?.no && emp.badge.salt && emp.badge.hash),
-            // A scanned (or typed) badge code → { name, no, crew, floorManager }, or { error: 'unknown' | 'replaced', name? }
-            BADGE_RE: /^\d{16}$/,
-            async verifyBadge(code) {
-                code = String(code || '').trim();
-                if (!this.BADGE_RE.test(code)) return { error: 'unknown' };
-                const no = code.slice(0, 4), secret = code.slice(4), emps = this._emps();
-                for (const [name, e] of Object.entries(emps)) {
-                    if (!this.hasBadge(e) || e.badge.no !== no) continue;
-                    if ((await this.hash(e.badge.salt, secret)) === e.badge.hash) return { name, no, crew: e.crew === true, floorManager: e.floorManager === true && e.crew !== true };
-                }
-                for (const [name, e] of Object.entries(emps)) {
-                    const r = (Array.isArray(e?.badgeRetired) ? e.badgeRetired : []).find(x => x?.no === no);
-                    if (r) return { error: 'replaced', name, until: r.until || '' };
-                }
-                return { error: 'unknown' };
-            },
-            // A new badge: a number no badge has had (current or replaced), 12 secret digits, and the record to keep.
-            // The code itself is never stored: it's printed once (the Labour & Cost Wizard keeps it while it's open).
-            async makeBadge() {
-                const used = new Set();
-                for (const e of Object.values(this._emps())) {
-                    if (e?.badge?.no) used.add(e.badge.no);
-                    for (const r of Array.isArray(e?.badgeRetired) ? e.badgeRetired : []) if (r?.no) used.add(r.no);
-                }
-                const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => String(v % 10)).join('');
-                let no = '';
-                for (let i = 0; i < 200 && (!no || used.has(no)); i++) no = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
-                if (used.has(no)) for (let v = 1000; v <= 9999; v++) if (!used.has(String(v))) { no = String(v); break; }
-                const secret = digits(12);
-                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
-                return { code: no + secret, record: { no, salt, hash: await this.hash(salt, secret) } };
-            },
-            // A signature: drawn initials ({ name, strokes }) or a badge scan ({ name, badge })
-            signed: sig => !!(sig && ((Array.isArray(sig.strokes) && sig.strokes.length) || sig.badge)),
-            // SHA-256 (hex) of `${salt}:${pin}`: Web Crypto when the page has it, else the small version below
-            async hash(salt, pin) {
-                const text = `${salt}:${pin}`;
-                try {
-                    if (window.crypto?.subtle) {
-                        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-                        return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
-                    }
-                } catch (_) { /* fall back */ }
-                return this.sha256(text);
-            },
-            sha256(text) {
-                const K = [], H = [];
-                const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
-                for (let n = 2, c = 0; c < 64; n++) {
-                    let prime = true;
-                    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
-                    if (!prime) continue;
-                    if (c < 8) H[c] = frac(Math.sqrt(n));
-                    K[c++] = frac(Math.cbrt(n));
-                }
-                const bytes = Array.from(new TextEncoder().encode(text));
-                const bits = bytes.length * 8;
-                bytes.push(0x80);
-                while (bytes.length % 64 !== 56) bytes.push(0);
-                for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
-                const rot = (x, r) => (x >>> r) | (x << (32 - r));
-                const w = new Array(64);
-                for (let o = 0; o < bytes.length; o += 64) {
-                    for (let j = 0; j < 16; j++) w[j] = (bytes[o + 4 * j] << 24) | (bytes[o + 4 * j + 1] << 16) | (bytes[o + 4 * j + 2] << 8) | bytes[o + 4 * j + 3];
-                    for (let j = 16; j < 64; j++) {
-                        const s0 = rot(w[j - 15], 7) ^ rot(w[j - 15], 18) ^ (w[j - 15] >>> 3);
-                        const s1 = rot(w[j - 2], 17) ^ rot(w[j - 2], 19) ^ (w[j - 2] >>> 10);
-                        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
-                    }
-                    let [a, b, c, d, e, f, g, h] = H;
-                    for (let j = 0; j < 64; j++) {
-                        const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[j] + w[j]) | 0;
-                        const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-                        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
-                    }
-                    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
-                }
-                return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
-            },
-            // A new PIN's record (4–8 digits; the caller checks the format)
-            // Drawn initials, smaller (review H2): when the pen lifts, the points that don't change the line's shape are
-            // dropped (Ramer–Douglas–Peucker, within 0.003 of the pad: under a pixel at the pad's size). The stroke is
-            // [x0, y0, x1, y1, …] with 3 decimals; it looks the same and takes a fraction of the space.
-            slimStroke(pts, eps = 0.003) {
-                const n = Math.floor((pts || []).length / 2);
-                if (n <= 2) return (pts || []).slice();
-                const keep = new Uint8Array(n);
-                keep[0] = keep[n - 1] = 1;
-                const stack = [[0, n - 1]];
-                while (stack.length) {
-                    const [a, z] = stack.pop();
-                    const ax = pts[2 * a], ay = pts[2 * a + 1], dx = pts[2 * z] - ax, dy = pts[2 * z + 1] - ay, len = Math.hypot(dx, dy);
-                    let far = -1, dmax = eps;
-                    for (let i = a + 1; i < z; i++) {
-                        const px = pts[2 * i] - ax, py = pts[2 * i + 1] - ay;
-                        const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(dy * px - dx * py) / len;
-                        if (d > dmax) { dmax = d; far = i; }
-                    }
-                    if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, z]); }
-                }
-                const out = [];
-                for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[2 * i], pts[2 * i + 1]);
-                return out;
-            },
-            async make(pin) {
-                const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
-                return { salt, hash: await this.hash(salt, pin) };
-            },
-            async check(name, pin) {
-                const rec = DB.data?._EmployeeWizard?.employees?.[name]?.pin;
-                return !!rec?.salt && !!rec?.hash && (await this.hash(rec.salt, pin)) === rec.hash;
-            },
-            // Ask a floor manager for their PIN (and, with { initials: true }, their drawn initials) — or a scan of their
-            // badge. Resolves { name } (plus initials, or badge) once it's right, or null (cancelled).
-            ask(why, opts = {}) {
-                if (this._done) this._finish(null);
-                this._build();
-                const el = this._el, names = this.pinManagers(), emps = this._emps();
-                const badges = this.managers().some(n => this.hasBadge(emps[n]));
-                const who = el.querySelector('[data-fpin-who]'), pin = el.querySelector('[data-fpin-pin]');
-                this._wantInitials = !!opts.initials;
-                this._strokes = [];
-                // The words are set on every ask, so they follow DailyWizard's language
-                el.querySelector('.fpin-title').textContent = this.tr(this._wantInitials ? '✍️ Floor manager sign-off' : '🔒 Floor manager PIN');
-                el.querySelector('[data-fpin-sign-label]').textContent = this.tr('Your initials — draw them');
-                el.querySelector('[data-fpin-clear]').textContent = this.tr('Clear initials');
-                el.querySelector('[data-fpin-none]').textContent = this.tr('No floor manager has a PIN yet. The office sets them in the Labour & Cost Wizard: Employees → tick Floor manager → PIN.');
-                el.querySelector('label[for="floorPinWho"]').textContent = this.tr('Floor manager');
-                el.querySelector('label[for="floorPinInput"]').textContent = this.tr('PIN');
-                el.querySelector('[data-fpin-ok]').textContent = this.tr('OK');
-                el.querySelector('[data-fpin-why]').textContent = why || '';
-                el.querySelector('[data-fpin-err]').textContent = '';
-                // 🪪 Scanning a floor manager's badge is the whole sign-off (no PIN, no initials)
-                const scan = el.querySelector('[data-fpin-scan]');
-                scan.textContent = this.tr(names.length ? '🪪 Scan your badge — or pick your name and type your PIN' : '🪪 Scan your floor manager badge');
-                scan.hidden = !badges;
-                const none = !names.length && !badges, pinOff = !names.length;
-                el.querySelector('[data-fpin-none]').hidden = !none;
-                el.querySelector('[data-fpin-fields]').hidden = pinOff;
-                el.querySelector('[data-fpin-ok]').hidden = pinOff;
-                el.querySelector('[data-fpin-cancel]').textContent = this.tr(none ? 'Close' : 'Cancel');
-                const sign = el.querySelector('[data-fpin-sign]');
-                sign.hidden = pinOff || !this._wantInitials;
-                who.innerHTML = '';
-                if (names.length > 1) who.appendChild(new Option(this.tr('— Pick your name —'), ''));
-                for (const n of names) who.appendChild(new Option(n, n));
-                pin.value = '';
-                el.hidden = false;
-                if (!sign.hidden) this._sizePad();
-                (pinOff ? el.querySelector('[data-fpin-cancel]') : names.length > 1 ? who : pin).focus();
-                if (this._unscan) this._unscan();
-                this._unscan = typeof BadgeScan !== 'undefined' ? BadgeScan.push(code => this._scanned(code)) : null;   // a scan never reaches what's under the dialog
-                return new Promise(resolve => { this._done = resolve; });
-            },
-            _finish(result) {
-                const done = this._done;
-                this._done = null;
-                if (this._unscan) { this._unscan(); this._unscan = null; }
-                if (this._el) this._el.hidden = true;
-                if (done) done(result);
-            },
-            // A badge scanned while the dialog is open: a floor manager's signs off at once
-            async _scanned(code) {
-                const el = this._el, err = el.querySelector('[data-fpin-err]'), asking = this._done;
-                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
-                const r = await this.verifyBadge(code);
-                if (!asking || this._done !== asking) return;   // closed meanwhile
-                if (r.error) {
-                    if (++this._fails >= this.WAIT_AFTER) { this._fails = 0; this._waitUntil = Date.now() + this.WAIT_MS; err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); }
-                    else err.textContent = r.error === 'replaced' ? this.tr('That badge was replaced — use the new one') : this.tr('Badge not recognized — try again');
-                    return;
-                }
-                if (!r.floorManager) { err.textContent = this.tr('Only a floor manager can approve this — {name} isn’t one', { name: r.name }); return; }
-                this._fails = 0;
-                const sig = { name: r.name, badge: r.no };
-                this._finish(this._wantInitials ? { name: r.name, badge: r.no, initials: sig } : { name: r.name, badge: r.no });
-            },
-            async _submit() {
-                const el = this._el, err = el.querySelector('[data-fpin-err]');
-                const name = el.querySelector('[data-fpin-who]').value, pinEl = el.querySelector('[data-fpin-pin]');
-                if (Date.now() < this._waitUntil) { err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again'); return; }
-                if (!name) { err.textContent = this.tr('Pick your name'); return; }
-                if (!pinEl.value) { err.textContent = this.tr('Enter your PIN'); pinEl.focus(); return; }
-                if (this._wantInitials && !this._strokes.length) { err.textContent = this.tr('Draw your initials'); return; }
-                if (await this.check(name, pinEl.value)) {
-                    this._fails = 0;
-                    this._finish(this._wantInitials ? { name, initials: { name, strokes: this._strokes.map(st => st.slice()) } } : { name });
-                    return;
-                }
-                pinEl.value = '';
-                pinEl.focus();
-                if (++this._fails >= this.WAIT_AFTER) {
-                    this._fails = 0;
-                    this._waitUntil = Date.now() + this.WAIT_MS;
-                    err.textContent = this.tr('Too many wrong PINs — wait a minute, then try again');
-                } else err.textContent = this.tr('Wrong PIN — try again');
-            },
-            _build() {
-                if (this._el) return;
-                const css = document.createElement('style');
-                css.textContent = `
-                    .fpin { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
-                    .fpin[hidden] { display: none; }
-                    .fpin-card { width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
-                    .fpin-title { font-size: 1.1rem; font-weight: 700; }
-                    .fpin-why, .fpin-none { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
-                    .fpin-fields { display: flex; flex-direction: column; gap: 6px; }
-                    .fpin-fields[hidden], .fpin-none[hidden], .fpin button[hidden] { display: none; }
-                    .fpin label { font-size: 0.8rem; color: var(--text-secondary); }
-                    .fpin select, .fpin input { min-height: 48px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
-                    .fpin input { font-size: 1.4rem; letter-spacing: 6px; text-align: center; }
-                    .fpin-err { min-height: 1.2em; color: var(--danger); font-size: 0.85rem; font-weight: 600; }
-                    .fpin-sign { display: flex; flex-direction: column; gap: 6px; }
-                    .fpin-sign[hidden] { display: none; }
-                    .fpin-sign span { font-size: 0.8rem; color: var(--text-secondary); }
-                    .fpin-pad { width: 100%; height: 120px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
-                    .fpin .fpin-clear { align-self: flex-start; min-height: 40px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
-                    .fpin-actions { display: flex; justify-content: flex-end; gap: 10px; }
-                    .fpin-actions button { min-height: 48px; min-width: 96px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
-                    .fpin-cancel { background: var(--bg-card); color: var(--text-primary); }
-                    .fpin-ok { background: var(--accent); color: #08301f; border-color: var(--accent) !important; }
-                    .fpin-scan { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--accent); font-size: 0.9rem; font-weight: 600; text-align: center; }
-                    .fpin-scan[hidden] { display: none; }`;
-                document.head.appendChild(css);
-                const el = document.createElement('div');
-                el.className = 'fpin';
-                el.id = 'floorPin';
-                el.hidden = true;
-                el.setAttribute('role', 'dialog');
-                el.setAttribute('aria-modal', 'true');
-                el.innerHTML = `
-                    <div class="fpin-card">
-                        <div class="fpin-title"></div>
-                        <div class="fpin-why" data-fpin-why></div>
-                        <div class="fpin-none" data-fpin-none></div>
-                        <div class="fpin-scan" data-fpin-scan hidden></div>
-                        <div class="fpin-fields" data-fpin-fields>
-                            <label for="floorPinWho"></label>
-                            <select id="floorPinWho" data-fpin-who></select>
-                            <label for="floorPinInput"></label>
-                            <input id="floorPinInput" data-fpin-pin type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" spellcheck="false">
-                        </div>
-                        <div class="fpin-sign" data-fpin-sign hidden>
-                            <span data-fpin-sign-label></span>
-                            <canvas class="fpin-pad" data-fpin-pad></canvas>
-                            <button type="button" class="fpin-clear" data-fpin-clear></button>
-                        </div>
-                        <div class="fpin-err" data-fpin-err role="alert"></div>
-                        <div class="fpin-actions">
-                            <button type="button" class="fpin-cancel" data-fpin-cancel></button>
-                            <button type="button" class="fpin-ok" data-fpin-ok></button>
-                        </div>
-                    </div>`;
-                el.querySelector('[data-fpin-ok]').addEventListener('click', () => this._submit());
-                el.querySelector('[data-fpin-cancel]').addEventListener('click', () => this._finish(null));
-                el.querySelector('[data-fpin-pin]').addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); this._submit(); }
-                });
-                el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._finish(null); });
-                // The initials pad: pointer strokes, normalized 0–1
-                const pad = el.querySelector('[data-fpin-pad]');
-                let stroke = null;
-                const at = (e) => {
-                    const r = pad.getBoundingClientRect();
-                    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
-                };
-                pad.addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    try { pad.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
-                    const [x, y] = at(e);
-                    stroke = [+x.toFixed(3), +y.toFixed(3)];
-                    this._strokes.push(stroke);
-                    this._drawPad();
-                });
-                pad.addEventListener('pointermove', (e) => {
-                    if (!stroke) return;
-                    const [x, y] = at(e);
-                    if (Math.hypot(x - stroke[stroke.length - 2], y - stroke[stroke.length - 1]) < 0.006) return;
-                    stroke.push(+x.toFixed(3), +y.toFixed(3));
-                    this._drawPad();
-                });
-                const end = () => { if (stroke) { stroke.splice(0, stroke.length, ...this.slimStroke(stroke)); this._drawPad(); } stroke = null; };
-                pad.addEventListener('pointerup', end);
-                pad.addEventListener('pointercancel', end);
-                el.querySelector('[data-fpin-clear]').addEventListener('click', () => { this._strokes = []; this._drawPad(); });
-                document.body.appendChild(el);
-                this._el = el;
-            },
-            _sizePad() {
-                const c = this._el.querySelector('[data-fpin-pad]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-                c.width = Math.max(1, Math.round(r.width * dpr));
-                c.height = Math.max(1, Math.round(r.height * dpr));
-                this._drawPad();
-            },
-            _drawPad() {
-                const c = this._el.querySelector('[data-fpin-pad]'), ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
-                ctx.clearRect(0, 0, c.width, c.height);
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2.5 * dpr;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                for (const st of this._strokes) {
-                    if (st.length < 2) continue;
-                    ctx.beginPath();
-                    ctx.moveTo(st[0] * c.width, st[1] * c.height);
-                    for (let i = 2; i + 1 < st.length; i += 2) ctx.lineTo(st[i] * c.width, st[i + 1] * c.height);
-                    if (st.length === 2) ctx.lineTo(st[0] * c.width + 0.5, st[1] * c.height + 0.5);
-                    ctx.stroke();
-                }
-            }
-        };
-
-        // ---- 🪪 Badge scans (user decision 2026-10-28) — the same snippet in DailyWizard and the Labour & Cost Wizard ----
-        // A barcode scanner is a keyboard: it "types" a badge's 16 digits in a burst, then Enter (or Tab). A capture-phase
-        // keydown on this tool's document collects digits that come in a burst (each within GAP_MS of the last); 16 of
-        // them then Enter or Tab is a scan. It goes to the newest handler pushed (the dialog on top, else the tool's own).
-        //  • The Enter or Tab is swallowed: it doesn't press a focused button or move the focus on.
-        //  • Digits outside a text box are swallowed too, so a scan can't pick an option in a focused list.
-        //  • A scan that went into a text box (a PIN, a note, a date) is taken back out of it.
-        // Nobody types 16 digits at that pace, so typing by hand is never taken for a scan.
-        var BadgeScan = {
-            GAP_MS: 100,
-            _buf: '',
-            _last: 0,
-            _field: null,
-            _value: null,
-            _handlers: [],
-            _on: false,
-            install() {
-                if (this._on) return;
-                this._on = true;
-                document.addEventListener('keydown', e => this._key(e), true);
-            },
-            // The newest handler gets each scan; the function returned takes it off again
-            push(fn) {
-                this.install();
-                this._handlers.push(fn);
-                return () => { const i = this._handlers.lastIndexOf(fn); if (i >= 0) this._handlers.splice(i, 1); };
-            },
-            _editable(el) {
-                if (!el || el.disabled || el.readOnly) return false;
-                if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
-                return el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|color|range|image)$/i.test(el.type || '');
-            },
-            _key(e) {
-                if (e.ctrlKey || e.metaKey || e.altKey) { this._buf = ''; return; }
-                const now = Date.now(), t = e.target;
-                if (/^[0-9]$/.test(e.key)) {
-                    if (!this._buf || now - this._last > this.GAP_MS) {
-                        this._buf = '';
-                        this._field = this._editable(t) ? t : null;
-                        this._value = this._field ? this._field.value : null;
-                    }
-                    this._buf += e.key;
-                    this._last = now;
-                    if (!this._editable(t)) e.preventDefault();
-                    return;
-                }
-                if ((e.key === 'Enter' || e.key === 'Tab') && this._buf.length === 16 && now - this._last <= this.GAP_MS) {
-                    const code = this._buf, field = this._field, value = this._value;
-                    this._buf = '';
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (field && field.value !== value) {
-                        field.value = value;
-                        field.dispatchEvent(new Event('input', { bubbles: true }));
-                        field.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    const fn = this._handlers[this._handlers.length - 1];
-                    if (fn) { try { fn(code); } catch (err) { console.error(err); } }
-                    return;
-                }
-                if (e.key !== 'Shift') this._buf = '';
-            }
-        };
+        // ---- 🔒 Floor manager PINs and 🪪 badge scans: SitkaTools' makeFloorPinKit (DailyWizard and the office gate have an
+        // instance each). FloorPin: the PIN / badge dialog; BadgeScan: the scanner's keystrokes. ----
+        var { FloorPin, BadgeScan } = makeFloorPinKit(document, () => DB.data);
 
         // Removing hours needs a floor manager's PIN (user decision 2026-10-22) and is kept on record in
         // _EmployeeWizard.labourRemovals (Main.json), which the Labour Log shows struck through. Office only: a

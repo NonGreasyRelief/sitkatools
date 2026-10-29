@@ -5,7 +5,7 @@ PaperWizard fills the facility's **controlled paper forms** (propagation workshe
 Two tabs:
 
 1. **Filing Cabinet** (default) — the active lot's paperwork tree (see "Filing Cabinet").
-2. **Configure Sheets** — load a form's page images, place boxes over them, bind boxes to DB values or questions, and build the sheet's wizard. The toolbar lists saved sheets (pick one to edit, 🗑 deletes, 📤 / 📥 export / import a sheet's configuration). An import is checked first (`cleanSheetImport`, review D13): plain ids, positions and sizes in range, known alignments, cadences and question types; anything else is refused with the reason. For a saved sheet, a **Document** dropdown files it in the cabinet.
+2. **Configure Sheets** — load a form's page images, place boxes over them, bind boxes to DB values or questions, and build the sheet's wizard. The toolbar lists saved sheets (pick one to edit, 🗑 deletes, 📤 / 📥 export / import a sheet's configuration). An import is checked first (`cleanSheetImport`, review D13): plain ids, positions and sizes in range, known alignments, cadences and question types; anything else is refused with the reason. For a saved sheet, a **Document** dropdown files it in the cabinet. **💾 Save sheet** and **🗑 Delete sheet** are in the footer (user request 2026-10-28: they were under the sheet editor), either side of Close Tool, shown on Configure Sheets and off until a document is loaded.
 
 - **Nothing is hard-coded.** No sheet ships in code. Layouts, bindings and wizards are all data under `_PaperWizard`. A new form = export its pages as WebP, load them, place boxes, build the wizard.
 - **Not in scope:** creating or changing `calendarEvents`; printing directly (always the user in the popup's print dialog).

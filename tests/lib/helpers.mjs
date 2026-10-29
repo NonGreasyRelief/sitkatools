@@ -73,6 +73,16 @@ export function withFloorManager(db, name = 'Casey', pin = FM_PIN) {
     return db;
 }
 
+// 🏢 Office access (the office gate): their PIN or badge opens SitkaTools as the office; a floor manager's doesn't
+export const OFFICE_PIN = '1357';
+export function withOfficeAccess(db, name = 'Drew', pin = OFFICE_PIN) {
+    const salt = `office${name.toLowerCase()}`;
+    const emp = db._EmployeeWizard.employees[name];
+    emp.officeAccess = true;
+    if (pin) emp.pin = { salt, hash: createHash('sha256').update(`${salt}:${pin}`).digest('hex'), setAt: '2026-10-01' };
+    return db;
+}
+
 // 🪪 A badge, stored the way the Labour & Cost Wizard stores it: its 4-digit number and a salted hash of the 12 secret
 // digits, never the code itself. badgeOf(name) is the fixture's code for that person (or crew).
 export const badgeOf = name => ({ Alex: '1001', Blair: '1002', Casey: '1003', Drew: '1004', 'Crew A': '1005' }[name] || '1999') + '482916037154';
@@ -206,8 +216,11 @@ export async function splitFiles(b, ctx, base, db) {
     return files;
 }
 
-// Open a split set on a device (from the page link ?device=…), the way 📂 Load DB does with several files
-export async function openSplit(b, ctx, base, device, files) {
+// Open a split set on a device (from the page link ?device=…), the way 📂 Load DB does with several files. Opening as the
+// office asks for the badge or PIN of someone with office access when Main's roster has one (the office gate): it's
+// answered with `gate` ({ name, pin }: Drew and the office PIN by default, as withOfficeAccess sets them), or left open
+// with gate: null (then it resolves null at once: DbSplit.open is still waiting, window.__opened has its result later).
+export async function openSplit(b, ctx, base, device, files, { gate = { name: 'Drew', pin: OFFICE_PIN } } = {}) {
     await openSitka(b, ctx, base, device);
     const set = {
         main: { name: 'Main.json', text: files['Main.json'] },
@@ -215,7 +228,15 @@ export async function openSplit(b, ctx, base, device, files) {
         buildings: Object.entries(files).filter(([n]) => n.startsWith('Building-')).map(([name, text]) => ({ name, text })),
         folder: null
     };
-    return b.run(ctx, `return await DbSplit.open(${JSON.stringify(set)});`);
+    await b.run(ctx, `window.__opened = undefined; DbSplit.open(${JSON.stringify(set)}).then(r => { window.__opened = r; }, e => { window.__opened = 'error: ' + e.message; });`);
+    if (!gate) return null;
+    for (let i = 0; i < 200; i++) {
+        const st = await b.run(ctx, `const el = document.getElementById('floorPin'); return { done: window.__opened !== undefined, gate: !!el && !el.hidden };`);
+        if (st.done) break;
+        if (st.gate) await answerPin(b, ctx, gate.name, gate.pin);
+        else await b.sleep(50);
+    }
+    return b.run(ctx, `return window.__opened;`);
 }
 
 // 💾 Save DB with split files → the text of every changed file offered (each right-click link used; the
