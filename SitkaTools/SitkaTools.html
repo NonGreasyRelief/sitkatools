@@ -3816,6 +3816,7 @@
         .close-ask-text { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
         .close-ask-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
         .close-ask-actions .btn { min-height: 48px; flex: 1 1 180px; }
+        .recipe-save-link { min-height: 48px; display: flex; align-items: center; justify-content: center; text-decoration: none; word-break: break-all; text-align: center; }
 
         /* ---- Footer ---- */
         .footer {
@@ -8315,6 +8316,18 @@
                 <button type="button" class="btn btn-danger" id="closeAskDiscard">Close and discard</button>
                 <button type="button" class="btn btn-primary" id="closeAskOverwrite">Overwrite schedule then close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ⬇️ Export a recipe (user report 2026-10-29: the direct download didn't arrive on some PCs): a link to click, or
+         right-click → Save Link As…, like 💾 Save DB's -->
+    <div class="close-ask" id="recipeSaveAsk" hidden role="dialog" aria-modal="true" aria-labelledby="recipeSaveTitle">
+        <div class="close-ask-card">
+            <div class="close-ask-title" id="recipeSaveTitle">⬇️ Export recipe</div>
+            <div class="close-ask-text" id="recipeSaveText"></div>
+            <a class="btn btn-primary recipe-save-link" id="recipeSaveLink" href="#" download></a>
+            <div class="close-ask-text">Click it to download, or right-click it → <strong>Save Link As…</strong> to pick the folder and the name. Another copy of SitkaTools takes it with ⬆️ Import.</div>
+            <div class="close-ask-actions"><button type="button" class="btn btn-secondary" id="recipeSaveClose">Close</button></div>
         </div>
     </div>
 
@@ -21508,30 +21521,43 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             win.document.close();
         }
 
-        // ---- Recipe export helper (share-API-first) — the manager's ⬇️ Export and each recipe row's ⬇️ Export ----
+        // ---- Recipe export — the manager's ⬇️ Export and each recipe row's ⬇️ Export ----
+        // A dialog with the file as a link (user report 2026-10-29): clicking it downloads (a tablet's share sheet where
+        // it takes the file), right-click → Save Link As… picks the folder and name. The old direct download (a link
+        // clicked by the code and its file let go at once) didn't arrive on PCs that block downloads, while the toast
+        // said it was saved; 💾 Save DB works this way for the same reason. The file is kept until the dialog closes.
+        let recipeSave = null;   // { url, blob, filename }
         function exportRecipeJson(recipe) {
-            const json = JSON.stringify(recipe, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
+            closeRecipeSave();
+            const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: 'application/json' });
             const filename = `recipe-${recipe.id}.json`;
-
-            // Use Web Share API on mobile (fixes iOS Safari blob URL issue)
-            const file = new File([blob], filename, { type: 'application/json' });
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({ files: [file], title: filename })
-                    .then(() => showToast('Recipe shared'))
-                    .catch(() => {});
-            } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast(`Recipe saved as ${filename}`);
-            }
+            recipeSave = { url: URL.createObjectURL(blob), blob, filename };
+            const a = $('recipeSaveLink');
+            a.href = recipeSave.url;
+            a.download = filename;
+            a.textContent = `💾 ${filename}`;
+            $('recipeSaveText').textContent = `“${recipe.name || recipe.id}” as ${filename}.`;
+            $('recipeSaveAsk').hidden = false;
+            a.focus();
         }
+        function closeRecipeSave() {
+            $('recipeSaveAsk').hidden = true;
+            if (recipeSave) URL.revokeObjectURL(recipeSave.url);
+            recipeSave = null;
+            $('recipeSaveLink').removeAttribute('href');
+        }
+        $('recipeSaveLink').addEventListener('click', (e) => {
+            if (!recipeSave) { e.preventDefault(); return; }
+            const { blob, filename } = recipeSave;
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.share && navigator.canShare?.({ files: [file] })) {   // a tablet that shares .json files
+                e.preventDefault();
+                navigator.share({ files: [file], title: filename }).then(() => showToast(`Recipe shared as ${filename}`), () => showToast(`${filename} wasn't shared — the share was cancelled`));
+            } else showToast(`Recipe saved as ${filename}`);
+        });
+        $('recipeSaveClose').addEventListener('click', closeRecipeSave);
+        $('recipeSaveAsk').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeRecipeSave(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('recipeSaveAsk').hidden) { e.preventDefault(); e.stopPropagation(); closeRecipeSave(); } }, true);
 
         // ---- Recipe Manager (Stage 4) — create / edit / duplicate / delete recipes in-UI ----
         const RECIPE_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
