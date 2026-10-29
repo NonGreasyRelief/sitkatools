@@ -335,6 +335,8 @@
         .lot-item:hover {
             border-color: var(--accent);
         }
+        /* 🌿 The mother lots' heading, under the lots for flower rooms */
+        .lot-group-head { margin-top: 10px; padding: 6px 2px 2px; font-size: 0.85rem; font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
 
         /* Row 1 of a lot card — name/meta on the left, controls on the right */
         .lot-row-top {
@@ -15032,6 +15034,16 @@
         }
 
         // ---- Render Lot List ----
+        // 🌿 A mother lot: scheduled with a 🌿 vegetative recipe (what makes a lot a mother lot). One with no schedule yet
+        // counts by its stage (Mother) or its destination room (designated Mother); a bloom schedule says it isn't one.
+        function lotIsMother(lot) {
+            if (!lot) return false;
+            const cfg = lot._tool_CropLabourWizard;
+            if (cfg && typeof cfg === 'object') return cfg.kind === 'vegetative';
+            if (String(lot.stage || '').trim().toLowerCase() === 'mother') return true;
+            const dest = String(lot.destRoom || '').trim().toLowerCase();
+            return !!dest && Object.values(DB.data?.rooms || {}).some(r => r?.designation === 'Mother' && String(r.name || '').trim().toLowerCase() === dest);
+        }
         function renderLotList() {
             if (DB.data) LotActions.render();   // the lot move / close-out lists show the lots too
             const lots = DB.lots;
@@ -15045,13 +15057,20 @@
             lotListCard.style.display = 'block';
             lotListEl.innerHTML = '';
 
-            // Sort by created date (newest first)
-            const sorted = lotKeys.sort((a, b) => {
-                return lots[b].createdDate.localeCompare(lots[a].createdDate);
-            });
+            // Order (user request 2026-10-29): the lots for flower rooms first, then the 🌿 mother lots under their own
+            // heading, each by lot number, lowest first (numbers inside ids compare as numbers: L99 before L100)
+            const byNumber = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+            const mothers = lotKeys.filter(k => lotIsMother(lots[k])).sort(byNumber);
+            const sorted = [...lotKeys.filter(k => !lotIsMother(lots[k])).sort(byNumber), ...mothers];
 
             sorted.forEach(key => {
                 const lot = lots[key];
+                if (key === mothers[0]) {
+                    const head = document.createElement('div');
+                    head.className = 'lot-group-head';
+                    head.textContent = `🌿 Mother lots (${mothers.length})`;
+                    lotListEl.appendChild(head);
+                }
                 const k = escapeHtml(key);   // ids, strains and room names are typed: escaped into the page (review I1)
                 const item = document.createElement('div');
                 item.className = 'lot-item';
