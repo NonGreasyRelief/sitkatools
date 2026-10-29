@@ -21,7 +21,7 @@ export async function run(b, BASE) {
 
     // ---- Recipe editor: the Day column ----
     const editorDays = () => b.run(clw, `return Object.fromEntries([...document.querySelectorAll('#recipeTaskBody tr')].map(tr => [tr.querySelector('input.t-type').value,
-        [...tr.querySelectorAll('td.t-life span')].map(s => s.textContent).join(' ')]));`);
+        [...tr.querySelectorAll('td.t-life span:not(.t-life-wd)')].map(s => s.textContent).join(' ')]));`);   // the day (the 📅 weekday: recipe-weekdays)
     await b.run(clw, `openRecipeManager(); duplicateRecipe(BUILTIN_RECIPE);`, { user: true });
     let ed = await editorDays();
     const want = { clone_cut_prep: "day 1 of the plant's life", planting: "day 15 of the plant's life", transplant: "day 31 of the plant's life",
