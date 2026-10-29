@@ -4574,6 +4574,11 @@
         .task-table td.t-life { min-width: 92px; line-height: 1.2; }
         .task-table .t-life-num { display: block; font-weight: 600; white-space: nowrap; }
         .task-table .t-life-of { display: block; font-size: 0.72rem; color: var(--text-secondary); }
+        .task-table .t-life-wd { display: block; font-size: 0.78rem; font-weight: 600; color: var(--accent); white-space: nowrap; }
+        .recipe-weekday-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 2px 0 8px; }
+        .recipe-weekday-row label { margin: 0; font-size: 0.85rem; color: var(--text-primary); }
+        .recipe-weekday-row select { width: auto; min-width: 140px; }
+        .recipe-weekday-note { font-size: 0.78rem; color: var(--text-secondary); }
         /* Narrow windows: the table scrolls sideways rather than squash names and estimates */
         .task-table input.t-name { min-width: 160px; }
         .task-table input.t-min, .task-table input.t-staff { min-width: 64px; }
@@ -8384,6 +8389,16 @@
                 </div>
                 <div class="form-group">
                     <label>Tasks (top → bottom = chronological order)</label>
+                    <!-- 📅 The weekday each task lands on, from the weekday picked for day 1 (user request 2026-10-29): a guide while
+                         editing; a lot's own dates come from its anchor date -->
+                    <div class="recipe-weekday-row">
+                        <label for="recipeDay1Weekday">📅 Day 1 (clones cut) is a</label>
+                        <select id="recipeDay1Weekday">
+                            <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option>
+                            <option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option>
+                        </select>
+                        <span class="recipe-weekday-note" id="recipeDay1Note"></span>
+                    </div>
                     <div style="overflow-x:auto;">
                         <table class="task-table" id="recipeTaskTable">
                             <thead>
@@ -21130,7 +21145,8 @@
                 const len = t.taskType === 'trim' ? DEFAULT_TRIM_DAYS : recipeTaskDays(t);
                 const end = len > 1 ? computeTaskDate(start, len - 1) : null;
                 afterDays = Math.max(afterDays, daysBetween(lifeEnd, end || start));
-                return lifeDayLabel(day0, start, end, lifeEnd, veg);
+                // from / to: days after day 1 it starts and ends (the editor's 📅 weekdays)
+                return { ...lifeDayLabel(day0, start, end, lifeEnd, veg), from: daysBetween(day0, start), to: daysBetween(day0, end || start) };
             });
             return { rows, life, afterDays };
         }
@@ -21875,6 +21891,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 ? '<span class="recipe-kind" title="For mother plants: no flip, harvest or trim — the mothers are retired on a planned day">🌿 Vegetative (mothers)</span>'
                 : '<span class="recipe-kind" title="A crop that flowers and is harvested">🌸 Bloom</span>';
             editorTurnaroundSig = null;   // opening the editor shows the readout without a toast
+            setRecipeDay1Weekday(editorRecipe);
             renderTaskTable();
             setRecipeEditorTab('tasks', true);
             setRecipeMgrView('editor');
@@ -21903,18 +21920,35 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             editorTurnaroundSig = sig;
         }
 
-        // The Day column: each row's day of the plants' life (or after harvest), from the table as it stands
+        // The Day column: each row's day of the plants' life (or after harvest), from the table as it stands, and 📅 the
+        // weekday it lands on with day 1 on the weekday picked above it (user request 2026-10-29)
+        const recipeWeekday = (w0, n) => WEEKDAYS_SHORT[((w0 + n) % 7 + 7) % 7];
         function updateEditorLifeDays() {
             const rows = [...$('recipeTaskBody').querySelectorAll('tr')];
             const { rows: days } = recipeLifeDays(readTaskTable(), editorRecipe?.kind);
+            const w0 = Number($('recipeDay1Weekday').value);
             rows.forEach((tr, i) => {
                 const cell = tr.querySelector('td.t-life'), d = days[i];
                 if (!cell) return;
-                const key = d ? `${d.num}|${d.of}` : '—';
+                const wd = d ? (d.from === d.to ? recipeWeekday(w0, d.from) : `${recipeWeekday(w0, d.from)}–${recipeWeekday(w0, d.to)}`) : '';
+                const key = d ? `${d.num}|${d.of}|${wd}` : '—';
                 if (cell.dataset.v === key) return;
                 cell.dataset.v = key;
-                cell.innerHTML = d ? `<span class="t-life-num">${d.num}</span><span class="t-life-of">${escapeHtml(d.of)}</span>` : '<span class="t-life-of">—</span>';
+                cell.innerHTML = d ? `<span class="t-life-num">${d.num}</span><span class="t-life-wd">${wd}</span><span class="t-life-of">${escapeHtml(d.of)}</span>` : '<span class="t-life-of">—</span>';
             });
+        }
+        // 📅 Day 1's weekday as a recipe opens: the one that puts its harvest on a Friday (as the built-ins are made:
+        // Saturday cuts with 20 days of veg, Sunday with 19, Monday with 18); a mother recipe has no harvest: Saturday
+        function setRecipeDay1Weekday(recipe) {
+            const veg = isVegRecipe(recipe);
+            let w0 = 6;
+            if (!veg) {
+                const { life } = recipeLifeDays(recipe.tasks, recipe.kind);
+                if (Number.isInteger(life) && life > 0) w0 = ((5 - (life - 1)) % 7 + 7) % 7;
+            }
+            $('recipeDay1Weekday').value = String(w0);
+            $('recipeDay1Note').textContent = veg ? 'Pick the weekday you cut the clones on: each task\u2019s Day shows the weekday it lands on.'
+                : 'Starts on the weekday that puts the harvest on a Friday; pick another to see where every task lands.';
         }
 
         function renderTaskTable() {
@@ -24600,6 +24634,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         });
         // Offsets typed or spun: the readout follows as you go
         $('recipeTaskBody').addEventListener('input', updateEditorTurnaround);
+        $('recipeDay1Weekday').addEventListener('change', updateEditorLifeDays);   // 📅 the weekdays follow day 1's
 
         // ---- Toast ----
         function showToast(msg) {
