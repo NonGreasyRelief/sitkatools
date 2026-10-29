@@ -1019,9 +1019,11 @@
         /* Calendar Navigation */
         .calendar-nav {
             display: flex;
+            flex-wrap: wrap;   /* four view buttons and a long title wrap rather than widen the page on a tablet */
             align-items: center;
             justify-content: center;
             gap: 24px;
+            row-gap: 8px;
             margin-bottom: 16px;
         }
 
@@ -1493,6 +1495,103 @@
             border-left: 3px dashed var(--text-secondary);
             opacity: 0.8;
         }
+
+        /* =====================================================
+           🚀 Launch windows — the 10 weekly flip windows, one row each
+           ===================================================== */
+
+        .launch-view { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; min-width: 0; }
+        .launch-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+        .launch-summary { font-size: 1rem; color: var(--text-primary); }
+        .launch-summary b { color: var(--accent); }
+        .launch-summary .launch-warn { color: var(--danger); font-weight: 700; }
+        .launch-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 0.78rem; color: var(--text-secondary); }
+        .launch-legend i { display: inline-block; width: 22px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+        .launch-legend .lg-lot { background: var(--accent); }
+        .launch-legend .lg-proj { background: rgba(168, 168, 184, 0.12); border: 1px dashed var(--text-secondary); }
+        .launch-legend .lg-open { background: rgba(243, 156, 18, 0.12); border: 1px dashed var(--warning); }
+        .launch-legend .lg-over { background: var(--accent); box-shadow: inset 0 0 0 2px var(--danger); }
+        .launch-legend .lg-today { width: 2px; height: 14px; border-radius: 0; background: var(--accent); }
+        .launch-intro, .launch-note { margin: 0; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
+        .launch-note { color: var(--warning); }
+
+        .launch-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        .launch-chart { min-width: 560px; padding: 4px 10px 8px; }
+        .launch-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); border-bottom: 1px solid var(--border); }
+        .launch-row:last-child { border-bottom: none; }
+        .launch-label { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 8px 4px 0; font-size: 0.8rem; line-height: 1.2; }
+        .launch-wk { font-weight: 700; color: var(--text-primary); }
+        .launch-fri { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
+        .launch-chip { font-size: 0.7rem; font-weight: 700; color: var(--warning); }
+        .launch-track {
+            position: relative;
+            height: calc(10px + var(--lanes, 1) * 28px);
+            /* a line at each Monday: 20 weeks across */
+            background-image: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 5%);
+        }
+        .launch-row.open .launch-track { background-color: rgba(243, 156, 18, 0.04); }
+        .launch-axis .launch-track { height: 24px; background-image: none; }
+        .launch-month {
+            position: absolute;
+            top: 5px;
+            padding-left: 4px;
+            border-left: 1px solid var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 600;
+            line-height: 14px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .launch-now { position: absolute; top: 0; bottom: 0; background: rgba(83, 216, 168, 0.09); pointer-events: none; }
+        .launch-today { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; z-index: 2; }
+        .launch-bar, .launch-ghost {
+            position: absolute;
+            top: calc(5px + var(--lane, 0) * 28px);
+            height: 22px;
+            line-height: 20px;
+            padding: 0 6px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .launch-bar { z-index: 1; cursor: pointer; color: var(--bg-primary); background: var(--accent); }
+        .launch-bar:hover { filter: brightness(1.12); }
+        .launch-bar:focus-visible, .launch-bar.selected { outline: 2px solid var(--text-primary); outline-offset: 1px; }
+        .launch-bar.done { background: rgba(83, 216, 168, 0.3); color: var(--text-primary); }
+        .launch-bar.projection { background: rgba(168, 168, 184, 0.12); color: var(--text-secondary); border: 1px dashed var(--text-secondary); }
+        .launch-bar.estimated { border-right: 3px dashed var(--text-primary); }
+        .launch-bar.overlap { box-shadow: inset 0 0 0 2px var(--danger); }
+        .launch-bar.stale { background: repeating-linear-gradient(135deg, rgba(243, 156, 18, 0.25) 0 6px, transparent 6px 12px); color: var(--warning); border: 1px dashed var(--warning); }
+        .launch-bar.superseded { opacity: 0.45; }
+        .launch-ghost { pointer-events: none; color: var(--warning); background: rgba(243, 156, 18, 0.1); border: 1px dashed var(--warning); font-weight: 700; }
+
+        .launch-panels { display: grid; gap: 12px; }
+        .launch-panel { min-width: 0; padding: 12px 14px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); }
+        .launch-panel h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--accent); }
+        .launch-panel.warn h3 { color: var(--warning); }
+        .launch-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; line-height: 1.4; }
+        .launch-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .launch-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .launch-table th, .launch-table td { padding: 6px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+        .launch-table th { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); white-space: nowrap; }
+        .launch-table td.date { white-space: nowrap; }
+        .launch-table b { color: var(--accent); }
+        .launch-table .muted { color: var(--text-secondary); }
+        .launch-table .warn { color: var(--warning); }
+        .launch-foot { margin: 8px 0 0; font-size: 0.75rem; line-height: 1.4; color: var(--text-secondary); }
+        .launch-empty { padding: 24px; text-align: center; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); }
 
         /* =====================================================
            Annual view — 12 mini-months, emoji dots per task
@@ -2329,6 +2428,10 @@
             .main.calendar-active {
                 max-width: 100%;
             }
+
+            /* 🚀 Launch windows: a narrower label column; the timeline scrolls in its own box */
+            .launch-row { grid-template-columns: 5.25rem minmax(0, 1fr); }
+            .launch-chart { padding: 4px 6px 8px; }
 
             .calendar-nav {
                 flex-wrap: wrap;
@@ -7654,9 +7757,9 @@
 
             <!-- Calendar navigation -->
             <div class="calendar-nav">
-                <button class="btn btn-secondary" id="prevMonthBtn" title="Previous month / day / year (depends on view)">◀ Prev</button>
+                <button class="btn btn-secondary" id="prevMonthBtn" title="Previous month / day / year / week (depends on view)">◀ Prev</button>
                 <h2 class="calendar-month-title" id="calendarTitle">August 2026</h2>
-                <button class="btn btn-secondary" id="nextMonthBtn" title="Next month / day / year (depends on view)">Next ▶</button>
+                <button class="btn btn-secondary" id="nextMonthBtn" title="Next month / day / year / week (depends on view)">Next ▶</button>
                 <button class="btn btn-primary" id="todayBtn" style="margin-left: 16px;">Today</button>
                 <label class="holiday-toggle" title="Show BC civic holidays on the calendar (on by default)">
                     <input type="checkbox" id="showHolidaysToggle" checked>
@@ -7666,6 +7769,7 @@
                     <button type="button" class="btn btn-secondary view-toggle-btn active" id="viewMonthBtn" title="Monthly grid view">📆 Monthly</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewWeekBtn" title="7-day stacked view">📅 7-Day</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewYearBtn" title="Annual (12-month) overview">🗓️ Annual</button>
+                    <button type="button" class="btn btn-secondary view-toggle-btn" id="viewLaunchBtn" title="The 10 weekly launch windows of the 70-day cycle: which weeks have a crop flipping to bloom and which are open">🚀 Launch windows</button>
                 </div>
                 <button type="button" class="btn btn-secondary hidden" id="printYearBtn" title="Print this year's task calendar in black and white, with the filters that are on">🖨️ Print year</button>
             </div>
@@ -7693,6 +7797,9 @@
 
             <!-- 7-day view: vertically stacked days with full task text -->
             <div class="week-view hidden" id="weekView"></div>
+
+            <!-- 🚀 Launch windows: the 10 weekly flip windows of the 70-day cycle, one row each (Calendar.renderLaunch) -->
+            <div class="launch-view hidden" id="launchView"></div>
 
             <!-- Event details/operations panel -->
             <div class="event-panel" id="eventPanel">
@@ -14892,8 +14999,10 @@
         }
         function lotLocked(lotId) { return lotDailyPages(lotId).length > 0; }
         // 🌸 A lot's phase as an emoji, in front of it in every lot dropdown (user request 2026-10-27): ✂️ or 🍂 when its
-        // current daily paperwork is its trim or drying log (the daily log whose newest page started last), else its stage.
-        // '' for a lot with neither (a projected lot, a lot with no stage). Every tool calls this one (the page's own).
+        // current daily paperwork is its trim or drying log (the daily log whose newest page started last), 🍂 when its
+        // current room is designated Dry/Trim (user request 2026-10-29: a lot moved to the dry room before its stage or
+        // drying log says so), else its stage. '' for a lot with none of these (a projected lot, a lot with no stage).
+        // Every tool calls this one (the page's own).
         const LOT_PHASE_EMOJI = { cloning: '🌱', veg: '🪴', vegetation: '🪴', mother: '🌿', flower: '🌸', bloom: '🌸', harvest: '🌸', harvesting: '🌸', drying: '🍂', curing: '🍂' };
         function lotPhaseEmoji(lotId) {
             const lot = DB.data?.lots?.[lotId];
@@ -14901,6 +15010,8 @@
             const pages = lotDailyPages(lotId), current = pages[pages.length - 1]?.sheet?.document;   // sorted by start day
             if (current === 'trim-log') return '✂️';
             if (current === 'drying-log') return '🍂';
+            const here = String(lot.currentRoom || '').trim().toLowerCase();
+            if (here && Object.values(DB.data?.rooms || {}).some(r => r?.designation === 'Dry/Trim' && String(r.name || '').trim().toLowerCase() === here)) return '🍂';
             return LOT_PHASE_EMOJI[String(lot.stage || '').trim().toLowerCase()] || '';
         }
         // ✂️ Has the lot moved from drying to trimming? Its current daily log (the daily log whose newest page started last) is
@@ -15440,6 +15551,122 @@
             const day = s => { const [y, mo, d] = s.split('-').map(Number); return new Date(y, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', ''); };
             const rel = n => n === 0 ? 'on the day' : `${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'} ${n > 0 ? 'before' : 'after'}`;
             return `Lot ${m.lotId} cuts clones ${day(m.realCut)}, ${rel(m.realDays)} its harvest ends (${day(m.harvestEnd)}). The projections cut them ${day(m.tbaCut)}, ${rel(m.tbaDays)}.`;
+        }
+
+        // ---- 🚀 Launch windows (user request 2026-10-29) ----
+        // CropLabourWizard's default recipe (sitkaStandardRecipe, 'sitka-9week') is a sealed 70-day cycle: a lot flips on a
+        // Friday and harvests 63 days later on a Friday, its room is cleaned over the weekend, and the room's next lot
+        // transplants on the Monday and flips that Friday, 70 days after the last. So the facility has 10 weekly launch
+        // windows: one flip and one harvest a week, never two harvests in one week. The calendar's 🚀 view shows which are
+        // taken and which are open. These figures mirror that recipe, which lives inside CropLabourWizard's code and can't be
+        // read from here; tests/launch-windows checks they still match. LEAD: Day 1 (clones cut) to the flip.
+        const LAUNCH = { SLOTS: 10, CYCLE: 70, BLOOM: 63, LEAD: 34 };
+        const launchDay = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+        const launchIso = n => new Date(n * 86400000).toISOString().slice(0, 10);
+        const launchAdd = (s, n) => launchIso(launchDay(s) + n);
+        // Weeks run Monday to Sunday, numbered from the week of 1970-01-01 (day 0, a Thursday: its Monday was day −3)
+        const launchWeekOf = s => Math.floor((launchDay(s) + 3) / 7);
+        const launchMonday = w => launchIso(w * 7 - 3);
+        const launchFriday = w => launchIso(w * 7 + 1);
+
+        // The crops that can take a launch window: each lot's flip (a real lot's or a projection's, never a 📋 copy) with its
+        // harvest, the first one on or after the flip (none: 63 days on, `estimated`). `flips`: the flip events to use (the
+        // calendar's, filtered); `events`: where to find the harvests; `roomOf(ev)`: the flip's flower room id. A real lot
+        // must still be in the DB (a closed-out lot's leftovers aren't crops), and a projection's room must exist.
+        // `stale`: a projection whose flip day has passed (no lot was made for it). `superseded`: a projection overlapping a
+        // real crop in its room (the room is waiting for Reproject): the real one counts. Neither takes a window.
+        function launchCrops(data, flips, events, roomOf, today) {
+            const isCrop = ev => !!ev && !('copyOf' in ev) && !!ev.lotId && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || '')
+                && (ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection');
+            const harvests = new Map();
+            for (const ev of events) {
+                if (ev?.taskType !== 'harvest' || !isCrop(ev)) continue;
+                const key = ev.sourceTool + '|' + ev.lotId;
+                if (!harvests.has(key)) harvests.set(key, []);
+                harvests.get(key).push(ev);
+            }
+            const crops = [], seen = new Set();
+            for (const flipEv of flips.filter(ev => ev?.taskType === 'flip' && isCrop(ev)).sort((a, b) => a.date.localeCompare(b.date))) {
+                const key = flipEv.sourceTool + '|' + flipEv.lotId, projected = flipEv.sourceTool === 'CropProjection';
+                if (seen.has(key)) continue;   // a lot's first flip
+                seen.add(key);
+                const roomId = roomOf(flipEv) || null;
+                if (projected ? !data?.rooms?.[roomId] : !data?.lots?.[flipEv.lotId]) continue;
+                const harvestEv = (harvests.get(key) || []).filter(h => h.date >= flipEv.date).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+                const harvestStart = harvestEv ? harvestEv.date : launchAdd(flipEv.date, LAUNCH.BLOOM);
+                const harvestEnd = harvestEv?.endDate > harvestStart ? harvestEv.endDate : harvestStart;
+                crops.push({ lotId: flipEv.lotId, projected, flipEv, harvestEv, roomId, flip: flipEv.date, harvestStart, harvestEnd,
+                    estimated: !harvestEv, bloomDays: launchDay(harvestStart) - launchDay(flipEv.date),
+                    stale: projected && flipEv.date < today, superseded: false });
+            }
+            for (const p of crops) if (p.projected && !p.stale)
+                p.superseded = crops.some(c => !c.projected && !!c.roomId && c.roomId === p.roomId && c.flip <= p.harvestEnd && p.flip <= c.harvestEnd);
+            return crops;
+        }
+
+        // The 10 launch windows as of a week (`asOf`: its Monday). Row 1 is the week the oldest crop in bloom flipped (no more
+        // than 9 weeks back, so a long bloom can't push the next windows off the end), rows 2–10 the weeks after it. Each row
+        // shows its window twice, this cycle and the next (20 weeks from row 1's Monday): a room's next lot, 70 days on,
+        // lands in the same row. The as-of day is today in this week, else the week's Monday.
+        //  • A window is taken when a crop in its row is in bloom on the as-of day, or one flips in its next launch week (the
+        //    row's first week from the as-of week on whose Friday hasn't passed); open otherwise.
+        //  • ⚠️ Harvest overlap: two crops whose harvests start in the same week (Monday to Sunday).
+        //  • A flower room is free for a window flipping on Friday F when each crop in it harvests by F − 7 (cleaned out for
+        //    the Monday transplant) or flips on F + 70 or later (moves in after this one's harvest).
+        // `rooms`: the flowering rooms to offer, [{ id, name }]. Stale and superseded projections are drawn but count for nothing.
+        function launchModel(crops, { asOf, today, rooms = [] }) {
+            const S = LAUNCH.SLOTS, T = launchWeekOf(asOf);
+            const day = launchWeekOf(today) === T ? today : launchMonday(T);
+            const counts = c => !c.stale && !c.superseded;
+            const inBloom = c => c.flip <= day && day <= c.harvestEnd;
+            const blooming = crops.filter(c => counts(c) && inBloom(c));
+            const oldest = blooming.length ? Math.min(...blooming.map(c => launchWeekOf(c.flip))) : T;
+            const A = Math.max(T - (S - 1), Math.min(T, oldest)), END = A + 2 * S;   // the weeks drawn: [A, END)
+            const from = launchMonday(A), to = launchAdd(launchMonday(END), -1);
+            const rowOf = c => (((launchWeekOf(c.flip) - A) % S) + S) % S;
+            const live = crops.filter(counts);
+            // ⚠️ Harvest overlaps, by the week each harvest starts
+            const byWeek = new Map();
+            for (const c of live) {
+                if (c.harvestStart < from || c.harvestStart > to) continue;
+                const w = launchWeekOf(c.harvestStart);
+                if (!byWeek.has(w)) byWeek.set(w, []);
+                byWeek.get(w).push(c);
+            }
+            const overlaps = [...byWeek].filter(([, list]) => list.length > 1).sort((a, b) => a[0] - b[0])
+                .map(([w, list]) => ({ week: w, monday: launchMonday(w), crops: list }));
+            const overlapping = new Set(overlaps.flatMap(o => o.crops));
+            // ⚠️ Two real crops in one room at the same time
+            const clashes = [], real = live.filter(c => !c.projected && c.roomId);
+            for (let i = 0; i < real.length; i++) for (let j = i + 1; j < real.length; j++) {
+                const a = real[i], b = real[j];
+                if (a.roomId === b.roomId && a.flip <= b.harvestEnd && b.flip <= a.harvestEnd) clashes.push({ roomId: a.roomId, crops: [a, b] });
+            }
+            const freeRooms = flip => rooms.filter(r => !live.some(c => c.roomId === r.id
+                && !(launchDay(c.harvestEnd) <= launchDay(flip) - 7 || launchDay(c.flip) >= launchDay(flip) + LAUNCH.CYCLE)));
+            const shown = crops.filter(c => c.flip <= to && c.harvestEnd >= from);
+            const rows = [];
+            for (let k = 0; k < S; k++) {
+                const week = A + k;
+                let next = week;
+                while (next < T || launchFriday(next) < day) next += S;
+                // Lanes: crops one after another share a lane; two at once (flips the same week) get one each
+                const items = [], laneEnds = [];
+                for (const c of shown.filter(c => rowOf(c) === k).sort((a, b) => a.flip.localeCompare(b.flip))) {
+                    let lane = laneEnds.findIndex(end => end < c.flip);
+                    if (lane < 0) { lane = laneEnds.length; laneEnds.push(''); }
+                    laneEnds[lane] = c.harvestEnd;
+                    items.push({ crop: c, lane });
+                }
+                const takenBy = items.map(i => i.crop).filter(c => counts(c) && (inBloom(c) || launchWeekOf(c.flip) === next));
+                const flip = launchFriday(next), cut = launchAdd(flip, -LAUNCH.LEAD), harvest = launchAdd(flip, LAUNCH.BLOOM);
+                rows.push({ k, week, friday: launchFriday(week), items, laneEnds, taken: takenBy.length > 0, takenBy,
+                    next: { week: next, flip, cut, harvest, cutPassed: cut < today, again: launchAdd(flip, LAUNCH.CYCLE), freeRooms: freeRooms(flip),
+                        holidays: [['Clone cut', cut], ['Flip', flip], ['Harvest', harvest]]
+                            .map(([what, date]) => ({ what, date, holiday: Holidays.forDate(date) })).filter(h => h.holiday) } });
+            }
+            const taken = rows.filter(r => r.taken).length;
+            return { T, A, END, from, to, day, rows, overlaps, overlapping, clashes, inBloom, taken, open: S - taken };
         }
 
         // What the open tool last had (the DB without SitkaTools' save stamp, plus the view): Tools measures its changes by it
@@ -16282,10 +16509,12 @@
             selectedEvent: null,
             showHolidays: true,
 
-            // ---- View mode: 'month' | 'week' (7-day stacked) | 'year' (12-month annual) ----
+            // ---- View mode: 'month' | 'week' (7-day stacked) | 'year' (12-month annual) | 'launch' (🚀 launch windows) ----
             viewMode: 'month',
             // First day of the 7-day window in week view ('YYYY-MM-DD')
             weekAnchorDate: null,
+            // 🚀 The week the launch windows are shown as of: its Monday ('YYYY-MM-DD'); null until the view is first opened
+            launchWeek: null,
 
             // ---- Tag filters (session-only; not persisted to the DB) ----
             filters: [],          // [{ key: 'room'|'building'|'lot'|'strain'|'taskType', value }]
@@ -16335,11 +16564,13 @@
                         d.setDate(d.getDate() - d.getDay()); // back to Sunday
                         this.weekAnchorDate = localDate(d);
                     }
+                    if (mode === 'launch' && !this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(localDate()));
                     this.render();
                 };
                 $('viewMonthBtn').addEventListener('click', () => setView('month'));
                 $('viewWeekBtn').addEventListener('click', () => setView('week'));
                 $('viewYearBtn').addEventListener('click', () => setView('year'));
+                $('viewLaunchBtn').addEventListener('click', () => setView('launch'));
                 $('printYearBtn').addEventListener('click', () => this.printAnnual());
 
                 // Holiday display toggle (on by default)
@@ -16410,6 +16641,12 @@
                     this.render();
                     return;
                 }
+                if (this.viewMode === 'launch') {
+                    // 🚀 Launch windows: Prev/Next show them as of the week before / after
+                    this.launchWeek = launchAdd(this.launchWeek || launchMonday(launchWeekOf(localDate())), 7 * delta);
+                    this.render();
+                    return;
+                }
                 this.currentMonth += delta;
                 if (this.currentMonth > 11) {
                     this.currentMonth = 0;
@@ -16429,6 +16666,7 @@
                     // Slide the 7-day window so today is its first day
                     this.weekAnchorDate = localDate(today);
                 }
+                if (this.viewMode === 'launch') this.launchWeek = launchMonday(launchWeekOf(localDate(today)));
                 this.render();
             },
 
@@ -16792,6 +17030,7 @@
                 view.classList.remove('hidden');
                 if (monthGrid) monthGrid.classList.add('hidden');
                 $('weekView').classList.add('hidden');
+                $('launchView').classList.add('hidden');
 
                 const todayStr = localDate();
                 const taskTypes = this._annualTaskTypes();
@@ -17067,6 +17306,7 @@
                 const monthGrid = $('calendarGrid').closest('.calendar-grid-wrapper');
                 if (monthGrid) monthGrid.classList.add('hidden');
                 $('annualView').classList.add('hidden');
+                $('launchView').classList.add('hidden');
                 view.classList.remove('hidden');
 
                 // Default anchor: most recent Sunday (so the window is Sun–Sat)
@@ -17162,6 +17402,173 @@
 
                     // Hover tooltip with the full entry text
                     this._attachEventTooltip(el);
+                });
+            },
+
+            // =====================================================
+            // 🚀 Launch windows (user request 2026-10-29) — the 10 weekly flip windows of the 70-day cycle (launchModel),
+            // one row each: oldest crop in bloom at the top, each crop a bar from its flip to its harvest, the open weeks
+            // marked 🚀 at their next launch Friday. The whole facility; the tag filters (task type aside) and a building
+            // device narrow it.
+            // =====================================================
+            renderLaunch() {
+                const view = $('launchView');
+                const monthGrid = $('calendarGrid').closest('.calendar-grid-wrapper');
+                if (monthGrid) monthGrid.classList.add('hidden');
+                $('annualView').classList.add('hidden');
+                $('weekView').classList.add('hidden');
+                view.classList.remove('hidden');
+                const today = localDate();
+                if (!this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(today));
+                if (!DB.data) { view.innerHTML = '<div class="launch-empty">Load a database to see the launch windows.</div>'; return; }
+
+                const data = DB.data, rooms = data.rooms || {}, building = DeviceView.building;
+                const roomOf = ev => this._filterCache.get(ev)?.roomId || null;
+                const inBuilding = id => !building || rooms[id]?.buildingId === building;
+                const active = this._activeFilterKeys();
+                // The flips the filters leave (task-type filters aside: the view is about flips); on a building device only
+                // the ones flowering in its building (its tablet also sees lots that grow there first and flower elsewhere)
+                const flips = this.filteredEvents('taskType').filter(ev => ev.taskType === 'flip' && inBuilding(roomOf(ev)));
+                const crops = launchCrops(data, flips, this.shownEvents, roomOf, today);
+                // The flowering rooms a window may go to: in the building filter / room filter when one is on
+                const label = (id, rec) => rec?.name ? `${rec.name} (${id})` : id;
+                const flowerRooms = Object.entries(rooms).filter(([id, r]) => r?.isFlowering && inBuilding(id)
+                        && (!active.has('room') || active.get('room').has(label(id, r)))
+                        && (!active.has('building') || (!!r.buildingId && active.get('building').has(label(r.buildingId, data.buildings?.[r.buildingId])))))
+                    .map(([id, r]) => ({ id, name: r.name || id }))
+                    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                const M = launchModel(crops, { asOf: this.launchWeek, today, rooms: flowerRooms });
+
+                const fmt = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
+                const fmtY = s => fmt(s) + (s.slice(0, 4) !== today.slice(0, 4) ? `, ${s.slice(0, 4)}` : '');
+                const roomName = id => rooms[id]?.name || id || 'no room';
+                const span = LAUNCH.SLOTS * 14, d0 = launchDay(M.from);
+                const at = d => Math.min(100, Math.max(0, (launchDay(d) - d0) / span * 100));
+                const place = (a, b) => { const l = at(a), r = Math.min(100, Math.max(0, (launchDay(b) + 1 - d0) / span * 100)); return `left:${l.toFixed(3)}%;width:${Math.max(0.7, r - l).toFixed(3)}%`; };
+                const bloomTag = c => c.bloomDays === LAUNCH.BLOOM ? '' : (c.bloomDays % 7 === 0 ? `${c.bloomDays / 7}-wk bloom` : `${c.bloomDays}-day bloom`);
+                const cropName = c => c.projected ? c.lotId.replace(/^.*-(TBA-\d+)$/, '$1') : c.lotId;
+
+                // A crop's bar: its label and the lines of its tooltip
+                const bar = (c, lane) => {
+                    const weeks = Math.ceil(c.bloomDays / 7), wk = Math.floor((launchDay(M.day) - launchDay(c.flip)) / 7) + 1;
+                    const status = M.day < c.flip ? `flips ${fmt(c.flip)}` : M.inBloom(c) ? `wk ${Math.min(wk, weeks)}/${weeks}` : 'harvested';
+                    const over = M.overlapping.has(c), tag = bloomTag(c);
+                    const lot = data.lots?.[c.lotId];
+                    const text = [c.stale ? '⚠️' : c.superseded ? '⏳' : over ? '⚠️' : (c.projected ? '' : lotPhaseEmoji(c.lotId)),
+                        `${cropName(c)} · ${roomName(c.roomId)}`, '·', c.projected ? 'projected' : status, tag ? `· ${tag}` : '', c.estimated ? '· est.' : '']
+                        .filter(Boolean).join(' ');
+                    const tip = [c.projected ? `Projected lot ${c.lotId}` : `Lot ${c.lotId}${lot?.strain ? ' · ' + lot.strain : ''}`,
+                        roomName(c.roomId),
+                        `Flip ${fmtY(c.flip)} → harvest ${fmtY(c.harvestStart)}${c.harvestEnd !== c.harvestStart ? '–' + fmtY(c.harvestEnd) : ''} (${c.bloomDays} days)`,
+                        M.inBloom(c) ? `In bloom: week ${Math.min(wk, weeks)} of ${weeks}` : '',
+                        c.estimated ? '⚠️ No harvest task: harvest estimated 63 days after the flip' : '',
+                        over ? `⚠️ Harvest overlap: another crop harvests the week of ${fmt(launchMonday(launchWeekOf(c.harvestStart)))}` : '',
+                        c.stale ? '⚠️ Its flip day has passed and no lot was made for it' : '',
+                        c.superseded ? '⏳ Overlaps a real lot in this room: Reproject in CropLabourWizard' : '',
+                        'Click to open its Flip to Flower task'].filter(Boolean).join('\n');
+                    const cls = ['launch-bar', c.projected ? 'projection' : '', c.stale ? 'stale' : '', c.superseded ? 'superseded' : '',
+                        over ? 'overlap' : '', c.estimated ? 'estimated' : '', !c.projected && c.harvestEnd < M.day ? 'done' : '',
+                        this.selectedEvent === c.flipEv ? 'selected' : ''].filter(Boolean).join(' ');
+                    return `<button type="button" class="${cls}" style="${place(c.flip, c.harvestEnd)};--lane:${lane}" data-event-id="${escapeHtml(c.flipEv.id || '')}" title="${escapeHtml(tip)}">${escapeHtml(text)}</button>`;
+                };
+
+                // The month labels, the as-of week and today, drawn on every row
+                const firsts = [];
+                for (let d = M.from; d <= M.to; d = launchAdd(d, 1)) if (d.slice(8) === '01') firsts.push(d);
+                if (!firsts.length || launchDay(firsts[0]) - d0 > 10) firsts.unshift(M.from);   // the first month, unless its 1st is close
+                const months = firsts.map(d => {
+                    const dt = parseLocalDate(d);
+                    return `<span class="launch-month" style="left:${at(d).toFixed(3)}%">${dt.toLocaleDateString('en-US', { month: 'short' })}${dt.getMonth() === 0 ? ' ' + dt.getFullYear() : ''}</span>`;
+                }).join('');
+                const nowBand = `<div class="launch-now" style="${place(launchMonday(M.T), launchAdd(launchMonday(M.T), 6))}"></div>`;
+                const todayLine = today >= M.from && today <= M.to ? `<div class="launch-today" style="left:${((launchDay(today) + 0.5 - d0) / span * 100).toFixed(3)}%"></div>` : '';
+
+                let rowsHtml = '';
+                for (const row of M.rows) {
+                    const fri = row.friday, hol = this.showHolidays ? Holidays.forDate(fri) : null;
+                    let inner = nowBand + todayLine + row.items.map(i => bar(i.crop, i.lane)).join('');
+                    let lanes = Math.max(1, row.laneEnds.length);
+                    if (!row.taken) {
+                        // 🚀 its next launch, with the bloom it would have
+                        let lane = row.laneEnds.findIndex(end => end < row.next.flip);
+                        if (lane < 0) lane = row.laneEnds.length;
+                        lanes = Math.max(lanes, lane + 1);
+                        inner += `<div class="launch-ghost" style="${place(row.next.flip, row.next.harvest)};--lane:${lane}">🚀 ${escapeHtml(fmt(row.next.flip))}</div>`;
+                    }
+                    rowsHtml += `<div class="launch-row ${row.taken ? 'taken' : 'open'}" data-row="${row.k + 1}">
+                        <div class="launch-label"${hol ? ` title="🏛️ ${escapeHtml(hol.name)}"` : ''}>
+                            <span class="launch-wk">Wk ${row.k + 1}</span>
+                            <span class="launch-fri">${escapeHtml(fmt(fri))}${hol ? ' 🏛️' : ''}</span>
+                            ${row.taken ? '' : '<span class="launch-chip">🚀 open</span>'}
+                        </div>
+                        <div class="launch-track" style="--lanes:${lanes}">${inner}</div>
+                    </div>`;
+                }
+
+                // 🚀 The open windows, soonest first
+                const open = M.rows.filter(r => !r.taken).sort((a, b) => a.next.flip.localeCompare(b.next.flip));
+                const tableRows = open.map(r => {
+                    const n = r.next, notes = [];
+                    if (n.cutPassed) notes.push(`<span class="warn">Clone-cut day has passed: needs rooted clones, or the next window, ${escapeHtml(fmtY(n.again))}</span>`);
+                    for (const h of n.holidays) notes.push(`🏛️ ${escapeHtml(h.what)} on ${escapeHtml(h.holiday.name)}`);
+                    const free = n.freeRooms.length ? n.freeRooms.map(rm => escapeHtml(rm.name)).join(', ') : '<span class="muted">none free</span>';
+                    return `<tr data-row="${r.k + 1}"><td>Wk ${r.k + 1}</td><td class="date"><b>${escapeHtml(fmtY(n.flip))}</b></td>
+                        <td class="date${n.cutPassed ? ' muted' : ''}">${escapeHtml(fmtY(n.cut))}</td><td class="date">${escapeHtml(fmtY(n.harvest))}</td>
+                        <td class="free">${free}</td><td>${notes.join('<br>') || '<span class="muted">—</span>'}</td></tr>`;
+                }).join('');
+                const openPanel = `<section class="launch-panel">
+                    <h3>🚀 Open launch windows</h3>
+                    ${open.length ? `<div class="launch-table-wrap"><table class="launch-table">
+                        <thead><tr><th>Wk</th><th>Flip</th><th>Cut clones*</th><th>Harvest</th><th>Flower rooms free</th><th>Notes</th></tr></thead>
+                        <tbody>${tableRows}</tbody></table></div>
+                    <p class="launch-foot">* Day 1 with CropLabourWizard's default recipe (Sitka Standard, 20-day veg): clones cut ${LAUNCH.LEAD} days before the flip, harvest ${LAUNCH.BLOOM} days after it. A room is free when its last crop has harvested by the Friday before and nothing else is booked in it until after this harvest.</p>`
+                        : '<p class="launch-foot">Every window is taken: one crop flips each week.</p>'}
+                </section>`;
+
+                // ⚠️ What to check: harvest overlaps, rooms booked twice, projections out of date, lots with no flip
+                const checks = [];
+                const who = c => `${escapeHtml(cropName(c))} (${escapeHtml(roomName(c.roomId))}, ${escapeHtml(fmt(c.harvestStart))})`;
+                for (const o of M.overlaps) checks.push(`⚠️ <b>Harvest overlap</b>, week of ${escapeHtml(fmtY(o.monday))}: ${o.crops.map(who).join(', ')}`);
+                for (const cl of M.clashes) checks.push(`⚠️ <b>${escapeHtml(roomName(cl.roomId))} is booked twice</b>: ${cl.crops.map(c => `${escapeHtml(c.lotId)} (${escapeHtml(fmt(c.flip))} – ${escapeHtml(fmt(c.harvestEnd))})`).join(' and ')}`);
+                const shownCrops = new Set(M.rows.flatMap(r => r.items.map(i => i.crop)));
+                const pending = [...new Set(crops.filter(c => c.superseded && shownCrops.has(c)).map(c => c.roomId))];
+                for (const id of pending) checks.push(`⏳ <b>${escapeHtml(roomName(id))}</b>: its projected lots overlap a real lot. Run Reproject in CropLabourWizard.`);
+                for (const c of crops.filter(c => c.stale && shownCrops.has(c)))
+                    checks.push(`⚠️ <b>${escapeHtml(c.lotId)}</b>: its flip day (${escapeHtml(fmtY(c.flip))}) has passed and no lot was made for it.`);
+                const flipped = new Set(this.events.filter(ev => ev.sourceTool === 'CropLabourWizard' && ev.taskType === 'flip').map(ev => ev.lotId));
+                const roomNamed = name => Object.keys(rooms).find(id => rooms[id]?.name && rooms[id].name === name);
+                for (const [id, lot] of Object.entries(data.lots || {})) {
+                    if (flipped.has(id) || lotIsMother(lot) || !DeviceView.lotVisible(lot)) continue;
+                    if (/^(drying|curing|shipped|closed)$/i.test(String(lot.stage || '').trim()) || String(lot.plantCount ?? '') === '0') continue;
+                    if ((active.has('lot') && !active.get('lot').has(id)) || (active.has('strain') && !active.get('strain').has(String(lot.strain || '')))) continue;
+                    const rid = roomNamed(lot.destRoom);
+                    if (!rid || !flowerRooms.some(r => r.id === rid)) continue;
+                    checks.push(`📋 <b>Lot ${escapeHtml(id)}</b> (${escapeHtml(roomName(rid))}) has no flip scheduled, so it isn't shown. Generate its schedule in CropLabourWizard.`);
+                }
+                const checkPanel = checks.length ? `<section class="launch-panel warn"><h3>⚠️ Check these</h3><ul>${checks.map(t => `<li>${t}</li>`).join('')}</ul></section>` : '';
+
+                const typeFilter = active.has('taskType') ? '<p class="launch-note">Task-type filters don\'t apply here.</p>' : '';
+                view.innerHTML = `
+                    <div class="launch-head">
+                        <div class="launch-summary"><b>${M.taken} of ${LAUNCH.SLOTS}</b> windows taken · <b>${M.open} open</b>${M.overlaps.length ? ` · <span class="launch-warn">⚠️ ${M.overlaps.length} harvest overlap${M.overlaps.length > 1 ? 's' : ''}</span>` : ''}</div>
+                        <div class="launch-legend"><span><i class="lg-lot"></i>lot</span><span><i class="lg-proj"></i>projected</span><span><i class="lg-open"></i>🚀 open window</span><span><i class="lg-over"></i>harvest overlap</span><span><i class="lg-today"></i>today</span></div>
+                    </div>
+                    <p class="launch-intro">Each flower room's next lot flips ${LAUNCH.CYCLE} days after its last, so there are ${LAUNCH.SLOTS} weekly windows: one flip and one harvest a week. Wk 1 is the week the oldest crop in bloom flipped; each row shows its window this cycle and the next.</p>
+                    ${typeFilter}
+                    <div class="launch-scroll"><div class="launch-chart">
+                        <div class="launch-row launch-axis"><div class="launch-label"></div><div class="launch-track">${months}</div></div>
+                        ${rowsHtml}
+                    </div></div>
+                    <div class="launch-panels">${openPanel}${checkPanel}</div>`;
+
+                // Click a bar → its Flip to Flower task in the event panel
+                view.querySelectorAll('.launch-bar').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const ev = this.eventById(el.dataset.eventId);
+                        if (!ev) return;
+                        this.selectEvent(ev);
+                        $('eventPanel')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+                    });
                 });
             },
 
@@ -17394,7 +17801,8 @@
                 return {
                     room: roomLabel(room),
                     building: buildingLabel(roomIdToBuildingId(room)),
-                    lot, strain, taskType
+                    lot, strain, taskType,
+                    roomId: room || null   // the raw id (🚀 launch windows); not a filter key
                 };
             },
 
@@ -17418,10 +17826,13 @@
 
             // Events passing all active filters: values within a key OR
             // together, keys AND together (strict — missing value fails).
-            filteredEvents() {
+            // `ignoreKey`: a filter key left out (🚀 launch windows ignore task-type filters).
+            filteredEvents(ignoreKey = null) {
                 const all = this.shownEvents;
                 if (this.filters.length === 0) return all;
                 const byKey = this._activeFilterKeys();
+                if (ignoreKey) byKey.delete(ignoreKey);
+                if (byKey.size === 0) return all;
                 return all.filter(ev => {
                     const vals = this._filterCache.get(ev);
                     if (!vals) return false;
@@ -17665,6 +18076,8 @@
                     this.renderAnnual();
                 } else if (this.viewMode === 'week') {
                     this.renderWeek();
+                } else if (this.viewMode === 'launch') {
+                    this.renderLaunch();
                 } else {
                     this.renderGrid();
                 }
@@ -17682,11 +18095,14 @@
                     b.setDate(b.getDate() + 6);
                     const fmt = d => `${months[d.getMonth()].slice(0, 3)} ${d.getDate()}, ${d.getFullYear()}`;
                     $('calendarTitle').textContent = `${fmt(a)} – ${fmt(b)} — 7-Day View`;
+                } else if (this.viewMode === 'launch') {
+                    const a = parseLocalDate(this.launchWeek || launchMonday(launchWeekOf(localDate())));
+                    $('calendarTitle').textContent = `🚀 Launch Windows — week of ${months[a.getMonth()].slice(0, 3)} ${a.getDate()}, ${a.getFullYear()}`;
                 } else {
                     $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
                 }
                 // Keep the view buttons in sync with the active view
-                const viewBtns = { month: $('viewMonthBtn'), week: $('viewWeekBtn'), year: $('viewYearBtn') };
+                const viewBtns = { month: $('viewMonthBtn'), week: $('viewWeekBtn'), year: $('viewYearBtn'), launch: $('viewLaunchBtn') };
                 for (const [mode, btn] of Object.entries(viewBtns)) {
                     if (btn) btn.classList.toggle('active', mode === this.viewMode);
                 }
@@ -17703,6 +18119,7 @@
                 }
                 $('annualView').classList.add('hidden');
                 $('weekView').classList.add('hidden');
+                $('launchView').classList.add('hidden');
 
                 // Keep headers, remove day cells
                 const headers = grid.querySelectorAll('.calendar-day-header');
@@ -19204,6 +19621,7 @@
         var DayRollover = {
             day: null,
             sundayOf(ds) { const d = parseLocalDate(ds); d.setDate(d.getDate() - d.getDay()); return localDate(d); },
+            mondayOf(ds) { return launchMonday(launchWeekOf(ds)); },
             check() {
                 const today = localDate();
                 if (!this.day || today === this.day) { this.day = today; return; }
@@ -19215,6 +19633,7 @@
                 if (onMonth || onYear) { C.currentYear = n.getFullYear(); C.currentMonth = n.getMonth(); }
                 if (C.weekAnchorDate === was) C.weekAnchorDate = today;
                 else if (C.weekAnchorDate === this.sundayOf(was)) C.weekAnchorDate = this.sundayOf(today);
+                if (C.launchWeek === this.mondayOf(was)) C.launchWeek = this.mondayOf(today);   // 🚀 shown as of this week
                 if (lotDateInput.value === was) lotDateInput.value = today;
                 refreshAllViews();
             },

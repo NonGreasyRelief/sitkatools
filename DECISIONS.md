@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · the lot dropdowns' phase emoji is 🍂 for a lot whose current room is designated Dry/Trim (after ✂️ / 🍂 for its trim or drying log, before its stage)
 - 2026-10-29 · the Lot Manager lists the lots for flower rooms first and the 🌿 mother lots under them, each by lot number, lowest first (it was newest first)
 - 2026-10-29 · the recipe editor shows the weekday each task lands on, from a "Day 1 (clones cut) is a …" picker that opens on the weekday putting the harvest on a Friday; a guide only, not saved with the recipe
 - 2026-10-29 · CropLabourWizard's recipe ⬇️ Export offers the file as a link in a dialog (click, or right-click → Save Link As…), like 💾 Save DB, instead of a download started by the code (it didn't arrive on PCs that block downloads)
