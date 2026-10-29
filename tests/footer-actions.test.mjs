@@ -1,7 +1,8 @@
 // The footer actions (user request 2026-10-28): CropLabourWizard's Clear / Generate Schedule, the recipe editor's Save
 // Recipe and PaperWizard's sheet editor's Delete / Save sheet sit in the tool's footer — delete or clear on the left,
-// Close Tool (or ‹ Back) in the middle, the main action on the right — all the same shape.
-import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
+// Close Tool (or ‹ Back) in the middle, the main action on the right — all the same shape. DailyWizard's edit mode too
+// (user request 2026-10-29): ✅ Done editing on the left, + Add Task on the right.
+import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, withFloorManager, dwBuilding, dwUnlock } from './lib/helpers.mjs';
 
 export const title = 'Footer actions';
 
@@ -15,7 +16,7 @@ export async function run(b, BASE) {
     const main = await fresh(b);
     await b.send('browsingContext.setViewport', { context: main, viewport: { width: 1280, height: 800 } });
     await openSitka(b, main, BASE);
-    await loadSingle(b, main, fixtureDb());
+    await loadSingle(b, main, withFloorManager(fixtureDb()));
 
     // ---- CropLabourWizard ----
     const clw = await openTool(b, main, 'CropLabourWizard');
@@ -44,11 +45,39 @@ export async function run(b, BASE) {
     check('…not under the sheet editor any more, and off until a document is loaded', await b.run(pw, `return !document.querySelector('#configurePanel #saveSheetBtn')
         && document.getElementById('saveSheetBtn').disabled && document.getElementById('deleteSheetBtn').disabled;`));
 
-    // ---- One shape ----
-    const actions = [by(main1, 'clearFormBtn'), by(main1, 'generateBtn'), by(recipe, 'recipeEditorSaveBtn'), by(pf, 'deleteSheetBtn'), by(pf, 'saveSheetBtn')];
-    const mids = [by(main1, 'closeToolBtn'), by(recipe, 'recipeFooterBackBtn'), by(pf, 'closeToolBtn')];
-    check('every footer action is the same size in all three', actions.every(a => a.w === actions[0].w && a.h === actions[0].h) && actions[0].h > 30, JSON.stringify(actions.map(a => [a.w, a.h])));
-    check('…and Close Tool / ‹ Back the same height', mids.every(m => m.h === actions[0].h), JSON.stringify(mids.map(m => [m.w, m.h])));
     await b.run(main, `Tools.close();`);
+
+    // ---- DailyWizard's edit mode ----
+    const dw = await openTool(b, main, 'DailyWizard');
+    await dwBuilding(b, dw, 'B1');
+    let df = await footer(b, dw, '.tool-root > footer');
+    check('DailyWizard locked: only Close Tool in the footer', df.length === 1 && df[0].id === 'closeToolBtn', JSON.stringify(df));
+    check('…✏️ Edit tasks stays above the list', await b.run(dw, `return !!document.querySelector('#listContainer #editTasksBtn');`));
+    await dwUnlock(b, dw);
+    df = await footer(b, dw, '.tool-root > footer');
+    check('editing: ✅ Done editing on the left, Close Tool in the middle, + Add Task on the right of the footer',
+        by(df, 'doneEditingBtn').side === 'left' && by(df, 'closeToolBtn').side === 'middle' && by(df, 'addTaskBtn').side === 'right' &&
+        by(df, 'addTaskBtn').text === '+ Add Task' && by(df, 'doneEditingBtn').text === '✅ Done editing', JSON.stringify(df));
+    check('…not above the list any more; who is editing still is', await b.run(dw, `const L = document.getElementById('listContainer');
+        return !L.querySelector('#addTaskBtn, #doneEditingBtn') && L.querySelector('.edit-mode-note')?.textContent === '✏️ Editing as Casey';`));
+    await b.run(dw, `document.getElementById('addTaskBtn').click();`, { user: true });
+    check('+ Add Task opens the task editor for the building shown', await b.run(dw, `return document.getElementById('editorOverlay').classList.contains('open') && editorBuildingId === 'B1' && !editorTaskCode;`));
+    await b.run(dw, `closeTaskEditor();`);
+    await dwBuilding(b, dw, 'ALL');
+    df = await footer(b, dw, '.tool-root > footer');
+    check('All Buildings: no + Add Task, ✅ Done editing still there', !by(df, 'addTaskBtn').id && by(df, 'doneEditingBtn').side === 'left', JSON.stringify(df));
+    await dwBuilding(b, dw, 'B1');
+    const dwActions = await footer(b, dw, '.tool-root > footer');
+    await b.run(dw, `document.getElementById('doneEditingBtn').click();`, { user: true });
+    df = await footer(b, dw, '.tool-root > footer');
+    check('✅ Done editing locks it: only Close Tool again', df.length === 1 && !(await b.run(dw, 'return EditMode.on();')), JSON.stringify(df));
+    await b.run(main, `Tools.close();`);
+
+    // ---- One shape ----
+    const actions = [by(main1, 'clearFormBtn'), by(main1, 'generateBtn'), by(recipe, 'recipeEditorSaveBtn'), by(pf, 'deleteSheetBtn'), by(pf, 'saveSheetBtn'),
+        by(dwActions, 'doneEditingBtn'), by(dwActions, 'addTaskBtn')];
+    const mids = [by(main1, 'closeToolBtn'), by(recipe, 'recipeFooterBackBtn'), by(pf, 'closeToolBtn'), by(dwActions, 'closeToolBtn')];
+    check('every footer action is the same size in all four', actions.every(a => a.w === actions[0].w && a.h === actions[0].h) && actions[0].h > 30, JSON.stringify(actions.map(a => [a.w, a.h])));
+    check('…and Close Tool / ‹ Back the same height', mids.every(m => m.h === actions[0].h), JSON.stringify(mids.map(m => [m.w, m.h])));
     return results;
 }

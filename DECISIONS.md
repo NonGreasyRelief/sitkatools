@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · DailyWizard's edit mode buttons are in the footer: ✅ Done editing on the left, + Add Task on the right of Close Tool (✏️ Edit tasks and who is editing stay above the list)
 - 2026-10-28 · CropLabourWizard closing (Close Tool or ✕ Close) with a saved schedule's dates changed and not overwritten asks "Close crop labour wizard without overwriting old values?": red Close and discard, teal Overwrite schedule then close
 - 2026-10-28 · opening SitkaTools as the office (split files: the page link, the device question, Set this device…, a restored office session) needs the badge or PIN of someone with 🏢 Office access (a new roster tick), not a floor manager's; nothing is asked while no one has it; a building device and a single-file DB open as before
 - 2026-10-28 · a view's own actions can sit in the tool's footer: delete or clear on the left, Close Tool (or ‹ Back) in the middle, the main action on the right, all one shape — CropLabourWizard's Clear / Generate Schedule and recipe editor (Save Recipe), PaperWizard's sheet editor (Delete / Save sheet)

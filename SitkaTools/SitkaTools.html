@@ -5303,6 +5303,20 @@
             bottom: 0;
             z-index: 100;
         }
+        /* Footer actions (user request 2026-10-29): ✅ Done editing on the left, Close Tool in the middle, + Add Task on the
+           right — the same shape as CropLabourWizard's and PaperWizard's */
+        .footer.foot-actions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+        .foot-actions .foot-left { justify-self: start; display: flex; gap: 10px; }
+        .foot-actions .foot-mid { justify-self: center; }
+        .foot-actions .foot-right { justify-self: end; display: flex; gap: 10px; }
+        .foot-actions .foot-btn { min-height: 44px; padding: 0 22px; border-radius: var(--radius); font-size: 0.9rem; font-weight: 600; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 180px; }
+        .foot-actions [hidden] { display: none !important; }
+        @media (max-width: 640px) {
+            .footer.foot-actions { grid-template-columns: 1fr 1fr; }
+            .foot-actions .foot-mid { grid-column: 1 / -1; grid-row: 2; }
+            .foot-actions .foot-left .foot-btn, .foot-actions .foot-right .foot-btn { min-width: 0; }
+        }
 
         /* ---- Toast ---- */
         .toast {
@@ -8457,9 +8471,12 @@
         <div id="listContainer"></div>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <button class="btn btn-secondary" id="closeToolBtn" data-t>Close Tool</button>
+    <!-- Footer: in ✏️ edit mode, ✅ Done editing on the left and + Add Task on the right of Close Tool (user request
+         2026-10-29), like the other tools' footer actions; their words are set as the list draws (renderFootActions) -->
+    <footer class="footer foot-actions">
+        <div class="foot-left"><button type="button" class="btn btn-secondary foot-btn" id="doneEditingBtn" hidden></button></div>
+        <div class="foot-mid"><button class="btn btn-secondary foot-btn" id="closeToolBtn" data-t>Close Tool</button></div>
+        <div class="foot-right"><button type="button" class="btn btn-primary foot-btn" id="addTaskBtn" hidden></button></div>
     </footer>
 
     <!-- Task Editor Overlay (add / edit) -->
@@ -27174,7 +27191,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 container.appendChild(viewOnlyNote(DeviceView.building ? T('👀 Viewing {building} — view only', { building: b?.name || buildingId })
                     : T('👀 {building}’s daily list is view only on the office — open SitkaTools as {building} to change it. Hours and sign-offs on crop and equipment tasks still work here.', { building: b?.name || buildingId })));
             } else {
-                // ✏️ Edit tasks (floor manager PIN) → + Add Task and ✅ Done editing (single-building mode only)
+                // ✏️ Edit tasks (floor manager PIN) → who is editing; + Add Task and ✅ Done editing are in the footer
+                // (renderFootActions; single-building mode only)
                 const addBar = document.createElement('div');
                 addBar.className = 'add-task-bar';
                 const mk = (cls, text, fn) => {
@@ -27187,8 +27205,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     return btn;
                 };
                 if (EditMode.on()) {
-                    mk('btn-primary', T('+ Add Task'), () => openTaskEditor(buildingId)).id = 'addTaskBtn';
-                    mk('btn-secondary', T('✅ Done editing'), () => EditMode.end()).id = 'doneEditingBtn';
                     const who = document.createElement('span');
                     who.className = 'edit-mode-note';
                     who.textContent = T('✏️ Editing as {name}', { name: EditMode.by });
@@ -27309,6 +27325,19 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const sel = $('buildingSelect').value;
             if (sel === 'ALL') renderAllBuildings(container, dateStr);
             else renderBuildingView(container, sel, dateStr);
+            renderFootActions(sel === 'ALL' ? null : sel);
+        }
+
+        // ✏️ Edit mode's buttons in the footer (user request 2026-10-29): ✅ Done editing whenever editing is unlocked,
+        // + Add Task for the building shown when this device may change it (as the list's edit bar was)
+        let footBuilding = null;
+        function renderFootActions(buildingId) {
+            footBuilding = buildingId && canEditTasks(buildingId) ? buildingId : null;
+            const add = $('addTaskBtn'), done = $('doneEditingBtn');
+            add.textContent = T('+ Add Task');
+            done.textContent = T('✅ Done editing');
+            add.hidden = !footBuilding;
+            done.hidden = !EditMode.on();
         }
 
         function renderAll() {
@@ -27670,6 +27699,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             window.addEventListener('focus', rollToToday);
             setInterval(rollToToday, 60000);
             $('closeToolBtn').addEventListener('click', () => Hub.close());
+            $('addTaskBtn').addEventListener('click', () => { if (footBuilding) openTaskEditor(footBuilding); });
+            $('doneEditingBtn').addEventListener('click', () => EditMode.end());
 
             // Task editor + emoji picker
             $('emojiCurrentBtn').addEventListener('click', () => emojiPicker().toggle());   // its search and click-outside: EmojiKit

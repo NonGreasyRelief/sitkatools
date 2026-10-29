@@ -201,7 +201,7 @@ Each floor manager has their own PIN, set by the office in the Labour & Cost Wiz
   - `FloorPin.ask(why, { initials: true })` adds an initials pad ("✍️ Floor manager sign-off") and resolves `{ name, initials: { name, strokes } }`. The Labour & Cost Wizard uses it when hours are added or changed in its Tasks tab and for closing times; DailyWizard doesn't use it yet.
   - **🪪 A floor manager's badge** (user decision 2026-10-28) stands in for both the PIN and the initials wherever the dialog is asked: "🪪 Scan your badge — or pick your name and type your PIN". A scan resolves at once as `{ name, badge }` (with initials: `initials: { name, badge }`). Someone else's badge is refused ("Only a floor manager can approve this — {name} isn't one"); a badge not recognized or replaced counts toward the 5-wrong wait. `FloorPin.managers()` lists floor managers with a PIN or a badge; the name list next to the PIN box only those with a PIN (`pinManagers`).
 - **✏️ Edit mode** (`EditMode`, `canEditTasks(bid)` = `canEditBuilding(bid)` and edit mode on): needed to add, edit, reorder and delete tasks, and to write, move or delete steps and translations. Every entry point checks it (`openTaskEditor`, `saveTaskFromEditor`, `moveTask`, step edits, `deleteCurrentTask`), not just the buttons.
-  - **✏️ Edit tasks** asks for the PIN. Then the bar shows **+ Add Task**, **✅ Done editing** and "✏️ Editing as {name}", the rows show ▲ ▼, and the detail view shows Edit Task, Delete Task and step editing.
+  - **✏️ Edit tasks** asks for the PIN. Then the bar shows "✏️ Editing as {name}", the footer **✅ Done editing** (left of Close Tool) and **+ Add Task** (right; user request 2026-10-29, like the other tools' footer actions), the rows show ▲ ▼, and the detail view shows Edit Task, Delete Task and step editing. + Add Task shows only for a building this device may change; ✅ Done editing whenever editing is unlocked (All Buildings and a view-only building too).
   - It ends with ✅ Done editing, or after 10 minutes without an edit (checked every 15 s; never while the task editor is open or a step is being typed). It lasts until DailyWizard closes and is never stored.
 - **Deletions ask every time:** removing an hours entry, and deleting a whole task even in edit mode. Each goes in `adjustments` with `approvedBy` (see "Database Key"). Deleting a step in edit mode needs no extra PIN.
 - **Applies on every device**, the office included. Ticks, ⏱ Log and sign-ins need no PIN; ✅ Mark done takes the floor manager's PIN with their initials, or their badge (below).
@@ -259,7 +259,7 @@ The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overla
 
 ## UI
 
-Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **✏️ Edit tasks**, or in edit mode **+ Add Task** and **✅ Done editing** (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer.
+Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **✏️ Edit tasks**, or in edit mode "✏️ Editing as {name}" (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer (in edit mode **✅ Done editing** · Close Tool · **+ Add Task**).
 
 ### Header
 
@@ -326,8 +326,8 @@ Full picker, all inline (no library, no network), the same in GeneralEvent and C
 
 ### Footer and Empty States
 
-- **Close Tool** (centred, alone: Reset Day was removed, user request 2026-10-27) closes DailyWizard (`Hub.close()`).
-- No tasks in the building: "No daily tasks defined for {building} yet." + a prominent **+ Add Task**.
+- **Close Tool** (centred: Reset Day was removed, user request 2026-10-27) closes DailyWizard (`Hub.close()`). In ✏️ edit mode **✅ Done editing** is on its left and **+ Add Task** on its right (user request 2026-10-29: `.foot-actions`, the same shape as the other tools' footer actions; `renderFootActions`).
+- No tasks in the building: "No daily tasks defined for {building} yet." (+ Add Task is in the footer in edit mode).
 - Tasks but none that day: "No daily tasks scheduled for this date." (events still show).
 
 ### Tablet

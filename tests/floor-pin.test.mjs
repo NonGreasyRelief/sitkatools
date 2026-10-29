@@ -22,7 +22,8 @@ export async function run(b, BASE) {
         el.querySelector('[data-fpin-ok]').click(); await new Promise(r => setTimeout(r, 150));`);
     const cancelPin = (ctx) => b.run(ctx, `document.querySelector('#floorPin [data-fpin-cancel]').click();`);
     const bar = (dw) => b.run(dw, `const L = document.getElementById('listContainer');
-        return { edit: !!document.getElementById('editTasksBtn'), add: !!document.getElementById('addTaskBtn'), done: !!document.getElementById('doneEditingBtn'),
+        const shown = id => { const el = document.getElementById(id); return !!el && !el.hidden && !!el.offsetParent; };   // + Add Task and ✅ Done editing: in the footer
+        return { edit: !!document.getElementById('editTasksBtn'), add: shown('addTaskBtn'), done: shown('doneEditingBtn'),
             move: L.querySelectorAll('.move-btns').length, note: L.querySelector('.edit-mode-note')?.textContent || '' };`);
 
     // ---- No PIN yet: nothing can be unlocked ----
