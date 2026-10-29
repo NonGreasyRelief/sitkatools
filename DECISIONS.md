@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · DailyWizard's steps (edit mode) have 📷 Take picture and 🎥 Record training video: the tablet's camera, shown on the step in this window, saved under the step's name ({code}_{n}.jpg / .mp4; a picture as a JPEG of at most 1280 px) by the share sheet or a download, to be put in the "Pictures and Videos" folder on SharePoint next to the database folder; nothing in the database
 - 2026-10-29 · a room's building can be changed in its detail panel (a dropdown beside the Building Manager's own assign, refused the same way for a room holding a lot with a grow log)
 - 2026-10-29 · rooms can be designated Dry/Trim; a DailyWizard chore in one is a drying chore, a trimming chore or either: drying shows while a lot in the room dries, trimming once it has moved to trimming (its current daily log is its trim log); a lot with no trim log yet is drying
 - 2026-10-29 · DailyWizard's edit mode buttons are in the footer: ✅ Done editing on the left, + Add Task on the right of Close Tool (✏️ Edit tasks and who is editing stay above the list)

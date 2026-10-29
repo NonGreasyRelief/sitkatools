@@ -5178,6 +5178,23 @@
             display: block;
         }
 
+        /* 📷 Take picture / 🎥 Record training video under a step (edit mode), and the save dialog after one */
+        .step-capture { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0 42px; }
+        .step-capture .btn { min-height: 48px; }
+        .capture-ask { position: fixed; inset: 0; z-index: 300; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .capture-ask[hidden] { display: none; }
+        .capture-card { width: 100%; max-width: 520px; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow); }
+        .capture-title { font-size: 1.1rem; font-weight: 700; }
+        .capture-preview img, .capture-preview video { max-width: 100%; max-height: 240px; border-radius: var(--radius); border: 1px solid var(--border); display: block; background: #000; }
+        .capture-text { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.45; }
+        .capture-text strong { color: var(--text-primary); }
+        .capture-warn { color: var(--warning); font-size: 0.9rem; font-weight: 600; line-height: 1.4; }
+        .capture-warn[hidden], .capture-lang[hidden] { display: none; }
+        .capture-lang { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; }
+        .capture-lang input { width: 20px; height: 20px; accent-color: var(--accent); }
+        .capture-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .capture-actions .btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; flex: 1 1 160px; }
+
         .chip.missing { color: var(--text-secondary); }
         /* 🌐 A name or step with no translation in the chosen language shows the English, tagged "EN" */
         .chip.chip-en { border-style: dashed; color: var(--text-secondary); font-size: 0.7rem; letter-spacing: 0.5px; }
@@ -8582,6 +8599,21 @@
             <button class="btn btn-danger" id="deleteTaskBtn" data-t>Delete Task</button>
             <button class="btn btn-primary" id="editTaskBtn" data-t>Edit Task</button>
         </footer>
+    </div>
+
+    <!-- 📷 / 🎥 A picture or training video just taken for a step (user request 2026-10-29): saved under the step's name -->
+    <div class="capture-ask" id="captureAsk" hidden role="dialog" aria-modal="true" aria-labelledby="captureTitle">
+        <div class="capture-card">
+            <div class="capture-title" id="captureTitle"></div>
+            <div class="capture-preview" id="capturePreview"></div>
+            <div class="capture-warn" id="captureWarn" hidden></div>
+            <label class="capture-lang" id="captureLangRow" hidden><input type="checkbox" id="captureLang"> <span id="captureLangText"></span></label>
+            <div class="capture-text" id="captureText"></div>
+            <div class="capture-actions">
+                <button type="button" class="btn btn-secondary" id="captureDoneBtn" data-t>Done</button>
+                <a class="btn btn-primary" id="captureSaveLink" href="#" download></a>
+            </div>
+        </div>
     </div>
 
     <!-- Hours Overlay — who worked on a chore, for how long, signed with drawn initials -->
@@ -25811,6 +25843,175 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             };
             next();
         }
+        // ---- 📷 Take picture / 🎥 Record training video (user request 2026-10-29) ----
+        // In edit mode every step has the two buttons. They open the tablet's camera (a file input with `capture`; a PC
+        // with no camera picks a file instead). What comes back shows on the step at once, in this window only, like
+        // 🖼 Upload (uploadedPics / uploadedVids), and is offered to save under the step's name — {code}_{n}.jpg / .mp4, or
+        // the version for the language on screen (es_{code}_{n}) — by the share sheet on a tablet (OneDrive → the folder),
+        // a download or right-click Save Link As… on a PC. Someone then puts it in the "Pictures and Videos" folder on
+        // SharePoint, next to the database folder, which 📁 Picture folder picks. A picture is made a JPEG of at most
+        // 1280 px (as "Step Pictures" suggests); a video is kept as it is, and one this device can't play, or that isn't
+        // an MP4, is flagged (DailyWizard plays MP4, H.264). Nothing goes in the database.
+        const PICS_FOLDER = 'Pictures and Videos';
+        const CAPTURE_MAX_PX = 1280;
+        let capture = null;   // { kind, code, n, lang: '' | 'es' …, blob, url, ext, warn }
+        let captureInput = null;
+        function startCapture(kind, bid, code, n) {
+            if (!canEditTasks(bid)) return;
+            EditMode.touch();
+            captureInput?.remove();
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = kind === 'pic' ? 'image/*' : 'video/*';
+            input.setAttribute('capture', 'environment');   // the back camera
+            input.hidden = true;
+            input.className = 'capture-input';
+            input.addEventListener('change', () => {
+                const f = input.files?.[0];
+                input.remove();
+                if (captureInput === input) captureInput = null;
+                if (f) tookCapture(kind, code, n, f);
+            });
+            input.addEventListener('cancel', () => input.remove());
+            document.body.appendChild(input);
+            captureInput = input;
+            input.click();
+        }
+        // A picture as a JPEG of at most CAPTURE_MAX_PX on its long side, the right way up; null when it can't be read
+        async function captureJpeg(file) {
+            let src = null, tmp = null;
+            try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+            catch (_) {
+                tmp = URL.createObjectURL(file);
+                src = await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = tmp; });
+            }
+            try {
+                const w = src?.width || src?.naturalWidth, h = src?.height || src?.naturalHeight;
+                if (!w || !h) return null;
+                const k = Math.min(1, CAPTURE_MAX_PX / Math.max(w, h));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(w * k));
+                c.height = Math.max(1, Math.round(h * k));
+                c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+                return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+            } catch (_) { return null; }
+            finally { if (tmp) URL.revokeObjectURL(tmp); src?.close?.(); }
+        }
+        // Can this device play the video? (metadata within 10 s)
+        function capturePlayable(url) {
+            return new Promise(res => {
+                const v = document.createElement('video');
+                v.preload = 'metadata';
+                v.muted = true;
+                const done = ok => { clearTimeout(t); v.onloadedmetadata = v.onerror = null; v.removeAttribute('src'); res(ok); };
+                const t = setTimeout(() => done(false), 10000);
+                v.onloadedmetadata = () => done(true);
+                v.onerror = () => done(false);
+                v.src = url;
+            });
+        }
+        const captureName = c => `${c.lang ? c.lang + '_' : ''}${c.code}_${c.n}`;
+        async function tookCapture(kind, code, n, file) {
+            let blob = file, ext = 'mp4', warn = '';
+            if (kind === 'pic') {
+                blob = await captureJpeg(file);
+                ext = 'jpg';
+                if (!blob) {
+                    const own = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type];
+                    if (!own) { showToast(T('Couldn’t read that picture — try again')); return; }
+                    blob = file;
+                    ext = own;
+                }
+            }
+            const url = URL.createObjectURL(blob);
+            if (kind === 'vid') {
+                const plays = await capturePlayable(url);
+                if (!plays) warn = T('This device can’t play this video. DailyWizard plays MP4 (H.264): set the camera to record that, then try again.');
+                else if (file.type && file.type !== 'video/mp4') warn = T('This video isn’t an MP4 ({type}): other tablets may not play it. DailyWizard plays MP4 (H.264).', { type: file.type });
+            }
+            if (capture && capture.url !== url) dropCapture();   // one at a time: the last one shown stays on its step
+            capture = { kind, code, n, lang: '', blob, url, ext, warn };
+            putCapture();
+            showCapture();
+        }
+        // The capture on its step in this window (it wins over pics/, as an upload does). What it covers under that name
+        // is kept until the dialog closes, so moving it to another name (the language version) puts that back.
+        const captureStore = c => c.kind === 'pic' ? uploadedPics : uploadedVids;
+        function putCapture() {
+            const store = captureStore(capture), key = captureName(capture);
+            const prev = store.get(key);
+            capture.under = { key, prev: prev && prev.url !== capture.url ? prev : null };
+            store.set(key, { url: capture.url, file: `${key}.${capture.ext}` });
+            renderPicsNote();
+            if ($('detailOverlay').classList.contains('open')) renderDetail();
+        }
+        // Off the name it's under, putting back what it covered there
+        function unputCapture() {
+            const store = captureStore(capture), u = capture.under;
+            if (!u || store.get(u.key)?.url !== capture.url) return;
+            if (u.prev) store.set(u.key, u.prev); else store.delete(u.key);
+            capture.under = null;
+        }
+        // The dialog is done with: the capture stays on its step (it's in the uploads); what it replaced there goes
+        function dropCapture() {
+            const u = capture?.under;
+            if (u?.prev && captureStore(capture).get(u.key)?.url === capture.url) URL.revokeObjectURL(u.prev.url);
+            capture = null;
+        }
+        function showCapture() {
+            const c = capture, file = `${captureName(c)}.${c.ext}`;
+            $('captureTitle').textContent = c.kind === 'pic' ? T('📷 Step {n}’s picture', { n: c.n }) : T('🎥 Step {n}’s training video', { n: c.n });
+            const prev = $('capturePreview');
+            prev.innerHTML = '';
+            const el = document.createElement(c.kind === 'pic' ? 'img' : 'video');
+            el.src = c.url;
+            if (c.kind === 'vid') { el.controls = true; el.playsInline = true; el.preload = 'metadata'; }
+            else el.alt = file;
+            prev.appendChild(el);
+            $('captureWarn').hidden = !c.warn;
+            $('captureWarn').textContent = c.warn ? '⚠️ ' + c.warn : '';
+            // In another language: this may be that language's version (es_j234_2.mp4)
+            $('captureLangRow').hidden = LANG === 'en';
+            $('captureLang').checked = !!c.lang;
+            if (LANG !== 'en') $('captureLangText').textContent = T('This is the {language} version ({file})', { language: langInfo(LANG).name, file: `${LANG}_${c.code}_${c.n}.${c.ext}` });
+            const mb = c.blob.size / 1048576;
+            const text = $('captureText');
+            text.innerHTML = '';
+            text.append(T('It shows on this step in this window now. To keep it for every tablet, save it as '));
+            const strong = document.createElement('strong');
+            strong.textContent = file;
+            text.append(strong, T(' and put it in the “{folder}” folder on SharePoint, next to the database folder.', { folder: PICS_FOLDER }));
+            if (c.kind === 'vid') text.append(' ' + T('{mb} MB — keep training videos short: every tablet loads them.', { mb: mb.toFixed(1) }));
+            const a = $('captureSaveLink');
+            a.href = c.url;
+            a.download = file;
+            a.textContent = T('📤 Save {file}', { file });
+            $('captureAsk').hidden = false;
+            $('captureSaveLink').focus();
+        }
+        $('captureLang').addEventListener('change', () => {
+            if (!capture) return;
+            unputCapture();   // off its old name, putting back what it covered there
+            capture.lang = $('captureLang').checked ? LANG : '';
+            putCapture();
+            showCapture();
+        });
+        // 📤 Save: the share sheet where the device has one (a tablet: OneDrive → the folder), else the download (or
+        // right-click Save Link As… on a PC, which works on the link itself)
+        $('captureSaveLink').addEventListener('click', (e) => {
+            if (!capture) { e.preventDefault(); return; }
+            const name = `${captureName(capture)}.${capture.ext}`;
+            const file = new File([capture.blob], name, { type: capture.blob.type || (capture.kind === 'pic' ? 'image/jpeg' : 'video/mp4') });
+            const saved = () => showToast(T('Saved {file} — now put it in “{folder}” on SharePoint', { file: name, folder: PICS_FOLDER }));
+            if (navigator.share && navigator.canShare?.({ files: [file] })) {
+                e.preventDefault();
+                navigator.share({ files: [file], title: name }).then(saved, () => showToast(T('{file} wasn’t saved — the share was cancelled', { file: name })));
+            } else saved();
+        });
+        const closeCapture = () => { $('captureAsk').hidden = true; dropCapture(); };
+        $('captureDoneBtn').addEventListener('click', closeCapture);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('captureAsk').hidden) { e.preventDefault(); closeCapture(); } });
+
         // Probe-cache keys of a task: `${code}_${n}` and the language versions `${lang}_${code}_${n}`
         const isTaskMediaKey = (k, code) => k.startsWith(code + '_') || /^(fr|es|vi|zh)_/.test(k) && k.slice(3).startsWith(code + '_');
 
@@ -25994,6 +26195,20 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
 
             row.appendChild(top);
+            if (!viewOnly) {   // 📷 / 🎥 on the tablet's camera, saved under this step's name (startCapture)
+                const cap = document.createElement('div');
+                cap.className = 'step-capture';
+                for (const [kind, label] of [['pic', T('📷 Take picture')], ['vid', T('🎥 Record training video')]]) {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'btn btn-secondary capture-btn';
+                    b.dataset.kind = kind;
+                    b.textContent = label;
+                    b.addEventListener('click', () => startCapture(kind, bid, code, n));
+                    cap.appendChild(b);
+                }
+                row.appendChild(cap);
+            }
             row.appendChild(makeStepImageWrap(task.code, n));
             return row;
         }
@@ -27509,6 +27724,21 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "— Whole building (no room) —": { fr: "— Tout le bâtiment (aucune salle) —", es: "— Todo el edificio (sin sala) —", vi: "— Cả tòa nhà (không theo phòng) —", zh: "— 整栋楼（不指定房间）—" },
             "⚠️ {room} — no longer in this building": { fr: "⚠️ {room} — ne fait plus partie de ce bâtiment", es: "⚠️ {room} — ya no está en este edificio", vi: "⚠️ {room} — không còn thuộc tòa nhà này", zh: "⚠️ {room} — 已不在此楼栋" },
             "This room is no longer in this building — its hours are shared like a whole-building chore": { fr: "Cette salle ne fait plus partie de ce bâtiment — ses heures sont partagées comme une tâche de tout le bâtiment", es: "Esta sala ya no está en este edificio — sus horas se reparten como una tarea de todo el edificio", vi: "Phòng này không còn thuộc tòa nhà này — số giờ được chia như việc của cả tòa nhà", zh: "该房间已不在此楼栋——其工时按整栋楼任务分摊" },
+            "📷 Take picture": { fr: "📷 Prendre une photo", es: "📷 Tomar foto", vi: "📷 Chụp ảnh", zh: "📷 拍照" },
+            "🎥 Record training video": { fr: "🎥 Filmer une vidéo de formation", es: "🎥 Grabar video de capacitación", vi: "🎥 Quay video hướng dẫn", zh: "🎥 录制培训视频" },
+            "Couldn’t read that picture — try again": { fr: "Impossible de lire cette photo — réessayez", es: "No se pudo leer esa foto; inténtelo de nuevo", vi: "Không đọc được ảnh đó — hãy thử lại", zh: "无法读取这张照片——请重试" },
+            "This device can’t play this video. DailyWizard plays MP4 (H.264): set the camera to record that, then try again.": { fr: "Cet appareil ne peut pas lire cette vidéo. DailyWizard lit le MP4 (H.264) : réglez la caméra sur ce format, puis réessayez.", es: "Este dispositivo no puede reproducir este video. DailyWizard reproduce MP4 (H.264): configure la cámara para grabar así e inténtelo de nuevo.", vi: "Thiết bị này không phát được video này. DailyWizard phát MP4 (H.264): hãy đặt camera quay định dạng đó rồi thử lại.", zh: "此设备无法播放该视频。DailyWizard 播放 MP4（H.264）格式：请将相机设为该格式后重试。" },
+            "This video isn’t an MP4 ({type}): other tablets may not play it. DailyWizard plays MP4 (H.264).": { fr: "Cette vidéo n’est pas un MP4 ({type}) : d’autres tablettes pourraient ne pas la lire. DailyWizard lit le MP4 (H.264).", es: "Este video no es MP4 ({type}): puede que otras tabletas no lo reproduzcan. DailyWizard reproduce MP4 (H.264).", vi: "Video này không phải MP4 ({type}): máy tính bảng khác có thể không phát được. DailyWizard phát MP4 (H.264).", zh: "该视频不是 MP4 格式（{type}）：其他平板可能无法播放。DailyWizard 播放 MP4（H.264）格式。" },
+            "📷 Step {n}’s picture": { fr: "📷 Photo de l’étape {n}", es: "📷 Foto del paso {n}", vi: "📷 Ảnh của bước {n}", zh: "📷 第 {n} 步的照片" },
+            "🎥 Step {n}’s training video": { fr: "🎥 Vidéo de formation de l’étape {n}", es: "🎥 Video de capacitación del paso {n}", vi: "🎥 Video hướng dẫn của bước {n}", zh: "🎥 第 {n} 步的培训视频" },
+            "This is the {language} version ({file})": { fr: "C’est la version en {language} ({file})", es: "Es la versión en {language} ({file})", vi: "Đây là bản {language} ({file})", zh: "这是{language}版本（{file}）" },
+            "It shows on this step in this window now. To keep it for every tablet, save it as ": { fr: "Elle s’affiche maintenant sur cette étape, dans cette fenêtre. Pour la garder sur toutes les tablettes, enregistrez-la sous ", es: "Ya se muestra en este paso, en esta ventana. Para que esté en todas las tabletas, guárdelo como ", vi: "Giờ nó hiện ở bước này trong cửa sổ này. Để mọi máy tính bảng đều có, hãy lưu với tên ", zh: "现在它已显示在此窗口的这一步上。要让每台平板都能看到，请保存为 " },
+            " and put it in the “{folder}” folder on SharePoint, next to the database folder.": { fr: " et mettez-la dans le dossier « {folder} » sur SharePoint, à côté du dossier de la base de données.", es: " y póngalo en la carpeta «{folder}» de SharePoint, junto a la carpeta de la base de datos.", vi: " rồi đặt vào thư mục “{folder}” trên SharePoint, cạnh thư mục cơ sở dữ liệu.", zh: "，并放入 SharePoint 上数据库文件夹旁的“{folder}”文件夹。" },
+            "{mb} MB — keep training videos short: every tablet loads them.": { fr: "{mb} Mo — gardez les vidéos de formation courtes : chaque tablette les charge.", es: "{mb} MB: mantenga los videos de capacitación cortos, cada tableta los carga.", vi: "{mb} MB — hãy giữ video hướng dẫn ngắn: máy tính bảng nào cũng phải tải.", zh: "{mb} MB——培训视频请尽量简短：每台平板都要加载。" },
+            "📤 Save {file}": { fr: "📤 Enregistrer {file}", es: "📤 Guardar {file}", vi: "📤 Lưu {file}", zh: "📤 保存 {file}" },
+            "Saved {file} — now put it in “{folder}” on SharePoint": { fr: "{file} enregistré — mettez-le maintenant dans « {folder} » sur SharePoint", es: "{file} guardado: ahora póngalo en «{folder}» de SharePoint", vi: "Đã lưu {file} — giờ hãy đặt vào “{folder}” trên SharePoint", zh: "已保存 {file}——现在请放入 SharePoint 上的“{folder}”" },
+            "{file} wasn’t saved — the share was cancelled": { fr: "{file} n’a pas été enregistré — le partage a été annulé", es: "{file} no se guardó: se canceló el uso compartido", vi: "Chưa lưu {file} — đã hủy chia sẻ", zh: "{file} 未保存——已取消分享" },
+            "Done": { fr: "Terminé", es: "Listo", vi: "Xong", zh: "完成" },
             "Drying or trimming": { fr: "Séchage ou taille", es: "Secado o recorte", vi: "Phơi sấy hay cắt tỉa", zh: "干燥还是修剪" },
             "Either — while any lot is in the room": { fr: "Les deux — tant qu’un lot est dans la salle", es: "Ambos — mientras haya un lote en la sala", vi: "Cả hai — khi có lô trong phòng", zh: "两者皆可——房间内有批次时" },
             "🍂 Drying — while a lot dries": { fr: "🍂 Séchage — pendant qu’un lot sèche", es: "🍂 Secado — mientras un lote se seca", vi: "🍂 Phơi sấy — khi lô đang phơi", zh: "🍂 干燥——批次干燥期间" },
