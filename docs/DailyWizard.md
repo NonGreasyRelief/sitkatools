@@ -28,6 +28,7 @@ Per-building **daily chore lists** plus that day's calendar events, as a tablet 
 | `steps` | `{ text, translations? }[]` | Ordered instructions for the detail view. No picture data in the DB. |
 | `translations` | object, optional | The name in other languages (`{ es: 'Regar las plantas' }`); see "🌐 Language". |
 | `roomId` | string, optional | 🚪 One of this building's rooms: a **room chore** ("🚪 Room Chores"). Absent = a whole-building chore. |
+| `dryTrim` | `'drying'` \| `'trimming'`, optional | 🍂 / ✂️ In a room designated **Dry/Trim**: a drying or a trimming chore ("🍂 Dry/Trim Rooms"). Absent = either. Ignored while the room isn't Dry/Trim. |
 
 Task order is the **array order** (no sort field); moving a task rewrites its position.
 
@@ -42,6 +43,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
   - **🚪 Show N chores for empty rooms** under the list reveals them, dimmed (until DailyWizard closes; "Hide the chores for empty rooms" puts them away). All Buildings has the same button per building.
   - The status bar and the building's ✅ count leave them out. Edit mode lists every chore, so the floor manager can still edit or reorder them.
   - It reads the lots' current room as it is now, for any date shown.
+- **🍂 Dry/Trim rooms** (user request 2026-10-29): in a room designated **Dry/Trim** (SitkaTools' Room Manager), a chore is a **🍂 drying** chore, a **✂️ trimming** chore, or either (`dryTrim`). A drying chore is listed while a lot in the room is drying; a trimming chore once a lot in the room has moved from drying to trimming — its current daily log is its ✂️ trim log (the page's `lotTrimming`, the rule the lot dropdowns' ✂️ uses); either, while any lot is in the room. A lot in the room with no trim log yet is drying. Two lots at different stages show both kinds. The row and the detail view tag it `🍂 Drying` / `✂️ Trimming`; the rest is as for any room chore (kept when ticked or with hours, 🚪 Show to reveal, edit mode lists all). The editor's **Drying or trimming** choice shows only while the room picked is Dry/Trim; saving with another room drops it. A room no longer designated Dry/Trim makes them ordinary room chores again.
 - **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
 - **Changing the room** re-attributes the chore's past hours too (Reports read the room from the task). A closed-out lot keeps the share saved in its summary.
 
@@ -312,7 +314,7 @@ Full-screen overlay:
 
 ### Task Editor (Add / Edit)
 
-- Emoji picker; **Name** (required); **Estimated time** (min 5, step 5); **Staff required** (min 1); **Room** (optional, "🚪 Room Chores").
+- Emoji picker; **Name** (required); **Estimated time** (min 5, step 5); **Staff required** (min 1); **Room** (optional, "🚪 Room Chores"); **Drying or trimming** (a Dry/Trim room only: either, 🍂 drying, ✂️ trimming).
 - **Weekdays:** seven pill toggles Mon → Sun (values `1,2,3,4,5,6,0`), all on by default.
 - **Also on day(s) of month:** comma list of 1–31, validated and deduplicated on save; preset chips `1st & 15th`, `1st only`, `Clear`.
 - **Save** validates: name, at least one weekday or month-day, minutes ≥ 5, staff ≥ 1. New tasks get a fresh unique `code` and are appended.

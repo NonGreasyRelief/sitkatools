@@ -8525,6 +8525,12 @@
                     <select id="taskRoomSelect"></select>
                     <span class="field-hint" data-t>A room chore’s hours count toward the lots in that room that day, split by plants when lots share it. A whole-building chore is shared by every crop.</span>
                 </div>
+                <!-- 🍂 / ✂️ Only for a room designated Dry/Trim: a drying chore, a trimming chore, or either (user request 2026-10-29) -->
+                <div class="form-group" id="taskDryTrimGroup" hidden>
+                    <label for="taskDryTrimSelect" data-t>Drying or trimming</label>
+                    <select id="taskDryTrimSelect"></select>
+                    <span class="field-hint" data-t>A lot moves from drying to trimming when its ✂️ Trim Log starts in PaperWizard.</span>
+                </div>
                 <div class="form-group">
                     <label data-t>Weekdays</label>
                     <div class="weekday-pills" id="weekdayPills"></div>
@@ -14832,6 +14838,12 @@
             if (current === 'drying-log') return '🍂';
             return LOT_PHASE_EMOJI[String(lot.stage || '').trim().toLowerCase()] || '';
         }
+        // ✂️ Has the lot moved from drying to trimming? Its current daily log (the daily log whose newest page started last) is
+        // its trim log, as lotPhaseEmoji shows it. DailyWizard's chores in a Dry/Trim room follow it (user request 2026-10-29).
+        function lotTrimming(lotId) {
+            const pages = lotDailyPages(lotId);
+            return pages[pages.length - 1]?.sheet?.document === 'trim-log';
+        }
         // An event holding hours or a floor manager's sign-off is the record of work done: it isn't deleted (user decision
         // 2026-10-25, review Q4); its lot's close-out archives it. What it holds, or null.
         function eventWorkRecord(ev) {
@@ -15362,7 +15374,7 @@
         // Room designation vocabulary — a conceptual role for a room, separate from its
         // name and ID. PaperWizard reads this to prefill paperwork (e.g. checkboxes that
         // match the lot's current room's designation). Stored on room.designation.
-        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
+        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation', 'Dry/Trim'];
 
         // Light cycles, stored as hours of light a day (veg default 18/6, bloom 12/12). The Labour & Cost Wizard's
         // reports estimate lighting power from them: lights × watts per light × hours × the day's light %.
@@ -24946,13 +24958,23 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // day still shows. Whole-building chores, and chores whose room is gone, always show. "Show N chores for empty
         // rooms" reveals the rest (until DailyWizard closes); edit mode lists every chore.
         let showEmptyRoomChores = false;
-        function roomHoldsLot(roomId) {
+        // A lot whose current room is this room; with `stage` ('drying' | 'trimming'), only a lot at that stage: trimming once
+        // its ✂️ trim log has started (lotTrimming, the page's own), else drying
+        function roomHoldsLot(roomId, stage = null) {
             const name = String(DB.rooms[roomId]?.name || '').trim().toLowerCase();
-            return !!name && Object.values(DB.lots).some(l => l && !l.closedDate && String(l.currentRoom || '').trim().toLowerCase() === name);
+            return !!name && Object.entries(DB.lots).some(([id, l]) => l && !l.closedDate && String(l.currentRoom || '').trim().toLowerCase() === name &&
+                (!stage || (lotTrimming(id) ? 'trimming' : 'drying') === stage));
+        }
+        // 🍂 / ✂️ A chore in a Dry/Trim room may be a drying or a trimming chore (user request 2026-10-29): task.dryTrim. It
+        // counts only while its room is designated Dry/Trim; null = either (any lot in the room)
+        const DRY_TRIM = 'Dry/Trim';
+        const isDryTrimRoom = roomId => DB.rooms[roomId]?.designation === DRY_TRIM;
+        function choreDryTrim(task) {
+            return task?.roomId && isDryTrimRoom(task.roomId) && ['drying', 'trimming'].includes(task.dryTrim) ? task.dryTrim : null;
         }
         function choreForEmptyRoom(buildingId, task, dateStr) {
             const room = choreRoom(buildingId, task);
-            if (!room || room.missing || roomHoldsLot(room.id)) return false;
+            if (!room || room.missing || roomHoldsLot(room.id, choreDryTrim(task))) return false;
             if (isChecked(checkSpotForTask(buildingId, task.code), dateStr)) return false;
             if ((DB.dailyBuildings[buildingId]?.labour?.[dateStr]?.[task.code] || []).length) return false;
             if (Object.values(DB.dailyBuildings[buildingId]?.timers?.[task.code] || {}).some(t => t && (t.since || Number(t.ms) > 0))) return false;
@@ -25137,6 +25159,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             row.appendChild(codeChip);
             const room = choreRoom(buildingId, task);
             if (room) row.appendChild(roomChip(room));
+            const dryTrim = choreDryTrim(task);
+            if (dryTrim) row.appendChild(dryTrimChip(dryTrim));
 
             // Tapping anywhere on the row body (except the checkbox / move buttons)
             // opens the task's detail view (docs/DailyWizard.md "Task Rows").
@@ -25217,6 +25241,15 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (!task?.roomId) return null;
             const r = DB.rooms[task.roomId];
             return { id: task.roomId, name: r?.name || task.roomId, missing: !r || r.buildingId !== buildingId };
+        }
+        // 🍂 Drying / ✂️ Trimming on a Dry/Trim room's chore
+        const DRY_TRIM_WHEN = { drying: '🍂 Drying — while a lot dries', trimming: '✂️ Trimming — once a lot has moved to trimming' };
+        function dryTrimChip(stage) {
+            const chip = document.createElement('span');
+            chip.className = 'chip chip-room chip-drytrim';
+            chip.textContent = stage === 'trimming' ? T('✂️ Trimming') : T('🍂 Drying');
+            chip.title = T(DRY_TRIM_WHEN[stage]);
+            return chip;
         }
         function roomChip(room) {
             const chip = document.createElement('span');
@@ -25450,6 +25483,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('taskStaffInput').value = task?.staff ?? 1;
             $('monthDaysInput').value = (task?.monthDays || []).join(', ');
             fillRoomSelect(buildingId, task?.roomId || '');
+            fillDryTrim(task?.dryTrim || '');
 
             // Weekday pills — display order Mon → Sun, values 1..6,0; default all on for new tasks
             const days = new Set(task?.days || [0, 1, 2, 3, 4, 5, 6]);
@@ -25478,6 +25512,21 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('editorTitle').textContent = task ? T('Edit Task — {name}', { name: taskName(task) }) : T('Add Task');
             document.querySelectorAll('#weekdayPills .pill').forEach(b => { b.textContent = weekdayShort(Number(b.dataset.day)); });
             if (editorBuildingId) fillRoomSelect(editorBuildingId, $('taskRoomSelect').value);
+            fillDryTrim($('taskDryTrimSelect').value);
+        }
+
+        // 🍂 / ✂️ Drying or trimming: shown only while the room picked is designated Dry/Trim
+        function fillDryTrim(current) {
+            const sel = $('taskDryTrimSelect');
+            sel.innerHTML = '';
+            for (const [value, text] of [['', 'Either — while any lot is in the room'], ['drying', DRY_TRIM_WHEN.drying], ['trimming', DRY_TRIM_WHEN.trimming]]) {
+                const o = document.createElement('option');
+                o.value = value;
+                o.textContent = T(text);
+                sel.appendChild(o);
+            }
+            sel.value = ['drying', 'trimming'].includes(current) ? current : '';
+            $('taskDryTrimGroup').hidden = !isDryTrimRoom($('taskRoomSelect').value);
         }
 
         // 🚪 Room: whole building, or one of this building's rooms (`id — name`). A saved room that's gone or now in
@@ -25521,6 +25570,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const monthDays = parseMonthDays($('monthDaysInput').value);
             const nameTr = $('taskNameTrInput').value.trim();
             const roomId = $('taskRoomSelect').value;
+            const dryTrim = roomId && isDryTrimRoom(roomId) ? $('taskDryTrimSelect').value : '';
 
             // Validation (docs/DailyWizard.md "Task Editor")
             if (!name) { showToast(T('Task name is required')); return; }
@@ -25549,12 +25599,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     task.days = days;
                     task.monthDays = monthDays;
                     if (roomId) task.roomId = roomId; else delete task.roomId;
+                    if (dryTrim) task.dryTrim = dryTrim; else delete task.dryTrim;
                     // steps preserved — edited in the detail view (Stage 4)
                     if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
                 }
             } else {
                 const task = { code: generateTaskCode(), emoji: editorEmoji, name, minutes, staff, days, monthDays, steps: [] };
                 if (roomId) task.roomId = roomId;
+                if (dryTrim) task.dryTrim = dryTrim;
                 if (editorLang !== 'en') setTranslation(task, editorLang, nameTr);
                 tasks.push(task);
             }
@@ -25822,6 +25874,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 line.textContent = room.missing ? T('🚪 {room} — no longer in this building, so its hours are shared like a whole-building chore', { room: room.name })
                     : T('🚪 {room} — its hours count toward the lots in this room', { room: room.name });
                 sum.appendChild(line);
+                const dryTrim = choreDryTrim(task);
+                if (dryTrim) {
+                    const when = document.createElement('div');
+                    when.className = 'summary-line';
+                    when.textContent = T(DRY_TRIM_WHEN[dryTrim]);
+                    sum.appendChild(when);
+                }
             }
             const rec = document.createElement('div');
             rec.className = 'summary-line';
@@ -27414,6 +27473,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "— Whole building (no room) —": { fr: "— Tout le bâtiment (aucune salle) —", es: "— Todo el edificio (sin sala) —", vi: "— Cả tòa nhà (không theo phòng) —", zh: "— 整栋楼（不指定房间）—" },
             "⚠️ {room} — no longer in this building": { fr: "⚠️ {room} — ne fait plus partie de ce bâtiment", es: "⚠️ {room} — ya no está en este edificio", vi: "⚠️ {room} — không còn thuộc tòa nhà này", zh: "⚠️ {room} — 已不在此楼栋" },
             "This room is no longer in this building — its hours are shared like a whole-building chore": { fr: "Cette salle ne fait plus partie de ce bâtiment — ses heures sont partagées comme une tâche de tout le bâtiment", es: "Esta sala ya no está en este edificio — sus horas se reparten como una tarea de todo el edificio", vi: "Phòng này không còn thuộc tòa nhà này — số giờ được chia như việc của cả tòa nhà", zh: "该房间已不在此楼栋——其工时按整栋楼任务分摊" },
+            "Drying or trimming": { fr: "Séchage ou taille", es: "Secado o recorte", vi: "Phơi sấy hay cắt tỉa", zh: "干燥还是修剪" },
+            "Either — while any lot is in the room": { fr: "Les deux — tant qu’un lot est dans la salle", es: "Ambos — mientras haya un lote en la sala", vi: "Cả hai — khi có lô trong phòng", zh: "两者皆可——房间内有批次时" },
+            "🍂 Drying — while a lot dries": { fr: "🍂 Séchage — pendant qu’un lot sèche", es: "🍂 Secado — mientras un lote se seca", vi: "🍂 Phơi sấy — khi lô đang phơi", zh: "🍂 干燥——批次干燥期间" },
+            "✂️ Trimming — once a lot has moved to trimming": { fr: "✂️ Taille — une fois qu’un lot est passé à la taille", es: "✂️ Recorte — cuando un lote ya pasó al recorte", vi: "✂️ Cắt tỉa — khi lô đã chuyển sang cắt tỉa", zh: "✂️ 修剪——批次转入修剪之后" },
+            "🍂 Drying": { fr: "🍂 Séchage", es: "🍂 Secado", vi: "🍂 Phơi sấy", zh: "🍂 干燥" },
+            "✂️ Trimming": { fr: "✂️ Taille", es: "✂️ Recorte", vi: "✂️ Cắt tỉa", zh: "✂️ 修剪" },
+            "A lot moves from drying to trimming when its ✂️ Trim Log starts in PaperWizard.": { fr: "Un lot passe du séchage à la taille quand son ✂️ registre de taille commence dans PaperWizard.", es: "Un lote pasa del secado al recorte cuando empieza su ✂️ registro de recorte en PaperWizard.", vi: "Lô chuyển từ phơi sấy sang cắt tỉa khi ✂️ sổ cắt tỉa của lô bắt đầu trong PaperWizard.", zh: "批次的 ✂️ 修剪记录在 PaperWizard 中开始时，即从干燥转入修剪。" },
             "🚪 {room} — its hours count toward the lots in this room": { fr: "🚪 {room} — ses heures comptent pour les lots de cette salle", es: "🚪 {room} — sus horas cuentan para los lotes de esta sala", vi: "🚪 {room} — số giờ được tính cho các lô trong phòng này", zh: "🚪 {room} — 工时计入该房间的批次" },
             "🚪 {room} — no longer in this building, so its hours are shared like a whole-building chore": { fr: "🚪 {room} — ne fait plus partie de ce bâtiment, ses heures sont donc partagées comme une tâche de tout le bâtiment", es: "🚪 {room} — ya no está en este edificio, así que sus horas se reparten como una tarea de todo el edificio", vi: "🚪 {room} — không còn thuộc tòa nhà này nên số giờ được chia như việc của cả tòa nhà", zh: "🚪 {room} — 已不在此楼栋，因此其工时按整栋楼任务分摊" },
             "Also on day(s) of month (1–31, comma-separated)": { fr: "Aussi certains jours du mois (1–31, séparés par des virgules)", es: "También ciertos días del mes (1–31, separados por comas)", vi: "Thêm các ngày trong tháng (1–31, cách nhau bằng dấu phẩy)", zh: "每月另外的日期（1–31，用逗号分隔）" },
@@ -27707,6 +27773,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             $('editorBackBtn').addEventListener('click', closeTaskEditor);
             $('editorCancelBtn').addEventListener('click', closeTaskEditor);
             $('editorSaveBtn').addEventListener('click', saveTaskFromEditor);
+            $('taskRoomSelect').addEventListener('change', () => { $('taskDryTrimGroup').hidden = !isDryTrimRoom($('taskRoomSelect').value); });
             document.querySelectorAll('#monthDayPresets .chip-btn').forEach(b => {
                 b.addEventListener('click', () => { $('monthDaysInput').value = b.dataset.preset; });
             });
@@ -27837,7 +27904,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // (room.designation). The lot.roomDesignation binding resolves the INSTANCE's stored
         // room (inst.room, falling back to the live lot.currentRoom) to its room record and
         // returns this value, so paperwork can carry checkboxes that match a room's designation.
-        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation'];
+        const ROOM_DESIGNATIONS = ['Grow 1', 'Grow 2', 'Grow 3', 'Grow 4', 'Clone', 'Mother', 'Vegetation', 'Dry/Trim'];
         function normalizeStage(v) {
             if (v === null || v === undefined) return null;
             const s = String(v).trim();
