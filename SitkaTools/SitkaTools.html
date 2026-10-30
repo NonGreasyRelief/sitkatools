@@ -1522,18 +1522,26 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
         }
-        .launch-chart { min-width: 560px; padding: 4px 10px 8px; }
-        .launch-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); border-bottom: 1px solid var(--border); }
+        /* --weeks: the weeks drawn (🚀 sets it; 20 by default). The first 20 fill the box and the rest scroll sideways, at least
+           21 px a week; the labels stay put while it scrolls */
+        .launch-chart {
+            --lbl: 7.5rem;
+            --padx: 10px;
+            width: calc(var(--lbl) + 2 * var(--padx) + (100% - var(--lbl) - 2 * var(--padx)) * var(--weeks, 20) / 20);
+            min-width: calc(var(--lbl) + 2 * var(--padx) + 21px * var(--weeks, 20));
+            padding: 4px var(--padx) 8px;
+        }
+        .launch-row { display: grid; grid-template-columns: var(--lbl) minmax(0, 1fr); border-bottom: 1px solid var(--border); }
         .launch-row:last-child { border-bottom: none; }
-        .launch-label { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 8px 4px 0; font-size: 0.8rem; line-height: 1.2; }
+        .launch-label { position: sticky; left: 0; z-index: 3; background: var(--bg-secondary); display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 8px 4px 0; font-size: 0.8rem; line-height: 1.2; }
         .launch-wk { font-weight: 700; color: var(--text-primary); }
         .launch-fri { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
         .launch-chip { font-size: 0.7rem; font-weight: 700; color: var(--warning); }
         .launch-track {
             position: relative;
             height: calc(10px + var(--lanes, 1) * 28px);
-            /* a line at each Monday: 20 weeks across */
-            background-image: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 5%);
+            /* a line at each Monday */
+            background-image: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px calc(100% / var(--weeks, 20)));
         }
         .launch-row.open .launch-track { background-color: rgba(243, 156, 18, 0.04); }
         .launch-axis .launch-track { height: 24px; background-image: none; }
@@ -1595,6 +1603,24 @@
         .launch-table .warn { color: var(--warning); }
         .launch-foot { margin: 8px 0 0; font-size: 0.75rem; line-height: 1.4; color: var(--text-secondary); }
         .launch-empty { padding: 24px; text-align: center; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); }
+
+        /* 🌿 Mothers — each mother lot by Mother room: faint while growing, solid once mature (--m: where it turns) */
+        .mothers-view .launch-track { background-image: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 3.84615%); }   /* 26 weeks */
+        .mothers-view .launch-axis .launch-track { background-image: none; }
+        .mothers-view .launch-label { padding-right: 10px; }
+        .mothers-view .launch-wk { overflow-wrap: anywhere; }
+        .launch-bar.mother { color: var(--text-primary); border-color: rgba(83, 216, 168, 0.6);
+            background: linear-gradient(90deg, rgba(83, 216, 168, 0.16) 0 var(--m, 0%), #1f7a5c var(--m, 0%) 100%); }
+        .launch-bar.mother.projection { color: var(--text-secondary); border: 1px dashed var(--text-secondary);
+            background: linear-gradient(90deg, rgba(168, 168, 184, 0.08) 0 var(--m, 0%), rgba(168, 168, 184, 0.32) var(--m, 0%) 100%); }
+        .launch-bar.mother.nomature { border-right: 3px dashed var(--warning); }
+        .launch-bar.mother.done { opacity: 0.5; }
+        .launch-bar.mother.stale { background: repeating-linear-gradient(135deg, rgba(243, 156, 18, 0.25) 0 6px, transparent 6px 12px); color: var(--warning); border: 1px dashed var(--warning); }
+        .launch-legend .lg-grow { background: rgba(83, 216, 168, 0.16); border: 1px solid rgba(83, 216, 168, 0.6); }
+        .launch-legend .lg-mature { background: #1f7a5c; }
+        .mothers-none { display: flex; align-items: center; padding: 0 10px; font-size: 0.82rem; color: var(--text-secondary); background-image: none; }
+        .mothers-table { min-width: 560px; }
+        .mothers-table td.moms { min-width: 14rem; line-height: 1.5; }
 
         /* =====================================================
            Annual view — 12 mini-months, emoji dots per task
@@ -2436,8 +2462,7 @@
 
             /* 🚀 Launch windows: a narrower label column; the timeline and table scroll in their own boxes */
             .view-toggle-group { margin-left: 0; }
-            .launch-row { grid-template-columns: 5.25rem minmax(0, 1fr); }
-            .launch-chart { padding: 4px 6px 8px; }
+            .launch-chart { --lbl: 5.25rem; --padx: 6px; }
 
             .calendar-nav {
                 flex-wrap: wrap;
@@ -7778,6 +7803,7 @@
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewWeekBtn" title="7-day stacked view">📅 7-Day</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewYearBtn" title="Annual (12-month) overview">🗓️ Annual</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewLaunchBtn" title="The 10 weekly launch windows of the 70-day cycle: which weeks have a crop flipping to bloom and which are open">🚀 Launch windows</button>
+                    <button type="button" class="btn btn-secondary view-toggle-btn" id="viewMothersBtn" title="The mother lots, real and projected: when each one's mothers are mature, and which are mature for each clone cut ahead">🌿 Mothers</button>
                 </div>
                 <button type="button" class="btn btn-secondary hidden" id="printYearBtn" title="Print this year's task calendar in black and white, with the filters that are on">🖨️ Print year</button>
             </div>
@@ -7808,6 +7834,8 @@
 
             <!-- 🚀 Launch windows: the 10 weekly flip windows of the 70-day cycle, one row each (Calendar.renderLaunch) -->
             <div class="launch-view hidden" id="launchView"></div>
+            <!-- 🌿 Mothers: each mother lot, growing then mature, by Mother room, and the clone cuts ahead (Calendar.renderMothers) -->
+            <div class="launch-view mothers-view hidden" id="mothersView"></div>
 
             <!-- Event details/operations panel -->
             <div class="event-panel" id="eventPanel">
@@ -8371,6 +8399,11 @@
                 <label for="projectionRecipeSelect">Projection Recipe</label>
                 <select id="projectionRecipeSelect"></select>
             </div>
+            <!-- 🌿 Mothers from clones (user request 2026-10-30): the mother recipe Project Crop gives each lot's kept-back plants -->
+            <div class="form-group projection-recipe-group">
+                <label for="motherRecipeSelect">🌿 Mothers from clones</label>
+                <select id="motherRecipeSelect" title="The plants kept back at each lot's Transplanting become mothers: pick their 🌿 recipe and Project Crop projects them in the Mother room"><option value="">— No mothers —</option></select>
+            </div>
             <button type="button" class="btn btn-secondary btn-project" id="generateProjectionsBtn" disabled title="Select a lot to project its crop">🔮 Project Crop</button>
             <button type="button" class="btn btn-secondary btn-project" id="clearProjectionsBtn" disabled title="Clears all projections for the selected lot's room">🧹 Clear Projections</button>
             <div class="form-group">
@@ -8492,6 +8525,12 @@
                     <div class="form-group" style="flex:1;">
                         <label>Type</label>
                         <div id="recipeKindLabel"></div>
+                    </div>
+                    <!-- 🌿 Mature from (mother recipes only, user decision 2026-10-30): the task from which the mothers are
+                         mature, so clones can be cut from them until they retire -->
+                    <div class="form-group" style="flex:1; display:none;" id="recipeMatureGroup">
+                        <label for="recipeMatureSelect">🌿 Mature from</label>
+                        <select id="recipeMatureSelect" title="The task from which these mothers are mature: clones can be cut from them until they retire. SitkaTools' 🌿 Mothers view counts them mature from that day."></select>
                     </div>
                 </div>
                 <div class="editor-tabs" role="tablist">
@@ -15015,8 +15054,9 @@
             // entry + its events. TBA-2…TBA-5 survive — the room is now pending reprojection.
             let projNote = '';
             if (matchedRoomId && projectedRoom(DB.data.rooms[matchedRoomId])) {
-                const res = deleteTBA1Projection(matchedRoomId);
-                if (res.removedEntry || res.deletedEvents > 0) {
+                const { mothers, tba: res } = takeProjectedPlace(matchedRoomId, lotId);
+                if (mothers.length) projNote = `\n\n${mothersTakenText(mothers)}.`;
+                else if (res.removedEntry || res.deletedEvents > 0) {
                     projNote = `\n\n🔮 TBA-01 projection for this room was removed — the room is flagged for reprojection. Generate a schedule for this lot, then run Reproject in CropLabourWizard.`;
                 }
             }
@@ -15503,8 +15543,9 @@
 
                     // A real lot taking a flowering room's slot "takes" TBA-1, as in the Room Manager's moveLot
                     if (flowerRoomChanged && targetId && projectedRoom(rooms[targetId])) {
-                        const res = deleteTBA1Projection(targetId);
-                        if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${rooms[targetId].name} — room flagged for reprojection`);
+                        const { mothers, tba: res } = takeProjectedPlace(targetId, lotId);
+                        if (mothers.length) showSyncToast(mothersTakenText(mothers));
+                        else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${rooms[targetId].name} — room flagged for reprojection`);
                     }
 
                     renderLotList();
@@ -15585,6 +15626,34 @@
             return result;
         }
 
+        // 🌿 Real mothers take their projection's place (user request 2026-10-30): a lot made from lot P (a split or sub-lot,
+        // parentLotId P) that lands in a Mother room is the mothers P's kept-back plants became, so CropLabourWizard's projected
+        // mothers from P (its "mothers from clones", sourceLotId P) and their events go. Returns the ids removed.
+        function deleteProjectedMothersOf(lotId) {
+            const parent = DB.lots[lotId]?.parentLotId;
+            const map = DB.data?._CropLabourWizard?.projectedLots;
+            if (!parent || !map) return [];
+            const ids = Object.keys(map).filter(id => map[id]?.sourceRoomId && map[id].sourceLotId === parent);
+            if (!ids.length) return [];
+            for (const id of ids) delete map[id];
+            const gone = new Set(ids);
+            DB.data.calendarEvents = (DB.data.calendarEvents || []).filter(ev => !(ev.sourceTool === 'CropProjection' && gone.has(ev.lotId)));
+            markUnsaved();
+            Calendar.onDbChanged();
+            Calendar.render();
+            return ids;
+        }
+        // A real lot landing in a room CropLabourWizard projects in. In a Mother room, a lot made from another lot takes the
+        // place of that lot's 🌿 projected mothers (they came from its clones, not from the room's own chain); otherwise it
+        // takes TBA-01. Returns { mothers: [ids removed], tba: deleteTBA1Projection's result }.
+        function takeProjectedPlace(roomId, lotId) {
+            const room = DB.data?.rooms?.[roomId], none = { deletedEvents: 0, removedEntry: false };
+            if (!projectedRoom(room)) return { mothers: [], tba: none };
+            const mothers = room.designation === 'Mother' ? deleteProjectedMothersOf(lotId) : [];
+            return { mothers, tba: mothers.length ? none : deleteTBA1Projection(roomId) };
+        }
+        const mothersTakenText = ids => `🌿 Projected mothers ${ids.join(', ')} removed — this lot is the mothers they planned`;
+
         // ---- Schedule tasks move only in CropLabourWizard (user decision 2026-10-26) ----
         // The tasks a crop's schedule is built from: the anchors (CropLabourWizard reads them back from where their events
         // sit), the transplant, both clone cuts (the next lot's Day 0) and the room-ready cleans (when the next lot can move
@@ -15645,6 +15714,8 @@
         // taken and which are open. These figures mirror that recipe, which lives inside CropLabourWizard's code and can't be
         // read from here; tests/launch-windows checks they still match. LEAD: Day 1 (clones cut) to the flip.
         const LAUNCH = { SLOTS: 10, CYCLE: 70, BLOOM: 63, LEAD: 34 };
+        // The timeline scrolls sideways out to the last crop's harvest (user request 2026-10-30), at most 3 years from row 1
+        const LAUNCH_MAX_WEEKS = 156;
         const launchDay = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
         const launchIso = n => new Date(n * 86400000).toISOString().slice(0, 10);
         const launchAdd = (s, n) => launchIso(launchDay(s) + n);
@@ -15705,7 +15776,10 @@
             const inBloom = c => c.flip <= day && day <= c.harvestEnd;
             const blooming = crops.filter(c => counts(c) && inBloom(c));
             const oldest = blooming.length ? Math.min(...blooming.map(c => launchWeekOf(c.flip))) : T;
-            const A = Math.max(T - (S - 1), Math.min(T, oldest)), END = A + 2 * S;   // the weeks drawn: [A, END)
+            // The weeks drawn, [A, END): from row 1 for two cycles at least, and on as far as any crop's harvest goes (projections
+            // included) or an open window's would (T + 2 cycles), so the timeline scrolls out to the last projection
+            const lastWeek = Math.max(0, ...crops.map(c => launchWeekOf(c.harvestEnd) + 1));
+            const A = Math.max(T - (S - 1), Math.min(T, oldest)), END = Math.min(A + LAUNCH_MAX_WEEKS, Math.max(A + 2 * S, T + 2 * S, lastWeek));
             const from = launchMonday(A), to = launchAdd(launchMonday(END), -1);
             const rowOf = c => (((launchWeekOf(c.flip) - A) % S) + S) % S;
             const live = crops.filter(counts);
@@ -15750,7 +15824,81 @@
                             .map(([what, date]) => ({ what, date, holiday: Holidays.forDate(date) })).filter(h => h.holiday) } });
             }
             const taken = rows.filter(r => r.taken).length;
-            return { T, A, END, from, to, day, rows, overlaps, overlapping, clashes, inBloom, taken, open: S - taken };
+            return { T, A, END, weeks: END - A, from, to, day, rows, overlaps, overlapping, clashes, inBloom, taken, open: S - taken };
+        }
+
+        // ---- 🌿 Mothers (user request 2026-10-30): when which mothers are mature, like the launch windows ----
+        // A mother lot (real, or projected by CropLabourWizard: a Mother room's own chain, or 🌿 mothers from clones) grows from
+        // its move-in and is mature, clones can be cut from it, from its recipe's 🌿 Mature from task until Retire Mothers.
+        // BACK / WEEKS: the weeks drawn (from 8 weeks before the shown week, 26 in all); CUTS: the weeks of clone cuts listed;
+        // SOON: "coming of age" weeks. MATURE_TASK: the built-in mother recipe's Mature from (it lives in CropLabourWizard's
+        // code), for mother lots generated before their events carried motherMature; tests/mothers-view checks it matches.
+        const MOTHERS = { BACK: 8, WEEKS: 26, CUTS: 10, SOON: 4, MATURE_TASK: 'mother_pick2' };
+
+        // The mother lots: each lot with a Retire Mothers task (a real lot's or a projection's, never a 📋 copy). `retires`: the
+        // retire events to use (the calendar's, filtered); `events`: where to find the lots' other tasks; `roomOf(ev)`: the
+        // event's room. A real lot must still be in the DB, a projection's room must exist. Move-in = Transplanting, else
+        // Planting, else its first task; mature = the task flagged motherMature (the recipe's 🌿 Mature from), else the
+        // built-in's Second leaf pick, else null; retire = Retire Mothers' last day. `stale`: a projection whose move-in has
+        // passed (no lot was made for it). `from`: the flower lot projected mothers from clones come from.
+        function motherCrops(data, retires, events, roomOf, today) {
+            const isCrop = ev => !!ev && !('copyOf' in ev) && !!ev.lotId && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || '')
+                && (ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection');
+            const byLot = new Map();
+            for (const ev of events) {
+                if (!isCrop(ev)) continue;
+                const key = ev.sourceTool + '|' + ev.lotId;
+                if (!byLot.has(key)) byLot.set(key, []);
+                byLot.get(key).push(ev);
+            }
+            const crops = [], seen = new Set();
+            for (const retireEv of retires.filter(ev => ev?.taskType === 'retire' && isCrop(ev)).sort((a, b) => a.date.localeCompare(b.date))) {
+                const key = retireEv.sourceTool + '|' + retireEv.lotId, projected = retireEv.sourceTool === 'CropProjection';
+                if (seen.has(key)) continue;
+                seen.add(key);
+                const roomId = roomOf(retireEv) || null;
+                if (projected ? !data?.rooms?.[roomId] : !data?.lots?.[retireEv.lotId]) continue;
+                const evs = byLot.get(key) || [retireEv];
+                const first = tt => evs.filter(e => e.taskType === tt).sort((a, b) => (a.repeat || 1) - (b.repeat || 1) || a.date.localeCompare(b.date))[0] || null;
+                const moveInEv = first('transplant') || first('planting') || [...evs].sort((a, b) => a.date.localeCompare(b.date))[0];
+                const retire = retireEv.endDate > retireEv.date ? retireEv.endDate : retireEv.date;
+                const matureEv = evs.find(e => e.motherMature) || first(MOTHERS.MATURE_TASK);
+                const p = projected ? data?._CropLabourWizard?.projectedLots?.[retireEv.lotId] : null;
+                crops.push({ lotId: retireEv.lotId, projected, roomId, retireEv, moveInEv, matureEv: matureEv && matureEv.date <= retire ? matureEv : null,
+                    moveIn: moveInEv.date <= retire ? moveInEv.date : retire, mature: matureEv && matureEv.date <= retire ? matureEv.date : null, retire,
+                    stale: projected && moveInEv.date < today, from: p?.sourceLotId ? { roomId: p.sourceRoomId, lotId: p.sourceLotId } : null });
+            }
+            return crops;
+        }
+
+        // The mothers as of a week (`asOf`: its Monday): the weeks drawn, each Mother room's lots in lanes (lots one after
+        // another share a lane), and the clone cuts ahead with the mothers mature on each one's day. The as-of day is today
+        // in this week, else the week's Monday. `cuts`: [{ date, … }], the bloom lots' Cutting Clones. Stale projections are
+        // drawn but count for nothing.
+        function mothersModel(crops, cuts, { asOf, today }) {
+            const T = launchWeekOf(asOf), day = launchWeekOf(today) === T ? today : launchMonday(T);
+            const A = T - MOTHERS.BACK, END = A + MOTHERS.WEEKS;
+            const from = launchMonday(A), to = launchAdd(launchMonday(END), -1);
+            const monday = launchMonday(T), sunday = launchAdd(monday, 6);
+            const live = crops.filter(c => !c.stale);
+            const matureOn = (c, d) => !c.stale && !!c.mature && c.mature <= d && d <= c.retire;
+            const groups = new Map();
+            for (const c of crops.filter(c => c.moveIn <= to && c.retire >= from).sort((a, b) => a.moveIn.localeCompare(b.moveIn) || a.lotId.localeCompare(b.lotId))) {
+                if (!groups.has(c.roomId)) groups.set(c.roomId, { roomId: c.roomId, items: [], laneEnds: [] });
+                const g = groups.get(c.roomId);
+                let lane = g.laneEnds.findIndex(end => end < c.moveIn);
+                if (lane < 0) { lane = g.laneEnds.length; g.laneEnds.push(''); }
+                g.laneEnds[lane] = c.retire;
+                g.items.push({ crop: c, lane });
+            }
+            const inWeek = live.filter(c => c.moveIn <= sunday && c.retire >= monday);
+            const mature = inWeek.filter(c => c.mature && c.mature <= sunday);
+            const soonTo = launchAdd(sunday, MOTHERS.SOON * 7);
+            const soon = live.filter(c => c.mature && c.mature > sunday && c.mature <= soonTo);
+            const cutTo = launchAdd(monday, MOTHERS.CUTS * 7 - 1);
+            const cutRows = cuts.filter(c => c.date >= monday && c.date <= cutTo).sort((a, b) => a.date.localeCompare(b.date) || String(a.lotId).localeCompare(String(b.lotId)))
+                .map(c => ({ ...c, mothers: live.filter(m => matureOn(m, c.date)) }));
+            return { T, A, END, from, to, day, monday, sunday, groups: [...groups.values()], inWeek, mature, soon, cuts: cutRows, matureOn };
         }
 
         // What the open tool last had (the DB without SitkaTools' save stamp, plus the view): Tools measures its changes by it
@@ -16371,9 +16519,13 @@
                 const room = this.rooms[roomId];
                 if (!room || refuseRoomChange(roomId, 'deleted')) return;
                 // Its projected lots belong to CropLabourWizard, which couldn't reach them once the room is gone (review E8)
-                const projected = Object.values(DB.data._CropLabourWizard?.projectedLots || {}).filter(p => p?.roomId === roomId).length
+                // 🌿 Mothers from clones count for the flower room they come from and the Mother room they live in
+                const projLots = Object.values(DB.data._CropLabourWizard?.projectedLots || {});
+                const projected = projLots.filter(p => p?.roomId === roomId || p?.sourceRoomId === roomId).length
                     + DB.data.calendarEvents.filter(ev => ev.sourceTool === 'CropProjection' && ev.roomId === roomId).length;
-                if (projected) { alert(`${room.name} has projected lots. Clear them first in CropLabourWizard (pick a lot in the room → 🧹 Clear Projections), then delete the room.`); return; }
+                const from = [...new Set(projLots.filter(p => p?.roomId === roomId && p.sourceRoomId).map(p => this.rooms[p.sourceRoomId]?.name || p.sourceRoomId))];
+                if (projected) { alert(`${room.name} has projected lots. Clear them first in CropLabourWizard (pick a lot in the room → 🧹 Clear Projections), then delete the room.` +
+                    (from.length ? `\n\n🌿 Its projected mothers come from ${from.join(', ')}: clear them from a lot in ${from.length === 1 ? 'that room' : 'those rooms'}.` : '')); return; }
                 // Clear any lot references to this room (assigned, veg, cloning, dry, trim, current)
                 Object.values(DB.lots).forEach(lot => {
                     if (!lot) return;
@@ -16421,8 +16573,9 @@
                 // Moving a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
                 // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
                 if (projectedRoom(toRoom)) {
-                    const res = deleteTBA1Projection(toRoomId);
-                    if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${toRoom.name} — room flagged for reprojection`);
+                    const { mothers, tba: res } = takeProjectedPlace(toRoomId, lotId);
+                    if (mothers.length) showSyncToast(mothersTakenText(mothers));
+                    else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${toRoom.name} — room flagged for reprojection`);
                 }
 
                 this.renderRoomList();
@@ -16467,8 +16620,9 @@
                 // Assigning a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
                 // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
                 if (projectedRoom(room)) {
-                    const res = deleteTBA1Projection(roomId);
-                    if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${room.name} — room flagged for reprojection`);
+                    const { mothers, tba: res } = takeProjectedPlace(roomId, lotId);
+                    if (mothers.length) showSyncToast(mothersTakenText(mothers));
+                    else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${room.name} — room flagged for reprojection`);
                 }
 
                 this.renderRoomList();
@@ -16648,13 +16802,14 @@
                         d.setDate(d.getDate() - d.getDay()); // back to Sunday
                         this.weekAnchorDate = localDate(d);
                     }
-                    if (mode === 'launch' && !this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(localDate()));
+                    if ((mode === 'launch' || mode === 'mothers') && !this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(localDate()));
                     this.render();
                 };
                 $('viewMonthBtn').addEventListener('click', () => setView('month'));
                 $('viewWeekBtn').addEventListener('click', () => setView('week'));
                 $('viewYearBtn').addEventListener('click', () => setView('year'));
                 $('viewLaunchBtn').addEventListener('click', () => setView('launch'));
+                $('viewMothersBtn').addEventListener('click', () => setView('mothers'));
                 $('printYearBtn').addEventListener('click', () => this.printAnnual());
 
                 // Holiday display toggle (on by default)
@@ -16725,8 +16880,8 @@
                     this.render();
                     return;
                 }
-                if (this.viewMode === 'launch') {
-                    // 🚀 Launch windows: Prev/Next show them as of the week before / after
+                if (this.viewMode === 'launch' || this.viewMode === 'mothers') {
+                    // 🚀 Launch windows and 🌿 Mothers (one shown week between them): Prev/Next show them as of the week before / after
                     this.launchWeek = launchAdd(this.launchWeek || launchMonday(launchWeekOf(localDate())), 7 * delta);
                     this.render();
                     return;
@@ -16750,7 +16905,7 @@
                     // Slide the 7-day window so today is its first day
                     this.weekAnchorDate = localDate(today);
                 }
-                if (this.viewMode === 'launch') this.launchWeek = launchMonday(launchWeekOf(localDate(today)));
+                if (this.viewMode === 'launch' || this.viewMode === 'mothers') this.launchWeek = launchMonday(launchWeekOf(localDate(today)));
                 this.render();
             },
 
@@ -17115,6 +17270,7 @@
                 if (monthGrid) monthGrid.classList.add('hidden');
                 $('weekView').classList.add('hidden');
                 $('launchView').classList.add('hidden');
+                $('mothersView').classList.add('hidden');
 
                 const todayStr = localDate();
                 const taskTypes = this._annualTaskTypes();
@@ -17391,6 +17547,7 @@
                 if (monthGrid) monthGrid.classList.add('hidden');
                 $('annualView').classList.add('hidden');
                 $('launchView').classList.add('hidden');
+                $('mothersView').classList.add('hidden');
                 view.classList.remove('hidden');
 
                 // Default anchor: most recent Sunday (so the window is Sun–Sat)
@@ -17501,6 +17658,7 @@
                 if (monthGrid) monthGrid.classList.add('hidden');
                 $('annualView').classList.add('hidden');
                 $('weekView').classList.add('hidden');
+                $('mothersView').classList.add('hidden');
                 view.classList.remove('hidden');
                 const today = localDate();
                 if (!this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(today));
@@ -17526,7 +17684,7 @@
                 const fmt = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
                 const fmtY = s => fmt(s) + (s.slice(0, 4) !== today.slice(0, 4) ? `, ${s.slice(0, 4)}` : '');
                 const roomName = id => rooms[id]?.name || id || 'no room';
-                const span = LAUNCH.SLOTS * 14, d0 = launchDay(M.from);
+                const span = M.weeks * 7, d0 = launchDay(M.from);
                 const at = d => Math.min(100, Math.max(0, (launchDay(d) - d0) / span * 100));
                 const place = (a, b) => { const l = at(a), r = Math.min(100, Math.max(0, (launchDay(b) + 1 - d0) / span * 100)); return `left:${l.toFixed(3)}%;width:${Math.max(0.7, r - l).toFixed(3)}%`; };
                 const bloomTag = c => c.bloomDays === LAUNCH.BLOOM ? '' : (c.bloomDays % 7 === 0 ? `${c.bloomDays / 7}-wk bloom` : `${c.bloomDays}-day bloom`);
@@ -17637,15 +17795,164 @@
                         <div class="launch-summary"><b>${M.taken} of ${LAUNCH.SLOTS}</b> windows taken · <b>${M.open} open</b>${M.overlaps.length ? ` · <span class="launch-warn">⚠️ ${M.overlaps.length} harvest overlap${M.overlaps.length > 1 ? 's' : ''}</span>` : ''}</div>
                         <div class="launch-legend"><span><i class="lg-lot"></i>lot</span><span><i class="lg-proj"></i>projected</span><span><i class="lg-open"></i>🚀 open window</span><span><i class="lg-over"></i>harvest overlap</span><span><i class="lg-today"></i>today</span></div>
                     </div>
-                    <p class="launch-intro">Each flower room's next lot flips ${LAUNCH.CYCLE} days after its last, so there are ${LAUNCH.SLOTS} weekly windows: one flip and one harvest a week. Wk 1 is the week the oldest crop in bloom flipped; each row shows its window this cycle and the next.</p>
+                    <p class="launch-intro">Each flower room's next lot flips ${LAUNCH.CYCLE} days after its last, so there are ${LAUNCH.SLOTS} weekly windows: one flip and one harvest a week. Wk 1 is the week the oldest crop in bloom flipped; each row shows its window every cycle from there. ${M.weeks > 2 * LAUNCH.SLOTS ? `Scroll sideways to follow the crops and projections out to ${escapeHtml(fmtY(M.to))}.` : ''}</p>
                     ${typeFilter}
-                    <div class="launch-scroll"><div class="launch-chart">
+                    <div class="launch-scroll"><div class="launch-chart" style="--weeks:${M.weeks}">
                         <div class="launch-row launch-axis"><div class="launch-label"></div><div class="launch-track">${months}</div></div>
                         ${rowsHtml}
                     </div></div>
                     <div class="launch-panels">${openPanel}${checkPanel}</div>`;
 
                 // Click a bar → its Flip to Flower task in the event panel
+                view.querySelectorAll('.launch-bar').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const ev = this.eventById(el.dataset.eventId);
+                        if (!ev) return;
+                        this.selectEvent(ev);
+                        $('eventPanel')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+                    });
+                });
+            },
+
+            // 🌿 Mothers (user request 2026-10-30) — each mother lot, real and projected, by Mother room: growing from its move-in,
+            // mature from its recipe's 🌿 Mature from to Retire Mothers (motherCrops / mothersModel), and the clone cuts ahead with
+            // the mothers mature on each one's day. Shares the shown week with 🚀 (launchWeek). Read from the events; nothing stored.
+            renderMothers() {
+                const view = $('mothersView');
+                const monthGrid = $('calendarGrid').closest('.calendar-grid-wrapper');
+                if (monthGrid) monthGrid.classList.add('hidden');
+                $('annualView').classList.add('hidden');
+                $('weekView').classList.add('hidden');
+                $('launchView').classList.add('hidden');
+                view.classList.remove('hidden');
+                const today = localDate();
+                if (!this.launchWeek) this.launchWeek = launchMonday(launchWeekOf(today));
+                if (!DB.data) { view.innerHTML = '<div class="launch-empty">Load a database to see the mothers.</div>'; return; }
+
+                const data = DB.data, rooms = data.rooms || {}, building = DeviceView.building;
+                const roomOf = ev => this._filterCache.get(ev)?.roomId || null;
+                const inBuilding = id => !building || rooms[id]?.buildingId === building;
+                const active = this._activeFilterKeys();
+                // The mother lots the filters leave (task-type filters aside); on a building device only its building's rooms
+                const retires = this.filteredEvents('taskType').filter(ev => ev.taskType === 'retire' && inBuilding(roomOf(ev)));
+                const crops = motherCrops(data, retires, this.shownEvents, roomOf, today);
+                // The clone cuts: each bloom lot's Cutting Clones (a lot with a flip or harvest), real or projected. The room filter
+                // doesn't apply (a cut is in a cloning room); building, lot and strain do
+                const bloom = new Set(this.shownEvents.filter(ev => ev.taskType === 'flip' || ev.taskType === 'harvest').map(ev => ev.sourceTool + '|' + ev.lotId));
+                const seenCut = new Set();
+                const cuts = this.filteredEvents(['taskType', 'room']).filter(ev => ev.taskType === 'clone_cut_prep' && !('copyOf' in ev) && ev.lotId
+                        && (ev.sourceTool === 'CropLabourWizard' || ev.sourceTool === 'CropProjection') && bloom.has(ev.sourceTool + '|' + ev.lotId)
+                        && (ev.sourceTool === 'CropProjection' ? !!rooms[ev.roomId] : !!data.lots?.[ev.lotId])
+                        && !seenCut.has(ev.sourceTool + '|' + ev.lotId) && seenCut.add(ev.sourceTool + '|' + ev.lotId))
+                    .map(ev => ({ ev, lotId: ev.lotId, projected: ev.sourceTool === 'CropProjection', date: ev.date,
+                        room: ev.sourceTool === 'CropProjection' ? (rooms[ev.roomId]?.name || ev.roomId) : (data.lots[ev.lotId]?.destRoom || '') }));
+                const M = mothersModel(crops, cuts, { asOf: this.launchWeek, today });
+
+                const fmt = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
+                const fmtY = s => fmt(s) + (s.slice(0, 4) !== today.slice(0, 4) ? `, ${s.slice(0, 4)}` : '');
+                const roomName = id => rooms[id]?.name || id || 'no room';
+                const span = MOTHERS.WEEKS * 7, d0 = launchDay(M.from);
+                const at = d => Math.min(100, Math.max(0, (launchDay(d) - d0) / span * 100));
+                const place = (a, b) => { const l = at(a), r = Math.min(100, Math.max(0, (launchDay(b) + 1 - d0) / span * 100)); return `left:${l.toFixed(3)}%;width:${Math.max(0.7, r - l).toFixed(3)}%`; };
+                const days = (a, b) => launchDay(b) - launchDay(a);
+
+                // A mother lot's bar: faint while growing, solid once mature (--m: where it turns), and the lines of its tooltip
+                const bar = (c, lane) => {
+                    const lot = data.lots?.[c.lotId];
+                    const status = M.day < c.moveIn ? `moves in ${fmt(c.moveIn)}` : M.day > c.retire ? 'retired'
+                        : !c.mature ? 'no mature day' : M.day < c.mature ? `mature ${fmt(c.mature)}` : `mature · retires ${fmt(c.retire)}`;
+                    const text = [c.stale ? '⚠️' : '🌿', c.lotId, '·', status].join(' ');
+                    const m = c.mature ? Math.max(0, Math.min(100, days(c.moveIn, c.mature) / (days(c.moveIn, c.retire) + 1) * 100)) : 100;
+                    const tip = [c.projected ? `Projected mothers ${c.lotId}${c.from ? ` · from ${c.from.lotId} (${roomName(c.from.roomId)})` : ''}` : `Mother lot ${c.lotId}${lot?.strain ? ' · ' + lot.strain : ''}`,
+                        roomName(c.roomId),
+                        `Moves in ${fmtY(c.moveIn)} → ${c.mature ? `mature ${fmtY(c.mature)} → ` : ''}retires ${fmtY(c.retire)}`,
+                        c.mature && M.day >= c.mature && M.day <= c.retire ? `Mature: ${days(M.day, c.retire)} days left to cut clones from` : '',
+                        c.mature && M.day < c.mature ? `Mature in ${days(M.day, c.mature)} days` : '',
+                        !c.mature ? '⚠️ No 🌿 Mature from day: set it in its recipe, then Generate its schedule again in CropLabourWizard' : '',
+                        c.stale ? '⚠️ Its move-in day has passed and no mother lot was made for it' : '',
+                        `Click to open its ${c.matureEv ? 'Mature from' : 'Retire Mothers'} task`].filter(Boolean).join('\n');
+                    const ev = c.matureEv || c.retireEv;
+                    const cls = ['launch-bar', 'mother', c.projected ? 'projection' : '', c.stale ? 'stale' : '', !c.mature ? 'nomature' : '',
+                        c.retire < M.day ? 'done' : '', this.selectedEvent === ev ? 'selected' : ''].filter(Boolean).join(' ');
+                    return `<button type="button" class="${cls}" style="${place(c.moveIn, c.retire)};--lane:${lane};--m:${m.toFixed(2)}%" data-event-id="${escapeHtml(ev.id || '')}" data-lot="${escapeHtml(c.lotId)}" title="${escapeHtml(tip)}">${escapeHtml(text)}</button>`;
+                };
+
+                // The month labels, the shown week and today, drawn on every row
+                const firsts = [];
+                for (let d = M.from; d <= M.to; d = launchAdd(d, 1)) if (d.slice(8) === '01') firsts.push(d);
+                if (!firsts.length || launchDay(firsts[0]) - d0 > 10) firsts.unshift(M.from);
+                const months = firsts.map(d => {
+                    const dt = parseLocalDate(d);
+                    return `<span class="launch-month" style="left:${at(d).toFixed(3)}%">${dt.toLocaleDateString('en-US', { month: 'short' })}${dt.getMonth() === 0 ? ' ' + dt.getFullYear() : ''}</span>`;
+                }).join('');
+                const nowBand = `<div class="launch-now" style="${place(M.monday, M.sunday)}"></div>`;
+                const todayLine = today >= M.from && today <= M.to ? `<div class="launch-today" style="left:${((launchDay(today) + 0.5 - d0) / span * 100).toFixed(3)}%"></div>` : '';
+
+                const groups = [...M.groups].sort((a, b) => roomName(a.roomId).localeCompare(roomName(b.roomId), undefined, { numeric: true }));
+                const rowsHtml = groups.map(g => {
+                    const matureNow = g.items.filter(i => M.matureOn(i.crop, M.day)).length;
+                    return `<div class="launch-row" data-room="${escapeHtml(g.roomId || '')}">
+                        <div class="launch-label">
+                            <span class="launch-wk">${escapeHtml(roomName(g.roomId))}</span>
+                            <span class="launch-fri">${g.items.length} lot${g.items.length === 1 ? '' : 's'} · ${matureNow} mature</span>
+                        </div>
+                        <div class="launch-track" style="--lanes:${Math.max(1, g.laneEnds.length)}">${nowBand}${todayLine}${g.items.map(i => bar(i.crop, i.lane)).join('')}</div>
+                    </div>`;
+                }).join('') || `<div class="launch-row"><div class="launch-label"></div><div class="launch-track mothers-none">No mother lots in these weeks${active.size ? ' with these filters' : ''}.</div></div>`;
+
+                // ✂️ The clone cuts ahead, with the mothers mature on each one's day
+                const noMothers = M.cuts.filter(c => !c.mothers.length).length;
+                const cutRows = M.cuts.map(c => {
+                    const moms = c.mothers.length
+                        ? c.mothers.map(m => `${escapeHtml(m.lotId)}${m.projected ? ' <span class="muted">(projected)</span>' : ''} <span class="muted">· ${escapeHtml(roomName(m.roomId))}</span>`).join('<br>')
+                        : '<span class="warn">⚠️ No mothers mature that day</span>';
+                    return `<tr data-cut="${escapeHtml(c.lotId)}"><td class="date"><b>${escapeHtml(fmtY(c.date))}</b></td>
+                        <td>${escapeHtml(c.lotId)}${c.projected ? ' <span class="muted">(projected)</span>' : ''}</td><td>${escapeHtml(c.room || '—')}</td>
+                        <td class="moms">${moms}</td></tr>`;
+                }).join('');
+                const cutPanel = `<section class="launch-panel">
+                    <h3>✂️ Clone cuts ahead</h3>
+                    ${M.cuts.length ? `<div class="launch-table-wrap"><table class="launch-table mothers-table">
+                        <thead><tr><th>Cut clones</th><th>Lot</th><th>Flower room</th><th>🌿 Mothers mature that day</th></tr></thead>
+                        <tbody>${cutRows}</tbody></table></div>
+                    <p class="launch-foot">Every crop's ✂️ Cutting Clones, real and projected, for the ${MOTHERS.CUTS} weeks from the week shown. A mother lot is mature from its recipe's 🌿 Mature from task until Retire Mothers.</p>`
+                        : `<p class="launch-foot">No clone cuts in the ${MOTHERS.CUTS} weeks from the week shown.</p>`}
+                </section>`;
+
+                // ⚠️ What to check: no mature day, projected mothers never made, mother lots with no schedule
+                const checks = [];
+                const shown = new Set(M.groups.flatMap(g => g.items.map(i => i.crop)));
+                for (const c of crops.filter(c => !c.mature && shown.has(c)))
+                    checks.push(`🌿 <b>${escapeHtml(c.lotId)}</b> has no 🌿 Mature from day: set it in its recipe in CropLabourWizard, then ${c.projected ? 'run 🔮 Project Crop' : 'Generate its schedule'} again.`);
+                for (const c of crops.filter(c => c.stale && shown.has(c)))
+                    checks.push(`⚠️ <b>${escapeHtml(c.lotId)}</b>: its move-in day (${escapeHtml(fmtY(c.moveIn))}) has passed and no mother lot was made for it.`);
+                const retired = new Set(this.events.filter(ev => ev.sourceTool === 'CropLabourWizard' && ev.taskType === 'retire').map(ev => ev.lotId));
+                const roomNamed = name => Object.keys(rooms).find(id => rooms[id]?.name && rooms[id].name === name);
+                for (const [id, lot] of Object.entries(data.lots || {})) {
+                    if (retired.has(id) || !lotIsMother(lot) || !DeviceView.lotVisible(lot)) continue;
+                    if (/^(closed|retired)$/i.test(String(lot.stage || '').trim()) || String(lot.plantCount ?? '') === '0') continue;
+                    if ((active.has('lot') && !active.get('lot').has(id)) || (active.has('strain') && !active.get('strain').has(String(lot.strain || '')))) continue;
+                    const rid = roomNamed(lot.destRoom) || roomNamed(lot.currentRoom);
+                    if (rid && !inBuilding(rid)) continue;
+                    checks.push(`📋 <b>Lot ${escapeHtml(id)}</b>${rid ? ` (${escapeHtml(roomName(rid))})` : ''} is a mother lot with no Retire Mothers scheduled, so it isn't shown. Generate its schedule in CropLabourWizard.`);
+                }
+                const checkPanel = checks.length ? `<section class="launch-panel warn"><h3>⚠️ Check these</h3><ul>${checks.map(t => `<li>${t}</li>`).join('')}</ul></section>` : '';
+
+                const typeFilter = active.has('taskType') ? '<p class="launch-note">Task-type filters don\'t apply here.</p>' : '';
+                view.innerHTML = `
+                    <div class="launch-head">
+                        <div class="launch-summary"><b>${M.inWeek.length}</b> mother lot${M.inWeek.length === 1 ? '' : 's'} this week · <b>${M.mature.length} mature</b> · <b>${M.soon.length}</b> coming of age in the next ${MOTHERS.SOON} weeks${noMothers ? ` · <span class="launch-warn">⚠️ ${noMothers} clone cut${noMothers > 1 ? 's' : ''} with no mothers mature</span>` : ''}</div>
+                        <div class="launch-legend"><span><i class="lg-grow"></i>growing</span><span><i class="lg-mature"></i>mature</span><span><i class="lg-proj"></i>projected</span><span><i class="lg-today"></i>today</span></div>
+                    </div>
+                    <p class="launch-intro">Each bar is a mother lot, from the day it moves into its Mother room: faint while the mothers grow, solid from the day they're mature (their recipe's 🌿 Mature from) until Retire Mothers. Projected mothers come from the plants each flower lot keeps back at its Transplanting (🌿 Mothers from clones in CropLabourWizard).</p>
+                    ${typeFilter}
+                    <div class="launch-scroll"><div class="launch-chart">
+                        <div class="launch-row launch-axis"><div class="launch-label"></div><div class="launch-track">${months}</div></div>
+                        ${rowsHtml}
+                    </div></div>
+                    <div class="launch-panels">${cutPanel}${checkPanel}</div>`;
+
+                // Click a bar → its Mature from task (else Retire Mothers) in the event panel
                 view.querySelectorAll('.launch-bar').forEach(el => {
                     el.addEventListener('click', () => {
                         const ev = this.eventById(el.dataset.eventId);
@@ -17914,11 +18221,12 @@
             // Events passing all active filters: values within a key OR
             // together, keys AND together (strict — missing value fails).
             // `ignoreKey`: a filter key left out (🚀 launch windows ignore task-type filters).
+            // ignoreKey: a filter key (or a list of them) to leave out
             filteredEvents(ignoreKey = null) {
                 const all = this.shownEvents;
                 if (this.filters.length === 0) return all;
                 const byKey = this._activeFilterKeys();
-                if (ignoreKey) byKey.delete(ignoreKey);
+                for (const k of [].concat(ignoreKey || [])) byKey.delete(k);
                 if (byKey.size === 0) return all;
                 return all.filter(ev => {
                     const vals = this._filterCache.get(ev);
@@ -18165,6 +18473,8 @@
                     this.renderWeek();
                 } else if (this.viewMode === 'launch') {
                     this.renderLaunch();
+                } else if (this.viewMode === 'mothers') {
+                    this.renderMothers();
                 } else {
                     this.renderGrid();
                 }
@@ -18185,11 +18495,14 @@
                 } else if (this.viewMode === 'launch') {
                     const a = parseLocalDate(this.launchWeek || launchMonday(launchWeekOf(localDate())));
                     $('calendarTitle').textContent = `🚀 Launch Windows — week of ${months[a.getMonth()].slice(0, 3)} ${a.getDate()}, ${a.getFullYear()}`;
+                } else if (this.viewMode === 'mothers') {
+                    const a = parseLocalDate(this.launchWeek || launchMonday(launchWeekOf(localDate())));
+                    $('calendarTitle').textContent = `🌿 Mothers — week of ${months[a.getMonth()].slice(0, 3)} ${a.getDate()}, ${a.getFullYear()}`;
                 } else {
                     $('calendarTitle').textContent = `${months[this.currentMonth]} ${this.currentYear}`;
                 }
                 // Keep the view buttons in sync with the active view
-                const viewBtns = { month: $('viewMonthBtn'), week: $('viewWeekBtn'), year: $('viewYearBtn'), launch: $('viewLaunchBtn') };
+                const viewBtns = { month: $('viewMonthBtn'), week: $('viewWeekBtn'), year: $('viewYearBtn'), launch: $('viewLaunchBtn'), mothers: $('viewMothersBtn') };
                 for (const [mode, btn] of Object.entries(viewBtns)) {
                     if (btn) btn.classList.toggle('active', mode === this.viewMode);
                 }
@@ -18207,6 +18520,7 @@
                 $('annualView').classList.add('hidden');
                 $('weekView').classList.add('hidden');
                 $('launchView').classList.add('hidden');
+                $('mothersView').classList.add('hidden');
 
                 // Keep headers, remove day cells
                 const headers = grid.querySelectorAll('.calendar-day-header');
@@ -21406,6 +21720,9 @@
             name: 'Sitka Default mother recipe',
             kind: 'vegetative',
             version: 1,
+            // 🌿 Mature from (user decision 2026-10-30): clones can be cut from these mothers from the Second leaf pick
+            // (planting + 56, day 71 of the plants' life) until they retire
+            matureTask: 'mother_pick2',
             tasks: [
                 { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
                 { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
@@ -21647,6 +21964,17 @@
         }
         const lifeDayText = d => d ? `${d.num} ${d.of}` : '';
 
+        // 🌿 Mature from (user decision 2026-10-30): the task of a mother recipe from which its mothers are mature (clones
+        // can be cut from them until they retire), with its day of the plants' life — { def, day: 'day 71' }, or null
+        function recipeMatureFrom(recipe, tasks = recipe?.tasks) {
+            if (!isVegRecipe(recipe) || !recipe.matureTask) return null;
+            const i = (tasks || []).findIndex(t => t?.taskType === recipe.matureTask);
+            if (i === -1) return null;
+            const d = recipeLifeDays(tasks, 'vegetative').rows[i];
+            return { def: tasks[i], day: d && d.kind === 'life' ? d.num : '' };
+        }
+        const matureFromLabel = m => m ? `${m.def.emoji ? m.def.emoji + ' ' : ''}${m.def.name || m.def.taskType}${m.day ? `, ${m.day} of the plant's life` : ''}` : '';
+
         // Each recipe task's day of the plants' life, worked out from its default offsets as a fresh lot would have
         // them: clones on, a one-day harvest, a 7-day trim. Also the length of the life and of the work after it.
         function recipeLifeDays(tasks, kind) {
@@ -21731,6 +22059,7 @@
         // The recipe a lot's schedule was generated from (config.recipeId). Without one: a projected lot follows the header
         // projection recipe (it's regenerated with it), a real lot the default built-in, as everywhere else (review G12).
         function lotRecipeFor(lotId) {
+            if (isMothersFromClones(lotId)) return motherRecipeOf(getProjectedLots()[lotId]);
             return getRecipeById(getScheduleConfig(lotId)?.recipeId || (isProjectedLot(lotId) ? projectionRecipeId : BUILTIN_RECIPE.id));
         }
 
@@ -21859,6 +22188,17 @@
                     else if (x.at != null && (x.per !== 'plant' || !(obj.tasks || []).some(t => t?.taskType === x.at))) errors.push(`inputs[${i}] "${x.name}": charged at task "${x.at}", which isn't in this recipe`);
                 });
             }
+            // 🌿 Mature from (vegetative only): the task from which the mothers are mature, clones can be cut from them,
+            // until Retire Mothers. Listed after Transplanting (they're mature in the Mother room), never Retire itself
+            if (obj.matureTask != null) {
+                const tasks = (obj.tasks || []).filter(t => t && typeof t === 'object');
+                const mi = tasks.findIndex(t => t.taskType === obj.matureTask);
+                const ti = tasks.findIndex(t => t.taskType === 'transplant');
+                if (!veg) errors.push('matureTask: only a vegetative (mother) recipe has a "Mature from" task');
+                else if (typeof obj.matureTask !== 'string' || mi === -1) errors.push(`matureTask: "${obj.matureTask}" isn't a task in this recipe`);
+                else if (obj.matureTask === 'retire') errors.push('matureTask: the mothers can\'t be mature from Retire Mothers — pick a task before it');
+                else if (ti !== -1 && mi <= ti) errors.push(`matureTask: "${obj.matureTask}" is listed before Transplanting — the mothers are mature in the Mother room, so pick a task after it`);
+            }
             if (obj.chain != null) {
                 if (typeof obj.chain !== 'object' || Array.isArray(obj.chain)) {
                     errors.push('chain: must be an object');
@@ -21919,12 +22259,51 @@
             }
             sel.value = [...sel.options].some(o => o.value === prev) ? prev : BUILTIN_RECIPE.id;
             projectionRecipeId = sel.value;
+            populateMotherRecipeSelector();
+        }
+
+        // ---- 🌿 Mothers from clones dropdown (user request 2026-10-30) ----
+        // "— No mothers —", then the 🌿 recipes with a Transplanting (the day the kept-back plants go to the Mother room).
+        // Kept in memory: it shows the selected flowering room's mothers, and Project Crop applies what it shows.
+        function populateMotherRecipeSelector() {
+            const sel = $('motherRecipeSelect');
+            if (!sel) return;
+            const prev = sel.value;
+            sel.innerHTML = '<option value="">— No mothers —</option>';
+            for (const r of allRecipes()) {
+                if (!r || !Array.isArray(r.tasks) || !projectableMotherRecipe(r)) continue;
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                opt.textContent = `🌿 ${r.name}${isBuiltinRecipe(r) ? ' (built-in)' : ''}`;
+                sel.appendChild(opt);
+            }
+            sel.value = [...sel.options].some(o => o.value === prev) ? prev : '';
+        }
+        // Show the selected lot's flowering room's mothers from clones: their recipe, or "— No mothers —"
+        function syncMotherSelectToRoom() {
+            const sel = $('motherRecipeSelect');
+            if (!sel) return;
+            const { roomId } = resolveProjectionRoom(activeLotSelect.value);
+            const r = roomId && !isMotherRoom(DB.data.rooms?.[roomId]) ? roomMotherRecipe(roomId) : null;
+            sel.value = r && [...sel.options].some(o => o.value === r.id) ? r.id : '';
+            updateMotherSelectState();
+        }
+        // Only a flowering room's lots give mothers from clones
+        function updateMotherSelectState() {
+            const sel = $('motherRecipeSelect');
+            if (!sel) return;
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            const room = roomId ? DB.data.rooms?.[roomId] : null;
+            sel.disabled = !!disabledReason || !room || isMotherRoom(room);
+            sel.title = isMotherRoom(room) ? `${room.name} is a Mother room: its next mothers follow its own 🌿 recipe (mothers from clones come from flowering rooms' lots)`
+                : sel.disabled ? 'Select a flowering room\'s lot to project the mothers its kept-back plants become'
+                : 'The plants kept back at each lot\'s Transplanting become mothers: pick their 🌿 recipe and Project Crop projects them in the Mother room';
         }
 
         // Point activeRecipe + the dropdown at the selected lot's stored recipe (built-in fallback)
         function syncActiveRecipeToLot(lotId) {
             const cfg = getScheduleConfig(lotId);
-            activeRecipe = getRecipeById(cfg?.recipeId);
+            activeRecipe = isMothersFromClones(lotId) ? motherRecipeOf(getProjectedLots()[lotId]) : getRecipeById(cfg?.recipeId);
             populateRecipeSelector(true);
             recipeSelect.value = activeRecipe.id; // show the lot's recipe, not the previous selection
         }
@@ -22003,6 +22382,8 @@
                 facts.push(`Mothers retired ${plural(a.retire, 'day')} after planting: the plants live ${plural(life, 'day')}, from cutting the clones (day 1) to Retire Mothers (day ${life}).`);
                 const cut = recipe.tasks.find(t => t.taskType === 'clone_cut');
                 facts.push(cut ? `Replacement clones are cut ${plural(cloneCutDays(recipe), 'day')} before the mothers retire, which starts the next mother lot.` : 'No replacement cut: new mothers come from another lot\'s clones.');
+                const mf = recipeMatureFrom(recipe);
+                facts.push(mf ? `Mothers are mature from ${matureFromLabel(mf)}. Clones can be cut from them until they retire.` : 'No 🌿 Mature from task set.');
             } else {
                 facts.push(`Veg ${plural(a.flip, 'day')} (planting → flip) · bloom ${plural(a.harvest, 'day')} (flip → harvest).`);
                 facts.push(`The plants live ${plural(life, 'day')}, from cutting the clones (day 1) to harvest (day ${life}), with a one-day harvest.` +
@@ -22161,6 +22542,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const retire = r.tasks.find(t => t.taskType === 'retire');
                 meta.textContent = isVegRecipe(r)
                     ? `${r.id} · 🌿 mothers · ${r.tasks.length} tasks · retired ${retire?.defaultOffset ?? DEFAULT_RETIRE_DAYS}d after planting` +
+                        (recipeMatureFrom(r) ? ` · mature from ${recipeMatureFrom(r).def.emoji || ''} ${recipeMatureFrom(r).def.name}` : '') +
                         (r.tasks.some(t => t.taskType === 'clone_cut') ? ` · replacement clones ${cloneCutDays(r)}d before` : '') + (estimated ? ` · ⏱ ${estimated} with labour estimates` : '')
                     : `${r.id} · ${r.tasks.length} tasks · clones cut ${cloneCutDays(r)}d before harvest` +
                         (estimated ? ` · ⏱ ${estimated} with labour estimates` : '');
@@ -22396,6 +22778,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 document.querySelectorAll('#inputCatalogBody tr[data-id]').forEach(row => { row.querySelector('.in-used').textContent = inputUsedText(row.dataset.id, editorInputs[row.dataset.id]); });
             });
             document.querySelectorAll('.editor-tab').forEach(b => b.addEventListener('click', () => setRecipeEditorTab(b.dataset.tab)));
+            $('recipeMatureSelect').addEventListener('change', () => updateEditorTurnaround());
         }
 
         // ---- Editor ----
@@ -22411,10 +22794,29 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 ? '<span class="recipe-kind" title="For mother plants: no flip, harvest or trim — the mothers are retired on a planned day">🌿 Vegetative (mothers)</span>'
                 : '<span class="recipe-kind" title="A crop that flowers and is harvested">🌸 Bloom</span>';
             editorTurnaroundSig = null;   // opening the editor shows the readout without a toast
+            const mature = $('recipeMatureSelect');
+            mature.innerHTML = ''; mature.dataset.sig = '';   // filled from this recipe's tasks (fillRecipeMatureSelect)
+            $('recipeMatureGroup').style.display = isVegRecipe(recipe) ? '' : 'none';
             setRecipeDay1Weekday(editorRecipe);
             renderTaskTable();
             setRecipeEditorTab('tasks', true);
             setRecipeMgrView('editor');
+        }
+
+        // 🌿 Mature from: the mother recipe's tasks after Transplanting (Retire Mothers aside), refilled only when they change
+        // so the select isn't redrawn while it's being used. "— not set —" first.
+        function fillRecipeMatureSelect(tasks) {
+            const sel = $('recipeMatureSelect');
+            if (!sel || !isVegRecipe(editorRecipe)) return;
+            const cur = sel.options.length ? sel.value : (editorRecipe.matureTask || '');
+            const ti = tasks.findIndex(t => t.taskType === 'transplant');
+            const opts = tasks.filter((t, i) => t.taskType && t.taskType !== 'retire' && (ti === -1 || i > ti));
+            const sig = JSON.stringify(opts.map(t => [t.taskType, t.emoji, t.name]));
+            if (sel.dataset.sig === sig) return;
+            sel.dataset.sig = sig;
+            sel.innerHTML = '<option value="">— not set —</option>' + opts.map(t =>
+                `<option value="${escapeHtml(t.taskType)}">${escapeHtml(`${t.emoji || ''} ${t.name || t.taskType}`.trim())}</option>`).join('');
+            sel.value = opts.some(t => t.taskType === cur) ? cur : '';
         }
 
         // Room-turnaround readout for the recipe being edited, worked out from the table as it stands.
@@ -22426,7 +22828,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             updateEditorLifeDays();
             if (isVegRecipe(editorRecipe)) {
                 const tasks = readTaskTable(), cut = tasks.find(t => t.taskType === 'clone_cut'), ret = tasks.find(t => t.taskType === 'retire');
-                box.innerHTML = `<div class="turnaround-title">🌿 Mothers</div><div>Retired <strong>${ret ? ret.defaultOffset : '?'} days</strong> after planting.` +
+                fillRecipeMatureSelect(tasks);
+                const mf = recipeMatureFrom({ ...editorRecipe, matureTask: $('recipeMatureSelect').value }, tasks);
+                box.innerHTML = `<div class="turnaround-title">🌿 Mothers</div><div>` +
+                    (mf ? `Mature from <strong>${escapeHtml(mf.day || '?')}</strong> (${escapeHtml(`${mf.def.emoji || ''} ${mf.def.name || ''}`.trim())}): clones can be cut from them until they retire. ` : 'No 🌿 Mature from task set: SitkaTools can\'t tell when these mothers are ready to cut clones from. ') +
+                    `Retired <strong>${ret ? ret.defaultOffset : '?'} days</strong> after planting.` +
                     (cut && Number.isInteger(cut.defaultOffset) ? ` Replacement clones are cut <strong>${-cut.defaultOffset} days</strong> before they retire, which starts the next mother lot.` : ' No replacement cut: new mothers come from another lot\'s clones.') +
                     ` No room-ready rule: new mothers move in without a room clean.</div>`;
                 editorTurnaroundSig = null;
@@ -22603,6 +23009,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
             if (!editorRecipe.inputs?.length) delete editorRecipe.inputs;
             if (editorRecipe.version == null) editorRecipe.version = 1;
+            // 🌿 Mature from: a mother recipe's, from the select (filled from its tasks); a bloom recipe has none
+            const mature = isVegRecipe(editorRecipe) ? ($('recipeMatureSelect').options.length ? $('recipeMatureSelect').value : editorRecipe.matureTask) : '';
+            if (mature) editorRecipe.matureTask = mature; else delete editorRecipe.matureTask;
 
             const errors = validateRecipe(editorRecipe);
             if (errors.length > 0) {
@@ -22766,6 +23175,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 refreshPreview();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
+                syncMotherSelectToRoom();
                 showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
             }
 
@@ -22781,6 +23191,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 renderSavedSummary();
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
+                syncMotherSelectToRoom();
             }
         }
 
@@ -22906,7 +23317,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function isStaleOrPending(lotId) {
             if (isStaleProjectedLot(lotId)) return true;
             const p = getProjectedLots()[lotId];
-            return !!(p && isPendingReprojection(p.roomId));
+            // 🌿 Mothers from clones wait on their flower room's Reproject, not on their Mother room's own chain
+            return !!(p && isPendingReprojection(p.sourceRoomId || p.roomId));
         }
 
         // ---- Populate Lot Selector ----
@@ -22938,7 +23350,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // Projected lots group by their room — a room with only projected lots still gets a divider
             for (const lotId of Object.keys(projLots)) {
-                const roomId = projLots[lotId].roomId;
+                // 🌿 Mothers from clones under the flower room they come from (after its TBA lots)
+                const roomId = projLots[lotId].sourceRoomId || projLots[lotId].roomId;
                 if (roomId && rooms[roomId]) {
                     if (!groups.has(roomId)) groups.set(roomId, { real: [], proj: [] });
                     groups.get(roomId).proj.push(lotId);
@@ -22973,11 +23386,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     const g = groups.get(roomId);
                     addDivider(rooms[roomId].name || roomId);
                     g.real.sort(byAge).forEach(addLotOption);
-                    g.proj.sort((a, b) => projLots[a].index - projLots[b].index).forEach(lotId => {
+                    g.proj.sort((a, b) => (!!projLots[a].sourceRoomId - !!projLots[b].sourceRoomId) || projLots[a].index - projLots[b].index).forEach(lotId => {
                         const p = projLots[lotId];
                         const opt = document.createElement('option');
                         opt.value = lotId;
-                        opt.textContent = `🔮 ${p.name}${isStaleOrPending(lotId) ? ' ⚠️' : ''}`;
+                        opt.textContent = p.sourceRoomId
+                            ? `🔮🌿 ${p.name} → ${p.roomName || p.roomId}${isStaleOrPending(lotId) ? ' ⚠️' : ''}`
+                            : `🔮 ${p.name}${isStaleOrPending(lotId) ? ' ⚠️' : ''}`;
                         sel.appendChild(opt);
                     });
                 });
@@ -23030,7 +23445,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // and reflect it in the preview toggle so refreshPreview agrees. A recipe without that
             // task always generates clones-on (generateLotSchedule), so treat it as on here too.
             const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
-            const clonesEnabled = clonePrepEntry ? !!eventsByType['clone_cut_prep'] : true;
+            // 🌿 Mothers from clones have no Cutting Clones of their own (it's the flower lot's), but count from it
+            const momsFromClones = isMothersFromClones(lotId);
+            const clonesEnabled = clonePrepEntry ? (momsFromClones || !!eventsByType['clone_cut_prep']) : true;
             if (clonePrepEntry) clonePrepEntry.enabled = clonesEnabled;
 
             // topDate = the date in the top picker (cloning date when clones enabled, planting otherwise)
@@ -23056,7 +23473,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const ev = eventsByType[def.taskType];
                 // Toggleable tasks absent from a generated schedule were disabled at generation time (Transplanting to
                 // Mother Room too, for a lot generated with its clones off)
-                if (canSwitchOff(def, clonesEnabled) && !ev) entry.enabled = false;
+                if (canSwitchOff(def, clonesEnabled) && !ev && !momsFromClones) entry.enabled = false;
                 if (!ev) continue; // task absent from schedule — keep default
 
                 // When clones disabled, planting is locked to Day 0
@@ -23499,9 +23916,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // The clone-cut row that says when it doesn't match the projections (as you edit it)
             const cutWarn = cloneCutMismatchTask(activeLotSelect.value);
+            // 🌿 Mothers from clones: their tasks before Transplanting are the flower lot's, so they aren't listed
+            const tIdx = taskOffsets.findIndex(e => e.def.taskType === 'transplant');
+            const flowerLotsTasks = isMothersFromClones(activeLotSelect.value) && tIdx > 0 ? new Set(taskOffsets.slice(0, tIdx).map(e => e.def.taskType)) : null;
 
             taskOffsets.forEach((entry, idx) => {
                 const def = entry.def;
+                if (flowerLotsTasks?.has(def.taskType)) return;
                 const isEnabled = entry.enabled !== false || !canSwitchOff(def, clonesEnabled);
 
                 // Determine display reference, label, offset, and locked state
@@ -23630,7 +24051,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <span class="preview-task-emoji">${escapeHtml(def.emoji)}</span>
                     <div class="preview-task-info">
                         <div class="preview-task-name">${escapeHtml(def.name)}</div>
-                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel} · <span class="preview-task-life" title="Day 1 is the day the clones are cut (the planting day with clones off); the plants' life ends with the harvest's last day">${lifeDayText(lifeDay)}</span>${estHtml}${repeatHtml}</div>
+                        <div class="preview-task-reference"><strong>${offsetLabel}</strong> from ${displayLabel} · <span class="preview-task-life" title="Day 1 is the day the clones are cut (the planting day with clones off); the plants' life ends with the harvest's last day">${lifeDayText(lifeDay)}</span>${estHtml}${repeatHtml}${isVegRecipe(activeRecipe) && activeRecipe.matureTask === def.taskType ? ' · <span class="preview-task-mature" title="🌿 Mature from (the recipe): clones can be cut from these mothers from this day until they retire">🌿 mothers mature from here</span>' : ''}</div>
                         ${cutWarnHtml}
                     </div>
                     ${offsetGroupHtml}
@@ -23809,6 +24230,17 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const lotId = activeLotSelect.value;
             const hasSchedule = lotId && getScheduleConfig(lotId);
             generateBtn.textContent = hasSchedule ? 'Overwrite Schedule' : 'Generate Schedule';
+            // 🌿 Mothers from clones follow their flower lot's Transplanting: only Project Crop changes them
+            const why = mothersFromClonesNote(lotId);
+            generateBtn.disabled = !!why;
+            generateBtn.title = why || '';
+        }
+        // Why a 🌿 TBAMOM lot isn't generated by hand ('' for any other lot)
+        function mothersFromClonesNote(lotId) {
+            const p = isMothersFromClones(lotId) ? getProjectedLots()[lotId] : null;
+            if (!p) return '';
+            const room = DB.data.rooms?.[p.sourceRoomId]?.name || p.sourceRoomId;
+            return `These mothers follow ${p.sourceLotId}'s Transplanting in ${room}: change them with 🌿 Mothers from clones and 🔮 Project Crop on ${room}'s lots.`;
         }
 
         // ---- Lot Selector Change Handler ----
@@ -23822,6 +24254,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             refreshPreview();
             updateGenerateBtnLabel();
             updateProjectBtnState();
+            syncMotherSelectToRoom();
         });
 
         // ---- Recipe Selector Change Handler ----
@@ -23953,7 +24386,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const projRoomId = isProjected ? getProjectedLots()[lotId].roomId : null;
 
             const newEvents = [];
-            const occurrences = scheduleOccurrences(day0, offsets, d, recipe);
+            let occurrences = scheduleOccurrences(day0, offsets, d, recipe);
+            // 🌿 Mothers from clones (TBAMOM): until Transplanting they're the flower lot's clones, on its schedule, so their own
+            // Cutting Clones, Planting and Clean Clone Room are left out (the calendar would show two clone cuts that day)
+            if (isMothersFromClones(lotId)) occurrences = fromTransplantOn(occurrences, recipe);
             // Transplanting switched off for this lot (mothers planted straight in their room): nothing moves rooms
             const roomOpts = { transplantOff: (recipe?.tasks || []).some(t => t.taskType === 'transplant') && !occurrences.some(o => o.def.taskType === 'transplant') };
             for (const occ of occurrences) {
@@ -23969,6 +24405,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 };
                 if (occ.repeat) event.repeat = occ.repeat;
                 if (projRoomId) event.roomId = projRoomId;
+                // 🌿 Mature from (user decision 2026-10-30): the mothers are mature from this task's day (its first repeat);
+                // SitkaTools' 🌿 Mothers view reads it from the event
+                if (isVegRecipe(recipe) && recipe.matureTask && def.taskType === recipe.matureTask && (occ.repeat || 1) === 1) event.motherMature = true;
 
                 // The room phase on every real lot's task (user decision 2026-10-25, review Q3): every tool reads the room
                 // from it. Projected lots carry their roomId instead.
@@ -24013,13 +24452,18 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // custom bloom). Stale lots (no events) are regenerated fresh from defaults at their new position.
         // `recipe`: the chain's recipe, for a lot with no stored config yet (a Mother room's chain follows its mothers' recipe)
         function reAnchorProjectedLot(roomId, index, day0, bloomDays, recipe) {
-            const lotId = projectedLotId(roomId, index);
+            return reAnchorLot(projectedLotId(roomId, index), day0, bloomDays, recipe);
+        }
+        // The same for any projected lot by its id (🌿 mothers from clones too)
+        function reAnchorLot(lotId, day0, bloomDays, recipe) {
             const entry = getProjectedLots()[lotId];
             if (!entry) return;
+            const mothersFromClones = isMothersFromClones(lotId);
 
             // The recipe this lot was generated from (per-lot override; the chain's / header selection for
-            // lots with no stored config). Drives the bloom-dependent task set + stale regen.
-            const lotRecipe = entry.config?.recipeId ? getRecipeById(entry.config.recipeId) : (recipe || getRecipeById(projectionRecipeId));
+            // lots with no stored config). Drives the bloom-dependent task set + stale regen. Mothers from clones: their 🌿 recipe.
+            const lotRecipe = mothersFromClones ? motherRecipeOf(entry)
+                : entry.config?.recipeId ? getRecipeById(entry.config.recipeId) : (recipe || getRecipeById(projectionRecipeId));
 
             const events = eventsForLot(lotId);
             const oldDay0 = entry.config?.plantingDate;
@@ -24028,7 +24472,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 // Stale (or no stored Day 0 to shift from) — fresh generation from the lot's recipe
                 // defaults at the new Day 0, with that recipe's own bloom unless one is given
                 if (events.length) reconcileLotSchedule(lotId);
-                const { events: fresh } = generateLotSchedule(lotId, day0, defaultOffsetsSnapshot(bloomDays ?? recipeBloomDays(lotRecipe), lotRecipe), {
+                // Mothers from clones count their Day 0 from the clone cut (their Transplanting is the flower lot's)
+                const offsets = defaultOffsetsSnapshot(bloomDays ?? recipeBloomDays(lotRecipe), lotRecipe)
+                    .map(e => mothersFromClones && e.def.taskType === 'clone_cut_prep' ? { ...e, enabled: true } : e);
+                const { events: fresh } = generateLotSchedule(lotId, day0, offsets, {
                     trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
                 }, lotRecipe);
                 carryOverAnnotations(events, fresh, annotationKey); // no-op for a stale lot
@@ -24062,6 +24509,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Labour estimates follow the lot's recipe (a shifted lot isn't regenerated)
             const taskDefs = new Map(lotRecipe.tasks.map(t => [t.taskType, t]));
             for (const ev of events) applyEstimate(ev, taskDefs.get(ev.taskType));
+            // So does 🌿 Mature from: its task's first repeat
+            if (isVegRecipe(lotRecipe)) {
+                for (const ev of events) delete ev.motherMature;
+                const m = lotRecipe.matureTask && events.filter(ev => ev.taskType === lotRecipe.matureTask).sort((a, b) => (a.repeat || 1) - (b.repeat || 1))[0];
+                if (m) m.motherMature = true;
+            }
 
             // Update stored config's anchor (keep the other fields)
             entry.config = Object.assign({}, entry.config, {
@@ -24119,6 +24572,128 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return r ? computeTaskDate(r.endDate || r.date, -cloneCutDays(lotRecipeFor(lotId))) : null;
         }
 
+        // ---- 🌿 Mothers from clones (TBAMOM, user request 2026-10-30) ----
+        // Every flowering lot keeps extra plants back at its Transplanting, and they become mothers that live out a 🌿 mother
+        // recipe. With a mother recipe picked beside Project Crop, each projected flower lot {room}-TBA-NN gets its mothers,
+        // {room}-TBAMOM-NN, and the room's newest real lot (while its transplant is ahead) {room}-TBAMOM-00. They live in
+        // projectedLots like any projected lot, with roomId = the Mother room they go to (so their events, rooms and buildings
+        // are the Mother room's) and sourceRoomId / sourceLotId = the flower room and lot they come from. Their Transplanting
+        // lands on that lot's; their tasks before it are left out (they're its clones until then).
+        function projectedMotherId(roomId, index) {
+            return `${roomId}-TBAMOM-${String(index).padStart(2, '0')}`;
+        }
+        function isMothersFromClones(lotId) {
+            return !!getProjectedLots()[lotId]?.sourceRoomId;
+        }
+        // The 🌿 recipe a TBAMOM follows: its own; a deleted one falls back to the built-in mother recipe, never a bloom one
+        function motherRecipeOf(entry) {
+            const id = entry?.recipeId || entry?.config?.recipeId;
+            const r = id ? getRecipeById(id) : null;
+            return r && r.id === id && isVegRecipe(r) ? r : SITKA_MOTHER_RECIPE;
+        }
+        // A flowering room's mothers from clones (00 = its newest real lot's, 01…05 = its TBA lots')
+        function roomMotherIds(roomId) {
+            const map = getProjectedLots();
+            return Object.keys(map).filter(id => roomId && map[id]?.sourceRoomId === roomId);
+        }
+        // The 🌿 recipe a room's mothers follow (its newest slot's), or null when it has none
+        function roomMotherRecipe(roomId) {
+            const map = getProjectedLots();
+            const ids = roomMotherIds(roomId).sort((a, b) => (map[b].index ?? 0) - (map[a].index ?? 0));
+            return ids.length ? motherRecipeOf(map[ids[0]]) : null;
+        }
+        // The Mother room a flowering room's mothers go to: one in its building, else the facility's first by name, else null
+        function motherRoomFor(roomId) {
+            const rooms = DB.data.rooms || {}, building = rooms[roomId]?.buildingId;
+            const mothers = Object.entries(rooms).filter(([, r]) => isMotherRoom(r))
+                .sort(([ia, a], [ib, b]) => (a.name || ia).localeCompare(b.name || ib, undefined, { numeric: true }));
+            const own = building ? mothers.find(([, r]) => r.buildingId === building) : null;
+            return (own || mothers[0] || [null])[0];
+        }
+        // A mother recipe can be projected from clones only with a Transplanting: its mothers move to the Mother room that day
+        const projectableMotherRecipe = r => isVegRecipe(r) && (r.tasks || []).some(t => t.taskType === 'transplant');
+        // A TBAMOM's occurrences: the tasks listed from Transplanting on (array order, the rule that already places rooms)
+        function fromTransplantOn(occurrences, recipe) {
+            const tasks = recipe?.tasks || [], ti = tasks.findIndex(t => t.taskType === 'transplant');
+            if (ti === -1) return occurrences;
+            const keep = new Set(tasks.slice(ti).map(t => t.taskType));
+            return occurrences.filter(o => keep.has(o.def.taskType));
+        }
+        // A lot's transplant day (a real lot's CropLabourWizard Transplanting, a projected lot's projection)
+        const transplantOf = lotId => eventsForLot(lotId).find(ev => ev.taskType === 'transplant')?.date || null;
+        // A real lot whose mothers are already a lot in a Mother room (a split or sub-lot made from it): no TBAMOM for it
+        function mothersMadeFrom(lotId) {
+            const rooms = DB.data.rooms || {};
+            const inMotherRoom = (id, l) => Object.values(rooms).some(r => isMotherRoom(r) && (r.assignedLots || []).includes(id))
+                || [l.destRoom, l.currentRoom].some(n => n && isMotherRoom(rooms[roomCodeForName(n)]));
+            return Object.entries(DB.lots).some(([id, l]) => l?.parentLotId === lotId && inMotherRoom(id, l));
+        }
+        // Rename a projected lot: its map key, name and the patch given, every event's lotId and the id in its title
+        function renameProjectedLot(oldId, newId, patch = {}) {
+            const map = getProjectedLots(), entry = map[oldId];
+            if (!entry || oldId === newId) return;
+            delete map[oldId];
+            Object.assign(entry, { name: newId }, patch);
+            map[newId] = entry;
+            for (const ev of DB.data.calendarEvents || []) {
+                if (ev.sourceTool === 'CropProjection' && ev.lotId === oldId) {
+                    ev.lotId = newId;
+                    if (typeof ev.title === 'string') ev.title = ev.title.split(oldId).join(newId);
+                }
+            }
+        }
+        // Remove projected lots and their events (by lot id); returns how many lots went
+        function removeProjectedLots(ids) {
+            const map = getProjectedLots(), gone = ids.filter(id => map[id]);
+            const set = new Set(ids);
+            for (const id of gone) delete map[id];
+            if (set.size) DB.data.calendarEvents = (DB.data.calendarEvents || []).filter(ev => !(ev.sourceTool === 'CropProjection' && set.has(ev.lotId)));
+            return gone.length;
+        }
+        function removeRoomMothers(roomId) {
+            return removeProjectedLots(roomMotherIds(roomId));
+        }
+        // Bring a flowering room's mothers from clones in step with its lots: slot NN follows {room}-TBA-NN, slot 00 the room's
+        // newest real lot while its transplant is today or later and its mothers aren't a lot yet. Each one's Transplanting
+        // lands on its lot's (shifted, or generated fresh); another recipe regenerates it, another Mother room moves it; a slot
+        // whose lot has no transplant goes. alignOnly (after Generate, or Project Crop with the mothers left as they are): only
+        // shift the ones there are. Returns { count: the room's mother lots, motherRoomId }.
+        function syncRoomMothers(roomId, recipe, { alignOnly = false } = {}) {
+            const motherRoomId = motherRoomFor(roomId);
+            if (!motherRoomId || !recipe) return { count: roomMotherIds(roomId).length, motherRoomId };
+            const map = ensureProjectedLots(), motherRoom = DB.data.rooms[motherRoomId];
+            const realLot = newestRealLotId(roomId), today = localDateStr(new Date());
+            const slots = [];
+            if (realLot) slots.push({ index: 0, source: realLot, ok: (transplantOf(realLot) || '') >= today && !mothersMadeFrom(realLot) });
+            for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) slots.push({ index: i, source: projectedLotId(roomId, i), ok: true });
+            for (const s of slots) {
+                const id = projectedMotherId(roomId, s.index);
+                let entry = map[id];
+                const flowerTransplant = s.ok ? transplantOf(s.source) : null;
+                if (!flowerTransplant) { if (entry && !alignOnly) removeProjectedLots([id]); continue; }
+                if (!entry) {
+                    if (alignOnly) continue;
+                    entry = map[id] = { name: id, roomId: motherRoomId, roomName: motherRoom.name, sourceRoomId: roomId, sourceLotId: s.source, strain: 'TBA', index: s.index, recipeId: recipe.id };
+                }
+                entry.sourceLotId = s.source;
+                entry.index = s.index;
+                // Another 🌿 recipe: generated afresh with it
+                if (!alignOnly && entry.recipeId !== recipe.id) { entry.recipeId = recipe.id; delete entry.config; }
+                // Another Mother room (one was designated in the building since): the mothers move there
+                if (entry.roomId !== motherRoomId) {
+                    entry.roomId = motherRoomId;
+                    for (const ev of eventsForLot(id)) ev.roomId = motherRoomId;
+                }
+                entry.roomName = motherRoom.name;
+                const lotRecipe = motherRecipeOf(entry);
+                const own = transplantOf(id), oldDay0 = entry.config?.plantingDate;
+                const day0 = own && oldDay0 ? computeTaskDate(oldDay0, daysBetween(own, flowerTransplant))
+                    : computeTaskDate(flowerTransplant, -freshLotDay0Offsets(lotRecipe).transplant);
+                reAnchorLot(id, day0, undefined, lotRecipe);
+            }
+            return { count: roomMotherIds(roomId).length, motherRoomId };
+        }
+
         // The recipe projected lot `index` follows: its own (an earlier generation's, possibly a per-lot
         // override), else the chain's (`chainRecipe`), else the header projection recipe. Its clone-cut
         // days set how long before the previous harvest ends this lot's clones are cut.
@@ -24160,6 +24735,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function cloneCutMismatchTask(lotId) {
             const { roomId } = resolveProjectionRoom(lotId);
             if (!roomId) return { roomId: null, taskType: null };
+            if (isMothersFromClones(lotId)) return { roomId, taskType: null };   // 🌿 no clone cut of their own
             if (isProjectedLot(lotId)) return { roomId, taskType: getProjectedLots()[lotId].index === 1 ? 'clone_cut_prep' : null };
             return { roomId, taskType: newestRealLotId(roomId) === lotId ? 'clone_cut' : null };
         }
@@ -24227,12 +24803,27 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return { lotId, anchorDate };
         }
 
+        // Project Crop / Reproject's 🌿 mothers from clones for a flowering room: a recipe syncs them, null removes them,
+        // undefined keeps the ones there are in step. Returns the toast's note.
+        function applyRoomMothers(roomId, motherRecipe) {
+            if (motherRecipe === null) {
+                const n = removeRoomMothers(roomId);
+                return n ? ` · 🌿 ${n} projected mother lot${n === 1 ? '' : 's'} removed` : '';
+            }
+            const recipe = motherRecipe || roomMotherRecipe(roomId);
+            if (!recipe) return '';
+            const { count, motherRoomId } = syncRoomMothers(roomId, recipe, { alignOnly: !motherRecipe });
+            return count ? ` · 🌿 ${count} mother lot${count === 1 ? '' : 's'} in ${DB.data.rooms[motherRoomId]?.name || motherRoomId}` : '';
+        }
+
         // Generate/refresh the full 5-lot projection chain for a flowering room.
         // Lot 1 anchors to the NEWEST real lot's last harvest day (resolveProjectionAnchor) — or that
         // lot's start day if it has no harvest or clone_cut event. Gated: that specific newest lot
         // must have a generated schedule, else there is nothing to anchor off.
         // Never auto-runs — only via the Project Crop button.
-        function generateProjectionsForRoom(roomId) {
+        // motherRecipe (a flowering room, 🌿 mothers from clones): a 🌿 recipe gives every lot of the chain its mothers;
+        // null removes the room's; undefined (the default) keeps the ones it has, in step with their lots.
+        function generateProjectionsForRoom(roomId, motherRecipe) {
             const room = (DB.data.rooms || {})[roomId];
             if (!room) return;
             if (!projectableRoom(room)) {
@@ -24240,6 +24831,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 return;
             }
             const mothers = isMotherRoom(room);
+            if (!mothers && motherRecipe && !motherRoomFor(roomId)) {
+                alert(`🌿 There's no Mother room to project ${room.name}'s mothers in. Designate a room "Mother" in SitkaTools' Room Manager, or pick "— No mothers —". Nothing was changed.`);
+                return;
+            }
             const projRecipe = chainRecipeFor(roomId);
             if (!projRecipe) { showToast(`🔮 "${room.name}"'s newest lot needs a 🌿 vegetative schedule before its next mothers can be projected`); return; }
 
@@ -24292,13 +24887,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
+            // 🌿 Mothers from clones: after the chain is placed (a cancel above changed nothing)
+            const momNote = mothers ? '' : applyRoomMothers(roomId, motherRecipe);
+
             populateLotSelector();
             renderSavedSummary();
             updateGenerateBtnLabel();
             updateProjectBtnState();
             refreshPreview();
             notifySitkaTools();
-            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projRecipe.name})`);
+            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projRecipe.name})${momNote}`);
         }
 
         // A lot's effective "Tank and Irrigation Line Clean" date — the last room-prep task, i.e. when
@@ -24417,7 +25015,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // slot is already free — TBA-1 is absent by the pending precondition, and each later slot was just
         // vacated by the previous rename. Renamed lots keep their dates/offsets verbatim; only IDs change.
         // The real lot's schedule is a gate only — its dates are never read.
-        function reprojectRoom(roomId) {
+        // motherRecipe: as for generateProjectionsForRoom (🌿 mothers from clones)
+        function reprojectRoom(roomId, motherRecipe) {
             const room = (DB.data.rooms || {})[roomId];
             if (!room) return;
             if (!isPendingReprojection(roomId)) {
@@ -24458,26 +25057,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
-            // Rename pass, low → high (i = 2 up to 5): target slot i−1 is always free.
+            // Rename pass, low → high (i = 2 up to 5): target slot i−1 is always free. Map key, name, index (the selector
+            // sorts by it), every event's lotId and the lot-ID token embedded in each stored title.
             for (let i = 2; i <= PROJECTION_LOT_COUNT; i++) {
                 const oldId = projectedLotId(roomId, i);
-                const entry = map[oldId];
-                if (!entry) continue; // gap in the chain — skip; top-up below refills the tail
-                const newId = projectedLotId(roomId, i - 1);
-
-                // Map key + name + index (selector sorts by index)
-                delete map[oldId];
-                entry.name = newId;
-                entry.index = i - 1;
-                map[newId] = entry;
-
-                // Events: lotId + the lot-ID token embedded in each stored title
-                for (const ev of DB.data.calendarEvents || []) {
-                    if (ev.sourceTool === 'CropProjection' && ev.lotId === oldId) {
-                        ev.lotId = newId;
-                        if (typeof ev.title === 'string') ev.title = ev.title.split(oldId).join(newId);
-                    }
-                }
+                if (!map[oldId]) continue; // gap in the chain — skip; top-up below refills the tail
+                renameProjectedLot(oldId, projectedLotId(roomId, i - 1), { index: i - 1 });
             }
 
             // Apply the push-back plan: shift/regenerate slots 1..4 to their target Day 0. Without
@@ -24515,6 +25100,20 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
             }, projRecipe);
 
+            // 🌿 Mothers from clones move down with their lots: the previous real lot's (00) go (its mothers are a lot by now,
+            // or never came), TBA-01's become the new real lot's (00), 02…05 → 01…04, then a fresh 05 for the fresh TBA-05
+            let momNote = '';
+            if (!isMotherRoom(room)) {
+                const momRecipe = motherRecipe === null ? null : (motherRecipe || roomMotherRecipe(roomId));
+                if (momRecipe && roomMotherIds(roomId).length) {
+                    removeProjectedLots([projectedMotherId(roomId, 0)]);
+                    for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
+                        if (map[projectedMotherId(roomId, i)]) renameProjectedLot(projectedMotherId(roomId, i), projectedMotherId(roomId, i - 1), { index: i - 1 });
+                    }
+                }
+                momNote = applyRoomMothers(roomId, momRecipe);   // null: removed (none, or "— No mothers —" picked)
+            }
+
             populateLotSelector();
             renderSavedSummary();
             updateGenerateBtnLabel();
@@ -24525,7 +25124,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const pushCount = plan ? plan.filter(s => s.action === 'push' || s.action === 'regen').length : 0;
             const maxDelta = plan ? Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta)) : 0;
             const pushNote = pushCount > 0 ? `, ${pushCount} lot${pushCount === 1 ? '' : 's'} pushed back up to ${maxDelta}d` : '';
-            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projRecipe.name})`);
+            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projRecipe.name})${momNote}`);
         }
 
         // True reset for one room: delete ALL of its CropProjection events (matched by roomId) and
@@ -24535,20 +25134,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (!DB.data || !roomId) return { deletedEvents: 0, removedEntries: 0 };
             const result = { deletedEvents: 0, removedEntries: 0 };
 
+            // 🌿 A flowering room's mothers from clones go with it. A Mother room's own clear leaves the mothers from clones that
+            // live in it (their events carry its roomId): they belong to their flower rooms
+            const moms = new Set(roomMotherIds(roomId));
+
             // 1. Delete all of the room's projection events (roomId is always present on them)
             if (Array.isArray(DB.data.calendarEvents)) {
                 const before = DB.data.calendarEvents.length;
                 DB.data.calendarEvents = DB.data.calendarEvents.filter(ev =>
-                    !(ev.sourceTool === 'CropProjection' && ev.roomId === roomId)
+                    !(ev.sourceTool === 'CropProjection' && ((ev.roomId === roomId && !isMothersFromClones(ev.lotId)) || moms.has(ev.lotId)))
                 );
                 result.deletedEvents = before - DB.data.calendarEvents.length;
             }
 
-            // 2. Remove every {roomId}-TBA-* map entry (prefix match — covers any index)
+            // 2. Remove every {roomId}-TBA-* map entry (prefix match — covers any index), and the room's mothers from clones
             const clw = DB.data._CropLabourWizard;
             if (clw && clw.projectedLots) {
                 for (const lotId of Object.keys(clw.projectedLots)) {
-                    if (lotId.startsWith(`${roomId}-TBA-`)) {
+                    if (lotId.startsWith(`${roomId}-TBA-`) || moms.has(lotId)) {
                         delete clw.projectedLots[lotId];
                         result.removedEntries++;
                     }
@@ -24658,6 +25261,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 alert('Please select a lot first.');
                 return;
             }
+            if (isMothersFromClones(lotId)) { alert(`${mothersFromClonesNote(lotId)} Nothing was changed.`); return; }
 
             const plantingDate = plantingDateInput.value;
 
@@ -24784,6 +25388,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
+            // 🌿 Mothers from clones follow their lots: a TBA lot or the room's newest real lot moved (or pushed the chain),
+            // so the room's mothers shift to their lots' Transplanting
+            const momRoomId = projEntry ? projEntry.roomId : resolveFlowerRoom(lotId, DB.data.rooms || {});
+            if (momRoomId && !isMotherRoom(DB.data.rooms?.[momRoomId]) && roomMotherIds(momRoomId).length && (projEntry || activeRealLotId(momRoomId) === lotId)) {
+                syncRoomMothers(momRoomId, roomMotherRecipe(momRoomId), { alignOnly: true });
+            }
+
             // Re-render: what's saved now is what the preview shows, so nothing is green
             snapshotSavedSettings(lotId);
             renderSavedSummary();
@@ -24818,7 +25429,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Projected lots carry their room; real lots resolve via assignment/destRoom
             let roomId = null;
             if (isProjectedLot(lotId)) {
-                roomId = getProjectedLots()[lotId].roomId;
+                // 🌿 Mothers from clones: their flower room's chain (they live in a Mother room)
+                const p = getProjectedLots()[lotId];
+                roomId = p.sourceRoomId || p.roomId;
             } else {
                 roomId = resolveFlowerRoom(lotId, DB.data.rooms || {});
             }
@@ -24863,11 +25476,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 btn.title = disabledReason
                     || (!anchor
                         ? `Project Crop is available once the room's newest lot${newestLotId ? ` (${newestLotId})` : ''} has a generated schedule`
-                        : 'Generate the 5-lot projection chain for this lot\'s room');
+                        : 'Generate the 5-lot projection chain for this lot\'s room' + ($('motherRecipeSelect')?.value && !$('motherRecipeSelect').disabled ? ', and the 🌿 mothers each lot\'s kept-back plants become' : ''));
             }
 
-            // Keep the Clear Projections button in sync (same resolved-room state)
+            // Keep the Clear Projections button and the 🌿 dropdown in sync (same resolved-room state)
             updateClearProjectionsBtnState();
+            updateMotherSelectState();
         }
 
         // Enable / grey out the Clear Projections button: enabled only when the resolved flowering
@@ -24882,8 +25496,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 return;
             }
             const map = getProjectedLots();
-            const hasEntry = Object.keys(map).some(id => id.startsWith(`${roomId}-TBA-`));
-            const hasEvent = (DB.data.calendarEvents || []).some(ev => ev.sourceTool === 'CropProjection' && ev.roomId === roomId);
+            const hasEntry = Object.keys(map).some(id => id.startsWith(`${roomId}-TBA-`) || map[id]?.sourceRoomId === roomId);
+            const hasEvent = (DB.data.calendarEvents || []).some(ev => ev.sourceTool === 'CropProjection' && ev.roomId === roomId && !isMothersFromClones(ev.lotId));
             btn.disabled = !(hasEntry || hasEvent);
             btn.title = btn.disabled
                 ? `No projections to clear for "${(DB.data.rooms[roomId] || {}).name || roomId}"`
@@ -24906,9 +25520,22 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 return;
             }
 
-            if (isPendingReprojection(roomId)) reprojectRoom(roomId);
-            else generateProjectionsForRoom(roomId);
+            // 🌿 Mothers from clones (a flowering room): the picked recipe gives each lot its mothers; "— No mothers —" removes them
+            const room = DB.data.rooms?.[roomId];
+            let mothers;
+            if (room && !isMotherRoom(room)) {
+                const id = $('motherRecipeSelect').value;
+                mothers = id ? getRecipeById(id) : null;
+                if (id && (mothers?.id !== id || !projectableMotherRecipe(mothers))) { alert('🌿 That mother recipe is gone, or has no Transplanting to move the mothers to the Mother room. Pick another one. Nothing was changed.'); return; }
+            }
+
+            if (isPendingReprojection(roomId)) reprojectRoom(roomId, mothers);
+            else generateProjectionsForRoom(roomId, mothers);
+            syncMotherSelectToRoom();
         });
+
+        // ---- 🌿 Mothers from clones dropdown — kept in memory; it shows the selected room's, and Project Crop applies it ----
+        $('motherRecipeSelect').addEventListener('change', () => updateProjectBtnState());
 
         // ---- Clear Projections — true reset of the selected lot's room (confirm first) ----
         $('clearProjectionsBtn').addEventListener('click', () => {
@@ -24916,7 +25543,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (disabledReason || !roomId) return;
 
             const roomName = (DB.data.rooms[roomId] || {}).name || roomId;
-            if (!confirm(`Clear ALL projections for "${roomName}"?\n\nThis deletes every projected crop event and all TBA map entries for the room. The next "Project Crop" starts from a completely fresh chain.`)) return;
+            const momCount = roomMotherIds(roomId).length;
+            if (!confirm(`Clear ALL projections for "${roomName}"?\n\nThis deletes every projected crop event and all TBA map entries for the room${momCount ? `, and its ${momCount} 🌿 projected mother lot${momCount === 1 ? '' : 's'}` : ''}. The next "Project Crop" starts from a completely fresh chain.`)) return;
 
             const selectedLot = activeLotSelect.value;
             const wasProjected = isProjectedLot(selectedLot); // capture before the wipe removes the entry
@@ -24934,6 +25562,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 updateProjectBtnState();
                 updateClearProjectionsBtnState();
             }
+            syncMotherSelectToRoom();
 
             showToast(`🧹 Cleared ${res.deletedEvents} projection event${res.deletedEvents === 1 ? '' : 's'} and ${res.removedEntries} TBA entr${res.removedEntries === 1 ? 'y' : 'ies'} for ${roomName}`);
         });
@@ -24994,7 +25623,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // Clear Schedule does what its ✕ did.)
         let savedSettings = null;
         function snapshotSavedSettings(lotId) {
-            savedSettings = lotId && getScheduleConfig(lotId) && eventsForLot(lotId).length ? {
+            // 🌿 Mothers from clones are never overwritten by hand, so there's nothing unsaved to ask about
+            savedSettings = lotId && !isMothersFromClones(lotId) && getScheduleConfig(lotId) && eventsForLot(lotId).length ? {
                 tasks: Object.fromEntries(taskOffsets.map(e => [e.def.taskType, { offset: e.offset, enabled: e.enabled !== false }])),
                 plantingDate: plantingDateInput.value, trimDays, harvestMultiDay, harvestDays
             } : null;
@@ -25039,11 +25669,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Projection summary (flowering rooms + projected lots, stale flagged).
             // Pending-reprojection lots (TBA-1 deleted, TBA-2…5 surviving) count as stale here.
             const floweringRooms = Object.values(DB.data.rooms || {}).filter(r => r.isFlowering).length;
-            const projIds = Object.keys(getProjectedLots());
-            const staleCount = projIds.filter(isStaleOrPending).length;
+            const allProj = Object.keys(getProjectedLots());
+            const momIds = allProj.filter(isMothersFromClones), projIds = allProj.filter(id => !isMothersFromClones(id));
+            const staleCount = projIds.filter(isStaleOrPending).length, momStale = momIds.filter(isStaleOrPending).length;
             if (floweringRooms > 0 || projIds.length > 0) {
                 statusMsg += ` · 🌸 ${floweringRooms} flowering room${floweringRooms === 1 ? '' : 's'} · 🔮 ${projIds.length} projected${staleCount ? ` (${staleCount} stale)` : ''}`;
             }
+            if (momIds.length) statusMsg += ` · 🌿 ${momIds.length} mothers from clones${momStale ? ` (${momStale} stale)` : ''}`;
             return statusMsg;
         }
 
@@ -40071,7 +40703,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
             for (const st of rptProjectedStays())
-                stays.push({ room: st.roomId, lotId: st.lotId, label: st.lotId.replace(/^.*-TBA-/, 'TBA-'), strain: null, ph: st.phase, from: st.from, to: st.to, proj: true, clean: st.clean });
+                stays.push({ room: st.roomId, lotId: st.lotId, label: st.lotId.replace(/^.*-(TBA(?:MOM)?-)/, '$1'), strain: null, ph: st.phase, from: st.from, to: st.to, proj: true, clean: st.clean });
             return stays;
         }
         // A flower stay holds its room until the room is clean again
@@ -40798,7 +41430,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (h.length < 2) { h = hist.filter(c => c.flowerRoomId === room); basis = 'room'; }
                 if (h.length < 2) { h = hist; basis = 'facility'; }
                 const g = h.map(c => c.derived.gpp);
-                out.push({ id: ev.lotId, short: proj ? ev.lotId.replace(/^.*-TBA-/, 'TBA-') : ev.lotId, proj, room, strain, date: ev.date, plants, basis, n: g.length,
+                out.push({ id: ev.lotId, short: proj ? ev.lotId.replace(/^.*-(TBA(?:MOM)?-)/, '$1') : ev.lotId, proj, room, strain, date: ev.date, plants, basis, n: g.length,
                     exp: plants && g.length ? plants * rMean(g) : null, lo: plants && g.length ? plants * Math.min(...g) : null, hi: plants && g.length ? plants * Math.max(...g) : null });
             }
             return out.sort((a, b) => a.date.localeCompare(b.date));

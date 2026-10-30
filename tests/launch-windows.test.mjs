@@ -19,6 +19,8 @@ const fri = w => add(MONDAY, 7 * w + 4);                        // the Friday w 
 const tue = w => add(MONDAY, 7 * w + 1);
 
 // The day the clock moves to: `days` from today (as tests/day-rollover.test.mjs does)
+const launchDayDiff = (a, b) => (Date.parse(b + 'T00:00Z') - Date.parse(a + 'T00:00Z')) / 86400000;
+
 const shiftClock = days => `if (!window.__RealDate) window.__RealDate = Date;
     const Real = window.__RealDate, r = new Real();
     const t = new Real(r.getFullYear(), r.getMonth(), r.getDate() + ${days}, 0, 5), shift = t - Real.now();
@@ -113,14 +115,28 @@ export async function run(b, BASE) {
         return { back: (launchDay(mon) - launchDay(M.from)) / 7, inRange: M.rows.every(r => r.next.flip >= M.from && r.next.flip <= M.to), taken: M.taken };`);
     check('a long bloom: row 1 is 9 weeks back, not 11, and every next window is in range', long.back === 9 && long.inRange && long.taken === 1, JSON.stringify(long));
 
+    // The timeline runs out to the last crop's harvest, projections included (user request 2026-10-30), at most 3 years
+    const far = await b.run(main, `
+        const today = localDate(), mon = launchMonday(launchWeekOf(today)), rooms = { G: { name: 'G' } };
+        const lot = (id, flip, p) => [{ id: 'f' + id, sourceTool: p ? 'CropProjection' : 'CropLabourWizard', lotId: id, roomId: 'G', taskType: 'flip', date: flip },
+            { id: 'h' + id, sourceTool: p ? 'CropProjection' : 'CropLabourWizard', lotId: id, roomId: 'G', taskType: 'harvest', date: launchAdd(flip, 63) }];
+        const model = evs => launchModel(launchCrops({ lots: { X: {} }, rooms }, evs, evs, () => 'G', today), { asOf: mon, today });
+        const near = model(lot('X', launchAdd(mon, 4)));
+        const out = model([...lot('X', launchAdd(mon, 4)), ...lot('G-TBA-05', launchAdd(mon, 7 * 40 + 4), true)]);
+        const bogus = model([...lot('X', launchAdd(mon, 4)), ...lot('G-TBA-09', launchAdd(mon, 7 * 400 + 4), true)]);
+        return { near: near.weeks, nearTo: near.to, out: out.weeks, outTo: out.to, harvest: launchAdd(launchAdd(mon, 7 * 40 + 4), 63), bogus: bogus.weeks };`);
+    check('with nothing far out, two cycles from this week (20 weeks, row 1 this week)', far.near === 20, JSON.stringify(far));
+    check('a projection flipping in 40 weeks: the timeline runs to the end of its harvest week', far.out === 50 && far.outTo >= far.harvest && launchDayDiff(far.harvest, far.outTo) < 7, JSON.stringify(far));
+    check('…never more than 3 years (a date 8 years out doesn\'t stretch it)', far.bogus === 156, JSON.stringify(far));
+
     // ---- The view ----
     await loadSingle(b, main, launchDb());
     await b.run(main, `document.getElementById('viewLaunchBtn').click();`, { user: true });
     let v = await b.run(main, READ);
     const views = await b.run(main, `return { active: document.getElementById('viewLaunchBtn').classList.contains('active'),
-        others: ['annualView', 'weekView'].every(id => document.getElementById(id).classList.contains('hidden')) && document.getElementById('calendarGrid').closest('.calendar-grid-wrapper').classList.contains('hidden'),
+        others: ['annualView', 'weekView', 'mothersView'].every(id => document.getElementById(id).classList.contains('hidden')) && document.getElementById('calendarGrid').closest('.calendar-grid-wrapper').classList.contains('hidden'),
         print: document.getElementById('printYearBtn').classList.contains('hidden') };`);
-    check('🚀 Launch windows is the active view; the month grid, 7-day and annual views are hidden; no 🖨️', v.shown && views.active && views.others && views.print, JSON.stringify(views));
+    check('🚀 Launch windows is the active view; the month grid, 7-day, annual and 🌿 mothers views are hidden; no 🖨️', v.shown && views.active && views.others && views.print, JSON.stringify(views));
     const [y, mo, d] = MONDAY.split('-').map(Number);
     const weekOf = new Date(y, mo - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     check('title: "🚀 Launch Windows — week of <this Monday>"', v.title === `🚀 Launch Windows — week of ${weekOf}`, v.title);
@@ -155,6 +171,29 @@ export async function run(b, BASE) {
     v = await b.run(main, `Calendar.filters = [{ key: 'lot', value: 'L100' }]; Calendar.render(); ${READ}`);
     check('a lot filter: only L100, which is row 1 now', JSON.stringify(allIds(v)) === '["ev_lw_f100"]' && v.rows[0].bars[0]?.id === 'ev_lw_f100' && v.summary.startsWith('1 of 10'), JSON.stringify([allIds(v), v.summary]));
     await b.run(main, `Calendar.filters = []; Calendar.render();`);
+
+    // ---- Scrolling sideways out to the last projection ----
+    const farFlip = fri(45);
+    await b.run(main, `DB.data._CropLabourWizard.projectedLots['R2G1-TBA-05'] = { name: 'R2G1-TBA-05', roomId: 'R2G1', roomName: 'Grow A', strain: 'TBA', index: 5 };
+        DB.data.calendarEvents.push({ id: 'ev_lw_far', date: '${farFlip}', title: 'Flip R2G1-TBA-05', sourceTool: 'CropProjection', lotId: 'R2G1-TBA-05', roomId: 'R2G1', taskType: 'flip' },
+            { id: 'ev_lw_farh', date: '${add(farFlip, 63)}', title: 'Harvest R2G1-TBA-05', sourceTool: 'CropProjection', lotId: 'R2G1-TBA-05', roomId: 'R2G1', taskType: 'harvest' });
+        Calendar.onDbChanged(); Calendar.render();`);
+    const sc = await b.run(main, `const v = document.getElementById('launchView'), box = v.querySelector('.launch-scroll'), chart = v.querySelector('.launch-chart');
+        const bar = v.querySelector('.launch-bar[data-event-id="ev_lw_far"]'), label = v.querySelector('.launch-row:not(.launch-axis) .launch-label');
+        const before = { scroll: box.scrollWidth, box: box.clientWidth, weeks: chart.style.getPropertyValue('--weeks'), sticky: getComputedStyle(label).position };
+        box.scrollLeft = box.scrollWidth;
+        await new Promise(r => setTimeout(r, 50));
+        const b2 = box.getBoundingClientRect(), br = bar?.getBoundingClientRect(), lr = label.getBoundingClientRect();
+        return { ...before, bar: !!bar, barShown: !!br && br.left >= b2.left && br.left < b2.right, labelAtLeft: Math.abs(lr.left - b2.left) < 3,
+            months: [...v.querySelectorAll('.launch-axis .launch-month')].map(m => m.textContent).slice(-2), intro: v.querySelector('.launch-intro').textContent };`);
+    check('a projection flipping in 45 weeks is drawn, and the timeline runs out to it (row 1 8 weeks back: 63 weeks)', sc.bar && sc.weeks === '63', JSON.stringify(sc));
+    check('…the chart scrolls sideways inside its box; scrolled to the end, that projection is in view', sc.scroll > sc.box * 2.5 && sc.barShown, JSON.stringify(sc));
+    check('…and each row\'s label stays at the left edge while it scrolls', sc.sticky === 'sticky' && sc.labelAtLeft, JSON.stringify(sc));
+    check('…the intro says how far it goes', sc.intro.includes('Scroll sideways'), sc.intro);
+    v = await b.run(main, READ);
+    check('…the far projection doesn\'t take a window this week', v.summary.startsWith('4 of 10 windows taken · 6 open'), v.summary);
+    await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => !e.id.startsWith('ev_lw_far')); delete DB.data._CropLabourWizard.projectedLots['R2G1-TBA-05'];
+        Calendar.onDbChanged(); Calendar.render();`);
 
     // ---- Prev / Next / Today ----
     const nav = await b.run(main, `const out = [];
