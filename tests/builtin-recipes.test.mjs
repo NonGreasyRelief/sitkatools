@@ -61,10 +61,10 @@ export async function run(b, BASE) {
     check('33 tasks, valid; the one early leaf pick is now two one-day picks, flip + 13 and flip + 22; the late one flip + 40 for 2 days',
         r.n === 33 && r.valid === 0 && !r.old && r.p1?.reference === 'flip' && r.p1.defaultOffset === 13 && !r.p1.days && r.p2?.defaultOffset === 22 && !r.p2.days &&
         r.late?.defaultOffset === 40 && r.late.days === 2, JSON.stringify({ p1: r.p1, p2: r.p2, late: r.late }));
-    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, leaf pick 2 8 people × 8 h, and the rest from labourhours.json',
+    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, leaf pick 2 8 people × 8 h, trim 8 people × 8 h a day, and the rest from labourhours.json',
         r.est === 'clone_cut_prep 3×360, planting 2×120, clone_room_clean 2×60, topping 2×90, layout_coco_blocks 2×180, undercanopy_lights 2×240, transplant 4×300, ' +
             'veg_room_clean 2×90, deploy_ipm 3×90, prune 3×360, trellis_layout 2×240, leafpick_early1 4×360, leafpick_early2 8×480, leafpick_late 6×960, harvest 10×480, ' +
-            'tank_irrigation_clean 1×240, tote_prep 2×120, bucking 3×480, trim_room_prep 1×60, trim 8×2400, machine_trim 1×240, dry_room_clean 2×120, weigh_ship 1×60' &&
+            'tank_irrigation_clean 1×240, tote_prep 2×120, bucking 3×480, trim_room_prep 1×60, trim 8×480, machine_trim 1×240, dry_room_clean 2×120, weigh_ship 1×60' &&
         r.none === 'ipm_spray_veg_early,order_ipm,hydrate_coco_blocks,ipm_spray_veg_second,flip,ipm_spray_flower_start,ipm_spray_flower_week2,clone_cut,room_clean,lab_sample', JSON.stringify(r));
 
     // ---- Generate with it, clones cut on a Saturday ----
