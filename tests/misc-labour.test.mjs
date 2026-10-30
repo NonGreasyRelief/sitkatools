@@ -26,6 +26,7 @@ export async function run(b, BASE) {
     let r = await miscRow();
     check('Building 1 lists 🧰 Miscellaneous labour', r?.text.includes('Miscellaneous labour'), JSON.stringify(r));
     check('…with ⏱ Log and ＋ Start task, and no tick box', r?.log && r.timers === 1 && !r.check, JSON.stringify(r));
+    check('…first in the list, above the chores (it was at the bottom)', await b.run(dw, `return document.querySelector('#listContainer .task-row')?.classList.contains('misc-row') === true;`));
     check('opening it changes nothing', (await b.run(main, 'return hasUnsavedChanges;')) === false);
     check('it isn\'t one of the building\'s tasks', !(await b.run(dw, `return DB.dailyBuildings.B1.tasks.some(t => t.code === 'misc');`)));
 

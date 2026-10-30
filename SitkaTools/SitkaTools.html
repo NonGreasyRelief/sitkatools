@@ -4870,6 +4870,8 @@
 
         /* ---- Task rows (core tablet UI) ---- */
         .task-row.empty-room { opacity: 0.55; }
+        /* ✏️ Edit mode: a task that doesn't run on the day shown — dimmed, its days on a chip, no tick box or ⏱ Log */
+        .task-row.off-day { opacity: 0.55; border-style: dashed; }
         /* 🧰 Miscellaneous labour: no tick box (a spacer keeps it in line), a dashed edge */
         .task-row.misc-row { border-style: dashed; cursor: default; }
         .task-check-spacer { width: 48px; height: 48px; flex-shrink: 0; }
@@ -25791,13 +25793,19 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // prevCode / nextCode: the codes of the rows shown just above / below this one (null at the ends)
-        function makeTaskRow(buildingId, task, prevCode, nextCode, allowMove) {
+        // offDay: the task doesn't run on the day shown (listed in ✏️ edit mode only): it can be opened, edited and moved,
+        // but not ticked, logged or timed for this day
+        function makeTaskRow(buildingId, task, prevCode, nextCode, allowMove, { offDay = false } = {}) {
             const dateStr = selectedDateStr();
             const spot = checkSpotForTask(buildingId, task.code);
             const row = document.createElement('div');
-            row.className = 'task-row' + (isChecked(spot, dateStr) ? ' done' : '');
+            row.className = 'task-row' + (isChecked(spot, dateStr) ? ' done' : '') + (offDay ? ' off-day' : '');
 
-            row.appendChild(makeCheck(spot, dateStr));
+            if (offDay) {
+                const spacer = document.createElement('span');
+                spacer.className = 'task-check-spacer';
+                row.appendChild(spacer);
+            } else row.appendChild(makeCheck(spot, dateStr));
 
             const emoji = document.createElement('span');
             emoji.className = 'task-emoji';
@@ -25818,6 +25826,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (room) row.appendChild(roomChip(room));
             const dryTrim = choreDryTrim(task);
             if (dryTrim) row.appendChild(dryTrimChip(dryTrim));
+            if (offDay) {
+                const when = document.createElement('span');
+                when.className = 'chip chip-offday';
+                when.textContent = T('📅 Not today · {days}', { days: describeRecurrence(task) || T('no days set') });
+                when.title = T('This task doesn’t run on the day shown, so it can’t be ticked or logged today. Edit mode lists every task.');
+                row.appendChild(when);
+            }
 
             // Tapping anywhere on the row body (except the checkbox / move buttons)
             // opens the task's detail view (docs/DailyWizard.md "Task Rows").
@@ -25836,7 +25851,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             minChip.textContent = `⏱ ${T('{m}m', { m: task.minutes ?? 0 })}`;
             row.appendChild(minChip);
 
-            row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
+            if (!offDay) row.appendChild(makeHoursButton({ kind: 'chore', buildingId, code: task.code, date: dateStr }));
 
             if (allowMove && canEditTasks(buildingId)) {
                 const moveBtns = document.createElement('div');
@@ -25860,7 +25875,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 row.appendChild(moveBtns);
             }
 
-            if (timersShown(buildingId)) {
+            if (timersShown(buildingId) && !offDay) {
                 row.classList.add('with-timers');
                 row.appendChild(makeSignInStrip(buildingId, task.code, `${task.emoji || '📋'} ${taskName(task)}`));
             }
@@ -28079,10 +28094,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function renderBuildingView(container, buildingId, dateStr) {
             const b = DB.buildings[buildingId];
             const allTasks = DB.dailyBuildings[buildingId]?.tasks || [];
-            // Edit mode lists every chore; otherwise a room chore waits for a lot in its room
+            // ✏️ Edit mode lists every task the building has, those that don't run on this day too (dimmed, 📅 their days,
+            // no tick box or ⏱ Log), so a task saved for Thursdays only can be found and edited on a Monday (user report
+            // 2026-10-30: it used to vanish). Otherwise a room chore waits for a lot in its room, unless the empty rooms'
+            // chores are shown.
             const vis = choresToShow(buildingId, dateStr);
-            const listAll = EditMode.on() || showEmptyRoomChores;
-            const tasks = listAll ? allTasks.filter(t => taskOccursOn(t, dateStr)) : vis.shown;
+            const tasks = EditMode.on() ? allTasks : showEmptyRoomChores ? allTasks.filter(t => taskOccursOn(t, dateStr)) : vis.shown;
             const events = eventsOnDate(dateStr).filter(ev => buildingForEvent(ev) === buildingId);
 
             if (!canEditBuilding(buildingId)) {
@@ -28116,19 +28133,20 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 container.appendChild(addBar);
             }
 
+            // 🧰 Miscellaneous labour first, above the chores (user request 2026-10-30: it was at the bottom)
+            if (DB.buildings[buildingId]) container.appendChild(makeMiscRow(buildingId));
             if (allTasks.length === 0) {
                 container.appendChild(mutedLine(T('No daily tasks defined for {building} yet.', { building: b?.name || buildingId })));
             } else if (tasks.length === 0) {
                 container.appendChild(mutedLine(vis.hidden.length ? T('No chores today: their rooms are empty.') : T('No daily tasks scheduled for this date.')));
             } else {
                 tasks.forEach((t, i) => {
-                    const row = makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true);
+                    const row = makeTaskRow(buildingId, t, tasks[i - 1]?.code || null, tasks[i + 1]?.code || null, true, { offDay: !taskOccursOn(t, dateStr) });
                     if (vis.hidden.includes(t)) row.classList.add('empty-room');
                     container.appendChild(row);
                 });
             }
             if (vis.hidden.length && !EditMode.on()) container.appendChild(emptyRoomToggle(vis.hidden.length));
-            if (DB.buildings[buildingId]) container.appendChild(makeMiscRow(buildingId));
 
             appendStillOpenSection(container, dateStr, buildingId);
             appendEventsSection(container, events);
@@ -28181,6 +28199,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 header.appendChild(label);
                 header.appendChild(chip);
                 section.appendChild(header);
+                section.appendChild(makeMiscRow(bid));   // 🧰 first, above the chores
 
                 if (tasks.length === 0) {
                     section.appendChild(mutedLine(vis.hidden.length ? T('No chores today: their rooms are empty.') : T('No daily tasks for this date.')));
@@ -28192,7 +28211,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     });
                 }
                 if (vis.hidden.length) section.appendChild(emptyRoomToggle(vis.hidden.length));
-                section.appendChild(makeMiscRow(bid));
 
                 appendStillOpenSection(section, dateStr, bid);
                 appendEventsSection(section, events);
@@ -28268,6 +28286,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "🏢 {n} buildings · 📝 {tasks} today · ✅ {done}/{tasks} done": { fr: "🏢 {n} bâtiments · 📝 {tasks} aujourd’hui · ✅ {done}/{tasks} faites", es: "🏢 {n} edificios · 📝 {tasks} hoy · ✅ {done}/{tasks} hechas", vi: "🏢 {n} tòa nhà · 📝 {tasks} việc hôm nay · ✅ {done}/{tasks} đã xong", zh: "🏢 {n} 个楼栋 · 📝 今天 {tasks} 项 · ✅ 已完成 {done}/{tasks}" },
             "+ Add Task": { fr: "+ Ajouter une tâche", es: "+ Añadir tarea", vi: "+ Thêm công việc", zh: "+ 添加任务" },
             "No daily tasks defined for {building} yet.": { fr: "Aucune tâche quotidienne pour {building} pour l’instant.", es: "Aún no hay tareas diarias para {building}.", vi: "Chưa có công việc hằng ngày cho {building}.", zh: "{building} 还没有每日任务。" },
+            "📅 Not today · {days}": { fr: "📅 Pas aujourd’hui · {days}", es: "📅 Hoy no · {days}", vi: "📅 Không phải hôm nay · {days}", zh: "📅 今天不做 · {days}" },
+            "no days set": { fr: "aucun jour choisi", es: "ningún día elegido", vi: "chưa chọn ngày", zh: "未设定日期" },
+            "This task doesn’t run on the day shown, so it can’t be ticked or logged today. Edit mode lists every task.": { fr: "Cette tâche n’a pas lieu le jour affiché : on ne peut ni la cocher ni y inscrire des heures aujourd’hui. Le mode édition montre toutes les tâches.", es: "Esta tarea no se hace el día que se muestra, así que hoy no se puede marcar ni registrar. El modo de edición muestra todas las tareas.", vi: "Công việc này không làm vào ngày đang xem, nên hôm nay không thể đánh dấu hay ghi giờ. Chế độ chỉnh sửa hiện mọi công việc.", zh: "这项任务不在显示的这一天进行，所以今天不能勾选或记录工时。编辑模式会列出所有任务。" },
             "No daily tasks scheduled for this date.": { fr: "Aucune tâche quotidienne prévue à cette date.", es: "No hay tareas diarias programadas para esta fecha.", vi: "Không có công việc hằng ngày nào cho ngày này.", zh: "这一天没有安排每日任务。" },
             "No daily tasks for this date.": { fr: "Aucune tâche quotidienne à cette date.", es: "No hay tareas diarias para esta fecha.", vi: "Không có công việc hằng ngày cho ngày này.", zh: "这一天没有每日任务。" },
             "📌 Unassigned / General": { fr: "📌 Non attribué / Général", es: "📌 Sin asignar / General", vi: "📌 Chưa phân bổ / Chung", zh: "📌 未分配 / 通用" },

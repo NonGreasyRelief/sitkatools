@@ -41,7 +41,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 - **Only while a lot is in the room** (user decision 2026-10-23): a room chore is listed only while some open lot's current room (`lots.<id>.currentRoom`) is that room, so "Water Grow 2" isn't asked for an empty Grow 2, and "Check the trim room" only while a lot is in it (`choreForEmptyRoom`, `choresToShow`).
   - A chore already ticked, with hours logged, someone signed in or a timer going that day stays listed. Whole-building chores, and chores whose room is gone, always show.
   - **🚪 Show N chores for empty rooms** under the list reveals them, dimmed (until DailyWizard closes; "Hide the chores for empty rooms" puts them away). All Buildings has the same button per building.
-  - The status bar and the building's ✅ count leave them out. Edit mode lists every chore, so the floor manager can still edit or reorder them.
+  - The status bar and the building's ✅ count leave them out. Edit mode lists every chore, so the floor manager can still edit or reorder them (and the tasks for other days, "Recurrence Rules").
   - It reads the lots' current room as it is now, for any date shown.
 - **🍂 Dry/Trim rooms** (user request 2026-10-29): in a room designated **Dry/Trim** (SitkaTools' Room Manager), a chore is a **🍂 drying** chore, a **✂️ trimming** chore, or either (`dryTrim`). A drying chore is listed while a lot in the room is drying; a trimming chore once a lot in the room has moved from drying to trimming — its current daily log is its ✂️ trim log (the page's `lotTrimming`, the rule the lot dropdowns' ✂️ uses); either, while any lot is in the room. A lot in the room with no trim log yet is drying. Two lots at different stages show both kinds. The row and the detail view tag it `🍂 Drying` / `✂️ Trimming`; the rest is as for any room chore (kept when ticked or with hours, 🚪 Show to reveal, edit mode lists all). The editor's **Drying or trimming** choice shows only while the room picked is Dry/Trim; saving with another room drops it. A room no longer designated Dry/Trim makes them ordinary room chores again.
 - **A room that's gone** (deleted, or moved to another building): the chip shows `🚪 ⚠️ {room}` and the editor lists it as "no longer in this building" until someone picks another. Reports treat the chore as whole-building.
@@ -51,7 +51,7 @@ Task order is the **array order** (no sort field); moving a task rewrites its po
 
 A built-in row in every building's list (user decision 2026-10-25), for hours on anything that isn't on the list.
 
-- **Where:** after the building's chores (and their 🚪 empty-room button), every day, in the building view and in each building's section of All Buildings, for every building in `DB.buildings` (one with no daily tasks too). Edit mode doesn't move, edit or delete it.
+- **Where:** first, above the building's chores (user request 2026-10-30: it was after them), every day, in the building view and in each building's section of All Buildings, for every building in `DB.buildings` (one with no daily tasks too). Edit mode doesn't move, edit or delete it.
 - **The row:** 🧰 and the name (translated: `UI_TEXT['Miscellaneous labour']`), a "📝 say what you did" chip, **⏱ Log** and **＋ Start task**, like a chore. No tick box (a spacer keeps it in line), no estimate, no detail view; it isn't in the ✅ count.
 - **Not a task:** it isn't in `tasks`, so opening the DB changes nothing. Its hours and sign-ins save like a chore's under the code **`misc`** (`MISC_CODE`; task codes never hold an `i`, so it can't clash): `labour[<day>].misc`, a sign-in's `item: 'misc'`. A building with no entry yet gets a bare `{ tasks: [] }` when it first logs Misc hours.
 - **A note is needed:** ⏱ Log asks "What were you doing? (needed)" and won't add the hours without it ("Say what you were doing"); ＋ Start task asks "What are you working on? (needed)" at sign-in, so signing out never stops to ask. Every other row has the box in ⏱ Log, optional ("⏱ Hours").
@@ -60,6 +60,8 @@ A built-in row in every building's list (user decision 2026-10-25), for hours on
 ### Recurrence Rules
 
 A task appears on a date when its weekday is in `days` **or** its day of month is in `monthDays`, and, for a room chore, a lot is in its room ("🚪 Room Chores"). Saving needs at least one weekday or one month-day.
+
+- **✏️ Edit mode lists every task** the building has (user report 2026-10-30: a task saved for Thursdays only vanished from the list on any other day, so it couldn't be found to edit). One that doesn't run on the date shown is dimmed and dashed, with a **📅 Not today · Thu** chip (its days, `describeRecurrence`), and has no tick box, ⏱ Log or timer for that day (`makeTaskRow`'s `offDay`); it can still be opened, edited, deleted and moved with ▲ ▼ (which now swap neighbours in the whole list). Out of edit mode the list is the date's again.
 
 ### Labour Display
 
@@ -265,7 +267,7 @@ The database comes and goes as for every tool (root `CLAUDE.md` → "Tool Overla
 
 ## UI
 
-Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **✏️ Edit tasks**, or in edit mode "✏️ Editing as {name}" (single building only) → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer (in edit mode **✅ Done editing** · Close Tool · **+ Add Task**).
+Follows the root `CLAUDE.md` UI Standards. Order: header → status bar → **✏️ Edit tasks**, or in edit mode "✏️ Editing as {name}" (single building only) → 🧰 Miscellaneous labour → daily task rows → ⏰ Still open → **Scheduled today** → **Upcoming** → footer (in edit mode **✅ Done editing** · Close Tool · **+ Add Task**).
 
 ### Header
 
