@@ -9826,24 +9826,54 @@
             };
         }
 
+        // What a picked file is, by what's in it (so "Main (1).json" or "Building-B1 1.json" still count):
+        // 'building' (a Building-<ID>.json: its `_building`), 'main' (Main.json: named so, or a database with Main's
+        // `_fieldStamps`, which a whole database never has), or null (a whole database, Wages.json, or not JSON)
+        function splitFileKind(text, name) {
+            let p;
+            try { p = JSON.parse(text); } catch (_) { return null; }
+            if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+            if (typeof p._building === 'string' && p._building && !('lots' in p)) return 'building';
+            if (isWagesFile(text)) return null;
+            if (name === SPLIT_MAIN || ('_fieldStamps' in p && p.lots && typeof p.lots === 'object')) return 'main';
+            return null;
+        }
+
         dbImportInput.addEventListener('change', async (e) => {
             const picked = [...e.target.files];
             const file = picked[0];
-            if (picked.length && (picked.length > 1 || picked.some(f => f.name === SPLIT_MAIN))) {
+            if (picked.length > 1 && picked.some(f => f.name === SPLIT_MAIN)) {
                 // Split files: Main.json plus any Wages / Building files picked with it
                 dbImportInput.value = '';
                 const source = fileDialogSource;
                 fileDialogSource = null;
                 const set = await readSplitSet(picked);
-                if (!set) {
-                    alert('To open building files, pick Main.json together with the Building-*.json files (and Wages.json on the office device).');
-                    if (source === 'overlay' && !DB.fileName) showOverlay();   // nothing open yet: back to the start screen
-                    return;
-                }
                 if (!confirmDiscard()) return;
                 if (await DbSplit.open(set)) DbFolder.deactivate();
                 else if (!DB.fileName) showOverlay();   // not opened (the office gate cancelled) and nothing open: the start screen
                 return;
+            }
+            if (file) {
+                // 📂 One file at a time (user request 2026-10-29): Main.json or a building's file picked without the
+                // rest is added to the open split files (DbSplit.addFiles), as a tablet picks them from OneDrive one by one
+                const source = fileDialogSource;
+                const texts = await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() })));
+                const kinds = texts.map(f => splitFileKind(f.text, f.name));
+                const splitOnly = kinds.every(k => k === 'main' || k === 'building') && kinds.filter(k => k === 'main').length <= 1;
+                if (splitOnly || picked.length > 1) {
+                    dbImportInput.value = '';
+                    fileDialogSource = null;
+                    if (!splitOnly) {
+                        alert('To open building files, pick Main.json together with the Building-*.json files (and Wages.json on the office device), ' +
+                            'or load them one at a time: Main.json, then each building\'s file.');
+                    } else {
+                        const main = texts.find((f, i) => kinds[i] === 'main') || null;
+                        const buildings = texts.filter((f, i) => kinds[i] === 'building').map(f => ({ ...f, id: JSON.parse(f.text)._building }));
+                        if (await DbSplit.addFiles(main, buildings)) { DbFolder.deactivate(); return; }
+                    }
+                    if (source === 'overlay' && !DB.fileName) showOverlay();   // nothing open yet: back to the start screen
+                    return;
+                }
             }
             if (!file) {
                 // User cancelled the file dialog
@@ -10457,6 +10487,7 @@
             facilityPickups: [],  // office: [{ id, n }] facility pages with additions taken in from building queues on open (not in Main yet)
             madeHere: new Set(),  // office: building files this session's split made (it may save them until the files are reopened)
             texts: {},            // file name → its text as opened / last saved here (memory only): reopened as another device
+            pending: [],          // 📂 building files picked one at a time before Main.json: [{ id, name, text }] (memory only)
 
             roleLabel(role = this.role, db = DB.data) {
                 if (role === 'office') return 'Office';
@@ -10486,6 +10517,7 @@
                 this.diskOverlays = {};
                 this.madeHere = new Set();   // building files this session's split made: the office may save them again
                 this.texts = {};
+                this.pending = [];
             },
 
             // The role comes from the page link (?device=office or ?device=<building id>); without one it is
@@ -11468,7 +11500,8 @@
 
             // ---- Opening ----
             // files: { main: {name, text}, wages: {name, text}|null, buildings: [{name, text}], folder: dir|null }
-            async open(files) {
+            // gate: false when this page is open as the office already (addFiles), so the office gate isn't asked again
+            async open(files, { gate = true } = {}) {
                 let main, wages = null;
                 let buildings = [];
                 try {
@@ -11499,7 +11532,7 @@
                 const roleBefore = this.role;
                 await this.ensureRole(main.buildings);
                 // 🔒 The office needs the badge or PIN of someone with office access, when Main's roster has one (OfficeGate)
-                if (this.role === 'office' && !await OfficeGate.ask(main)) {
+                if (this.role === 'office' && gate && !await OfficeGate.ask(main)) {
                     this.role = this.active ? roleBefore : null;   // nothing opened: the open session keeps its device, or the next open asks again
                     return false;
                 }
@@ -11515,6 +11548,7 @@
                 this.hashes = {};
                 this.madeHere = new Set();   // reopened: building files are saved by their own devices again
                 this.texts = {};
+                this.pending = [];           // building files waiting for Main.json open with it, or not at all
                 DB.data = db;
                 DB.ensureStructure();
                 DB.data._meta = main._meta || null;
@@ -11574,6 +11608,46 @@
             // "Main + Wages + 2 building files" — what the status bars call the open split files
             filesLabel(buildingCount) {
                 return `Main${this.haveWages ? ' + Wages' : ''} + ${buildingCount} building file${buildingCount === 1 ? '' : 's'}`;
+            },
+
+            // 📂 One file at a time (user request 2026-10-29): a tablet picks its files from OneDrive or SharePoint one by one,
+            // Main.json and then its own Building-<ID>.json (any other building's too). Each is added to the open split
+            // files, replacing the copy of it that's open (Main, or the same building's file, whatever the file is called
+            // now): the files reopen from this session's copies of the others (texts, as opened or last saved) plus the new
+            // one, as Set this device… reopens them, so unsaved changes would be lost (asked first). Building files picked
+            // before Main.json (or after a restore, which keeps no copies) wait for it, in memory, and open with it.
+            // main: { name, text } | null; buildings: [{ name, text, id }]. Returns true when the files were opened.
+            async addFiles(main, buildings) {
+                const open = this.active ? this.savedSet() : null;
+                const names = list => list.map(f => f.name).join(', ');
+                if (!main && !open) {
+                    for (const b of buildings) this.pending = this.pending.filter(p => p.id !== b.id).concat({ id: b.id, name: b.name, text: b.text });
+                    const restored = this.active ? ' (this session was restored, so the files it opened aren\'t in memory)' : '';
+                    showSyncToast(`📂 ${names(this.pending)} ${this.pending.length === 1 ? 'is' : 'are'} ready — now load Main.json${restored}: they open together`);
+                    return false;
+                }
+                const adding = [...(main ? [{ name: main.name }] : []), ...buildings];
+                if (hasUnsavedChanges && !confirm(open
+                    ? `You have unsaved changes. Adding ${names(adding)} reopens the open files, and those changes would be lost.\n\nAdd anyway? (Cancel, then 💾 Save DB, to keep them.)`
+                    : 'You have unsaved changes. Loading another database will discard them.\n\nLoad anyway?')) return false;
+                const ids = new Set(buildings.map(b => b.id));
+                const others = open
+                    ? open.buildings.filter(f => ![...ids].some(id => f.name === buildingFileName(id)))
+                    : this.pending.filter(p => !ids.has(p.id)).map(p => ({ name: buildingFileName(p.id), text: p.text }));
+                const set = {
+                    main: main ? { name: SPLIT_MAIN, text: main.text } : open.main,
+                    wages: open?.wages || null,
+                    buildings: [...others, ...buildings.map(b => ({ name: buildingFileName(b.id), text: b.text }))],
+                    folder: null
+                };
+                // Already open as the office: adding a file doesn't ask for office access again
+                if (!await this.open(set, { gate: !(open && this.role === 'office') })) return false;
+                // A building device saves its own file, so it needs it open: say so until it is
+                const own = this.role && this.role !== 'office' ? buildingFileName(this.role) : null;
+                if (own && !this.loaded.has(own)) {
+                    setTimeout(() => showSyncToast(`Now load ${own} with 📂 Load DB: it's this building's file, the one this device saves`), 0);
+                }
+                return true;
             },
 
             // A Wages.json picked by itself (📂 Load DB) is added to the open files instead of replacing them.
@@ -11691,11 +11765,11 @@
                     const own = buildingFileName(this.role);
                     if (changed.includes(own)) {
                         // Never overwrite the building's real file from a session that didn't open it
-                        if (!mayWrite(own)) cannot.push(`${own} (open it together with Main.json to save)`);
+                        if (!mayWrite(own)) cannot.push(`${own} (load it with 📂 Load DB to save)`);
                         else toSave.push(own);
                     }
                     offerUnchanged(own);
-                    if (!mayWrite(own)) note = `${own} wasn't opened — open it together with Main.json to save this building's file.`;
+                    if (!mayWrite(own)) note = `${own} wasn't opened — load it with 📂 Load DB (by itself is fine) to save this building's file.`;
                     const blocked = this.blockedOfficeChanges(db);
                     if (blocked.length) cannot.push(`office records: ${blocked.join(', ')}`);
                     for (const name of changed) {

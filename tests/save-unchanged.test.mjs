@@ -102,7 +102,7 @@ export async function run(b, BASE) {
     await b.run(main, `closeSavePopup();`);
     await openSplit(b, main, BASE, 'B1', { 'Main.json': files['Main.json'] });
     p = await popup(b, main);
-    check('a building that opened Main.json without its file is told to open it', p.links.length === 0 && /Building-B1\.json wasn't opened — open it together with Main\.json/.test(p.note), JSON.stringify(p));
+    check('a building that opened Main.json without its file is told to open it', p.links.length === 0 && /Building-B1\.json wasn't opened — load it with 📂 Load DB/.test(p.note), JSON.stringify(p));
     await b.run(main, `closeSavePopup();`);
 
     // The tests' save helper takes only the changed files

@@ -6,6 +6,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-29 · a slim Android app in `native/` on Development (the earlier app stays on the `android-app` branch): a WebView over a folder on the tablet holding SitkaTools.html and the training pictures and videos, so the steps show them; no internet and no SharePoint (the database still by the file picker and the share sheet); a step's new picture or video written into the folder, the old one renamed, never deleted; no page code for it
+- 2026-10-29 · tablets stay in Chrome and load the split files one at a time from OneDrive or SharePoint (📂 Load DB adds each to what's open, by its content), then share their one building file back; the thin Android app is kept on the `android-app` branch, out of Development
 - 2026-10-29 · SitkaTools' calendar gets a 4th view, 🚀 Launch windows: the 10 weekly flip windows of the default recipe's 70-day cycle as a staircase timeline, one row per week, oldest crop in bloom first; real lots with a flip scheduled and CropLabourWizard's projected lots take their week; one set of 10 for the whole facility (the building filter or a building device narrows it)
 - 2026-10-29 · the lot dropdowns' phase emoji is 🍂 for a lot whose current room is designated Dry/Trim (after ✂️ / 🍂 for its trim or drying log, before its stage)
 - 2026-10-29 · the Lot Manager lists the lots for flower rooms first and the 🌿 mother lots under them, each by lot number, lowest first (it was newest first)
