@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-30 · the 🚀 open launch windows table gets a Projected room column: each room whose projected lot flips in that window in a later cycle, with the TBA lot and its flip (stale and superseded projections don't count)
 - 2026-10-30 · the 🚀 launch windows timeline scrolls sideways out to the last crop's harvest, projections included (at most 3 years); the first 20 weeks fill the box as before and the week labels stay put
 - 2026-10-30 · 🌿 mothers from clones: the plants each flowering lot keeps back at its Transplanting become mothers; a 🌿 mother-recipe dropdown beside Project Crop projects them for every lot of the room's chain (`{room}-TBAMOM-NN`, `00` for the room's real lot), moved to the Mother room on that lot's transplant day with no tasks of their own before it; Reproject keeps them in step; the Mother room is picked by itself (the flower room's building's, else the first); a lot made from the flower lot that lands in a Mother room takes their place
 - 2026-10-30 · mother recipes get a 🌿 Mature from task; the built-in's mothers are mature from their Second leaf pick (day 71) until Retire Mothers

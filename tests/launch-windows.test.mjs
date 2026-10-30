@@ -172,6 +172,30 @@ export async function run(b, BASE) {
     check('a lot filter: only L100, which is row 1 now', JSON.stringify(allIds(v)) === '["ev_lw_f100"]' && v.rows[0].bars[0]?.id === 'ev_lw_f100' && v.summary.startsWith('1 of 10'), JSON.stringify([allIds(v), v.summary]));
     await b.run(main, `Calendar.filters = []; Calendar.render();`);
 
+    // ---- 🚀 Open launch windows: the Projected room column (user request 2026-10-30) ----
+    const heads = await b.run(main, `return [...document.querySelectorAll('#launchView .launch-table thead th')].map(th => th.textContent.trim());`);
+    check('the open windows table has a "Projected room" column, after the flower rooms free',
+        JSON.stringify(heads) === JSON.stringify(['Wk', 'Flip', 'Cut clones*', 'Harvest', 'Flower rooms free', 'Projected room', 'Notes']), JSON.stringify(heads));
+    v = await b.run(main, READ);
+    check('…"none" in every open window: no projection flips in one (the stale one in row 6 doesn\'t count)', v.open.length === 6 && v.open.every(r => r[5] === 'none'), JSON.stringify(v.open.map(r => r[5])));
+    // Grow 2's TBA-02 flipping in row 6 a cycle after its next window: the window stays open, naming the room
+    const projFlip = fri(17);
+    await b.run(main, `DB.data._CropLabourWizard.projectedLots['R1G2-TBA-02'] = { name: 'R1G2-TBA-02', roomId: 'R1G2', roomName: 'Grow 2', strain: 'TBA', index: 2 };
+        DB.data.calendarEvents.push({ id: 'ev_lw_p22', date: '${projFlip}', title: 'Flip R1G2-TBA-02', sourceTool: 'CropProjection', lotId: 'R1G2-TBA-02', roomId: 'R1G2', taskType: 'flip' },
+            { id: 'ev_lw_p22h', date: '${add(projFlip, 63)}', title: 'Harvest R1G2-TBA-02', sourceTool: 'CropProjection', lotId: 'R1G2-TBA-02', roomId: 'R1G2', taskType: 'harvest' });
+        Calendar.onDbChanged(); Calendar.render();`);
+    const fmtDay = await b.run(main, `const f = s => { const [y, m, d] = s.split('-').map(Number), dt = new Date(y, m - 1, d);
+            return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '') + (y !== new Date().getFullYear() ? ', ' + y : ''); };
+        return { proj: f('${projFlip}'), next: f('${fri(7)}') };`);
+    v = await b.run(main, READ);
+    const row6 = v.open.find(r => r[0] === 'Wk 6');
+    check('a projection flipping in an open window a cycle later: the window stays open (still 6 open)', v.summary.startsWith('4 of 10 windows taken · 6 open') && row6?.[1] === fmtDay.next,
+        JSON.stringify([v.summary, row6]));
+    check(`…its Projected room names the room, the projected lot and its flip: "Grow 2 · TBA-02 flips ${fmtDay.proj}"`, row6?.[5] === `Grow 2 · TBA-02 flips ${fmtDay.proj}`, JSON.stringify(row6));
+    check('…the other open windows still say none', v.open.filter(r => r !== row6).every(r => r[5] === 'none'), JSON.stringify(v.open.map(r => r[5])));
+    await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => !e.id.startsWith('ev_lw_p22')); delete DB.data._CropLabourWizard.projectedLots['R1G2-TBA-02'];
+        Calendar.onDbChanged(); Calendar.render();`);
+
     // ---- Scrolling sideways out to the last projection ----
     const farFlip = fri(45);
     await b.run(main, `DB.data._CropLabourWizard.projectedLots['R2G1-TBA-05'] = { name: 'R2G1-TBA-05', roomId: 'R2G1', roomName: 'Grow A', strain: 'TBA', index: 5 };

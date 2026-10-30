@@ -1591,9 +1591,9 @@
         .launch-panel.warn h3 { color: var(--warning); }
         .launch-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; line-height: 1.4; }
         .launch-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .launch-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.85rem; }
+        .launch-table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: 0.85rem; }
         .launch-table td:first-child { white-space: nowrap; }
-        .launch-table td.free { min-width: 9rem; }
+        .launch-table td.free, .launch-table td.proj { min-width: 9rem; }
         .launch-table td.notes { min-width: 15rem; }
         .launch-table th, .launch-table td { padding: 6px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
         .launch-table th { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); white-space: nowrap; }
@@ -15818,8 +15818,12 @@
                 }
                 const takenBy = items.map(i => i.crop).filter(c => counts(c) && (inBloom(c) || launchWeekOf(c.flip) === next));
                 const flip = launchFriday(next), cut = launchAdd(flip, -LAUNCH.LEAD), harvest = launchAdd(flip, LAUNCH.BLOOM);
+                // The rooms projected into this window (user request 2026-10-30): each room's first projected lot flipping in
+                // its row from the next launch week on (in an open window, a later cycle). Stale and superseded ones don't count.
+                const projected = [];
+                for (const { crop: c } of items) if (c.projected && counts(c) && launchWeekOf(c.flip) >= next && !projected.some(p => p.roomId === c.roomId)) projected.push(c);
                 rows.push({ k, week, friday: launchFriday(week), items, laneEnds, taken: takenBy.length > 0, takenBy,
-                    next: { week: next, flip, cut, harvest, cutPassed: cut < today, again: launchAdd(flip, LAUNCH.CYCLE), freeRooms: freeRooms(flip),
+                    next: { week: next, flip, cut, harvest, cutPassed: cut < today, again: launchAdd(flip, LAUNCH.CYCLE), freeRooms: freeRooms(flip), projected,
                         holidays: [['Clone cut', cut], ['Flip', flip], ['Harvest', harvest]]
                             .map(([what, date]) => ({ what, date, holiday: Holidays.forDate(date) })).filter(h => h.holiday) } });
             }
@@ -17754,16 +17758,18 @@
                     if (n.cutPassed) notes.push(`<span class="warn">Clone-cut day passed: rooted clones only · next window ${escapeHtml(fmtY(n.again))}</span>`);
                     for (const h of n.holidays) notes.push(`🏛️ ${escapeHtml(h.what)} on ${escapeHtml(h.holiday.name)}`);
                     const free = n.freeRooms.length ? n.freeRooms.map(rm => escapeHtml(rm.name)).join(', ') : '<span class="muted">none free</span>';
+                    const proj = n.projected.length ? n.projected.map(c => `${escapeHtml(roomName(c.roomId))} <span class="muted">· ${escapeHtml(cropName(c))} flips ${escapeHtml(fmtY(c.flip))}</span>`).join('<br>')
+                        : '<span class="muted">none</span>';
                     return `<tr data-row="${r.k + 1}"><td>Wk ${r.k + 1}</td><td class="date"><b>${escapeHtml(fmtY(n.flip))}</b></td>
                         <td class="date${n.cutPassed ? ' muted' : ''}">${escapeHtml(fmtY(n.cut))}</td><td class="date">${escapeHtml(fmtY(n.harvest))}</td>
-                        <td class="free">${free}</td><td class="notes">${notes.join('<br>') || '<span class="muted">—</span>'}</td></tr>`;
+                        <td class="free">${free}</td><td class="proj">${proj}</td><td class="notes">${notes.join('<br>') || '<span class="muted">—</span>'}</td></tr>`;
                 }).join('');
                 const openPanel = `<section class="launch-panel">
                     <h3>🚀 Open launch windows</h3>
                     ${open.length ? `<div class="launch-table-wrap"><table class="launch-table">
-                        <thead><tr><th>Wk</th><th>Flip</th><th>Cut clones*</th><th>Harvest</th><th>Flower rooms free</th><th>Notes</th></tr></thead>
+                        <thead><tr><th>Wk</th><th>Flip</th><th>Cut clones*</th><th>Harvest</th><th>Flower rooms free</th><th>Projected room</th><th>Notes</th></tr></thead>
                         <tbody>${tableRows}</tbody></table></div>
-                    <p class="launch-foot">* Day 1 with CropLabourWizard's default recipe (Sitka Standard, 20-day veg): clones cut ${LAUNCH.LEAD} days before the flip, harvest ${LAUNCH.BLOOM} days after it. A room is free when its last crop has harvested by the Friday before and nothing else is booked in it until after this harvest.</p>`
+                    <p class="launch-foot">* Day 1 with CropLabourWizard's default recipe (Sitka Standard, 20-day veg): clones cut ${LAUNCH.LEAD} days before the flip, harvest ${LAUNCH.BLOOM} days after it. A room is free when its last crop has harvested by the Friday before and nothing else is booked in it until after this harvest. Projected room: a room whose projected lot flips in this window in a later cycle.</p>`
                         : '<p class="launch-foot">Every window is taken: one crop flips each week.</p>'}
                 </section>`;
 
