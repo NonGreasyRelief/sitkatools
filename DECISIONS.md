@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-30 · the built-in 🌿 mother recipe's Transplanting to Mother Room is optional while the lot's clones are off (mothers from bought or received plants planted straight in the Mother room; their planting is then in the Mother room); always on with clones; a recipe task flag `optionalWithoutClones`, the editor's No ✂️ column
 - 2026-10-30 · focus on SitkaTools.html served from a browser: the slim Android app (a WebView over a tablet folder of the page and its pictures, no internet) is shelved on branch `native-app`, one commit ahead of Development, to revisit; a PC in each building sharing its OneDrive-synced folder on the building network was considered for later
 - 2026-10-29 · tablets stay in Chrome and load the split files one at a time from OneDrive or SharePoint (📂 Load DB adds each to what's open, by its content), then share their one building file back; the thin Android app is kept on the `android-app` branch, out of Development
 - 2026-10-29 · SitkaTools' calendar gets a 4th view, 🚀 Launch windows: the 10 weekly flip windows of the default recipe's 70-day cycle as a staircase timeline, one row per week, oldest crop in bloom first; real lots with a flip scheduled and CropLabourWizard's projected lots take their week; one set of 10 for the whole facility (the building filter or a building device narrows it)

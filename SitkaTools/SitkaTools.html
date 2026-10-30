@@ -8531,6 +8531,7 @@
                                     <th title="Staff needed">Staff</th>
                                     <th title="Toggleable (can be switched off)" class="t-check">Tgl</th>
                                     <th title="On by default" class="t-check">On</th>
+                                    <th title="Optional only while the lot's clones are off (Cutting Clones unticked): for plants that skip this task, such as bought mothers planted straight in the Mother room" class="t-check">No ✂️</th>
                                     <th title="Lock offset (not editable in preview)" class="t-check">Lck</th>
                                     <th></th>
                                     <th></th>
@@ -21405,6 +21406,8 @@
         // move it in the preview to line it up with a flowering lot's cut. Off, projections still count the next mothers from
         // 27 days before Retire Mothers.
         // Tasks in date order (the room split compares positions with Transplanting: all after it are in the Mother room).
+        // With the lot's clones off (Cutting Clones unticked: bought or received plants), Transplanting to Mother Room can be
+        // switched off too, for mothers planted straight in the Mother room (user request 2026-10-30, optionalWithoutClones).
         const SITKA_MOTHER_RECIPE = {
             id: 'sitka-mother',
             name: 'Sitka Default mother recipe',
@@ -21414,7 +21417,7 @@
                 { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
                 { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
                 { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
-                { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 16 },
+                { name: 'Transplanting to Mother Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 16, optionalWithoutClones: true },
                 { name: 'Top Mothers', emoji: '✂️', taskType: 'mother_top', reference: 'planting', defaultOffset: 21 },
                 { name: 'First leaf pick (Mothers)', emoji: '🌿', taskType: 'mother_pick1', reference: 'planting', defaultOffset: 37 },
                 { name: 'Up-Pot to 5-7 Gal', emoji: '🪣', taskType: 'mother_uppot1', reference: 'planting', defaultOffset: 46 },
@@ -21448,6 +21451,15 @@
         const VEG_ANCHORS = ['cloning', 'planting', 'retire'];
         const recipeAnchorList = r => isVegRecipe(r) ? VEG_ANCHORS : BLOOM_ANCHORS;
         const mandatoryTasks = r => isVegRecipe(r) ? ['planting', 'retire'] : ['planting', 'flip', 'harvest'];
+        // A task a lot may switch off: one with a toggle (hasToggle), or one its recipe makes optional while the lot's clones
+        // are off (optionalWithoutClones, user request 2026-10-30: the 🌿 mother recipe's Transplanting to Mother Room, for
+        // mothers planted straight in the Mother room). With the clones on, such a task is always on.
+        const canSwitchOff = (def, clonesOn) => !!def?.hasToggle || (!!def?.optionalWithoutClones && !clonesOn);
+        const clonesOnIn = offsets => offsets.find(e => e.def.taskType === 'clone_cut_prep')?.enabled !== false;
+        function settleClonesOptional(offsets) {
+            if (!clonesOnIn(offsets)) return;
+            for (const e of offsets) if (!canSwitchOff(e.def, true)) e.enabled = true;
+        }
         const DEFAULT_RETIRE_DAYS = 180;   // planting → Retire Mothers, when a recipe has no retire task
 
         // ---- Repeating tasks: "every N days" (user decision 2026-10-23) ----
@@ -22019,7 +22031,7 @@
             const hasRepeat = recipe.tasks.some(t => taskRepeatEvery(t)), hasEst = recipe.tasks.some(t => taskEstimate(t));
             const taskRows = recipe.tasks.map((t, i) => {
                 const est = taskEstimate(t), every = taskRepeatEvery(t), d = days[i];
-                const optional = t.hasToggle ? (t.defaultEnabled === false ? 'yes · off by default' : 'yes') : '';
+                const optional = t.hasToggle ? (t.defaultEnabled === false ? 'yes · off by default' : 'yes') : t.optionalWithoutClones ? 'when the clones are off' : '';
                 return `<tr><td class="n">${i + 1}</td><td>${esc(t.emoji || '')} ${esc(t.name || '')}</td><td>${esc(when(t))}</td>` +
                     `<td class="day"><strong>${d ? esc(d.num) : '—'}</strong>${d ? `<br><span class="sub">${esc(d.of)}</span>` : ''}</td><td>${esc(runs(t))}</td>` +
                     (hasRepeat ? `<td>${every ? `every ${plural(every, 'day')}` : ''}</td>` : '') +
@@ -22501,6 +22513,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <td class="t-est"><input type="number" class="t-staff" min="1" step="1" value="${Number.isInteger(t.minutes) && Number.isInteger(t.staff) ? t.staff : ''}" placeholder="1" title="Staff needed"></td>
                     <td class="t-check"><input type="checkbox" class="t-toggle" ${t.hasToggle ? 'checked' : ''} title="Toggleable (can be switched off)"></td>
                     <td class="t-check"><input type="checkbox" class="t-enabled" ${t.hasToggle && t.defaultEnabled !== false ? 'checked' : ''} ${t.hasToggle ? '' : 'disabled'} title="On by default"></td>
+                    <td class="t-check"><input type="checkbox" class="t-noclones" ${!t.hasToggle && t.optionalWithoutClones ? 'checked' : ''} ${t.hasToggle ? 'disabled' : ''} title="Optional only while the lot's clones are off (Cutting Clones unticked)"></td>
                     <td class="t-check"><input type="checkbox" class="t-locked" ${t.isLocked ? 'checked' : ''} title="Lock offset (not editable in preview)"></td>
                     <td class="t-move">
                         <button type="button" data-act="up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
@@ -22552,7 +22565,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (tr.querySelector('.t-toggle').checked) {
                     t.hasToggle = true;
                     if (!tr.querySelector('.t-enabled').checked) t.defaultEnabled = false;
-                }
+                } else if (tr.querySelector('.t-noclones').checked) t.optionalWithoutClones = true;
                 if (tr.querySelector('.t-locked').checked) t.isLocked = true;
                 return t;
             });
@@ -23052,8 +23065,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             for (const entry of taskOffsets) {
                 const def = entry.def;
                 const ev = eventsByType[def.taskType];
-                // Toggleable tasks absent from a generated schedule were disabled at generation time
-                if (def.hasToggle && !ev) entry.enabled = false;
+                // Toggleable tasks absent from a generated schedule were disabled at generation time (Transplanting to
+                // Mother Room too, for a lot generated with its clones off)
+                if (canSwitchOff(def, clonesEnabled) && !ev) entry.enabled = false;
                 if (!ev) continue; // task absent from schedule — keep default
 
                 // When clones disabled, planting is locked to Day 0
@@ -23065,6 +23079,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const anchorDate = resolveTaskAnchor(anchors, def.reference);
                 entry.offset = daysBetween(anchorDate, ev.date);
             }
+            settleClonesOptional(taskOffsets);
         }
 
         // ---- Reference date labels ----
@@ -23498,7 +23513,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             taskOffsets.forEach((entry, idx) => {
                 const def = entry.def;
-                const isEnabled = entry.enabled !== false;
+                const isEnabled = entry.enabled !== false || !canSwitchOff(def, clonesEnabled);
 
                 // Determine display reference, label, offset, and locked state
                 let displayRef = def.reference;
@@ -23551,8 +23566,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const checkInputId = `check_${idx}`;
 
                 // Checkbox for tasks with toggle
-                const checkboxHtml = def.hasToggle
-                    ? `<input type="checkbox" class="task-enabled-check" id="${checkInputId}" ${isEnabled ? 'checked' : ''} data-idx="${idx}" title="Enable/disable this task" />`
+                const checkboxHtml = canSwitchOff(def, clonesEnabled)
+                    ? `<input type="checkbox" class="task-enabled-check" id="${checkInputId}" ${isEnabled ? 'checked' : ''} data-idx="${idx}" title="${def.hasToggle ? 'Enable/disable this task' : 'Optional while the clones are off: untick it for plants that go straight into this room'}" />`
                     : '';
 
                 // Offset input: editable unless it's locked or disabled
@@ -23755,6 +23770,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 checkbox.addEventListener('change', () => {
                     const i = parseInt(checkbox.dataset.idx);
                     taskOffsets[i].enabled = checkbox.checked;
+                    settleClonesOptional(taskOffsets);   // clones back on: a task optional only without them is on again
                     // Re-render to update disabled state and styling
                     refreshPreview();
                 });
@@ -23906,7 +23922,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const repeatEnd = isVegRecipe(recipe) ? anchors.retire : anchors.harvest;
             const out = [];
             for (const entry of offsets) {
-                if (entry.enabled === false) continue;
+                if (entry.enabled === false && canSwitchOff(entry.def, clonesEnabled)) continue;
                 const def = entry.def;
                 let anchorRef = def.reference, effectiveOffset = entry.offset;
                 if (def.taskType === 'planting' && !clonesEnabled) { anchorRef = 'planting'; effectiveOffset = 0; }
@@ -23948,13 +23964,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const projRoomId = isProjected ? getProjectedLots()[lotId].roomId : null;
 
             const newEvents = [];
-            for (const occ of scheduleOccurrences(day0, offsets, d, recipe)) {
+            const occurrences = scheduleOccurrences(day0, offsets, d, recipe);
+            // Transplanting switched off for this lot (mothers planted straight in their room): nothing moves rooms
+            const roomOpts = { transplantOff: (recipe?.tasks || []).some(t => t.taskType === 'transplant') && !occurrences.some(o => o.def.taskType === 'transplant') };
+            for (const occ of occurrences) {
                 const def = occ.def;
                 const event = {
                     id: newEventId(),
                     date: occ.start,
                     // A repeat says which it is: "Prune Mothers (3/12)"
-                    title: buildEventTitle(def, lotId, recipe) + (occ.repeat ? ` (${occ.repeat}/${occ.total})` : ''),
+                    title: buildEventTitle(def, lotId, recipe, roomOpts) + (occ.repeat ? ` (${occ.repeat}/${occ.total})` : ''),
                     sourceTool: isProjected ? 'CropProjection' : 'CropLabourWizard',
                     lotId: lotId,
                     taskType: def.taskType
@@ -23964,7 +23983,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
                 // The room phase on every real lot's task (user decision 2026-10-25, review Q3): every tool reads the room
                 // from it. Projected lots carry their roomId instead.
-                if (!isProjected) event.roomPhase = taskRoomPhase(lotId, def.taskType, recipe);
+                if (!isProjected) event.roomPhase = taskRoomPhase(lotId, def.taskType, recipe, roomOpts);
 
                 // Labour estimate from the recipe task (estStaff / estMinutes, per day)
                 applyEstimate(event, def);
@@ -24583,7 +24602,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const DRY_ROOM_TASKS = ['dry_room_clean'];
         const TRIM_ROOM_TASKS = ['trim_room_prep', 'trim', 'machine_trim'];   // the trim room (the dry room when there's none)
         const ROOM_PHASES = ['cloning', 'veg', 'flower', 'dry', 'trim'];
-        function taskRoomPhase(lotId, taskType, recipe = activeRecipe) {
+        // roomOpts.transplantOff: the lot's Transplanting is switched off (a 🌿 mother lot planted straight in its Mother room)
+        function taskRoomPhase(lotId, taskType, recipe = activeRecipe, roomOpts = {}) {
             const lot = DB.lots[lotId] || {};
             const tasks = recipe?.tasks || [];
             // Explicit roomPhase from the recipe task wins over all heuristics below
@@ -24599,22 +24619,23 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Undercanopy lights & air socks, and the coco blocks (laid out the day before, hydrated on transplant day),
             // are flower-room tasks listed before transplant for chronological display
             if (taskType === 'undercanopy_lights' || taskType === 'layout_coco_blocks' || taskType === 'hydrate_coco_blocks') return 'flower';
-            // Everything before transplanting to flower happens in the veg room (array order is load-bearing)
+            // Everything before transplanting to flower happens in the veg room (array order is load-bearing), unless the
+            // lot skips the transplant: then it's in its destination room from planting on
             const defIdx = tasks.findIndex(d => d.taskType === taskType);
             const transplantIdx = tasks.findIndex(d => d.taskType === 'transplant');
-            if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx) return 'veg';
+            if (defIdx !== -1 && transplantIdx !== -1 && defIdx < transplantIdx && !roomOpts.transplantOff) return 'veg';
             // Transplant and everything after happens in the destination room: the flower room, or a mother lot's
             // Mother room. A mother lot with no destination room keeps its tasks in its veg room.
             if (isVegRecipe(recipe) && !resolveFlowerRoom(lotId, DB.data.rooms || {}) && lot.vegRoom) return 'veg';
             return 'flower';
         }
 
-        function getLotRoomCode(lotId, taskType, recipe = activeRecipe) {
+        function getLotRoomCode(lotId, taskType, recipe = activeRecipe, roomOpts = {}) {
             // Projected lots have no veg/cloning rooms — every task happens in the flower room
             if (isProjectedLot(lotId)) return getProjectedLots()[lotId].roomId;
             const lot = DB.lots[lotId] || {};
             const rooms = DB.data.rooms || {};
-            const phase = taskRoomPhase(lotId, taskType, recipe);
+            const phase = taskRoomPhase(lotId, taskType, recipe, roomOpts);
             if (phase === 'cloning') return roomCodeForName(lot.cloningRoom);
             if (phase === 'veg') return roomCodeForName(lot.vegRoom);
             if (phase === 'dry') return roomCodeForName(lot.dryRoom) || resolveFlowerRoom(lotId, rooms);
@@ -24622,14 +24643,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return resolveFlowerRoom(lotId, rooms);
         }
 
-        function buildEventTitle(def, lotId, recipe = activeRecipe) {
+        function buildEventTitle(def, lotId, recipe = activeRecipe, roomOpts = {}) {
             // Projected lots: the lotId already encodes room + "TBA" + index (e.g. "B66DG1-TBA-01"),
             // so use it directly — prepending the room code would repeat it twice in the title.
             if (isProjectedLot(lotId)) {
                 return `${def.emoji} ${lotId}, ${def.name}`;
             }
             const lot = getLotRecord(lotId);
-            const roomCode = getLotRoomCode(lotId, def.taskType, recipe);
+            const roomCode = getLotRoomCode(lotId, def.taskType, recipe, roomOpts);
             const strain = (lot.strain || '').trim();
             let prefix;
             if (roomCode && strain) prefix = `${roomCode}-${strain}#${lotId}`;
@@ -25148,6 +25169,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (e.target.classList.contains('t-toggle')) {
                 const row = e.target.closest('tr');
                 row.querySelector('.t-enabled').disabled = !e.target.checked;
+                row.querySelector('.t-noclones').disabled = e.target.checked;   // always optional: "No ✂️" says nothing more
             }
             updateEditorTurnaround();
         });
