@@ -3,7 +3,8 @@
 // Checked: the rules on a fixed day (the example DB's three crops on 2026-10-29: the anchor, an overlap, the open Fridays,
 // clone-cut days passed, 🏛️ holidays, free rooms), then the view itself with crops around today (the staircase, the
 // room's next lot in the same row, projections taking a window, stale and superseded ones not, copies and missing lots
-// left out, a flip with no harvest estimated, a long bloom held to 9 weeks back), the filters, a building device,
+// left out, a flip with no harvest estimated, a long bloom held to 9 weeks back), every window for the next 12 months listed
+// under the chart (taken by a lot or a projection, or open), the filters, a building device,
 // Prev / Next / Today, a bar opening its task, the day rolling over, the figures matching CropLabourWizard's default
 // recipe, and no sideways page scroll on a tablet.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, leave, splitFiles, openSplit, openTool } from './lib/helpers.mjs';
@@ -68,7 +69,11 @@ const READ = `const v = document.getElementById('launchView');
     return { shown: !v.classList.contains('hidden'), summary: v.querySelector('.launch-summary')?.textContent.replace(/\\s+/g, ' ').trim() || '',
         rows: [...v.querySelectorAll('.launch-row:not(.launch-axis)')].map(r => ({ open: r.classList.contains('open'), label: r.querySelector('.launch-label').textContent.replace(/\\s+/g, ' ').trim(),
             bars: [...r.querySelectorAll('.launch-bar')].map(b => ({ id: b.dataset.eventId, cls: b.className, text: b.textContent })), ghost: r.querySelector('.launch-ghost')?.textContent || null })),
-        open: [...v.querySelectorAll('.launch-table tbody tr')].map(tr => [...tr.cells].map(td => td.textContent.replace(/\\s+/g, ' ').trim())),
+        ghosts: [...v.querySelectorAll('.launch-ghost')].map(g => g.dataset.flip),
+        windows: [...v.querySelectorAll('.launch-table tbody tr.launch-window')].map(tr => ({ flip: tr.dataset.flip, open: tr.classList.contains('open'), projected: tr.classList.contains('projected'),
+            cells: [...tr.cells].map(td => td.textContent.replace(/\\s+/g, ' ').trim()) })),
+        months: [...v.querySelectorAll('.launch-table tbody tr.launch-month-row')].map(tr => tr.textContent.trim()),
+        sub: v.querySelector('.launch-year .launch-sub')?.textContent.replace(/\\s+/g, ' ').trim() || '',
         checks: [...v.querySelectorAll('.launch-panel.warn li')].map(li => li.textContent.replace(/\\s+/g, ' ').trim()),
         note: v.querySelector('.launch-note')?.textContent || null, title: document.getElementById('calendarTitle').textContent };`;
 
@@ -85,27 +90,32 @@ export async function run(b, BASE) {
             .flatMap(([lot, f, h]) => [{ id: 'f' + lot, sourceTool: 'CropLabourWizard', lotId: lot, taskType: 'flip', date: f }, { id: 'h' + lot, sourceTool: 'CropLabourWizard', lotId: lot, taskType: 'harvest', date: h }]);
         const crops = launchCrops(data, evs, evs, ev => room[ev.lotId], '2026-10-29');
         const M = launchModel(crops, { asOf: '2026-10-26', today: '2026-10-29', rooms: Object.entries(data.rooms).map(([id, r]) => ({ id, name: r.name })) });
-        const open = M.rows.filter(r => !r.taken).sort((a, b) => a.next.flip.localeCompare(b.next.flip));
         return { from: M.from, taken: M.taken, open: M.open, row1: M.rows[0].items.map(i => i.crop.lotId + '@' + i.lane), row10: M.rows[9].items.map(i => i.crop.lotId), row10open: !M.rows[9].taken,
             overlaps: M.overlaps.map(o => o.monday + ':' + o.crops.map(c => c.lotId).join('+')),
-            windows: open.map(r => ({ flip: r.next.flip, cut: r.next.cut, harvest: r.next.harvest, cutPassed: r.next.cutPassed, free: r.next.freeRooms.map(x => x.name), hol: r.next.holidays.map(h => h.what + ':' + h.holiday.name) })) };`);
+            windows: M.windows.map(w => ({ flip: w.flip, cut: w.cut, harvest: w.harvest, cutPassed: w.cutPassed, taken: w.taken, row: w.k + 1, free: w.freeRooms.map(x => x.name), hol: w.holidays.map(h => h.what + ':' + h.holiday.name) })) };`);
     check('row 1 is the week the oldest crop in bloom flipped (Mon Aug 31)', m.from === '2026-08-31', m.from);
     check('1190 (Mon) and 1171 (Thu) flipped the same week: one row, two lanes', JSON.stringify(m.row1) === JSON.stringify(['1190@0', '1171@1']), JSON.stringify(m.row1));
     check('…and harvest the same week: ⚠️ one overlap, the week of Nov 2', JSON.stringify(m.overlaps) === JSON.stringify(['2026-11-02:1190+1171']), JSON.stringify(m.overlaps));
     check('1179 (harvested Oct 27) is drawn in row 10, which is open', JSON.stringify(m.row10) === '["1179"]' && m.row10open, JSON.stringify(m.row10));
     check('1 of 10 taken, 9 open', m.taken === 1 && m.open === 9, `${m.taken} / ${m.open}`);
+    // The next 12 months: a window every Friday from this week's
     const flips = m.windows.map(w => w.flip);
-    check('the open windows are the next Fridays of their weeks', JSON.stringify(flips) === JSON.stringify(['2026-10-30', '2026-11-06', '2026-11-20', '2026-11-27', '2026-12-04', '2026-12-11', '2026-12-18', '2026-12-25', '2027-01-01']), JSON.stringify(flips));
+    check('52 weekly windows listed, every Friday from Oct 30 to Oct 22, 2027', flips.length === 52 && flips[0] === '2026-10-30' && flips[51] === '2027-10-22'
+        && flips.every((f, i) => !i || launchDayDiff(flips[i - 1], f) === 7), JSON.stringify([flips.length, flips[0], flips[51]]));
+    check('nothing flips from today on: all 52 open', m.windows.every(x => !x.taken), JSON.stringify(m.windows.filter(x => x.taken).map(x => x.flip)));
     const w = Object.fromEntries(m.windows.map(x => [x.flip, x]));
+    check('each window keeps its row: Oct 30 is Wk 9, and Nov 13 Wk 1 again', w['2026-10-30'].row === 9 && w['2026-11-06'].row === 10 && w['2026-11-13'].row === 1 && w['2027-01-22'].row === 1,
+        JSON.stringify([w['2026-10-30'].row, w['2026-11-06'].row, w['2026-11-13'].row, w['2027-01-22'].row]));
     check('clones are cut 34 days before (a Saturday), harvest 63 days after (a Friday)', m.windows.every(x => new Date(x.cut + 'T12:00').getDay() === 6 && new Date(x.harvest + 'T12:00').getDay() === 5)
         && w['2026-12-04'].cut === '2026-10-31' && w['2026-12-04'].harvest === '2027-02-05', JSON.stringify(w['2026-12-04']));
     check('the clone-cut day has passed for the windows through Nov 27, not from Dec 4', m.windows.every(x => x.cutPassed === (x.flip <= '2026-11-27')), JSON.stringify(m.windows.map(x => x.flip + ':' + x.cutPassed)));
-    check('🏛️ Christmas and New Year\'s Day flips, and the Oct 30 window\'s New Year\'s harvest', JSON.stringify(w['2026-12-25'].hol) === '["Flip:Christmas Day"]'
-        && JSON.stringify(w['2027-01-01'].hol) === '["Flip:New Year\'s Day"]' && JSON.stringify(w['2026-10-30'].hol) === '["Harvest:New Year\'s Day"]',
-        JSON.stringify([w['2026-12-25'].hol, w['2027-01-01'].hol, w['2026-10-30'].hol]));
-    check('free rooms: none for Oct 30 (Heron 2 harvests Oct 27), Heron 2 for Nov 6, all three from Nov 20',
-        JSON.stringify(w['2026-10-30'].free) === '[]' && JSON.stringify(w['2026-11-06'].free) === '["Heron 2"]' && w['2026-11-20'].free.length === 3,
-        JSON.stringify([w['2026-10-30'].free, w['2026-11-06'].free, w['2026-11-20'].free]));
+    check('🏛️ Christmas, New Year\'s Day and Good Friday flips, and the Oct 30 window\'s New Year\'s harvest', JSON.stringify(w['2026-12-25'].hol) === '["Flip:Christmas Day"]'
+        && JSON.stringify(w['2027-01-01'].hol) === '["Flip:New Year\'s Day"]' && JSON.stringify(w['2026-10-30'].hol) === '["Harvest:New Year\'s Day"]'
+        && JSON.stringify(w['2027-03-26'].hol) === '["Flip:Good Friday"]',
+        JSON.stringify([w['2026-12-25'].hol, w['2027-01-01'].hol, w['2026-10-30'].hol, w['2027-03-26'].hol]));
+    check('free rooms: none for Oct 30 (Heron 2 harvests Oct 27), Heron 2 for Nov 6, all three from Nov 13 (the Albatross crops harvest the week before)',
+        JSON.stringify(w['2026-10-30'].free) === '[]' && JSON.stringify(w['2026-11-06'].free) === '["Heron 2"]' && w['2026-11-13'].free.length === 3 && w['2026-11-20'].free.length === 3,
+        JSON.stringify([w['2026-10-30'].free, w['2026-11-06'].free, w['2026-11-13'].free]));
 
     // A long bloom (flipped 11 weeks ago, still in bloom): row 1 goes back no further than 9 weeks, every 🚀 stays in range
     const long = await b.run(main, `
@@ -129,6 +139,24 @@ export async function run(b, BASE) {
     check('a projection flipping in 40 weeks: the timeline runs to the end of its harvest week', far.out === 50 && far.outTo >= far.harvest && launchDayDiff(far.harvest, far.outTo) < 7, JSON.stringify(far));
     check('…never more than 3 years (a date 8 years out doesn\'t stretch it)', far.bogus === 156, JSON.stringify(far));
 
+    // The 12-month list: a window is taken by the crops flipping that week (real or projected; a stale or superseded
+    // projection doesn't count), open otherwise; an open one notes a crop already harvesting the week it would
+    const year = await b.run(main, `
+        const today = localDate(), mon = launchMonday(launchWeekOf(today)), T = launchWeekOf(today), rooms = { G: { name: 'G' }, H: { name: 'H' } };
+        const lot = (id, room, flip, bloom, p) => [{ id: 'f' + id, sourceTool: p ? 'CropProjection' : 'CropLabourWizard', lotId: id, roomId: room, taskType: 'flip', date: flip },
+            { id: 'h' + id, sourceTool: p ? 'CropProjection' : 'CropLabourWizard', lotId: id, roomId: room, taskType: 'harvest', date: launchAdd(flip, bloom) }];
+        const fri = n => launchFriday(T + n), room = { X: 'G', Y: 'H', Z: 'G' };
+        const evs = [...lot('X', 'G', fri(2), 70), ...lot('Y', 'H', fri(2), 63), ...lot('G-TBA-01', 'G', fri(13), 63, true), ...lot('G-TBA-02', 'G', fri(6), 63, true)];
+        const M = launchModel(launchCrops({ lots: { X: {}, Y: {} }, rooms }, evs, evs, ev => ev.roomId, today), { asOf: mon, today });
+        const at = n => M.windows.find(w => w.week === T + n);
+        const o = n => ({ by: at(n).by.map(c => c.lotId), taken: at(n).taken, projected: at(n).projected, shared: at(n).sharedHarvest.map(c => c.lotId) });
+        return { first: M.windows[0].week - T, two: o(2), proj: o(13), superseded: o(6), shared: o(3), plain: o(4) };`);
+    check('two crops flipping the same week both take it (a real one: not "projected")', JSON.stringify(year.two) === JSON.stringify({ by: ['X', 'Y'], taken: true, projected: false, shared: [] }), JSON.stringify(year.two));
+    check('…a projection takes its week, marked projected; one overlapping a real lot in its room doesn\'t',
+        year.proj.taken && year.proj.projected && JSON.stringify(year.proj.by) === '["G-TBA-01"]' && !year.superseded.taken, JSON.stringify([year.proj, year.superseded]));
+    check('…an open window whose harvest week another crop already harvests in names it (X\'s 10-week bloom)', !year.shared.taken && JSON.stringify(year.shared.shared) === '["X"]'
+        && JSON.stringify(year.plain.shared) === '[]', JSON.stringify([year.shared, year.plain]));
+
     // ---- The view ----
     await loadSingle(b, main, launchDb());
     await b.run(main, `document.getElementById('viewLaunchBtn').click();`, { user: true });
@@ -150,7 +178,9 @@ export async function run(b, BASE) {
     check('row 6: the stale projection is drawn but leaves its window open', JSON.stringify(ids(5)) === '["ev_lw_p21"]' && v.rows[5].bars[0].cls.includes('stale') && v.rows[5].open, JSON.stringify(v.rows[5]));
     check('the 📋 copy and the lot no longer in the DB aren\'t drawn', !v.rows.some(r => r.bars.some(x => x.id === 'ev_lw_copy' || x.id === 'ev_lw_f999')));
     check('4 of 10 taken · 6 open, no overlap', v.summary.startsWith('4 of 10 windows taken · 6 open') && !v.summary.includes('overlap'), v.summary);
-    check('every open row has a 🚀 and is listed in the table', v.rows.filter(r => r.open).every(r => r.ghost?.startsWith('🚀')) && v.open.length === 6, JSON.stringify(v.open));
+    const openFlips = new Set(v.windows.filter(x => x.open).map(x => x.flip));
+    check('every open row has a 🚀, and its Friday is an open window in the 12-month list', v.rows.filter(r => r.open).every(r => r.ghost?.startsWith('🚀')) && v.ghosts.length === 6
+        && v.ghosts.every(f => openFlips.has(f)), JSON.stringify([v.ghosts, [...openFlips].slice(0, 8)]));
     const wk = Math.floor((Date.parse(TODAY) - Date.parse(fri(-5))) / 86400000 / 7) + 1;
     check('the bars name the lot, room and bloom week', v.rows[3].bars[0].text.includes(`L100 · Grow 1 · wk ${wk}/9`), v.rows[3].bars[0].text);
     check('⚠️ Check these: Grow 1\'s projections to reproject, the stale one, and L500 with no flip (not the mother M1)',
@@ -165,34 +195,43 @@ export async function run(b, BASE) {
     // ---- Filters: building B2 only; a task-type filter changes nothing; a lot filter ----
     v = await b.run(main, `Calendar.filters = [{ key: 'building', value: 'Building 2 (B2)' }]; Calendar.render(); ${READ}`);
     const allIds = x => x.rows.flatMap(r => r.bars.map(b => b.id)).sort();
-    check('building filter B2: only Grow A\'s crops; Grow A the only room offered', JSON.stringify(allIds(v)) === '["ev_lw_f200","ev_lw_pA1"]' && v.open.every(r => r[4] === 'Grow A' || r[4] === 'none free'), JSON.stringify([allIds(v), v.open.map(r => r[4])]));
+    check('building filter B2: only Grow A\'s crops; Grow A the only room offered', JSON.stringify(allIds(v)) === '["ev_lw_f200","ev_lw_pA1"]' && v.windows.every(x => x.open ? (x.cells[5] === 'Grow A' || x.cells[5] === 'none free') : x.cells[5] === '—'), JSON.stringify([allIds(v), v.windows.map(x => x.cells[5])]));
     v = await b.run(main, `Calendar.filters = [{ key: 'taskType', value: 'equipment_maintenance' }]; Calendar.render(); ${READ}`);
     check('a task-type filter doesn\'t empty the view, and says it doesn\'t apply', allIds(v).length === 7 && /don't apply/.test(v.note || ''), JSON.stringify([allIds(v), v.note]));
     v = await b.run(main, `Calendar.filters = [{ key: 'lot', value: 'L100' }]; Calendar.render(); ${READ}`);
     check('a lot filter: only L100, which is row 1 now', JSON.stringify(allIds(v)) === '["ev_lw_f100"]' && v.rows[0].bars[0]?.id === 'ev_lw_f100' && v.summary.startsWith('1 of 10'), JSON.stringify([allIds(v), v.summary]));
     await b.run(main, `Calendar.filters = []; Calendar.render();`);
 
-    // ---- 🚀 Open launch windows: the Projected room column (user request 2026-10-30) ----
-    const heads = await b.run(main, `return [...document.querySelectorAll('#launchView .launch-table thead th')].map(th => th.textContent.trim());`);
-    check('the open windows table has a "Projected room" column, after the flower rooms free',
-        JSON.stringify(heads) === JSON.stringify(['Wk', 'Flip', 'Cut clones*', 'Harvest', 'Flower rooms free', 'Projected room', 'Notes']), JSON.stringify(heads));
+    // ---- 🚀 Every launch window for the next 12 months (user request 2026-10-30) ----
+    const heads = await b.run(main, `return [...document.querySelectorAll('#launchView .launch-year .launch-table thead th')].map(th => th.textContent.trim());`);
+    check('the table under the chart lists every window: Wk, Flip, Cut clones, Harvest, Window, Flower rooms free, Notes',
+        JSON.stringify(heads) === JSON.stringify(['Wk', 'Flip', 'Cut clones*', 'Harvest', 'Window', 'Flower rooms free', 'Notes']), JSON.stringify(heads));
     v = await b.run(main, READ);
-    check('…"none" in every open window: no projection flips in one (the stale one in row 6 doesn\'t count)', v.open.length === 6 && v.open.every(r => r[5] === 'none'), JSON.stringify(v.open.map(r => r[5])));
-    // Grow 2's TBA-02 flipping in row 6 a cycle after its next window: the window stays open, naming the room
+    const first = TODAY > fri(0) ? 1 : 0;   // this Friday, unless it has passed
+    const win = f => v.windows.find(x => x.flip === f);
+    check('52 windows, a Friday a week from this one (or next week\'s once it has passed)', v.windows.length === 52 && v.windows[0].flip === fri(first) && v.windows[51].flip === fri(first + 51),
+        JSON.stringify([v.windows.length, v.windows[0]?.flip, v.windows[51]?.flip]));
+    check('…under a heading for each month', v.months.length === new Set(v.windows.map(x => x.flip.slice(0, 7))).size
+        && v.months[0] === new Date(fri(first) + 'T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), JSON.stringify(v.months));
+    check('Grow A\'s projected lot takes its week: "🔮 TBA-01 · Grow A · projected", no rooms offered', win(fri(3))?.projected && win(fri(3)).cells[4] === '🔮 TBA-01 · Grow A · projected' && win(fri(3)).cells[5] === '—',
+        JSON.stringify(win(fri(3))));
+    check('L101 takes its week; Grow 1\'s superseded TBA-02 flipping then isn\'t listed', !win(fri(5))?.open && !win(fri(5)).projected && win(fri(5)).cells[4].includes('L101 · Grow 1') && !win(fri(5)).cells[4].includes('TBA-02'),
+        JSON.stringify(win(fri(5))));
+    check('the open ones say 🚀 open with the rooms free, and the summary counts them: 1 taken by lots · 1 projected · 50 open',
+        v.windows.filter(x => x.open).length === 50 && v.windows.filter(x => x.open).every(x => x.cells[4] === '🚀 open' && x.cells[5] !== '—') && v.sub.includes('1 taken by lots · 1 projected · 50 🚀 open'),
+        JSON.stringify([v.sub, v.windows.filter(x => x.open).length]));
+    check('…each keeps its row in the chart: a window and the one 10 weeks on share their Wk', v.windows.every((x, i) => i < 10 || x.cells[0] === v.windows[i - 10].cells[0]), JSON.stringify(v.windows.slice(0, 12).map(x => x.cells[0])));
+    // Grow 2's TBA-02 flipping in row 6 a cycle after its next window: that week is taken, the chart's row 6 stays open
     const projFlip = fri(17);
     await b.run(main, `DB.data._CropLabourWizard.projectedLots['R1G2-TBA-02'] = { name: 'R1G2-TBA-02', roomId: 'R1G2', roomName: 'Grow 2', strain: 'TBA', index: 2 };
         DB.data.calendarEvents.push({ id: 'ev_lw_p22', date: '${projFlip}', title: 'Flip R1G2-TBA-02', sourceTool: 'CropProjection', lotId: 'R1G2-TBA-02', roomId: 'R1G2', taskType: 'flip' },
             { id: 'ev_lw_p22h', date: '${add(projFlip, 63)}', title: 'Harvest R1G2-TBA-02', sourceTool: 'CropProjection', lotId: 'R1G2-TBA-02', roomId: 'R1G2', taskType: 'harvest' });
         Calendar.onDbChanged(); Calendar.render();`);
-    const fmtDay = await b.run(main, `const f = s => { const [y, m, d] = s.split('-').map(Number), dt = new Date(y, m - 1, d);
-            return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '') + (y !== new Date().getFullYear() ? ', ' + y : ''); };
-        return { proj: f('${projFlip}'), next: f('${fri(7)}') };`);
     v = await b.run(main, READ);
-    const row6 = v.open.find(r => r[0] === 'Wk 6');
-    check('a projection flipping in an open window a cycle later: the window stays open (still 6 open)', v.summary.startsWith('4 of 10 windows taken · 6 open') && row6?.[1] === fmtDay.next,
-        JSON.stringify([v.summary, row6]));
-    check(`…its Projected room names the room, the projected lot and its flip: "Grow 2 · TBA-02 flips ${fmtDay.proj}"`, row6?.[5] === `Grow 2 · TBA-02 flips ${fmtDay.proj}`, JSON.stringify(row6));
-    check('…the other open windows still say none', v.open.filter(r => r !== row6).every(r => r[5] === 'none'), JSON.stringify(v.open.map(r => r[5])));
+    check('a projection a cycle after an open window: its week is taken ("🔮 TBA-02 · Grow 2 · projected"), in the same Wk as that window',
+        win(projFlip)?.projected && win(projFlip).cells[4] === '🔮 TBA-02 · Grow 2 · projected' && win(projFlip).cells[0] === 'Wk 6' && win(fri(7))?.open && win(fri(7)).cells[0] === 'Wk 6',
+        JSON.stringify([win(projFlip), win(fri(7))]));
+    check('…the chart still has 6 open and the list 2 projected', v.summary.startsWith('4 of 10 windows taken · 6 open') && v.sub.includes('1 taken by lots · 2 projected · 49 🚀 open'), JSON.stringify([v.summary, v.sub]));
     await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => !e.id.startsWith('ev_lw_p22')); delete DB.data._CropLabourWizard.projectedLots['R1G2-TBA-02'];
         Calendar.onDbChanged(); Calendar.render();`);
 
@@ -215,7 +254,8 @@ export async function run(b, BASE) {
     check('…and each row\'s label stays at the left edge while it scrolls', sc.sticky === 'sticky' && sc.labelAtLeft, JSON.stringify(sc));
     check('…the intro says how far it goes', sc.intro.includes('Scroll sideways'), sc.intro);
     v = await b.run(main, READ);
-    check('…the far projection doesn\'t take a window this week', v.summary.startsWith('4 of 10 windows taken · 6 open'), v.summary);
+    check('…the far projection doesn\'t take a window this week, and is listed in its own week', v.summary.startsWith('4 of 10 windows taken · 6 open')
+        && v.windows.find(x => x.flip === farFlip)?.cells[4] === '🔮 TBA-05 · Grow A · projected', JSON.stringify([v.summary, v.windows.find(x => x.flip === farFlip)]));
     await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => !e.id.startsWith('ev_lw_far')); delete DB.data._CropLabourWizard.projectedLots['R2G1-TBA-05'];
         Calendar.onDbChanged(); Calendar.render();`);
 
@@ -262,7 +302,7 @@ export async function run(b, BASE) {
     v = await b.run(dev, READ);
     check('on Building 1\'s tablet: Grow 1 and Grow 2 only (not Grow A\'s lot or projection)',
         JSON.stringify(allIds(v)) === JSON.stringify(['ev_lw_f100', 'ev_lw_f101', 'ev_lw_f300', 'ev_lw_p12', 'ev_lw_p21']), JSON.stringify(allIds(v)));
-    check('…and only its rooms are offered', v.open.every(r => !r[4].includes('Grow A')), JSON.stringify(v.open.map(r => r[4])));
+    check('…and only its rooms are offered or listed', v.windows.every(x => !x.cells[4].includes('Grow A') && !x.cells[5].includes('Grow A')), JSON.stringify(v.windows.map(x => x.cells[5])));
 
     await leave(b, dev);
     await leave(b, main);
