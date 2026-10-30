@@ -1,6 +1,7 @@
 // 📅 The recipe editor shows the weekday each task lands on (user request 2026-10-29), from the weekday picked for day
-// 1 (the day the clones are cut). It opens on the weekday that puts the harvest on a Friday, as the built-ins are made:
-// Saturday cuts with 20 days of veg, Sunday with 19, Monday with 18. A guide only: nothing is saved with the recipe.
+// 1 (the day the clones are cut). It opens on the weekday that puts the harvest on a Friday, as the built-in is made:
+// Saturday cuts with its 20 days of veg (a copy with 19 days opens on Sunday, 18 on Monday). A guide only: nothing is
+// saved with the recipe.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
 
 export const title = 'the recipe editor shows each task\'s weekday from day 1\'s';
@@ -37,10 +38,12 @@ export async function run(b, BASE) {
     r = await rows();
     check('one more day of veg (flip +1): the flip moves to Sat, and the harvest with it (Sat)', r.flip?.wd === 'Sat' && r.flip?.day === 'day 36' && r.harvest?.wd === 'Sat', JSON.stringify({ flip: r.flip, harvest: r.harvest }));
 
-    // The 18-day and 19-day built-ins open on their own cut days
-    await openCopyOf('sitka-9week-19veg');
+    // Fewer days of veg (a copy flipped at planting + 19, then + 18) open on a later cut day
+    const openWithVeg = veg => b.run(clw, `openRecipeManager(); const r = JSON.parse(JSON.stringify(getRecipeById('sitka-9week')));
+        r.tasks.find(t => t.taskType === 'flip').defaultOffset = ${veg}; showRecipeEditor({ ...r, id: 'zz' + Math.random().toString(36).slice(2, 6), builtin: false });`, { user: true });
+    await openWithVeg(19);
     check('19 days of veg: opens on Sunday (harvest Friday)', await day1() === '0' && (await rows()).harvest?.wd === 'Fri');
-    await openCopyOf('sitka-9week-18veg');
+    await openWithVeg(18);
     check('18 days of veg: opens on Monday (harvest Friday)', await day1() === '1' && (await rows()).harvest?.wd === 'Fri');
 
     // Nothing of it is saved with the recipe

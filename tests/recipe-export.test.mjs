@@ -20,7 +20,7 @@ export async function run(b, BASE) {
     let d = await dialog();
     check('⬇️ Export opens a dialog with the file as a link', d.open && d.link === '💾 recipe-sitka-9week.json' && d.file === 'recipe-sitka-9week.json' && /^blob:/.test(d.href), JSON.stringify(d));
     const json = await b.run(clw, `return JSON.parse(await (await fetch(document.getElementById('recipeSaveLink').href)).text());`);
-    check('…the link holds the whole recipe', json?.id === 'sitka-9week' && Array.isArray(json.tasks) && json.tasks.length === 32, JSON.stringify({ id: json?.id, tasks: json?.tasks?.length }));
+    check('…the link holds the whole recipe', json?.id === 'sitka-9week' && Array.isArray(json.tasks) && json.tasks.length === 33, JSON.stringify({ id: json?.id, tasks: json?.tasks?.length }));
     check('…nothing is downloaded until the link is used', await b.run(clw, `return !document.getElementById('toast').classList.contains('show') || !/saved as/.test(document.getElementById('toast').textContent);`));
     await b.run(clw, `const stop = e => e.preventDefault(); window.addEventListener('click', stop, true); document.getElementById('recipeSaveLink').click(); window.removeEventListener('click', stop, true);`, { user: true });
     check('clicking the link downloads it and says so', await b.run(clw, `return document.getElementById('toast').textContent;`) === 'Recipe saved as recipe-sitka-9week.json');

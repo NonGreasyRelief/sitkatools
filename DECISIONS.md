@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-10-30 · one bloom built-in, the agreed Sitka Standard (20-day veg, Saturday cuts, 9-week bloom, every 70 days), replaces the 20-, 19- and 18-day-veg built-ins; it keeps the default's id `sitka-9week` (lots on the removed ones fall back to it); the early leaf pick is two one-day picks (bloom days 13 and 22); every task carries the team's labour estimate (labourhours.json; leaf pick 1 4 people × 6 h, leaf pick 2 8 people × 8 h)
 - 2026-10-30 · the built-in 🌿 mother recipe's Transplanting to Mother Room is optional while the lot's clones are off (mothers from bought or received plants planted straight in the Mother room; their planting is then in the Mother room); always on with clones; a recipe task flag `optionalWithoutClones`, the editor's No ✂️ column
 - 2026-10-30 · focus on SitkaTools.html served from a browser: the slim Android app (a WebView over a tablet folder of the page and its pictures, no internet) is shelved on branch `native-app`, one commit ahead of Development, to revisit; a PC in each building sharing its OneDrive-synced folder on the building network was considered for later
 - 2026-10-29 · tablets stay in Chrome and load the split files one at a time from OneDrive or SharePoint (📂 Load DB adds each to what's open, by its content), then share their one building file back; the thin Android app is kept on the `android-app` branch, out of Development

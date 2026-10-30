@@ -15636,7 +15636,7 @@
         }
 
         // ---- 🚀 Launch windows (user request 2026-10-29) ----
-        // CropLabourWizard's default recipe (sitkaStandardRecipe, 'sitka-9week') is a sealed 70-day cycle: a lot flips on a
+        // CropLabourWizard's default recipe (SITKA_STANDARD_RECIPE, 'sitka-9week') is a sealed 70-day cycle: a lot flips on a
         // Friday and harvests 63 days later on a Friday, its room is cleaned over the weekend, and the room's next lot
         // transplants on the Monday and flips that Friday, 70 days after the last. So the facility has 10 weekly launch
         // windows: one flip and one harvest a week, never two harvests in one week. The calendar's 🚀 view shows which are
@@ -16767,7 +16767,7 @@
                 undercanopy_lights: '💡', transplant: '🪴', ipm_spray_veg_second: '🧴',
                 veg_room_clean: '🧼', deploy_ipm: '🛡️', prune: '🔪', flip: '🌸',
                 ipm_spray_flower_start: '🧴', trellis_layout: '🕸️',
-                ipm_spray_flower_week2: '💦', leafpick_early: '🍃', clone_cut: '🌿',
+                ipm_spray_flower_week2: '💦', leafpick_early: '🍃', leafpick_early1: '🍃', leafpick_early2: '🍃', clone_cut: '🌿',
                 leafpick_late: '🍂', harvest: '🌾', room_clean: '🧹',
                 tank_irrigation_clean: '🚿', tote_prep: '🧺', bucking: '📦',
                 lab_sample: '🔬', trim_room_prep: '🧽', trim: '✂️',
@@ -17206,7 +17206,7 @@
                 topping: 'TP', order_ipm: 'OI', layout_coco_blocks: 'LB', hydrate_coco_blocks: 'HB',
                 undercanopy_lights: 'UL', transplant: 'TR', ipm_spray_veg_second: 'S2', veg_room_clean: 'VR',
                 deploy_ipm: 'DI', prune: 'PR', flip: 'FL', ipm_spray_flower_start: 'S3', trellis_layout: 'TL',
-                ipm_spray_flower_week2: 'S4', leafpick_early: 'LE', clone_cut: 'CC', leafpick_late: 'LL',
+                ipm_spray_flower_week2: 'S4', leafpick_early: 'LE', leafpick_early1: 'E1', leafpick_early2: 'E2', clone_cut: 'CC', leafpick_late: 'LL',
                 harvest: 'HV', room_clean: 'GR', tank_irrigation_clean: 'TI', tote_prep: 'TO', bucking: 'BK',
                 lab_sample: 'LS', trim_room_prep: 'PT', trim: 'TM', machine_trim: 'MT', dry_room_clean: 'DR',
                 weigh_ship: 'WS', equipment_maintenance: 'EQ'
@@ -17755,6 +17755,8 @@
                 trellis_layout: 'Layout Trellis & Secure',
                 ipm_spray_flower_week2: 'IPM Spray (Second Week of Flower)',
                 leafpick_early: 'Early Flower Leaf Pick',
+                leafpick_early1: 'Early Flower Leaf Pick 1',
+                leafpick_early2: 'Early Flower Leaf Pick 2',
                 clone_cut: 'Cut Clones to Replace Lot',
                 leafpick_late: 'Late Flower Leaf Pick',
                 harvest: 'Harvest',
@@ -17773,7 +17775,8 @@
 
             // Task-type registry fallback: CropLabourWizard recipes can define custom task
             // types; their labels/emojis live in _CropLabourWizard.taskTypes (merged on every
-            // recipe import/save). The hard-coded maps above win for the 32 known types.
+            // recipe import/save). The hard-coded maps above win for the known types (the built-in recipe's 33, and
+            // leafpick_early, the one early leaf pick of the built-ins before 2026-10-30, for lots generated with it).
             _taskTypeName(tt) {
                 if (!tt) return null;
                 return this.TASK_TYPE_NAMES[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.name || tt;
@@ -17790,7 +17793,7 @@
                 'order_ipm', 'layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights',
                 'transplant', 'ipm_spray_veg_second', 'veg_room_clean', 'deploy_ipm', 'prune',
                 'flip', 'ipm_spray_flower_start', 'trellis_layout', 'ipm_spray_flower_week2',
-                'leafpick_early', 'clone_cut', 'leafpick_late', 'harvest', 'room_clean',
+                'leafpick_early', 'leafpick_early1', 'leafpick_early2', 'clone_cut', 'leafpick_late', 'harvest', 'room_clean',
                 'tank_irrigation_clean', 'tote_prep', 'bucking', 'lab_sample', 'trim_room_prep',
                 'trim', 'machine_trim', 'dry_room_clean', 'weigh_ship'
             ],
@@ -21329,76 +21332,63 @@
 
         const $ = id => document.getElementById(id);
 
-        // ---- Built-in Recipes: Sitka Standard, 9-week bloom (user decision 2026-10-23) ----
-        // Three built-ins, one per clone-cut day, so every room harvests on a Friday and its next lot moves in the Monday
-        // after (the day after Tank & Irrigation Clean, as tight as the room allows), then flips on the Friday. Clones are cut
-        // on the Saturday (20-day veg, the default), Sunday (19) or Monday (18), 27 / 26 / 25 days before harvest. A new lot
-        // every 70 days (10 weeks), so the weekdays never drift. They differ only in the days set by the veg length: the
-        // flower-room prep, the transplant and the days after it, prune and flip, and the clone cut.
+        // ---- Built-in bloom recipe: the agreed Sitka Standard (user decision 2026-10-30) ----
+        // One bloom built-in, the recipe the team agreed (it replaced the 20-, 19- and 18-day-veg built-ins of 2026-10-23):
+        // 20 days of veg, clones cut on the Saturday, flip on the Friday 34 days later, harvest 63 days after that on a
+        // Friday, and the room's next lot in on the Monday after (the day after Tank & Irrigation Clean), flipped on the
+        // Friday: a new lot every 70 days (10 weeks), so the weekdays never drift. The early leaf pick is two one-day picks,
+        // a Thursday (bloom day 13) and a Saturday (bloom day 22). Each task's labour estimate (minutes per person per day,
+        // staff) is the team's (labourhours.json), the leaf picks' as the user gave them: 4 people 6 hours, 8 people 8 hours.
         // Recipe schema: { id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...] }
         // Task fields — reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
         // defaultOffset: days from the reference point. Array order = chronological display order
-        // (load-bearing: room resolution compares a task's position vs "transplant" in this list).
-        function sitkaStandardRecipe(id, name, veg) {
-            const transplant = veg - 4;   // veg = planting → flip; the Monday transplant is 4 days before the Friday flip
-            return {
-            id,
-            name,
+        // (load-bearing: room resolution compares a task's position vs "transplant" in this list: the flower-room prep the
+        // day before transplant is listed before it but happens in the flower room; the day-after tasks, listed after it,
+        // happen in the flower room too, except the veg-room clean). Optional IPM sprays are toggleable, off by default.
+        // The clone cut is the next lot's Day 0, counted back from harvest end (27 days: cut 14 days before its planting,
+        // in 3 days after this harvest). Trim runs 7 days by default; machine trim, the dry-room clean and weigh & ship
+        // count from trim start and land after it ends for any length (resolveTaskAnchor).
+        const SITKA_STANDARD_RECIPE = {
+            id: 'sitka-9week',
+            name: 'Sitka Standard: 20-day veg, Saturday Cuts Weekend Leaf Pick',
             version: 1,
-            chain: { cloneCutBeforeHarvest: veg + 7 },
+            chain: { cloneCutBeforeHarvest: 27 },
             tasks: [
-            { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true },
-            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14 },
-            { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1 },
-            // Optional preventative IPM sprays — toggleable, off by default
+            { name: 'Cutting Clones', emoji: '✂️', taskType: 'clone_cut_prep', reference: 'cloning', defaultOffset: 0, hasToggle: true, isLocked: true, minutes: 360, staff: 3 },
+            { name: 'Planting Clones', emoji: '🌱', taskType: 'planting', reference: 'cloning', defaultOffset: 14, minutes: 120, staff: 2 },
+            { name: 'Clean Clone Room and used cloning supplies', emoji: '🧼', taskType: 'clone_room_clean', reference: 'planting', defaultOffset: 1, minutes: 60, staff: 2 },
             { name: 'Preventative IPM Spray (Early veg)', emoji: '🧴', taskType: 'ipm_spray_veg_early', reference: 'planting', defaultOffset: 2, hasToggle: true, defaultEnabled: false },
-            { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3 },
+            { name: 'Topping', emoji: '✂️', taskType: 'topping', reference: 'planting', defaultOffset: 3, minutes: 90, staff: 2 },
             { name: 'Order Preventative Insects: Swirskii, Hypoaspis, Nematode, Atheta', emoji: '🐛', taskType: 'order_ipm', reference: 'planting', defaultOffset: 7 },
-            // Flower-room prep the day before transplant (the Sunday, after the previous lot's Tank and Irrigation Line Clean)
-            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: transplant - 1 },
-            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: transplant - 1 },
-            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: transplant - 1 },
-            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: transplant },
-            // Day after transplant — plants are now in the flower room (listed after transplant so these resolve there;
-            // the veg-room clean always goes to the veg room)
-            { name: 'Preventative IPM Spray (Second veg IPM)', emoji: '🧴', taskType: 'ipm_spray_veg_second', reference: 'planting', defaultOffset: transplant + 1, hasToggle: true, defaultEnabled: false },
-            { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: transplant + 1 },
-            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: transplant + 1 },
-            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: veg },
-            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: veg },
-            // Bloom-relative tasks (offset from flip)
-            // First day of bloom = flip day; toggleable, off by default
+            { name: 'Lay-out and Spike Coco Blocks for Hydrating', emoji: '🥥', taskType: 'layout_coco_blocks', reference: 'planting', defaultOffset: 15, minutes: 180, staff: 2 },
+            { name: 'Hydrate Coco Blocks for Transplanting', emoji: '💧', taskType: 'hydrate_coco_blocks', reference: 'planting', defaultOffset: 15 },
+            { name: 'Install Undercanopy Lights and Air Socks', emoji: '💡', taskType: 'undercanopy_lights', reference: 'planting', defaultOffset: 15, minutes: 240, staff: 2 },
+            { name: 'Transplanting to Flower Room', emoji: '🪴', taskType: 'transplant', reference: 'planting', defaultOffset: 16, minutes: 300, staff: 4 },
+            { name: 'Preventative IPM Spray (Second veg IPM)', emoji: '🧴', taskType: 'ipm_spray_veg_second', reference: 'planting', defaultOffset: 17, hasToggle: true, defaultEnabled: false },
+            { name: 'Clean Vegetation Room', emoji: '🧼', taskType: 'veg_room_clean', reference: 'planting', defaultOffset: 17, minutes: 90, staff: 2 },
+            { name: 'Deploy IPM to Flower Room', emoji: '🛡️', taskType: 'deploy_ipm', reference: 'planting', defaultOffset: 17, minutes: 90, staff: 3 },
+            { name: 'Two-Node / Lollipop Prune', emoji: '🔪', taskType: 'prune', reference: 'planting', defaultOffset: 20, minutes: 360, staff: 3 },
+            { name: 'Flip to Flower', emoji: '🌸', taskType: 'flip', reference: 'planting', defaultOffset: 20 },
             { name: 'Preventative IPM Spray (Start of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_start', reference: 'flip', defaultOffset: 0, hasToggle: true, defaultEnabled: false },
-            { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1 },
-            // Second week of bloom; toggleable, off by default
+            { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1, minutes: 240, staff: 2 },
             { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
-            // Leaf picks, two days each, counted from flip day (day 0): bloom days 17–18 (Monday–Tuesday) and 40–41
-            // (Wednesday–Thursday)
-            { name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 17, days: 2 },
-            // The next lot's Day 0, counted back from harvest end: cut 14 days before planting, the next lot transplants
-            // 3 days after this harvest (the Monday) — the day after this lot's Tank and Irrigation Line Clean
-            { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -(veg + 7) },
-            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 40, days: 2 },
-            // Harvest — user-editable offset from flip (default 63 days = 9 weeks bloom)
-            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63 },
-            // Post-harvest tasks (offset from harvest)
+            { name: 'Early Flower Leaf Pick 1', emoji: '🍃', taskType: 'leafpick_early1', reference: 'flip', defaultOffset: 13, minutes: 360, staff: 4 },
+            { name: 'Early Flower Leaf Pick 2', emoji: '🍃', taskType: 'leafpick_early2', reference: 'flip', defaultOffset: 22, minutes: 480, staff: 8 },
+            { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -27 },
+            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 40, days: 2, minutes: 960, staff: 6 },
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63, minutes: 480, staff: 10 },
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
-            { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2 },
-            // 6 days after harvest, so the totes are ready if the crop dries early (user request 2026-10-27; it was 11)
-            { name: 'Clean and Prepare Totes for Bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 6 },
-            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 12 },
+            { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2, minutes: 240, staff: 1 },
+            { name: 'Clean and Prepare Totes for Bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 6, minutes: 120, staff: 2 },
+            { name: 'Dry Room Take-Down / Bucking', emoji: '📦', taskType: 'bucking', reference: 'harvest', defaultOffset: 12, minutes: 480, staff: 3 },
             { name: 'Prepare Sample for Lab Testing', emoji: '🔬', taskType: 'lab_sample', reference: 'harvest', defaultOffset: 12 },
-            // Day before trim starts — prep the trim room
-            { name: 'Prepare Trim Room', emoji: '🧽', taskType: 'trim_room_prep', reference: 'harvest', defaultOffset: 12 },
-            // Trim is multi-day (length user-selectable, default 7), offset from harvest end
-            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 13 },
-            // Post-trim tasks (offset from trim start; re-based by resolveTaskAnchor so +7/+8 land after trim ends for any length)
-            { name: 'Machine Trim Smalls', emoji: '⚙️', taskType: 'machine_trim', reference: 'trim', defaultOffset: 7, hasToggle: true },
-            { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7 },
-            { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8 }
+            { name: 'Prepare Trim Room', emoji: '🧽', taskType: 'trim_room_prep', reference: 'harvest', defaultOffset: 12, minutes: 60, staff: 1 },
+            { name: 'Trim', emoji: '✂️', taskType: 'trim', reference: 'harvest', defaultOffset: 13, minutes: 2400, staff: 8 },
+            { name: 'Machine Trim Smalls', emoji: '⚙️', taskType: 'machine_trim', reference: 'trim', defaultOffset: 7, hasToggle: true, minutes: 240, staff: 1 },
+            { name: 'Clean Dry Room', emoji: '🧼', taskType: 'dry_room_clean', reference: 'trim', defaultOffset: 7, minutes: 120, staff: 2 },
+            { name: 'Weigh Final Dry Weight and Send Lot to Processing', emoji: '⚖️', taskType: 'weigh_ship', reference: 'trim', defaultOffset: 8, minutes: 60, staff: 1 }
             ]
-            };
-        }
+        };
         // ---- Built-in 🌿 mother recipe (user decision 2026-10-27) ----
         // The user's own mother recipe, made a built-in. Every task happens once. Mothers are replaced by clones cut alongside a
         // flowering lot's (27 days before that lot's harvest, not the same lot each time), so "Cut Clones to Replace Mothers"
@@ -21427,14 +21417,10 @@
                 { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 110 }
             ]
         };
-        // The default keeps the old built-in's id, so lots scheduled with it still resolve (their dates stay as generated).
-        // The bloom built-ins first, then the mother recipe.
-        const BUILTIN_RECIPES = [
-            sitkaStandardRecipe('sitka-9week', 'Sitka Standard: 20-day veg, Saturday cuts', 20),
-            sitkaStandardRecipe('sitka-9week-19veg', 'Sitka Standard: 19-day veg, Sunday cuts', 19),
-            sitkaStandardRecipe('sitka-9week-18veg', 'Sitka Standard: 18-day veg, Monday cuts', 18),
-            SITKA_MOTHER_RECIPE
-        ];
+        // The bloom built-in keeps the old default's id, so lots scheduled with it still resolve (their dates stay as
+        // generated). A lot scheduled with the removed 19- or 18-day built-in (sitka-9week-19veg / -18veg) falls back to it
+        // too, as any lot whose recipe is missing does (getRecipeById). The bloom built-in first, then the mother recipe.
+        const BUILTIN_RECIPES = [SITKA_STANDARD_RECIPE, SITKA_MOTHER_RECIPE];
         // The default: new lots, projections, ＋ New Recipe, and any lot whose recipe is missing
         const BUILTIN_RECIPE = BUILTIN_RECIPES[0];
         const isBuiltinRecipe = idOrRecipe => { const id = typeof idOrRecipe === 'string' ? idOrRecipe : idOrRecipe?.id; return BUILTIN_RECIPES.some(b => b.id === id); };
