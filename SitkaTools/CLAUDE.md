@@ -137,7 +137,7 @@ The tools live in this file (root `CLAUDE.md` → "Tool Overlays"; user decision
   - **Restore session:** the DB, file name and split bookkeeping (`DbSplit.importState`) come back, marked unsaved, and the tool that was open opens again. A restored session saves with the save links (folder mode isn't reconnected).
   - **Discard** asks first ("Discard the session from … ? Its unsaved changes can't be brought back."), then deletes the copy.
   - Leaving without answering keeps the session for the next start.
-- **😴 Reloaded:** the start check restores by itself, with no card, when the page is the same tab reloaded (`document.wasDiscarded`, navigation type `reload`). The Android app (`native/`) sets `document.wasDiscarded` when it reopens the page after Android stopped it, the page crashed or the folder changed.
+- **😴 Reloaded:** the start check restores by itself, with no card, when the page is the same tab reloaded (`document.wasDiscarded`, navigation type `reload`).
 - **Nothing overwrites a session before it's answered:** `WorkCopy.flush()` waits until the start check is done (`WorkCopy.ready`), and `pagehide` touches the copy only in a tab that wrote it (`WorkCopy.wrote`).
 - **Another SitkaTools tab on the device** (a home-screen shortcut can open a second one): the start check asks `sitka-alive?` on the channel and waits 400 ms. A tab that has written the copy answers `sitka-alive`.
   - With an answer, the new tab offers nothing and deletes nothing. Its card says "SitkaTools is already open in another tab", with only OK. It covers an open tool too: OK it first.
