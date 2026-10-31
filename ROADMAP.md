@@ -115,6 +115,7 @@ To do:
 
 - Load and save the Phase 1 files directly through Microsoft Graph, with version-tag conflict checks.
 - Needs IT to register the app. Still no server of ours.
+- **Building tablets:** planned in the Android app (`android/README.md`; user decision 2026-10-29). Phase A, the app shell, is built: tablets work as in Chrome without its tab troubles. Phase B reads and writes the SharePoint folder directly from the app (Graph, conflict-checked writes, per-building write rules). What to ask IT for is in `android/README.md` → "Asking IT".
 
 ---
 
@@ -127,4 +128,4 @@ To do:
 - Building devices run Chrome or Edge.
 - Staff log their own hours on the building tablet (DailyWizard).
 
-**Still open:** would IT consider an app registration in the company's Microsoft tenant? It matters only for Phase 3.
+**App registration:** the director can register the app in the company's Entra ID (2026-10-30), so the Android app's phase B (direct to SharePoint, user decision 2026-10-29) can go ahead. What to register is in `android/README.md` → "Asking IT".

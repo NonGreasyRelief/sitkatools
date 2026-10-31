@@ -9967,6 +9967,11 @@
                     showSyncToast(`${filename} was not saved — the share was cancelled. Tap its link again to save it.`);
                     return false;
                 });
+            } else if (/; wv\)/.test(navigator.userAgent)) {
+                // An app's built-in browser on Android (Teams, Outlook…) has no share sheet and drops downloads: the file
+                // would be lost while the save counted as done (user request 2026-10-29)
+                alert(`${filename} was not saved: this app's built-in browser can't save files. Open SitkaTools in Chrome (or the SitkaTools app) to save.`);
+                return Promise.resolve(false);
             } else {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -13796,7 +13801,8 @@
                 // waits on its card instead
                 const office = copy.split?.role === 'office';
                 const gate = () => !office || OfficeGate.ask(copy.db, 'Bringing back the office session needs office access: scan your badge, or pick your name and type your PIN.');
-                if ((document.wasDiscarded === true || nav?.type === 'reload') && await gate()) { restoreWorkCopy(copy); return; }
+                // 📱 The Android app bringing the page back after Android stopped it (window.sitkaNative.resumed) counts as a reload
+                if ((document.wasDiscarded === true || nav?.type === 'reload' || window.sitkaNative?.resumed === true) && await gate()) { restoreWorkCopy(copy); return; }
                 for (;;) {
                     const choice = await RestoreCard.ask(copy);
                     if (choice === 'restore') {
@@ -15564,6 +15570,10 @@
 
         // ---- Unsaved Changes Tracking ----
         let hasUnsavedChanges = false;
+        // 📱 For the Android app: may it reload the page now? (nothing unsaved, no tool open)
+        function sitkaPageState() {
+            return { unsaved: !!hasUnsavedChanges, tool: (typeof Tools !== 'undefined' && Tools.current) || null };
+        }
 
         function markUnsaved() {
             hasUnsavedChanges = true;
