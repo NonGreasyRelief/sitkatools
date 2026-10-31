@@ -9788,6 +9788,12 @@
                     mainEl.classList.remove('calendar-active');
                 }
 
+                // Opening the Lot Manager: its room dropdowns from the rooms as they are now
+                if (targetId === 'lot-management' && DB.data) {
+                    renderLotList();
+                    RoomManager.updateRoomDatalist();
+                    updateStatusBar();
+                }
                 // Refresh room + building lists when switching to Room Manager tab
                 if (targetId === 'room-management' && DB.data) {
                     RoomManager.renderRoomList();
@@ -10470,6 +10476,10 @@
         }
 
         // Re-render every view after DB.data is replaced
+        // Every view redrawn from the DB: a DB opening, a tool closing, the day rolling over — and every change to rooms,
+        // buildings or the rooms a lot is given (made, deleted, put in a building, assigned), so every list and dropdown
+        // that offers them (the lot form's and each lot's room dropdowns, each room's Building dropdown, each building's
+        // room picker, the calendar's filters and views) follows at once on every tab, with no reload (user bug 2026-10-30)
         function refreshAllViews() {
             DeviceView.apply();
             updateStatusBar();
@@ -15098,9 +15108,7 @@
             plantCountGroup.style.display = 'flex';
             lotDateInput.readOnly = false;
             delete lotDateInput.dataset.fromMove;
-            updateStatusBar();
-            renderLotList();
-            updateLotIdSuggestion();
+            refreshAllViews();   // its room's lot picker in the Room Manager, the lot move lists and the calendar too
         });
 
         // ---- Clear Form ----
@@ -15467,8 +15475,7 @@
                     if (confirm(`Are you sure you want to delete "${lotName}" (${lotId})?${nEv ? `\n\nIts ${nEv} scheduled task${nEv === 1 ? '' : 's'} go${nEv === 1 ? 'es' : ''} with it.` : ''}\n\nThis action cannot be undone.`)) {
                         // Everything that is only the lot's own goes with it: its events, schedule history, empty
                         // paperwork record and transfer records (and its place in every room's assignedLots)
-                        LotActions.removeLot(lotId);
-                        updateRoomStatusBar();
+                        LotActions.removeLot(lotId);   // redraws every view
                     }
                 });
             });
@@ -15493,7 +15500,7 @@
                     if (!lot || lotLocked(lotId)) { renderLotList(); return; }
                     lot.currentRoom = select.value || null;
                     markUnsaved();
-                    renderLotList();
+                    refreshAllViews();
                 });
             });
 
@@ -15563,7 +15570,7 @@
                         else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${rooms[targetId].name} — room flagged for reprojection`);
                     }
 
-                    renderLotList();
+                    refreshAllViews();   // the room's lots in the Room Manager follow too
                 });
             });
         }
@@ -16135,10 +16142,7 @@
 
                 $('roomForm').reset();
                 this.updateRoomIdSuggestion();
-                this.updateRoomDatalist();
-                this.renderRoomList();
-                updateRoomStatusBar();
-                BuildingManager.renderBuildingList();
+                refreshAllViews();   // every room dropdown offers it at once, each lot's in the Lot Manager too
             },
 
             renderRoomList() {
@@ -16459,8 +16463,7 @@
                         if (!room) return;
                         room.isFlowering = cb.checked;
                         markUnsaved();
-                        this.renderRoomList();
-                        updateRoomStatusBar();
+                        refreshAllViews();   // the launch windows' flower rooms
                     });
                 });
 
@@ -16512,13 +16515,11 @@
                         else {   // a building that isn't in the database any more: nothing to take it out of
                             room.buildingId = null;
                             markUnsaved();
-                            this.renderRoomList();
-                            BuildingManager.renderBuildingList();
+                            refreshAllViews();
                         }
                         // Refused (a lot locked to its grow log is in it): the dropdown shows where the room still is
                         const now = this.rooms[roomId]?.buildingId || '';
                         if (now !== to) sel.value = now;
-                        updateRoomStatusBar();
                     });
                 });
                 // Room designation select (per-room detail panel)
@@ -16529,8 +16530,7 @@
                         if (!room) return;
                         room.designation = sel.value || null;
                         markUnsaved();
-                        this.renderRoomList();
-                        updateRoomStatusBar();
+                        refreshAllViews();   // the Lot Manager's mother lots and 🍂 Dry/Trim, the 🌿 Mothers view
                     });
                 });
             },
@@ -16577,10 +16577,7 @@
                 });
                 delete DB.data.rooms[roomId];
                 markUnsaved();
-                this.renderRoomList();
-                updateRoomStatusBar();
-                this.updateRoomDatalist();
-                BuildingManager.renderBuildingList();
+                refreshAllViews();   // the lots that used it lose it from their dropdowns too
             },
 
             moveLot(lotId, fromRoomId, toRoomId) {
@@ -16611,7 +16608,7 @@
                     else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${toRoom.name} — room flagged for reprojection`);
                 }
 
-                this.renderRoomList();
+                refreshAllViews();   // the lot's flower room in the Lot Manager too
             },
 
             removeLotFromRoom(lotId, roomId) {
@@ -16626,7 +16623,7 @@
                 }
 
                 markUnsaved();
-                this.renderRoomList();
+                refreshAllViews();
             },
 
             assignLotToRoom(lotId, roomId) {
@@ -16658,7 +16655,7 @@
                     else if (res.removedEntry || res.deletedEvents > 0) showSyncToast(`🔮 TBA-01 removed for ${room.name} — room flagged for reprojection`);
                 }
 
-                this.renderRoomList();
+                refreshAllViews();
             }
         };
 
@@ -19730,9 +19727,7 @@
                 alert(`Building "${buildingName}" created successfully!\n\nID: ${buildingId}${monthlyPropertyCost != null ? `\n🏠 Property cost: ${fmtMonthly(monthlyPropertyCost)}` : ''}\nAssign rooms to it below, or pick it in the room form when creating a room.\nRemember to export the database to save.`);
 
                 $('buildingForm').reset();
-                this.renderBuildingList();
-                RoomManager.updateBuildingDatalist();
-                updateRoomStatusBar();
+                refreshAllViews();   // every Building dropdown offers it at once, each room's own too
             },
 
             renderBuildingList() {
@@ -20030,8 +20025,7 @@
                 room.buildingId = buildingId;
 
                 markUnsaved();
-                this.renderBuildingList();
-                RoomManager.renderRoomList();
+                refreshAllViews();
             },
 
             removeRoomFromBuilding(roomId, buildingId) {
@@ -20047,8 +20041,7 @@
                 }
 
                 markUnsaved();
-                this.renderBuildingList();
-                RoomManager.renderRoomList();
+                refreshAllViews();
             },
 
             deleteBuilding(buildingId) {
@@ -20063,10 +20056,7 @@
 
                 delete DB.data.buildings[buildingId];
                 markUnsaved();
-                this.renderBuildingList();
-                RoomManager.renderRoomList();
-                RoomManager.updateBuildingDatalist();
-                updateRoomStatusBar();
+                refreshAllViews();
             }
         };
 
