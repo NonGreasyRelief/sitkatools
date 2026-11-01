@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-01 · SitkaTools' calendar gets a ⏱ Man-hours toggle (Monthly and 7-Day): each day's estimated hours from its tasks' recipe labour estimates, real and projected, and the people that is in 8-hour days, in place of its tasks; equipment tasks show as having no estimate, and DailyWizard's daily chores aren't counted (they aren't on the calendar)
 - 2026-10-30 · the Android app's application id is `com.sitkalegends.sitkatools` (the company's domain, sitkalegends.com, reversed), settled before the director registers the app in Entra ID (the sign-in's redirect URI includes it)
 - 2026-10-30 · the full Android app (`android/`, phase A: the app shell) comes back to Development from the `android-app` branch: the director can register the app in the company's Entra ID, so phase B (the SharePoint folder through Microsoft Graph, from the app) can go ahead; the slim app stays shelved on `native-app`
 - 2026-10-30 · under the 🚀 launch windows chart, every weekly window for the next 12 months (52 weeks) is listed by month, taken (by a lot or a projected lot) or open, in place of the table of the open windows only
