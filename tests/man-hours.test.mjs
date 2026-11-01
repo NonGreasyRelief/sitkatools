@@ -60,7 +60,7 @@ export async function run(b, BASE) {
 
     await b.run(main, `document.getElementById('hoursModeBtn').click();`, { user: true });
     v = await b.run(main, READ);
-    check('clicked: pressed, it now says "📋 Show tasks", and the days show hours instead of tasks', v.btn.pressed === 'true' && v.btn.text === '📋 Show tasks' && v.today.tasks === 0 && v.trim.tasks === 0, JSON.stringify(v));
+    check('clicked: pressed, it now says "📅 Show tasks", and the days show hours instead of tasks', v.btn.pressed === 'true' && v.btn.text === '📅 Show tasks' && v.today.tasks === 0 && v.trim.tasks === 0, JSON.stringify(v));
     check('today: 1 h of L100\'s leaf pick + 3 h projected = "⏱ 4 h", "👥 0.5 people", "🔮 3 h projected", "⚠️ 2 tasks, no estimate" (the fan clean and L200\'s defoliation)',
         JSON.stringify(v.today.lines) === JSON.stringify(['⏱ 4 h', '👥 0.5 people', '🔮 3 h projected', '⚠️ 2 tasks, no estimate']), JSON.stringify(v.today.lines));
     check('the trim\'s first day: "⏱ 64 h", "👥 8 people", the busiest day shaded fullest', JSON.stringify(v.trim?.lines) === JSON.stringify(['⏱ 64 h', '👥 8 people']) && v.trim.load === '1.000',
@@ -72,7 +72,7 @@ export async function run(b, BASE) {
     check(`the line under the nav: "${monthName}: ${total} h" in eight-hour shifts, projected, busiest day, tasks with no estimate, and how it's worked out`,
         !!v.note && v.note.includes(`${monthName}: ${total} h of estimated work = ${Math.round(total / 8 * 10) / 10} eight-hour shifts`) && v.note.includes('🔮 3 h of it projected')
         && (trimDaysInMonth ? v.note.includes('64 h, 👥 8 people') : v.note.includes('4 h, 👥 0.5 people')) && /⚠️ \d+ tasks? with no estimate/.test(v.note) && v.note.includes('÷ an 8-hour day')
-        && v.note.includes('daily chores aren\'t on the calendar'), v.note);
+        && v.note.includes('daily tasks aren\'t counted: 📋 Daily tasks adds them'), v.note);
 
     // The day tooltip leads with the day's hours
     const tip = await b.run(main, `Calendar._showDayTooltip('${T}', 20, 20); const t = Calendar._getTooltipEl().textContent; Calendar._hideEventTooltip(); return t;`);
@@ -99,14 +99,27 @@ export async function run(b, BASE) {
         JSON.stringify(w.rows) === JSON.stringify({ leaf: '1 h', proj: '3 h', fans: 'no estimate', meeting: '', off: '', trim: '64 h' }), JSON.stringify(w.rows));
     check('…and the line totals these 7 days (4 + 3 × 64 = 196 h = 24.5 shifts)', !!w.note && w.note.includes('These 7 days: 196 h of estimated work = 24.5 eight-hour shifts'), w.note);
 
-    // ---- Annual, 🚀 and 🌿: no man-hours there ----
+    // ---- 🚀 and 🌿: no man-hours there ----
     const other = await b.run(main, `const out = {};
-        for (const id of ['viewYearBtn', 'viewLaunchBtn', 'viewMothersBtn']) { document.getElementById(id).click();
+        for (const id of ['viewLaunchBtn', 'viewMothersBtn']) { document.getElementById(id).click();
             out[id] = { btn: getComputedStyle(document.getElementById('hoursModeBtn')).display === 'none', note: document.getElementById('hoursNote').classList.contains('hidden') }; }
         return out;`, { user: true });
-    check('Annual, 🚀 Launch windows and 🌿 Mothers: the button and the line are hidden', Object.values(other).every(o => o.btn && o.note), JSON.stringify(other));
+    check('🚀 Launch windows and 🌿 Mothers: the button and the line are hidden', Object.values(other).every(o => o.btn && o.note), JSON.stringify(other));
 
-    // ---- Back to Monthly: still on for this session; 📋 Show tasks flips back ----
+    // ---- Annual: each day's hours, digits only, in place of the emoji (user request 2026-11-01) ----
+    const ann = await b.run(main, `document.getElementById('viewYearBtn').click(); Calendar.currentYear = ${Number(T.slice(0, 4))}; Calendar.render();
+        const cell = d => document.querySelector('#annualGrid .annual-day[data-date="' + d + '"]');
+        const shown = d => { const c = cell(d); return c ? { hours: c.querySelector('.annual-hours')?.textContent ?? null, dots: c.querySelectorAll('.annual-dot').length, badge: !!c.querySelector('.cluster-badge'),
+            text: c.textContent.replace(/\\s+/g, ' ').trim() } : null; };
+        const note = document.getElementById('hoursNote');
+        return { btn: getComputedStyle(document.getElementById('hoursModeBtn')).display !== 'none', today: shown('${T}'), trim: shown('${T1}'), empty: shown('${T.slice(0, 4)}-${T.slice(5, 7) === '01' ? '02' : '01'}-15'),
+            legend: document.getElementById('annualLegend').classList.contains('hidden'), note: note.classList.contains('hidden') ? null : note.textContent };`, { user: true });
+    check('Annual: the button stays; today shows just "4" and the trim day "64": digits, no emoji', ann.btn && ann.today?.hours === '4' && ann.today.dots === 0 && ann.trim?.hours === '64' && ann.trim.dots === 0,
+        JSON.stringify(ann));
+    check('…nothing else in the cell but its day number; a day with no hours shows no number', ann.today.text === `${Number(T.slice(8))} 4` && !ann.today.badge && ann.empty?.hours === null, JSON.stringify(ann));
+    check('…the emoji legend is put away, and the line totals the year', ann.legend && !!ann.note && ann.note.includes(`${T.slice(0, 4)}: `), JSON.stringify([ann.legend, ann.note?.slice(0, 120)]));
+
+    // ---- Back to Monthly: still on for this session; 📅 Show tasks flips back ----
     await b.run(main, `document.getElementById('viewMonthBtn').click();`, { user: true });
     v = await b.run(main, READ);
     check('back to Monthly: still man-hours', v.btn.pressed === 'true' && v.today.tasks === 0 && v.today.lines[0] === '⏱ 4 h', JSON.stringify(v.today));
@@ -116,7 +129,7 @@ export async function run(b, BASE) {
     await b.send('browsingContext.setViewport', { context: main, viewport: null });
     await b.run(main, `document.getElementById('hoursModeBtn').click();`, { user: true });
     v = await b.run(main, READ);
-    check('📋 Show tasks: the tasks are back, the line gone, the button says ⏱ Man-hours again', v.btn.pressed === 'false' && v.btn.text === '⏱ Man-hours' && v.today.tasks > 0 && v.today.lines.length === 0 && !v.note,
+    check('📅 Show tasks: the tasks are back, the line gone, the button says ⏱ Man-hours again', v.btn.pressed === 'false' && v.btn.text === '⏱ Man-hours' && v.today.tasks > 0 && v.today.lines.length === 0 && !v.note,
         JSON.stringify(v));
 
     await b.run(main, `clearUnsaved();`);

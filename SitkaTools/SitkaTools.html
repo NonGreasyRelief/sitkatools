@@ -1090,6 +1090,8 @@
         .week-count .wc-people { color: var(--accent); font-weight: 700; }
         .week-event .week-hours { margin-left: auto; padding-left: 8px; white-space: nowrap; font-size: 0.8rem; font-weight: 700; color: var(--accent); }
         .week-event .week-hours.none { font-weight: 400; color: var(--text-secondary); }
+        .week-event.week-chores { cursor: help; background: rgba(83, 216, 168, 0.08); border-left: 3px solid var(--accent); }
+        .week-event.week-chores:hover { transform: none; }
 
         /* Calendar tag filter bar (top-left of the calendar) */
         .calendar-filter-bar {
@@ -1835,6 +1837,9 @@
         }
 
         .annual-dot.projection { opacity: 0.55; }
+        /* ⏱ Man-hours: the day's hours, digits only */
+        .annual-hours { font-size: 0.7rem; line-height: 1; font-weight: 700; color: var(--accent); }
+        .hours-csv-popup { width: max-content; max-width: min(460px, calc(100vw - 32px)); }
 
         /* Cluster warning — too many events of one task type in a short window */
         .annual-day.clustered { box-shadow: inset 0 0 0 2px var(--danger); }
@@ -7838,7 +7843,16 @@
                     <input type="checkbox" id="showHolidaysToggle" checked>
                     <span>🏛️ Holidays</span>
                 </label>
-                <button type="button" class="hours-toggle" id="hoursModeBtn" aria-pressed="false" title="Show each day's estimated man-hours, and the people that is in 8-hour days, in place of its tasks (Monthly and 7-Day views). Click again to show the tasks.">⏱ Man-hours</button>
+                <button type="button" class="hours-toggle" id="hoursModeBtn" aria-pressed="false" title="Show each day's estimated man-hours, and the people that is in 8-hour days, in place of its tasks (Monthly, 7-Day and Annual views). Click again to show the tasks.">⏱ Man-hours</button>
+                <button type="button" class="hours-toggle hidden" id="hoursChoresBtn" aria-pressed="false" title="Add DailyWizard's daily tasks (each building's chores on their days) to the man-hours. A room's chores count only on days a lot is in the room.">📋 Daily tasks</button>
+                <!-- ⏱ The man-hours shown, as a CSV file: a link to click or right-click → Save Link As…, like 💾 Save DB's -->
+                <div class="export-wrapper hidden" id="hoursCsvWrap">
+                    <button type="button" class="hours-toggle" id="hoursCsvBtn" title="Export the man-hours shown (the month, 7 days or year, as the filters leave them) as a CSV file">CSV→</button>
+                    <div class="save-popup hours-csv-popup hidden" id="hoursCsvPopup">
+                        <a class="save-link" id="hoursCsvLink" href="#" download></a>
+                        <button type="button" class="save-close" id="hoursCsvClose" title="Close">✕</button>
+                    </div>
+                </div>
                 <div class="view-toggle-group" role="group" aria-label="Calendar view">
                     <button type="button" class="btn btn-secondary view-toggle-btn active" id="viewMonthBtn" title="Monthly grid view">📆 Monthly</button>
                     <button type="button" class="btn btn-secondary view-toggle-btn" id="viewWeekBtn" title="7-day stacked view">📅 7-Day</button>
@@ -10000,8 +10014,8 @@
         // ---- Helper: share or download a file (fixes iOS Safari blob URL issue) ----
         // Resolves true once the file was handed over: the share sheet completed, or (no share sheet) the download started.
         // A dismissed or failed share resolves false, so the save isn't counted as done (review A6).
-        function shareFile(blob, filename) {
-            const file = new File([blob], filename, { type: 'application/json' });
+        function shareFile(blob, filename, type = 'application/json') {
+            const file = new File([blob], filename, { type });
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 return navigator.share({ files: [file], title: filename }).then(() => true, () => {
                     showSyncToast(`${filename} was not saved — the share was cancelled. Tap its link again to save it.`);
@@ -15791,6 +15805,86 @@
             }
             return { hours, projected, people: hours / WORKDAY_HOURS, tasks, missing };
         }
+        // 📋 Daily tasks in the man-hours (user request 2026-11-01): DailyWizard's chores on their days (a weekday in `days`
+        // or a day of the month in `monthDays`), staff × minutes. A room chore counts only on a day a lot is in its room (in
+        // a Dry/Trim room, a 🍂 drying chore while one dries there, a ✂️ trimming chore while one is trimmed): today where the
+        // lots are now, as DailyWizard lists them, and on other days by the lots' schedules — `choreRoomStays`: a real lot in
+        // its cloning room from Cutting Clones, its veg room (else cloning room) from Planting, its flower or Mother room
+        // from Transplanting (else Planting) to its harvest or Retire Mothers, drying in its dry room from Harvest to the day
+        // before Trim, and in its trim room (else dry room) for the trim days; a projected lot in its own room from its
+        // Transplanting. A lot with no schedule stays where it is now. A chore ticked or with hours that day counts too.
+        // A chore whose room is gone counts as a whole-building chore, as DailyWizard shows it.
+        function choreRoomStays(data, events) {
+            const rooms = data?.rooms || {}, lots = data?.lots || {}, projected = data?._CropLabourWizard?.projectedLots || {};
+            const idOf = name => name ? (Object.keys(rooms).find(id => rooms[id]?.name === name) || null) : null;
+            const dayBefore = s => { const d = parseLocalDate(s); d.setDate(d.getDate() - 1); return localDate(d); };
+            const byLot = new Map();
+            for (const ev of events || []) {
+                if (!ev?.lotId || 'copyOf' in ev || !/^\d{4}-\d{2}-\d{2}$/.test(ev.date || '')) continue;
+                if (ev.sourceTool !== 'CropLabourWizard' && ev.sourceTool !== 'CropProjection') continue;
+                const key = ev.sourceTool + '|' + ev.lotId;
+                (byLot.get(key) || byLot.set(key, []).get(key)).push(ev);
+            }
+            const stays = new Map(), scheduled = new Set();
+            const add = (roomId, from, to, kind, lotId) => {
+                if (!roomId || !rooms[roomId] || !from || !to || to < from) return;
+                (stays.get(roomId) || stays.set(roomId, []).get(roomId)).push({ from, to, kind, lotId });
+                scheduled.add(lotId);
+            };
+            const end = e => e.endDate && e.endDate > e.date ? e.endDate : e.date;
+            for (const [key, evs] of byLot) {
+                const isProjected = key.startsWith('CropProjection|'), lotId = key.slice(key.indexOf('|') + 1);
+                const lot = isProjected ? null : lots[lotId], p = isProjected ? projected[lotId] : null;
+                if (isProjected ? !p : (!lot || lot.closedDate)) continue;
+                const first = tt => evs.filter(e => e.taskType === tt).map(e => e.date).sort()[0] || null;
+                const last = tt => evs.filter(e => e.taskType === tt).map(end).sort().pop() || null;
+                const firstDay = evs.map(e => e.date).sort()[0], lastDay = evs.map(end).sort().pop();
+                const cut = first('clone_cut_prep'), plant = first('planting'), trans = first('transplant');
+                const harvest = first('harvest'), trim = first('trim');
+                const moveIn = trans || plant || firstDay, leave = last('harvest') || last('retire') || lastDay;
+                if (isProjected) { add(p.roomId, trans || plant || firstDay, leave, null, lotId); continue; }
+                const flower = idOf(lot.destRoom) || Object.keys(rooms).find(id => (rooms[id]?.assignedLots || []).includes(lotId)) || null;
+                const clone = idOf(lot.cloningRoom), veg = idOf(lot.vegRoom) || clone, dry = idOf(lot.dryRoom), trimRoom = idOf(lot.trimRoom) || dry;
+                if (cut && (plant || trans)) add(clone, cut, dayBefore(plant || trans), null, lotId);
+                if (plant && trans) add(veg, plant, dayBefore(trans), null, lotId);
+                add(flower, moveIn, leave, null, lotId);
+                if (harvest) add(dry, harvest, trim ? dayBefore(trim) : lastDay, 'drying', lotId);
+                if (trim) add(trimRoom, trim, last('trim'), 'trimming', lotId);
+            }
+            return { stays, scheduled };
+        }
+        // A lot in the room that day (`stage`: 'drying' | 'trimming', or any): by the schedules, else where the lots are now —
+        // today for every lot, other days for a lot with no schedule. `trimming(lotId)`: its ✂️ trim log has started.
+        function choreRoomHoldsLot(data, places, roomId, dateStr, today, stage = null, trimming = () => false) {
+            if ((places.stays.get(roomId) || []).some(st => st.from <= dateStr && dateStr <= st.to && (!stage || st.kind === stage))) return true;
+            const norm = v => String(v || '').trim().toLowerCase(), name = norm(data?.rooms?.[roomId]?.name);
+            return !!name && Object.entries(data?.lots || {}).some(([id, l]) => l && !l.closedDate && norm(l.currentRoom) === name
+                && (dateStr === today || !places.scheduled.has(id)) && (!stage || (trimming(id) ? 'trimming' : 'drying') === stage));
+        }
+        // The day's daily tasks, building by building: [{ bid, task, room, hours }] and their hours. `buildingOk(bid)` and
+        // `roomOk(roomId | null)` narrow them (the filters, a building device); a chore with no minutes has no estimate.
+        function dailyChoreHours(data, dateStr, { places, today, buildingOk = () => true, roomOk = null, trimming } = {}) {
+            const rooms = data?.rooms || {}, d = parseLocalDate(dateStr), out = { hours: 0, chores: [], missing: 0 };
+            for (const [bid, b] of Object.entries(data?._DailyWizard?.buildings || {})) {
+                if (!data?.buildings?.[bid] || !buildingOk(bid)) continue;
+                for (const t of b?.tasks || []) {
+                    if (!t || !((t.days || []).includes(d.getDay()) || (t.monthDays || []).includes(d.getDate()))) continue;
+                    const room = t.roomId && rooms[t.roomId]?.buildingId === bid ? t.roomId : null;   // a room that's gone: whole building
+                    if (roomOk && !roomOk(room)) continue;
+                    if (room) {
+                        const stage = rooms[room].designation === 'Dry/Trim' && ['drying', 'trimming'].includes(t.dryTrim) ? t.dryTrim : null;
+                        const done = !!b.checks?.[dateStr]?.[t.code] || (b.labour?.[dateStr]?.[t.code] || []).length > 0;
+                        if (!done && !choreRoomHoldsLot(data, places, room, dateStr, today, stage, trimming)) continue;
+                    }
+                    const minutes = Number(t.minutes);
+                    if (!(minutes > 0)) { out.missing++; continue; }
+                    const hours = (Number.isInteger(t.staff) && t.staff >= 1 ? t.staff : 1) * minutes / 60;
+                    out.hours += hours;
+                    out.chores.push({ bid, task: t, room, hours });
+                }
+            }
+            return out;
+        }
         // 38.5 → "38.5", 6 → "6"; people: "4.8 people", "1 person"
         const fmtHours = h => String(Math.round(h * 10) / 10);
         const fmtPeople = p => { const r = Math.round(p * 10) / 10; return `${r} ${r === 1 ? 'person' : 'people'}`; };
@@ -16839,7 +16933,8 @@
             selectedDate: null,
             selectedEvent: null,
             showHolidays: true,
-            hoursMode: false,   // ⏱ Man-hours in place of tasks (Monthly and 7-Day; this page session only)
+            hoursMode: false,   // ⏱ Man-hours in place of tasks (Monthly, 7-Day and Annual; this page session only)
+            hoursChores: false, // 📋 …with DailyWizard's daily tasks added
 
             // ---- View mode: 'month' | 'week' (7-day stacked) | 'year' (12-month annual) | 'launch' (🚀 launch windows) ----
             viewMode: 'month',
@@ -16917,6 +17012,16 @@
                     this.hoursMode = !this.hoursMode;
                     this.render();
                 });
+                // 📋 Daily tasks: DailyWizard's chores added to the man-hours (user request 2026-11-01)
+                $('hoursChoresBtn').addEventListener('click', () => {
+                    this.hoursChores = !this.hoursChores;
+                    this.render();
+                });
+                // CSV→: the man-hours shown as a file, offered with the right-click Save Link As… link (user request 2026-11-01)
+                $('hoursCsvBtn').addEventListener('click', (e) => { e.stopPropagation(); this.exportHoursCsv(); });
+                $('hoursCsvClose').addEventListener('click', (e) => { e.stopPropagation(); this._closeHoursCsv(); });
+                $('hoursCsvPopup').addEventListener('click', (e) => e.stopPropagation());   // its link: the click mustn't close it first
+                document.addEventListener('click', () => this._closeHoursCsv());
 
                 // Tag filter bar — "＋ Add filter" dropdown, tag chips, clear all
                 const addFilterBtn = $('addFilterBtn');
@@ -17167,9 +17272,11 @@
                 });
 
                 let html = `<div class="tt-day-header">📅 ${escapeHtml(dateStr)} — ${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}</div>`;
-                if (this.hoursMode && this.viewMode === 'month') {
-                    const m = manHours(dayEvents);
-                    if (m.tasks) html += `<div class="tt-row">⏱ ${fmtHours(m.hours)} h of estimated work ≈ 👥 ${fmtPeople(m.people)} in ${WORKDAY_HOURS}-hour days${m.projected > 0 ? ` (${fmtHours(m.projected)} h projected)` : ''}${m.missing.length ? ` · ⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'} with no estimate` : ''}</div>`;
+                if (this.hoursMode && (this.viewMode === 'month' || this.viewMode === 'year')) {
+                    const m = this._dayHours(dateStr);
+                    const of = [m.chores?.hours > 0 ? `📋 ${fmtHours(m.chores.hours)} h daily tasks` : '', m.projected > 0 ? `${fmtHours(m.projected)} h projected` : ''].filter(Boolean);
+                    if (m.tasks || m.chores?.chores.length) html += `<div class="tt-row">⏱ ${fmtHours(m.hours)} h of estimated work ≈ 👥 ${fmtPeople(m.people)} in ${WORKDAY_HOURS}-hour days${of.length ? ` (${of.join(', ')})` : ''}${m.missing.length ? ` · ⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'} with no estimate` : ''}</div>`;
+                    if (m.chores?.chores.length) html += `<div class="tt-row">📋 ${m.chores.chores.map(c => `${escapeHtml(c.task.emoji || '')} ${escapeHtml(c.task.name || c.task.code)} ${fmtHours(c.hours)} h`).join(' · ')}</div>`;
                 }
 
                 // Holiday + cluster context (previously shown in the native title)
@@ -17399,7 +17506,7 @@
                     }
                 }
                 legend.innerHTML = legendHtml;
-
+                legend.classList.toggle('hidden', this.hoursMode);   // ⏱ Man-hours: no emoji to explain
                 // ---- 12 mini-months ----
                 let html = '';
                 for (let m = 0; m < 12; m++) {
@@ -17433,6 +17540,10 @@
                     html += `</div></div>`;
                 }
                 grid.innerHTML = html;
+                if (this.hoursMode) {
+                    const { days, span } = this._hoursRange();
+                    this._renderHoursNote(days, span);
+                }
 
                 // Click a day to jump into the 7-day view with that day as the first day
                 grid.querySelectorAll('.annual-month').forEach((monthEl, m) => {
@@ -17689,12 +17800,24 @@
                         ${isToday ? '<span class="week-today-badge">Today</span>' : ''}
                         ${holiday ? `<span class="week-holiday">🏛️ ${escapeHtml(holiday.name)}</span>` : ''}
                         ${this.hoursMode ? (() => {
-                            const m = manHours(dayEvents);
+                            const m = this._dayHours(dateStr);
                             return `<span class="week-count">${m.hours > 0 ? `<span class="wc-hours">⏱ ${fmtHours(m.hours)} h</span> · <span class="wc-people">👥 ${fmtPeople(m.people)}</span> · ` : ''}${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>`;
                         })() : `<span class="week-count">${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>`}
                     </div>`;
 
-                    if (dayEvents.length === 0) {
+                    // 📋 Daily tasks (with ⏱ Man-hours): one row per building, its chores in the tooltip
+                    let choreRows = '';
+                    if (this.hoursMode && this.hoursChores) {
+                        const byB = new Map();
+                        for (const c of this._choresOn(dateStr).chores) (byB.get(c.bid) || byB.set(c.bid, []).get(c.bid)).push(c);
+                        for (const [bid, list] of byB) {
+                            const h = list.reduce((t, c) => t + c.hours, 0);
+                            const tip = list.map(c => `${c.task.emoji || '📋'} ${c.task.name || c.task.code} — 👥 ${Number.isInteger(c.task.staff) && c.task.staff >= 1 ? c.task.staff : 1} × ${c.task.minutes}m = ${fmtHours(c.hours)} h`).join('\n');
+                            choreRows += `<div class="week-event week-chores" title="${escapeHtml(tip)}"><span class="week-title">📋 Daily tasks · ${escapeHtml(DB.data?.buildings?.[bid]?.name || bid)} — ${list.length} task${list.length === 1 ? '' : 's'}</span><span class="week-hours">${fmtHours(h)} h</span></div>`;
+                        }
+                    }
+
+                    if (dayEvents.length === 0 && !choreRows) {
                         html += `<div class="week-day-body"><div class="week-empty">No tasks scheduled</div></div>`;
                     } else {
                         html += '<div class="week-day-body">';
@@ -17733,7 +17856,7 @@
                             }
                             html += `<div class="${cssClass}" data-event-id="${escapeHtml(event.id || '')}"><span class="week-title">${escapeHtml(displayText)}</span>${hoursTag}</div>`;
                         });
-                        html += '</div>';
+                        html += choreRows + '</div>';
                     }
                     html += '</div>';
                 }
@@ -17748,7 +17871,7 @@
                 });
 
                 // Click an event → select it (opens the detail panel)
-                view.querySelectorAll('.week-event').forEach(el => {
+                view.querySelectorAll('.week-event:not(.week-chores)').forEach(el => {
                     el.addEventListener('click', () => {
                         const ev = this.eventById(el.dataset.eventId);
                         if (ev) this.selectEvent(ev);
@@ -17759,9 +17882,8 @@
                 });
 
                 if (this.hoursMode) {
-                    const days = [];
-                    for (let i = 0; i < 7; i++) { const d = new Date(anchor); d.setDate(d.getDate() + i); days.push(localDate(d)); }
-                    this._renderHoursNote(days, 'These 7 days');
+                    const { days, span } = this._hoursRange();
+                    this._renderHoursNote(days, span);
                 }
             },
 
@@ -18129,6 +18251,19 @@
                             const isProjection = dayEvents.some(e => this._eventEmoji(e) === emoji && e.sourceTool === 'CropProjection');
                             return `<span class="annual-dot${isProjection ? ' projection' : ''}" title="${n} event${n !== 1 ? 's' : ''}">${emoji}</span>`;
                         }).join('') + '</div>';
+                }
+
+                // ⏱ Man-hours: just the day's hours, digits only (user request 2026-11-01)
+                if (this.hoursMode) {
+                    const h = this._dayHours(dateStr).hours;
+                    const digits = h <= 0 ? '' : String(h >= 10 ? Math.round(h) : Math.round(h * 10) / 10);
+                    const cls = ['annual-day'];
+                    if (dateStr === todayStr) cls.push('today');
+                    if (holiday) cls.push('has-holiday');
+                    return `<div class="${cls.join(' ')}" data-date="${dateStr}">
+                    <span class="annual-day-num">${day}</span>
+                    ${digits ? `<span class="annual-hours">${digits}</span>` : ''}
+                </div>`;
                 }
 
                 const classes = ['annual-day'];
@@ -18607,6 +18742,8 @@
                 this._cutMismatch = null; // and the clone-cut warnings (the DB may have changed)
 
                 this._byDay = null;   // the visible events by day, built once for this render (review E14)
+                this._chorePlaces = null; this._choreDays = null;   // 📋 daily tasks' rooms and days, likewise
+                this._closeHoursCsv();   // a CSV offered for what was shown before
                 this.updateTitle();
                 this.renderFilterTags();
                 if (this.viewMode === 'year') {
@@ -18650,20 +18787,26 @@
                 }
                 // 🖨️ Print year is offered only in the Annual view (user decision 2026-10-25)
                 $('printYearBtn')?.classList.toggle('hidden', this.viewMode !== 'year');
-                // ⏱ Man-hours only in the views with days of tasks: Monthly and 7-Day
-                const hoursView = this.viewMode === 'month' || this.viewMode === 'week';
-                const hb = $('hoursModeBtn');
+                // ⏱ Man-hours only in the views with days of tasks: Monthly, 7-Day and Annual; 📋 Daily tasks while it's on
+                const hoursView = this.viewMode === 'month' || this.viewMode === 'week' || this.viewMode === 'year';
+                const hb = $('hoursModeBtn'), cb = $('hoursChoresBtn');
                 if (hb) {
                     hb.classList.toggle('hidden', !hoursView);
                     hb.setAttribute('aria-pressed', String(this.hoursMode));
-                    hb.textContent = this.hoursMode ? '📋 Show tasks' : '⏱ Man-hours';
+                    hb.textContent = this.hoursMode ? '📅 Show tasks' : '⏱ Man-hours';
                 }
+                if (cb) {
+                    cb.classList.toggle('hidden', !hoursView || !this.hoursMode);
+                    cb.setAttribute('aria-pressed', String(this.hoursChores));
+                }
+                $('hoursCsvWrap')?.classList.toggle('hidden', !hoursView || !this.hoursMode);
                 if (!hoursView || !this.hoursMode) $('hoursNote')?.classList.add('hidden');
             },
 
             renderGrid() {
                 const grid = $('calendarGrid');
                 this._byDay = null;   // re-indexed from the events as they are now (a drag may have moved one)
+                this._chorePlaces = null; this._choreDays = null;
                 // Coming back from another view — restore the month grid, hide the others
                 if (grid.closest('.calendar-grid-wrapper')) {
                     grid.closest('.calendar-grid-wrapper').classList.remove('hidden');
@@ -18718,33 +18861,134 @@
                     const cells = [...grid.querySelectorAll('.calendar-day.hours-day')];
                     const max = Math.max(0, ...cells.map(c => Number(c.dataset.hours) || 0));
                     for (const c of cells) c.style.setProperty('--load', max ? ((Number(c.dataset.hours) || 0) / max).toFixed(3) : '0');
-                    const days = [];
-                    for (let d = 1; d <= daysInMonth; d++) days.push(`${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
-                    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-                    this._renderHoursNote(days, `${months[this.currentMonth]} ${this.currentYear}`);
+                    const { days, span } = this._hoursRange();
+                    this._renderHoursNote(days, span);
                 }
             },
 
-            // ⏱ Man-hours: the total for the days shown (the month, or the 7 days), the busiest day, the tasks with no
-            // estimate, and how the figures are made
+            // 📋 The day's daily tasks, as the filters and the building view leave them: the filters other than building
+            // and room hide them (a chore has no lot, strain or task type), as they hide any event without that value
+            _choresOn(dateStr) {
+                if (!this._choreDays) this._choreDays = new Map();
+                if (this._choreDays.has(dateStr)) return this._choreDays.get(dateStr);
+                const data = DB.data, empty = { hours: 0, chores: [], missing: 0 };
+                let out = empty;
+                const active = this._activeFilterKeys();
+                if (data && ![...active.keys()].some(k => k !== 'building' && k !== 'room')) {
+                    if (!this._chorePlaces) this._chorePlaces = choreRoomStays(data, data.calendarEvents || []);
+                    const label = (id, rec) => rec?.name ? `${rec.name} (${id})` : id;
+                    out = dailyChoreHours(data, dateStr, {
+                        places: this._chorePlaces, today: localDate(), trimming: lotTrimming,
+                        buildingOk: bid => (!DeviceView.building || bid === DeviceView.building)
+                            && (!active.has('building') || active.get('building').has(label(bid, data.buildings?.[bid]))),
+                        roomOk: active.has('room') ? (rid => !!rid && active.get('room').has(label(rid, data.rooms?.[rid]))) : null
+                    });
+                }
+                this._choreDays.set(dateStr, out);
+                return out;
+            },
+
+            // ⏱ A day's man-hours: its tasks' (manHours), plus its daily tasks while 📋 Daily tasks is on
+            _dayHours(dateStr) {
+                const m = manHours(this._eventsOnDay(dateStr));
+                const chores = this.hoursChores ? this._choresOn(dateStr) : null;
+                const hours = m.hours + (chores?.hours || 0);
+                return { ...m, hours, people: hours / WORKDAY_HOURS, taskHours: m.hours, chores };
+            },
+
+            // ⏱ The days the man-hours cover: the month, the 7 days or the year shown; `span` names them, `file` too
+            _hoursRange() {
+                const days = [], each = (from, keep) => { for (const d = parseLocalDate(from); keep(d); d.setDate(d.getDate() + 1)) days.push(localDate(d)); };
+                if (this.viewMode === 'week') {
+                    const a = parseLocalDate(this.weekAnchorDate || localDate()), stop = new Date(a); stop.setDate(stop.getDate() + 7);
+                    each(localDate(a), d => d < stop);
+                    return { days, span: 'These 7 days', file: `${days[0]}-to-${days[6]}` };
+                }
+                const y = this.currentYear, m = this.currentMonth;
+                if (this.viewMode === 'year') { each(`${y}-01-01`, d => d.getFullYear() === y); return { days, span: String(y), file: String(y) }; }
+                each(`${y}-${String(m + 1).padStart(2, '0')}-01`, d => d.getMonth() === m);
+                const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                return { days, span: `${months[m]} ${y}`, file: `${y}-${String(m + 1).padStart(2, '0')}` };
+            },
+
+            // CSV→ (user request 2026-11-01): a row a day for the days shown, as the man-hours show them (the filters, the
+            // building view, 📋 Daily tasks), and a Total row; offered as a link to click or right-click → Save Link As…
+            hoursCsv() {
+                const { days, file } = this._hoursRange(), chores = this.hoursChores;
+                const r2 = n => String(Math.round(n * 100) / 100);
+                const cell = v => /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+                const rows = [['Date', 'Day', 'Task hours', 'Projected hours', 'Tasks', 'Tasks with no estimate',
+                    ...(chores ? ['Daily task hours', 'Daily tasks'] : []), 'Total hours', `People (${WORKDAY_HOURS}-hour day)`]];
+                const tasks = new Set(), missing = new Set(), sum = { task: 0, proj: 0, chores: 0, choreN: 0, total: 0 };
+                for (const d of days) {
+                    const m = this._dayHours(d), evs = this._eventsOnDay(d).filter(isWorkTask);
+                    evs.forEach(ev => tasks.add(ev));
+                    m.missing.forEach(ev => missing.add(ev));
+                    const ch = m.chores || { hours: 0, chores: [] };
+                    sum.task += m.taskHours; sum.proj += m.projected; sum.chores += ch.hours; sum.choreN += ch.chores.length; sum.total += m.hours;
+                    rows.push([d, parseLocalDate(d).toLocaleDateString('en-US', { weekday: 'short' }), r2(m.taskHours), r2(m.projected), String(evs.length), String(m.missing.length),
+                        ...(chores ? [r2(ch.hours), String(ch.chores.length)] : []), r2(m.hours), r2(m.people)]);
+                }
+                rows.push(['Total', '', r2(sum.task), r2(sum.proj), String(tasks.size), String(missing.size),
+                    ...(chores ? [r2(sum.chores), String(sum.choreN)] : []), r2(sum.total), r2(sum.total / WORKDAY_HOURS)]);
+                return { csv: rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n', filename: `ManHours-${file}${chores ? '-with-daily-tasks' : ''}.csv` };
+            },
+
+            exportHoursCsv() {
+                const { csv, filename } = this.hoursCsv();
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                if (this._hoursCsvUrl) revokeBlobUrlsSoon([this._hoursCsvUrl]);
+                this._hoursCsvUrl = URL.createObjectURL(blob);
+                const link = $('hoursCsvLink');
+                if (window.matchMedia('(pointer: coarse)').matches) {
+                    // A tablet: tap to share or save, as 💾 Save DB's link does
+                    link.href = '#';
+                    link.removeAttribute('download');
+                    link.textContent = `📄 ${filename} — Tap to save`;
+                    link.onclick = (e) => { e.preventDefault(); shareFile(blob, filename, 'text/csv'); };
+                } else {
+                    link.href = this._hoursCsvUrl;
+                    link.download = filename;
+                    link.textContent = `📄 ${filename} — Right-click → Save Link As…`;
+                    link.onclick = null;
+                }
+                // Under the button, opening leftward (as 💾 Save DB's); where that would leave the screen, rightward
+                const pop = $('hoursCsvPopup');
+                pop.style.left = pop.style.right = '';
+                pop.classList.remove('hidden');
+                if (pop.getBoundingClientRect().left < 8) { pop.style.right = 'auto'; pop.style.left = '0'; }
+            },
+
+            _closeHoursCsv() {
+                $('hoursCsvPopup')?.classList.add('hidden');
+                if (this._hoursCsvUrl) { revokeBlobUrlsSoon([this._hoursCsvUrl]); this._hoursCsvUrl = null; }
+            },
+
+            // ⏱ Man-hours: the total for the days shown (the month, the 7 days or the year), the busiest day, the tasks
+            // with no estimate, and how the figures are made
             _renderHoursNote(days, span) {
                 const note = $('hoursNote');
                 if (!note) return;
-                let total = 0, projected = 0, busiest = null;
+                let total = 0, projected = 0, chores = 0, busiest = null;
                 const missing = new Set();
                 for (const d of days) {
-                    const m = manHours(this._eventsOnDay(d));
+                    const m = this._dayHours(d);
                     total += m.hours;
                     projected += m.projected;
+                    chores += m.chores?.hours || 0;
                     m.missing.forEach(ev => missing.add(ev));
                     if (m.hours > 0 && (!busiest || m.hours > busiest.hours)) busiest = { date: d, hours: m.hours, people: m.people };
                 }
                 const day = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
                 const parts = [`⏱ <b>${escapeHtml(span)}: ${fmtHours(total)} h</b> of estimated work = ${fmtHours(total / WORKDAY_HOURS)} eight-hour shifts`];
+                if (this.hoursChores) parts.push(`📋 ${fmtHours(chores)} h of it daily tasks`);
                 if (projected > 0) parts.push(`🔮 ${fmtHours(projected)} h of it projected`);
                 if (busiest) parts.push(`busiest ${escapeHtml(day(busiest.date))}: ${fmtHours(busiest.hours)} h, 👥 ${fmtPeople(busiest.people)}`);
                 if (missing.size) parts.push(`<span class="warn">⚠️ ${missing.size} task${missing.size === 1 ? '' : 's'} with no estimate</span>`);
-                note.innerHTML = `${parts.join(' · ')}<span class="hn-how">From each task's labour estimate in its recipe (people × minutes a day), real and projected, as the filters leave them. People = hours ÷ an ${WORKDAY_HOURS}-hour day. Equipment tasks have no estimate; DailyWizard's daily chores aren't on the calendar, so they aren't counted.</span>`;
+                const how = this.hoursChores
+                    ? `📋 Daily tasks: each building's DailyWizard chores on their days (staff × minutes); a room's chores only on days a lot is in the room — today where the lots are now, other days by their schedules (a lot with no schedule stays where it is).`
+                    : `DailyWizard's daily tasks aren't counted: 📋 Daily tasks adds them.`;
+                note.innerHTML = `${parts.join(' · ')}<span class="hn-how">From each task's labour estimate in its recipe (people × minutes a day), real and projected, as the filters leave them. People = hours ÷ an ${WORKDAY_HOURS}-hour day. Equipment tasks have no estimate. ${how}</span>`;
                 note.classList.remove('hidden');
             },
 
@@ -18783,13 +19027,14 @@
                 const dayEvents = this._eventsOnDay(dateStr);
                 if (this.hoursMode) {
                     // ⏱ The day's estimated man-hours and people in place of its tasks
-                    const m = manHours(dayEvents);
+                    const m = this._dayHours(dateStr);
                     cell.classList.add('hours-day');
                     cell.dataset.hours = String(m.hours);
-                    if (m.tasks) {
+                    if (m.tasks || m.chores?.chores.length) {
                         const lines = [];
                         if (m.hours > 0) {
                             lines.push(`<div class="dh-hours">⏱ ${fmtHours(m.hours)} h</div>`, `<div class="dh-people">👥 ${fmtPeople(m.people)}</div>`);
+                            if (m.chores?.hours > 0) lines.push(`<div class="dh-note">📋 ${fmtHours(m.chores.hours)} h daily tasks</div>`);
                             if (m.projected > 0) lines.push(`<div class="dh-note">🔮 ${fmtHours(m.projected)} h projected</div>`);
                         }
                         if (m.missing.length) lines.push(`<div class="dh-warn">⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'}, no estimate</div>`);
