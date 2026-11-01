@@ -1,6 +1,6 @@
 // 🌿 Mothers from clones (user request 2026-10-30): every flowering lot keeps extra plants back at its Transplanting, and
 // they become mothers. With a 🌿 mother recipe picked beside Project Crop, each lot of a flowering room's chain gets its
-// projected mothers, {room}-TBAMOM-NN (00 = the room's newest real lot's, 01…05 = its TBA lots'), in the Mother room, moved
+// projected mothers, {room}-TBAMOM-NN (00 = the room's newest real lot's, 01…10 = its TBA lots'), in the Mother room, moved
 // there on that lot's transplant day, with no tasks of their own before it. Reproject, Generate and Clear keep them in step;
 // a real mother lot made from a lot takes its projection's place in SitkaTools. The mother recipe's 🌿 Mature from.
 import { today, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
@@ -8,6 +8,9 @@ import { motherDb, addDaysIso } from './mothers.test.mjs';
 
 export const title = 'mothers from clones: 🌿 TBAMOM lots projected from each flower lot\'s transplant, and 🌿 Mature from';
 
+// The chain's 10 lots (user request 2026-11-01) and their mothers, 00 = the real lot's
+const TBA = i => `R1G1-TBA-${String(i).padStart(2, '0')}`;
+const MOMS = Array.from({ length: 11 }, (_, i) => `R1G1-TBAMOM-${String(i).padStart(2, '0')}`);
 const daysBetween = (a, b) => { const p = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); }; return Math.round((p(b) - p(a)) / 86400000); };
 
 // A real lot's schedule as the default built-in writes it, from its clone-cut day
@@ -70,8 +73,8 @@ export async function run(b, BASE) {
     await pick('L500');
     let alerted = await project('sitka-mother');
     let M = await mothers();
-    check('Project Crop gives the real lot and each TBA lot its mothers: R1G1-TBAMOM-00…05', !alerted && M.map(x => x.id).join() === [0, 1, 2, 3, 4, 5].map(i => `R1G1-TBAMOM-0${i}`).join(), (alerted || '') + JSON.stringify(M.map(x => x.id)));
-    check('…00 from the real lot L500, 01…05 from R1G1-TBA-01…05, all with the built-in mother recipe', M[0]?.src === 'L500' && M.slice(1).every((x, i) => x.src === `R1G1-TBA-0${i + 1}`) && M.every(x => x.srcRoom === 'R1G1' && x.recipe === 'sitka-mother'), JSON.stringify(M.map(x => [x.src, x.recipe])));
+    check('Project Crop gives the real lot and each TBA lot its mothers: R1G1-TBAMOM-00…10', !alerted && M.map(x => x.id).join() === MOMS.join(), (alerted || '') + JSON.stringify(M.map(x => x.id)));
+    check('…00 from the real lot L500, 01…10 from R1G1-TBA-01…10, all with the built-in mother recipe', M[0]?.src === 'L500' && M.slice(1).every((x, i) => x.src === TBA(i + 1)) && M.every(x => x.srcRoom === 'R1G1' && x.recipe === 'sitka-mother'), JSON.stringify(M.map(x => [x.src, x.recipe])));
     check('…in Mother 1 (the Mother room in Grow 1\'s building), events and all', M.every(x => x.room === 'R1MO' && x.evRooms.join() === 'R1MO'), JSON.stringify(M.map(x => [x.room, x.evRooms])));
     check('…each one moves to the Mother room on its flower lot\'s transplant day', M.every(x => x.tp && x.tp === x.srcTp), JSON.stringify(M.map(x => [x.id, x.tp, x.srcTp])));
     check('…with no Cutting Clones, Planting or Clean Clone Room of its own (they\'re the flower lot\'s clones until then)',
@@ -83,7 +86,7 @@ export async function run(b, BASE) {
     const room2 = await b.run(clw, `return motherRoomFor('R2G1');`);
     check('Grow A (Building 2, no Mother room of its own) would use the facility\'s first Mother room, Mother 1', room2 === 'R1MO', room2);
     const status = await b.run(clw, `return statusLine();`);
-    check('the opening toast counts them apart from the TBA lots', status.includes('🔮 6 projected') && status.includes('🌿 6 mothers from clones'), status);
+    check('the opening toast counts them apart from the TBA lots', status.includes('🔮 11 projected') && status.includes('🌿 11 mothers from clones'), status);
 
     // Re-running keeps the same events
     const idsBefore = M.map(x => x.ids.join());
@@ -95,7 +98,7 @@ export async function run(b, BASE) {
     const opts = await b.run(clw, `return [...document.getElementById('activeLot').options].map(o => [o.value, o.textContent]);`);
     const at = id => opts.findIndex(o => o[0] === id);
     check('the Active Lot list shows them under Grow 1, after its TBA lots: "🔮🌿 R1G1-TBAMOM-03 → Mother 1"',
-        opts[at('R1G1-TBAMOM-03')]?.[1] === '🔮🌿 R1G1-TBAMOM-03 → Mother 1' && at('R1G1-TBAMOM-00') > at('R1G1-TBA-05') && at('R1G1-TBA-05') > at('L500'), JSON.stringify(opts));
+        opts[at('R1G1-TBAMOM-03')]?.[1] === '🔮🌿 R1G1-TBAMOM-03 → Mother 1' && at('R1G1-TBAMOM-00') > at('R1G1-TBA-10') && at('R1G1-TBA-10') > at('L500'), JSON.stringify(opts));
     await pick('R1G1-TBA-02');
     check('the dropdown follows the room: a Grow 1 lot shows its mothers\' recipe', (await mom()).value === 'sitka-mother');
     await pick('L200');
@@ -126,7 +129,7 @@ export async function run(b, BASE) {
     await b.run(clw, `clearAllProjectionsForRoom('R1MO');`);
     let left = await b.run(clw, `return { own: !!getProjectedLots()['R1MO-TBA-01'], ownEv: DB.data.calendarEvents.some(e => e.lotId === 'R1MO-TBA-01'), moms: Object.keys(getProjectedLots()).filter(id => id.includes('TBAMOM')).length,
         momEv: DB.data.calendarEvents.filter(e => e.sourceTool === 'CropProjection' && e.lotId.includes('TBAMOM')).length };`);
-    check('Clear Projections in Mother 1 clears its own chain and leaves the mothers from clones living there', !left.own && !left.ownEv && left.moms === 6 && left.momEv > 0, JSON.stringify(left));
+    check('Clear Projections in Mother 1 clears its own chain and leaves the mothers from clones living there', !left.own && !left.ownEv && left.moms === 11 && left.momEv > 0, JSON.stringify(left));
     await b.run(main, `Tools.close();`);
 
     // ---- SitkaTools: L500's mothers made as a lot in Mother 1 take their projection's place ----
@@ -159,10 +162,10 @@ export async function run(b, BASE) {
     check('a new real lot in Grow 1 took TBA-01: the room waits for Reproject, its mothers still on the dropdown', pend.btn === '🔁 Reproject' && pend.mom === 'sitka-mother' && !pend.tba1, JSON.stringify(pend));
     await project('sitka-mother');
     M = await mothers();
-    check('Reproject: the mothers move down with their lots, 00…05 again', M.map(x => x.id).join() === [0, 1, 2, 3, 4, 5].map(i => `R1G1-TBAMOM-0${i}`).join(), JSON.stringify(M.map(x => x.id)));
+    check('Reproject: the mothers move down with their lots, 00…10 again', M.map(x => x.id).join() === MOMS.join(), JSON.stringify(M.map(x => x.id)));
     check('…00 now follows the new real lot L700, keeping the events of the old 01 (renamed, ids and titles)', M[0]?.src === 'L700' && M[0].ids.join() === oldIds01.join() && M[0].titlesOk,
         JSON.stringify([M[0]?.src, M[0]?.ids.length, oldIds01.length]));
-    check('…01…05 follow R1G1-TBA-01…05 (a fresh 05), each transplanting with its lot', M.slice(1).every((x, i) => x.src === `R1G1-TBA-0${i + 1}`) && M.every(x => x.tp === x.srcTp && x.titlesOk),
+    check('…01…10 follow R1G1-TBA-01…10 (a fresh 10), each transplanting with its lot', M.slice(1).every((x, i) => x.src === TBA(i + 1)) && M.every(x => x.tp === x.srcTp && x.titlesOk),
         JSON.stringify(M.map(x => [x.id, x.src, x.tp, x.srcTp])));
 
     // ---- No Mother room: refused, nothing changed ----

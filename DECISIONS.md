@@ -6,6 +6,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-01 · CropLabourWizard projects 10 lots per room, about 2 years ahead (it was 5, about 12 months); a chain made with 5 grows to 10 on the next Project Crop or Reproject
+- 2026-11-01 · 📍 Project Crop from a TBA lot: a From dropdown beside 🔮 Project Crop ("Whole chain", or one of the room's TBA lots) defaults to the selected TBA lot; from TBA-03, TBA-01…03 and their 🌿 mothers stay exactly as they are and TBA-04…10 follow TBA-03's harvest by the usual chain and room-ready rules
 - 2026-11-01 · the 20-day built-in's single early leaf pick over bloom days 17–18 (Monday–Tuesday) comes back as a second bloom built-in, "Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick" (`sitka-9week-montue`), not the default: the agreed recipe ("…Weekend Leaf Pick") otherwise, with labourhours.json's 6 people × 16 h a day on the early leaf pick
 - 2026-11-01 · ⏱ Man-hours can add DailyWizard's daily tasks (📋 Daily tasks, a second toggle): a room chore counts on days a lot is in its room — today where the lots are now, as DailyWizard lists them, other days by the lots' schedules (a lot with no schedule stays where it is); the Annual view shows each day's hours as digits only; CSV→ exports the man-hours shown with the right-click Save Link As… link
 - 2026-11-01 · SitkaTools' calendar gets a ⏱ Man-hours toggle (Monthly and 7-Day): each day's estimated hours from its tasks' recipe labour estimates, real and projected, and the people that is in 8-hour days, in place of its tasks; equipment tasks show as having no estimate, and DailyWizard's daily chores aren't counted (they aren't on the calendar)

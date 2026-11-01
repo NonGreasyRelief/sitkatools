@@ -134,7 +134,7 @@ export async function run(b, BASE) {
     await pickLot('L300');
     check('picking the first lot again shows its recipe', await b.run(clw, `return document.getElementById('recipeSelect').value;`) === 'sitka-9week');
 
-    // ---- Project Crop from the newest lot (L300): 5 lots, each Friday harvest followed by a Monday transplant ----
+    // ---- Project Crop from the newest lot (L300): 10 lots (about 2 years), each Friday harvest followed by a Monday transplant ----
     await b.run(main, `delete DB.data.lots.L400._tool_CropLabourWizard;`);
     await b.run(clw, `window.__asked = []; window.confirm = m => { window.__asked.push(m); return true; }; generateProjectionsForRoom('R1G1');`);
     await b.sleep(200);
@@ -144,7 +144,7 @@ export async function run(b, BASE) {
     const chain = [a.on, ...ids.map(id => proj[id])];
     const gaps = chain.slice(1).map((l, i) => daysBetween(chain[i].harvest, l.harvest));
     const moveIn = chain.slice(1).map((l, i) => daysBetween(chain[i].harvest, l.transplant));
-    check('Project Crop: 5 lots, harvests 70 days apart, every one on a Friday', ids.length === 5 && gaps.every(g => g === 70) && chain.every(l => weekday(l.harvest) === 'Fri'), JSON.stringify({ ids, gaps }));
+    check('Project Crop: 10 lots, harvests 70 days apart, every one on a Friday', ids.length === 10 && gaps.every(g => g === 70) && chain.every(l => weekday(l.harvest) === 'Fri'), JSON.stringify({ ids, gaps }));
     check('…each moves in the Monday 3 days after the previous harvest, with nothing pushed back', moveIn.every(g => g === 3) && chain.every(l => weekday(l.transplant) === 'Mon') && asked.length === 0, JSON.stringify({ moveIn, asked }));
 
     // ---- An exported built-in, imported again, comes back as a copy ----
