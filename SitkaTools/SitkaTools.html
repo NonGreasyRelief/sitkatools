@@ -18362,7 +18362,7 @@
             // Task-type registry fallback: CropLabourWizard recipes can define custom task
             // types; their labels/emojis live in _CropLabourWizard.taskTypes (merged on every
             // recipe import/save). The hard-coded maps above win for the known types (the built-in recipe's 33, and
-            // leafpick_early, the one early leaf pick of the built-ins before 2026-10-30, for lots generated with it).
+            // leafpick_early, the one early leaf pick over two days: the Monday–Tuesday built-in's, and the built-ins' before 2026-10-30).
             _taskTypeName(tt) {
                 if (!tt) return null;
                 return this.TASK_TYPE_NAMES[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.name || tt;
@@ -22177,10 +22177,24 @@
                 { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 110 }
             ]
         };
-        // The bloom built-in keeps the old default's id, so lots scheduled with it still resolve (their dates stay as
+        // ---- The Monday–Tuesday leaf pick (user request 2026-11-01) ----
+        // The 20-day-veg built-in of 2026-10-24 brought back as a second bloom built-in, not the default: the agreed recipe
+        // (the weekend leaf pick) in every task but the early leaf pick, which is one pick over two days, bloom days 17–18
+        // (flip + 17, the Monday and Tuesday), as it was before 2026-10-30. Its labour is the team's (labourhours.json),
+        // the early leaf pick's as that file gave it, 6 people × 16 h a day, as the late leaf pick's.
+        const SITKA_MONTUE_RECIPE = {
+            ...SITKA_STANDARD_RECIPE,
+            id: 'sitka-9week-montue',
+            name: 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick',
+            tasks: SITKA_STANDARD_RECIPE.tasks.flatMap(t =>
+                t.taskType === 'leafpick_early1' ? [{ name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 17, days: 2, minutes: 960, staff: 6 }]
+                : t.taskType === 'leafpick_early2' ? [] : [{ ...t }])
+        };
+        // The default bloom built-in keeps the old default's id, so lots scheduled with it still resolve (their dates stay as
         // generated). A lot scheduled with the removed 19- or 18-day built-in (sitka-9week-19veg / -18veg) falls back to it
-        // too, as any lot whose recipe is missing does (getRecipeById). The bloom built-in first, then the mother recipe.
-        const BUILTIN_RECIPES = [SITKA_STANDARD_RECIPE, SITKA_MOTHER_RECIPE];
+        // too, as any lot whose recipe is missing does (getRecipeById). The bloom built-ins first, the default leading, then
+        // the mother recipe.
+        const BUILTIN_RECIPES = [SITKA_STANDARD_RECIPE, SITKA_MONTUE_RECIPE, SITKA_MOTHER_RECIPE];
         // The default: new lots, projections, ＋ New Recipe, and any lot whose recipe is missing
         const BUILTIN_RECIPE = BUILTIN_RECIPES[0];
         const isBuiltinRecipe = idOrRecipe => { const id = typeof idOrRecipe === 'string' ? idOrRecipe : idOrRecipe?.id; return BUILTIN_RECIPES.some(b => b.id === id); };

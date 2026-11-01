@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-01 · the 20-day built-in's single early leaf pick over bloom days 17–18 (Monday–Tuesday) comes back as a second bloom built-in, "Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick" (`sitka-9week-montue`), not the default: the agreed recipe ("…Weekend Leaf Pick") otherwise, with labourhours.json's 6 people × 16 h a day on the early leaf pick
 - 2026-11-01 · ⏱ Man-hours can add DailyWizard's daily tasks (📋 Daily tasks, a second toggle): a room chore counts on days a lot is in its room — today where the lots are now, as DailyWizard lists them, other days by the lots' schedules (a lot with no schedule stays where it is); the Annual view shows each day's hours as digits only; CSV→ exports the man-hours shown with the right-click Save Link As… link
 - 2026-11-01 · SitkaTools' calendar gets a ⏱ Man-hours toggle (Monthly and 7-Day): each day's estimated hours from its tasks' recipe labour estimates, real and projected, and the people that is in 8-hour days, in place of its tasks; equipment tasks show as having no estimate, and DailyWizard's daily chores aren't counted (they aren't on the calendar)
 - 2026-10-30 · the Android app's application id is `com.sitkalegends.sitkatools` (the company's domain, sitkalegends.com, reversed), settled before the director registers the app in Entra ID (the sign-in's redirect URI includes it)
