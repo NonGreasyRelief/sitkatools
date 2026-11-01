@@ -6,6 +6,7 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-01 · ⏱ Man-hours gets a 👥 People toggle: the people in 8-hour days (hours ÷ 8) first and the hours second, in the Monthly, 7-Day and Annual views, the tooltip and the summary line (in eight-hour shifts); the CSV keeps both columns
 - 2026-11-01 · CropLabourWizard projects 10 lots per room, about 2 years ahead (it was 5, about 12 months); a chain made with 5 grows to 10 on the next Project Crop or Reproject
 - 2026-11-01 · 📍 Project Crop from a TBA lot: a From dropdown beside 🔮 Project Crop ("Whole chain", or one of the room's TBA lots) defaults to the selected TBA lot; from TBA-03, TBA-01…03 and their 🌿 mothers stay exactly as they are and TBA-04…10 follow TBA-03's harvest by the usual chain and room-ready rules
 - 2026-11-01 · the 20-day built-in's single early leaf pick over bloom days 17–18 (Monday–Tuesday) comes back as a second bloom built-in, "Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick" (`sitka-9week-montue`), not the default: the agreed recipe ("…Weekend Leaf Pick") otherwise, with labourhours.json's 6 people × 16 h a day on the early leaf pick
