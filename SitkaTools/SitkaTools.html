@@ -3979,6 +3979,16 @@
            greys out when the selected lot can't be projected */
         .btn-project { padding: 10px 12px; white-space: nowrap; }
         .header-right .form-group { margin-bottom: 0; } /* bottom-align button + dropdown in the header row */
+        /* 📍 From: as wide as its "Whole chain" / "TBA-03" */
+        .header-right .form-group.projection-from-group { flex: 0 0 auto; min-width: 0; }
+        .header-right .projection-from-group select { min-width: 0; }
+        /* Down to 1280 px the header keeps one row with 📍 From: the two projection dropdowns narrow a little (their recipe
+           names are cut off there anyway) */
+        @media (max-width: 1340px) {
+            .header-right .form-group.projection-recipe-group { flex-basis: 140px; min-width: 0; }
+            .header-right .form-group.mother-recipe-group { flex-basis: 160px; }   /* its label, on one line */
+            .header-right .projection-recipe-group select { min-width: 0; }
+        }
         .btn:disabled { opacity: 0.45; cursor: not-allowed; }
         .btn:disabled:hover { border-color: var(--border); background: var(--bg-card); }
 
@@ -8457,9 +8467,14 @@
                 <select id="projectionRecipeSelect"></select>
             </div>
             <!-- 🌿 Mothers from clones (user request 2026-10-30): the mother recipe Project Crop gives each lot's kept-back plants -->
-            <div class="form-group projection-recipe-group">
+            <div class="form-group projection-recipe-group mother-recipe-group">
                 <label for="motherRecipeSelect">🌿 Mothers from clones</label>
                 <select id="motherRecipeSelect" title="The plants kept back at each lot's Transplanting become mothers: pick their 🌿 recipe and Project Crop projects them in the Mother room"><option value="">— No mothers —</option></select>
+            </div>
+            <!-- 📍 From (user request 2026-11-01): Project Crop for the whole chain, or for the lots after a TBA lot (the selected one by default) -->
+            <div class="form-group projection-from-group">
+                <label for="projectFromSelect">📍 From</label>
+                <select id="projectFromSelect" disabled title="Project Crop the whole chain first: then you can project the lots after any TBA lot"><option value="">Whole chain</option></select>
             </div>
             <button type="button" class="btn btn-secondary btn-project" id="generateProjectionsBtn" disabled title="Select a lot to project its crop">🔮 Project Crop</button>
             <button type="button" class="btn btn-secondary btn-project" id="clearProjectionsBtn" disabled title="Clears all projections for the selected lot's room">🧹 Clear Projections</button>
@@ -15124,7 +15139,7 @@
             markUnsaved();
 
             // A real lot taking a flowering room's slot "takes" TBA-1: delete only the TBA-01 map
-            // entry + its events. TBA-2…TBA-5 survive — the room is now pending reprojection.
+            // entry + its events. TBA-2…TBA-10 survive — the room is now pending reprojection.
             let projNote = '';
             if (matchedRoomId && projectedRoom(DB.data.rooms[matchedRoomId])) {
                 const { mothers, tba: res } = takeProjectedPlace(matchedRoomId, lotId);
@@ -15662,7 +15677,7 @@
 
         // ---- Crop Projection deletion hook (see root CLAUDE.md — "Deletion Hook — SitkaTools") ----
         // When a real lot takes a flowering room's slot, only TBA-1 is "taken": delete its map
-        // entry and its CropProjection calendar events. TBA-2…TBA-5 survive untouched (entries +
+        // entry and its CropProjection calendar events. TBA-2…TBA-10 survive untouched (entries +
         // events) — the room becomes *pending reprojection*, which CLW infers from the missing
         // TBA-1 entry. Idempotent: a no-op when the room has no TBA-1 projection.
         // Rooms CropLabourWizard projects future crops in: flowering rooms, and Mother rooms (their next mother lots)
@@ -16758,7 +16773,7 @@
                 markUnsaved();
 
                 // Moving a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
-                // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
+                // entry + its events; TBA-2…TBA-10 survive (room becomes pending reprojection).
                 if (projectedRoom(toRoom)) {
                     const { mothers, tba: res } = takeProjectedPlace(toRoomId, lotId);
                     if (mothers.length) showSyncToast(mothersTakenText(mothers));
@@ -16805,7 +16820,7 @@
                 markUnsaved();
 
                 // Assigning a real lot into a flowering room "takes" TBA-1 — delete only the TBA-01
-                // entry + its events; TBA-2…TBA-5 survive (room becomes pending reprojection).
+                // entry + its events; TBA-2…TBA-10 survive (room becomes pending reprojection).
                 if (projectedRoom(room)) {
                     const { mothers, tba: res } = takeProjectedPlace(roomId, lotId);
                     if (mothers.length) showSyncToast(mothersTakenText(mothers));
@@ -23630,6 +23645,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
                 syncMotherSelectToRoom();
+                syncProjectFromToLot();
                 showToast(statusLine());   // the database's line, as a quick toast as it opens (user request 2026-10-27: no status bar)
             }
 
@@ -23646,6 +23662,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 updateGenerateBtnLabel();
                 updateProjectBtnState();
                 syncMotherSelectToRoom();
+                syncProjectFromToLot();
             }
         }
 
@@ -23752,7 +23769,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // Pending-reprojection inference (display-only, never stored): a room is pending when its
-        // TBA-1 map entry is absent AND at least one of TBA-2…TBA-5 is present. This arises from
+        // TBA-1 map entry is absent AND at least one of TBA-2…TBA-10 is present. This arises from
         // SitkaTools' deletion hook removing only TBA-1. A full 5-entry chain is never pending,
         // even if some entries have no events (that is ordinary staleness).
         function isPendingReprojection(roomId) {
@@ -23766,7 +23783,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // Stale for display purposes: no events, OR the lot's room is pending reprojection —
-        // surviving TBA-2…TBA-5 await renumbering, so they get the ⚠️ indicator even though
+        // surviving TBA-2…TBA-10 await renumbering, so they get the ⚠️ indicator even though
         // their events still exist.
         function isStaleOrPending(lotId) {
             if (isStaleProjectedLot(lotId)) return true;
@@ -24709,6 +24726,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             updateGenerateBtnLabel();
             updateProjectBtnState();
             syncMotherSelectToRoom();
+            syncProjectFromToLot();
         });
 
         // ---- Recipe Selector Change Handler ----
@@ -24760,12 +24778,15 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // =====================================================
-        // Crop Projection — 5-lot chain per flowering room (see root CLAUDE.md)
+        // Crop Projection — 10-lot chain per flowering room, about 2 years (see root CLAUDE.md)
         // Lot Day 0 = the form's anchor date (the clone-cut date when cloning is enabled).
         // Chain rule: Lot(k+1) Day 0 = Lot(k)'s LAST harvest day − the clone-cut days of Lot(k+1)'s recipe (nextLotDay0).
         // =====================================================
 
-        const PROJECTION_LOT_COUNT = 5;
+        // 10 lots (user request 2026-11-01: 24 months ahead; it was 5, about 12). A chain made with fewer grows to 10 on the next
+        // Project Crop or Reproject.
+        const PROJECTION_LOT_COUNT = 10;
+        const tbaLabel = index => `TBA-${String(index).padStart(2, '0')}`;
 
         // Projected lot IDs are room-scoped: `{roomId}-TBA-{index}` (e.g. "G1B6-TBA-01").
         // The room code in the ID keeps each room's chain from colliding with another
@@ -24977,7 +24998,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             });
         }
 
-        // Re-project lots fromIndex..5 forward in the chain: each lot starts (Day 0) from the previous lot's
+        // Re-project lots fromIndex..10 forward in the chain: each lot starts (Day 0) from the previous lot's
         // last harvest day, read from its current events (nextLotDay0). Then the room-ready check
         // (pushIfRoomNotReady). Returns the lots that check pushed back.
         function cascadeProjections(roomId, fromIndex, bloomDays, recipe) {
@@ -25045,7 +25066,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const r = id ? getRecipeById(id) : null;
             return r && r.id === id && isVegRecipe(r) ? r : SITKA_MOTHER_RECIPE;
         }
-        // A flowering room's mothers from clones (00 = its newest real lot's, 01…05 = its TBA lots')
+        // A flowering room's mothers from clones (00 = its newest real lot's, 01…10 = its TBA lots')
         function roomMotherIds(roomId) {
             const map = getProjectedLots();
             return Object.keys(map).filter(id => roomId && map[id]?.sourceRoomId === roomId);
@@ -25111,8 +25132,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // newest real lot while its transplant is today or later and its mothers aren't a lot yet. Each one's Transplanting
         // lands on its lot's (shifted, or generated fresh); another recipe regenerates it, another Mother room moves it; a slot
         // whose lot has no transplant goes. alignOnly (after Generate, or Project Crop with the mothers left as they are): only
-        // shift the ones there are. Returns { count: the room's mother lots, motherRoomId }.
-        function syncRoomMothers(roomId, recipe, { alignOnly = false } = {}) {
+        // shift the ones there are. `after` (Project Crop from a TBA lot): slots up to it are only shifted, never added,
+        // regenerated or removed. Returns { count: the room's mother lots, motherRoomId }.
+        function syncRoomMothers(roomId, recipe, { alignOnly: alignAll = false, after = -1 } = {}) {
             const motherRoomId = motherRoomFor(roomId);
             if (!motherRoomId || !recipe) return { count: roomMotherIds(roomId).length, motherRoomId };
             const map = ensureProjectedLots(), motherRoom = DB.data.rooms[motherRoomId];
@@ -25123,6 +25145,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             for (const s of slots) {
                 const id = projectedMotherId(roomId, s.index);
                 let entry = map[id];
+                const alignOnly = alignAll || s.index <= after;
                 const flowerTransplant = s.ok ? transplantOf(s.source) : null;
                 if (!flowerTransplant) { if (entry && !alignOnly) removeProjectedLots([id]); continue; }
                 if (!entry) {
@@ -25258,26 +25281,30 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         // Project Crop / Reproject's 🌿 mothers from clones for a flowering room: a recipe syncs them, null removes them,
-        // undefined keeps the ones there are in step. Returns the toast's note.
-        function applyRoomMothers(roomId, motherRecipe) {
+        // undefined keeps the ones there are in step. `after` (Project Crop from a TBA lot): the mothers of the lots up to that
+        // one are left as they are (only kept in step). Returns the toast's note.
+        function applyRoomMothers(roomId, motherRecipe, after = -1) {
             if (motherRecipe === null) {
-                const n = removeRoomMothers(roomId);
+                const map = getProjectedLots();
+                const n = removeProjectedLots(roomMotherIds(roomId).filter(id => (map[id].index ?? 0) > after));
                 return n ? ` · 🌿 ${n} projected mother lot${n === 1 ? '' : 's'} removed` : '';
             }
             const recipe = motherRecipe || roomMotherRecipe(roomId);
             if (!recipe) return '';
-            const { count, motherRoomId } = syncRoomMothers(roomId, recipe, { alignOnly: !motherRecipe });
+            const { count, motherRoomId } = syncRoomMothers(roomId, recipe, { alignOnly: !motherRecipe, after });
             return count ? ` · 🌿 ${count} mother lot${count === 1 ? '' : 's'} in ${DB.data.rooms[motherRoomId]?.name || motherRoomId}` : '';
         }
 
-        // Generate/refresh the full 5-lot projection chain for a flowering room.
+        // Generate/refresh the full 10-lot projection chain for a flowering room.
         // Lot 1 anchors to the NEWEST real lot's last harvest day (resolveProjectionAnchor) — or that
         // lot's start day if it has no harvest or clone_cut event. Gated: that specific newest lot
         // must have a generated schedule, else there is nothing to anchor off.
         // Never auto-runs — only via the Project Crop button.
         // motherRecipe (a flowering room, 🌿 mothers from clones): a 🌿 recipe gives every lot of the chain its mothers;
         // null removes the room's; undefined (the default) keeps the ones it has, in step with their lots.
-        function generateProjectionsForRoom(roomId, motherRecipe) {
+        // from (📍 Project from a TBA lot, user request 2026-11-01): TBA-01 … that lot are kept as they are (their mothers
+        // too), and the lots after it are placed from its harvest by the same rules. Gated on that lot's schedule instead.
+        function generateProjectionsForRoom(roomId, motherRecipe, { from = 0 } = {}) {
             const room = (DB.data.rooms || {})[roomId];
             if (!room) return;
             if (!projectableRoom(room)) {
@@ -25292,9 +25319,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const projRecipe = chainRecipeFor(roomId);
             if (!projRecipe) { showToast(`🔮 "${room.name}"'s newest lot needs a 🌿 vegetative schedule before its next mothers can be projected`); return; }
 
-            // Gate: the room's newest real lot must have a generated schedule to anchor off.
-            const anchor = resolveProjectionAnchor(roomId);
-            if (!anchor) {
+            // Gate: the room's newest real lot must have a generated schedule to anchor off; from a TBA lot, that lot.
+            const fromBlock = from ? projectFromBlock(roomId, from) : null;
+            if (fromBlock) { showToast(`🔮 ${fromBlock}`); return; }
+            const anchor = from ? null : resolveProjectionAnchor(roomId);
+            if (!from && !anchor) {
                 const newestLotId = newestRealLotId(roomId);
                 showToast(`🔮 "${room.name}"'s newest lot${newestLotId ? ` (${newestLotId})` : ''} needs a generated schedule before Project Crop`);
                 return;
@@ -25307,8 +25336,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             const map = ensureProjectedLots();
 
-            // Ensure all 5 map entries exist (keep existing entries — never prune)
-            for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
+            // Ensure all 10 map entries exist (keep existing entries — never prune); from a TBA lot, the ones after it
+            for (let i = from + 1; i <= PROJECTION_LOT_COUNT; i++) {
                 const lotId = projectedLotId(roomId, i);
                 if (!map[lotId]) {
                     map[lotId] = { name: `${roomId}-TBA-${String(i).padStart(2, '0')}`, roomId, roomName: room.name, strain: 'TBA', index: i };
@@ -25317,10 +25346,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
-            // Lot 1 anchor: from the newest real lot's last harvest day (or its start day with no harvest or clone cut)
             const bloom = mothers ? undefined : recipeBloomDays(projRecipe);
-            reAnchorProjectedLot(roomId, 1, anchor.anchorDate, bloom, projRecipe);
-            const pushes = [mothers ? null : pushIfRoomNotReady(roomId, 1, anchor.lotId), ...cascadeProjections(roomId, 2, bloom, projRecipe)].filter(Boolean);
+            let pushes;
+            if (from) {
+                // From a TBA lot: it and the lots before it stay; the rest follow its harvest
+                pushes = cascadeProjections(roomId, from + 1, bloom, projRecipe);
+            } else {
+                // Lot 1 anchor: from the newest real lot's last harvest day (or its start day with no harvest or clone cut)
+                reAnchorProjectedLot(roomId, 1, anchor.anchorDate, bloom, projRecipe);
+                pushes = [mothers ? null : pushIfRoomNotReady(roomId, 1, anchor.lotId), ...cascadeProjections(roomId, 2, bloom, projRecipe)].filter(Boolean);
+            }
 
             // Room-ready check: lots that would move in before the room is clean were pushed back. Ask
             // before keeping that; cancel puts everything back as it was.
@@ -25342,7 +25377,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
 
             // 🌿 Mothers from clones: after the chain is placed (a cancel above changed nothing)
-            const momNote = mothers ? '' : applyRoomMothers(roomId, motherRecipe);
+            const momNote = mothers ? '' : applyRoomMothers(roomId, motherRecipe, from || -1);
 
             populateLotSelector();
             renderSavedSummary();
@@ -25350,7 +25385,29 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             updateProjectBtnState();
             refreshPreview();
             notifySitkaTools();
-            showToast(`🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projRecipe.name})${momNote}`);
+            showToast(from
+                ? `🔮 Projected from ${tbaLabel(from)} — ${tbaLabel(from + 1)}…${tbaLabel(PROJECTION_LOT_COUNT)} follow it, ${from === 1 ? 'TBA-01' : `TBA-01…${tbaLabel(from)}`} kept (${room.name}, ${projRecipe.name})${momNote}`
+                : `🔮 Projections generated — ${PROJECTION_LOT_COUNT} lots for ${room.name} (${projRecipe.name})${momNote}`);
+        }
+
+        // 📍 Project from a TBA lot: the slots it can start from (1 … 9) — the room's TBA lots with a schedule to follow
+        function projectFromSlots(roomId) {
+            if (!roomId || isPendingReprojection(roomId)) return [];
+            const map = getProjectedLots(), out = [];
+            for (let i = 1; i < PROJECTION_LOT_COUNT; i++) {
+                if (map[projectedLotId(roomId, i)] && eventsForLot(projectedLotId(roomId, i)).length) out.push(i);
+            }
+            return out;
+        }
+        // Why Project Crop can't start from TBA lot `from` (null when it can): it needs a schedule the next lot can follow
+        function projectFromBlock(roomId, from) {
+            const room = DB.data.rooms?.[roomId], label = tbaLabel(from);
+            if (isPendingReprojection(roomId)) return `${room?.name || roomId} is waiting to be reprojected: 🔁 Reproject it first`;
+            if (!(from >= 1 && from < PROJECTION_LOT_COUNT)) return `There's no lot after ${label} to project`;
+            const id = projectedLotId(roomId, from);
+            if (!getProjectedLots()[id] || !eventsForLot(id).length) return `${label} has no schedule to project from: 🔮 Project Crop the whole chain first`;
+            if (!nextLotDay0(id, projectedSlotRecipe(roomId, from + 1, chainRecipeFor(roomId)))) return `${label} has no harvest or clone cut for the next lot to follow`;
+            return null;
         }
 
         // A lot's effective "Tank and Irrigation Line Clean" date — the last room-prep task, i.e. when
@@ -25432,15 +25489,18 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return plan;
         }
 
-        // Reproject's plan, made before the rename: slot i (1..4) will hold today's TBA-(i+1), slot 5 is a new lot, and the
-        // real lot that took TBA-01's place comes first. Null when the real lot has no Tank & Irrigation Clean to go by
-        // (a mother lot): Reproject then just shifts the chain down.
+        // Reproject's plan, made before the rename: slot i (1..9) will hold today's TBA-(i+1), slot 10 is a new lot (so is a
+        // slot whose lot isn't there: a chain made with 5 lots), and the real lot that took TBA-01's place comes first. Null
+        // when the real lot has no Tank & Irrigation Clean to go by (a mother lot): Reproject then just shifts the chain down.
         function computeReprojectionPushes(roomId, newRealLotId) {
             const irr = effectiveIrrigationClean(newRealLotId);
             if (!irr) return null;
-            const slots = [];
-            for (let i = 1; i < PROJECTION_LOT_COUNT; i++) slots.push({ index: i, lotId: projectedLotId(roomId, i + 1) });
-            slots.push({ index: PROJECTION_LOT_COUNT, lotId: null, recipe: chainRecipeFor(roomId) || getProjectionRecipe() });
+            const slots = [], map = getProjectedLots(), recipe = chainRecipeFor(roomId) || getProjectionRecipe();
+            for (let i = 1; i < PROJECTION_LOT_COUNT; i++) {
+                const id = projectedLotId(roomId, i + 1);
+                slots.push(map[id] ? { index: i, lotId: id } : { index: i, lotId: null, recipe });
+            }
+            slots.push({ index: PROJECTION_LOT_COUNT, lotId: null, recipe });
             return planRoomReady(slots, { irr, harvestEnd: harvestEndOf(newRealLotId) });
         }
 
@@ -25464,8 +25524,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return planRoomReady(slots, prev);
         }
 
-        // Reproject a pending room: shift the surviving chain down one slot (TBA-2→TBA-1, …, TBA-5→TBA-4)
-        // and generate one fresh TBA-5. The rename pass runs LOW → HIGH (i = 2 up to 5) so every target
+        // Reproject a pending room: shift the surviving chain down one slot (TBA-2→TBA-1, …, TBA-10→TBA-9)
+        // and generate one fresh TBA-10. The rename pass runs LOW → HIGH (i = 2 up to 10) so every target
         // slot is already free — TBA-1 is absent by the pending precondition, and each later slot was just
         // vacated by the previous rename. Renamed lots keep their dates/offsets verbatim; only IDs change.
         // The real lot's schedule is a gate only — its dates are never read.
@@ -25511,7 +25571,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
-            // Rename pass, low → high (i = 2 up to 5): target slot i−1 is always free. Map key, name, index (the selector
+            // Rename pass, low → high (i = 2 up to 10): target slot i−1 is always free. Map key, name, index (the selector
             // sorts by it), every event's lotId and the lot-ID token embedded in each stored title.
             for (let i = 2; i <= PROJECTION_LOT_COUNT; i++) {
                 const oldId = projectedLotId(roomId, i);
@@ -25519,7 +25579,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 renameProjectedLot(oldId, projectedLotId(roomId, i - 1), { index: i - 1 });
             }
 
-            // Apply the push-back plan: shift/regenerate slots 1..4 to their target Day 0. Without
+            // Apply the push-back plan: shift/regenerate slots 1..9 to their target Day 0. Without
             // bloomDays, reAnchorProjectedLot shifts every event by (targetDay0 − oldDay0) — exactly the
             // planned delta — or regenerates a stale lot fresh at the target. "keep" slots are untouched.
             if (plan) {
@@ -25530,32 +25590,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 }
             }
 
-            // Top up: fresh TBA-5 at the plan's computed Day 0 (walk-down fallback if no plan).
-            let day0 = null;
-            if (plan) {
-                const fresh = plan.find(s => s.index === PROJECTION_LOT_COUNT);
-                if (fresh && fresh.day0) day0 = fresh.day0;
-            }
-            if (!day0) {
-                // Fallback: the day the highest-indexed surviving lot's next lot starts (today as last resort)
-                day0 = localDateStr(new Date());
-                for (let i = PROJECTION_LOT_COUNT - 1; i >= 1; i--) {
-                    const d = nextLotDay0(projectedLotId(roomId, i), chainRecipeFor(roomId) || getProjectionRecipe());
-                    if (d) { day0 = d; break; }
-                }
-            }
-
-            const tba5Id = projectedLotId(roomId, PROJECTION_LOT_COUNT);
-            if (!map[tba5Id]) {
-                map[tba5Id] = { name: tba5Id, roomId, roomName: room.name, strain: 'TBA', index: PROJECTION_LOT_COUNT };
-            }
+            // Top up: a fresh TBA-10, and every slot before it with no lot yet (a chain made when it had 5 lots grows to 10),
+            // in order, each at the plan's Day 0, else where the chain rule puts it after the lot before it (today as last resort)
             const projRecipe = chainRecipeFor(roomId) || getProjectionRecipe();   // a Mother room: its mothers' recipe
-            generateLotSchedule(tba5Id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), {
-                trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
-            }, projRecipe);
+            const added = [];
+            for (let i = 1; i <= PROJECTION_LOT_COUNT; i++) {
+                const id = projectedLotId(roomId, i);
+                if (map[id]) continue;
+                const planned = plan?.find(s => s.index === i && s.day0)?.day0;
+                const day0 = planned || nextLotDay0(i === 1 ? gatedLotId : projectedLotId(roomId, i - 1), projRecipe) || localDateStr(new Date());
+                map[id] = { name: id, roomId, roomName: room.name, strain: 'TBA', index: i };
+                generateLotSchedule(id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), {
+                    trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
+                }, projRecipe);
+                added.push(i);
+            }
 
             // 🌿 Mothers from clones move down with their lots: the previous real lot's (00) go (its mothers are a lot by now,
-            // or never came), TBA-01's become the new real lot's (00), 02…05 → 01…04, then a fresh 05 for the fresh TBA-05
+            // or never came), TBA-01's become the new real lot's (00), 02…10 → 01…09, then fresh ones for the fresh lots
             let momNote = '';
             if (!isMotherRoom(room)) {
                 const momRecipe = motherRecipe === null ? null : (motherRecipe || roomMotherRecipe(roomId));
@@ -25578,7 +25630,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const pushCount = plan ? plan.filter(s => s.action === 'push' || s.action === 'regen').length : 0;
             const maxDelta = plan ? Math.max(0, ...plan.filter(s => typeof s.delta === 'number').map(s => s.delta)) : 0;
             const pushNote = pushCount > 0 ? `, ${pushCount} lot${pushCount === 1 ? '' : 's'} pushed back up to ${maxDelta}d` : '';
-            showToast(`🔁 Reprojected ${room.name} — chain shifted down, fresh TBA-05 added${pushNote} (${projRecipe.name})${momNote}`);
+            const addedNote = added.length === 1 ? `fresh ${tbaLabel(added[0])} added` : `${added.length} fresh lots added (${added.map(tbaLabel).join(', ')})`;
+            showToast(`🔁 Reprojected ${room.name} — chain shifted down, ${addedNote}${pushNote} (${projRecipe.name})${momNote}`);
         }
 
         // True reset for one room: delete ALL of its CropProjection events (matched by roomId) and
@@ -25739,7 +25792,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // reprojection). The gate is room readiness only — later lots are pushed forward solely
             // when their transplant would land before this lot's new irrigation-clean + 1 day; they
             // are never pulled back. Applies to:
-            //   • a projected lot — the later TBA slots (index+1..5);
+            //   • a projected lot — the later TBA slots (index+1..10);
             //   • the room's ACTIVE real lot (the newest crop that took TBA-1's slot) — the room's
             //     surviving TBA chain, exactly like overwriting a TBA lot. Overwriting an OLDER real
             //     lot in the same room does not push the TBA chain (its cleaning doesn't gate it).
@@ -25921,22 +25974,64 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 btn.disabled = gated;
                 btn.title = gated
                     ? `Reproject is available once ${gatedLotId || "the room's new lot"} has a generated schedule`
-                    : 'Shift the surviving TBA chain down one slot and generate a fresh TBA-05';
+                    : `Shift the surviving TBA chain down one slot and generate a fresh ${tbaLabel(PROJECTION_LOT_COUNT)}`;
             } else {
-                btn.textContent = '🔮 Project Crop';
-                const anchor = roomId ? resolveProjectionAnchor(roomId) : null;
-                btn.disabled = !!disabledReason || !anchor;
-                const newestLotId = roomId ? newestRealLotId(roomId) : null;
-                btn.title = disabledReason
-                    || (!anchor
-                        ? `Project Crop is available once the room's newest lot${newestLotId ? ` (${newestLotId})` : ''} has a generated schedule`
-                        : 'Generate the 5-lot projection chain for this lot\'s room' + ($('motherRecipeSelect')?.value && !$('motherRecipeSelect').disabled ? ', and the 🌿 mothers each lot\'s kept-back plants become' : ''));
+                const from = populateProjectFromSelect(roomId, disabledReason);
+                const momSuffix = $('motherRecipeSelect')?.value && !$('motherRecipeSelect').disabled ? ', and the 🌿 mothers each lot\'s kept-back plants become' : '';
+                if (from) {
+                    // 📍 From a TBA lot: the lots after it follow its harvest
+                    const block = disabledReason || projectFromBlock(roomId, from);
+                    btn.textContent = `🔮 Project from ${tbaLabel(from)}`;
+                    btn.disabled = !!block;
+                    btn.title = block || `Keep ${from === 1 ? 'TBA-01' : `TBA-01…${tbaLabel(from)}`} as they are, and project ${tbaLabel(from + 1)}…${tbaLabel(PROJECTION_LOT_COUNT)} from ${tbaLabel(from)}'s harvest` + momSuffix;
+                } else {
+                    btn.textContent = '🔮 Project Crop';
+                    const anchor = roomId ? resolveProjectionAnchor(roomId) : null;
+                    btn.disabled = !!disabledReason || !anchor;
+                    const newestLotId = roomId ? newestRealLotId(roomId) : null;
+                    btn.title = disabledReason
+                        || (!anchor
+                            ? `Project Crop is available once the room's newest lot${newestLotId ? ` (${newestLotId})` : ''} has a generated schedule`
+                            : `Generate the ${PROJECTION_LOT_COUNT}-lot projection chain (about 2 years) for this lot's room` + momSuffix);
+                }
             }
+            if (roomId && isPendingReprojection(roomId)) populateProjectFromSelect(roomId, disabledReason);
 
             // Keep the Clear Projections button and the 🌿 dropdown in sync (same resolved-room state)
             updateClearProjectionsBtnState();
             updateMotherSelectState();
         }
+
+        // ---- 📍 From — Project Crop for the whole chain, or for the lots after a TBA lot (user request 2026-11-01) ----
+        // "Whole chain", then the room's TBA lots with a schedule (TBA-01 … TBA-09). Kept in memory; it follows the selected lot
+        // (syncProjectFromToLot: a TBA lot picks itself, any other lot "Whole chain"). Rebuilt with the button, keeping its
+        // choice while it's still there. Returns the slot picked (0 = the whole chain).
+        function populateProjectFromSelect(roomId, disabledReason) {
+            const sel = $('projectFromSelect');
+            if (!sel) return 0;
+            const slots = disabledReason ? [] : projectFromSlots(roomId);
+            const prev = sel.value;
+            sel.innerHTML = '<option value="">Whole chain</option>' + slots.map(i =>
+                `<option value="${i}" title="Keep TBA-01…${tbaLabel(i)}, project ${tbaLabel(i + 1)}…${tbaLabel(PROJECTION_LOT_COUNT)} from it">${tbaLabel(i)}</option>`).join('');
+            sel.value = slots.includes(Number(prev)) ? prev : '';
+            sel.disabled = !slots.length;
+            sel.title = roomId && isPendingReprojection(roomId) ? `${DB.data.rooms[roomId]?.name || roomId} is waiting to be reprojected: 🔁 Reproject it first`
+                : !slots.length ? 'Project Crop the whole chain first: then you can project the lots after any TBA lot'
+                : 'Whole chain: every projected lot from the room\'s newest lot. A TBA lot: keep it and the lots before it, and project the lots after it from its harvest';
+            return Number(sel.value) || 0;
+        }
+        // The 📍 From dropdown follows the selected lot: one of the room's TBA lots picks itself (if a lot follows it)
+        function syncProjectFromToLot() {
+            const sel = $('projectFromSelect');
+            if (!sel) return;
+            const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
+            populateProjectFromSelect(roomId, disabledReason);
+            const entry = getProjectedLots()[activeLotSelect.value];
+            const here = entry && !entry.sourceRoomId && entry.roomId === roomId ? String(entry.index) : '';
+            sel.value = [...sel.options].some(o => o.value === here) ? here : '';
+            updateProjectBtnState();
+        }
+        const projectFromIndex = () => ($('projectFromSelect')?.disabled ? 0 : Number($('projectFromSelect')?.value) || 0);
 
         // Enable / grey out the Clear Projections button: enabled only when the resolved flowering
         // room has at least one projected map entry or projection event.
@@ -25966,7 +26061,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         });
 
         // ---- Project Crop / Reproject — one button, two modes (button lives in the header) ----
-        // Pending room → reprojectRoom (shift chain down + fresh TBA-5); otherwise generateProjectionsForRoom.
+        // Pending room → reprojectRoom (shift chain down + fresh TBA-10); otherwise generateProjectionsForRoom, from the
+        // 📍 From dropdown's TBA lot when one is picked.
         $('generateProjectionsBtn').addEventListener('click', () => {
             const { roomId, disabledReason } = resolveProjectionRoom(activeLotSelect.value);
             if (disabledReason) {
@@ -25984,9 +26080,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
 
             if (isPendingReprojection(roomId)) reprojectRoom(roomId, mothers);
-            else generateProjectionsForRoom(roomId, mothers);
+            else generateProjectionsForRoom(roomId, mothers, { from: projectFromIndex() });
             syncMotherSelectToRoom();
         });
+
+        // ---- 📍 From — the whole chain, or the lots after a TBA lot ----
+        $('projectFromSelect').addEventListener('change', () => updateProjectBtnState());
 
         // ---- 🌿 Mothers from clones dropdown — kept in memory; it shows the selected room's, and Project Crop applies it ----
         $('motherRecipeSelect').addEventListener('change', () => updateProjectBtnState());

@@ -149,12 +149,12 @@ export async function run(b, BASE) {
     const proj = await b.run(main, `const ev = DB.data.calendarEvents.filter(e => e.sourceTool === 'CropProjection' && e.roomId === 'R1MO');
         const by = id => ev.filter(e => e.lotId === id); const d0 = id => by(id).find(e => e.taskType === 'clone_cut_prep')?.date; const cut = id => by(id).find(e => e.taskType === 'clone_cut')?.date;
         return { ids: [...new Set(ev.map(e => e.lotId))].sort(), m100cut: DB.data.calendarEvents.find(e => e.lotId === 'M100' && e.taskType === 'clone_cut')?.date,
-            d0: [1,2,3,4,5].map(i => d0('R1MO-TBA-0' + i)), cut: [1,2,3,4,5].map(i => cut('R1MO-TBA-0' + i)),
+            d0: [1,2,3,4,5,6,7,8,9,10].map(i => d0('R1MO-TBA-' + String(i).padStart(2, '0'))), cut: [1,2,3,4,5,6,7,8,9,10].map(i => cut('R1MO-TBA-' + String(i).padStart(2, '0'))),
             retire: !!by('R1MO-TBA-01').find(e => e.taskType === 'retire'), harvest: ev.some(e => e.taskType === 'harvest'), prunes: by('R1MO-TBA-01').filter(e => e.taskType === 'mother_prune').length,
             recipe: DB.data._CropLabourWizard.projectedLots['R1MO-TBA-01']?.config?.recipeId };`);
-    check('five projected mother lots in the Mother room, from its mothers\' own 🌿 recipe', JSON.stringify(proj.ids) === JSON.stringify(['R1MO-TBA-01', 'R1MO-TBA-02', 'R1MO-TBA-03', 'R1MO-TBA-04', 'R1MO-TBA-05'])
+    check('ten projected mother lots in the Mother room, from its mothers\' own 🌿 recipe', JSON.stringify(proj.ids) === JSON.stringify(Array.from({ length: 10 }, (_, i) => 'R1MO-TBA-' + String(i + 1).padStart(2, '0')))
         && proj.recipe === rid && proj.retire && !proj.harvest && proj.prunes === prunes.length, JSON.stringify(proj));
-    check('each starts on the previous one\'s "Cut Clones to Replace Mothers" day', proj.d0[0] === proj.m100cut && [1, 2, 3, 4].every(i => proj.d0[i] === proj.cut[i - 1]), JSON.stringify([proj.m100cut, proj.d0, proj.cut]));
+    check('each starts on the previous one\'s "Cut Clones to Replace Mothers" day', proj.d0[0] === proj.m100cut && [1, 2, 3, 4, 5, 6, 7, 8, 9].every(i => proj.d0[i] === proj.cut[i - 1]), JSON.stringify([proj.m100cut, proj.d0, proj.cut]));
     check('…with no room-ready push-back to ask about', !(await b.run(clw, 'return window.__pushAsked;')));
     // A mother recipe with no replacement cut has no next generation to plan
     const noCut = await b.run(clw, `const r = JSON.parse(JSON.stringify(DB.data._CropLabourWizard.recipes['${rid}'])); r.id = 'nocut1'; r.name = 'No cut'; r.tasks = r.tasks.filter(t => t.taskType !== 'clone_cut');

@@ -68,8 +68,8 @@ export async function run(b, BASE) {
     let g1 = await projected('R1G1');
     check('Grow 1 (clone cut counted from the harvest\'s first day): TBA-01 transplants Monday Jan 4, the Monday after the harvest ends on Friday Jan 1, and flips Friday Jan 8',
         g1[0]?.transplant === '2027-01-04' && g1[0]?.flip === '2027-01-08', JSON.stringify(g1[0]));
-    check('…all 5 projected lots move in the Monday 3 days after the previous harvest ends, flip that Friday and harvest on a Friday, nothing pushed back',
-        g1.length === 5 && chainOf(L500.h[1], g1).join(' | ') === tight(5) && asked.length === 0, chainOf(L500.h[1], g1).join(' | ') + ` · asked ${asked.length}`);
+    check('…all 10 projected lots (about 2 years) move in the Monday 3 days after the previous harvest ends, flip that Friday and harvest on a Friday, nothing pushed back',
+        g1.length === 10 && chainOf(L500.h[1], g1).join(' | ') === tight(10) && asked.length === 0, chainOf(L500.h[1], g1).join(' | ') + ` · asked ${asked.length}`);
     const cfg1 = await b.run(clw, `return getProjectedLots()['R1G1-TBA-01'].config.plantingDate;`);
     check('…TBA-01\'s clones are cut Saturday Dec 5, 27 days before the harvest ends (the real lot\'s own clone cut, Thursday Dec 10, isn\'t used)',
         cfg1 === '2026-12-05', cfg1);
@@ -78,7 +78,7 @@ export async function run(b, BASE) {
     const ga = await projected('R2G1');
     check('Grow A (clone cut counted from the harvest\'s last day, 21 days before): TBA-01 transplants Monday Jan 25 and flips Friday Jan 29',
         ga[0]?.transplant === '2027-01-25' && ga[0]?.flip === '2027-01-29', JSON.stringify(ga[0]));
-    check('…and the rest of the chain follows the same Monday / Friday rhythm', ga.length === 5 && chainOf(L600.h[1], ga).join(' | ') === tight(5) && asked.length === 0, chainOf(L600.h[1], ga).join(' | '));
+    check('…and the rest of the chain follows the same Monday / Friday rhythm', ga.length === 10 && chainOf(L600.h[1], ga).join(' | ') === tight(10) && asked.length === 0, chainOf(L600.h[1], ga).join(' | '));
 
     // ---- ⚠️ The real lot's own clone cut doesn't match TBA-01's: both clone-cut tasks say so ----
     const WARN = 'Does not match projection schedule. Adjust in real lot to match distance from harvest to projections.';
@@ -122,7 +122,7 @@ export async function run(b, BASE) {
     check('…after Generate L500 cuts Sat Dec 5, TBA-01\'s day, and only Grow A\'s two bars still have the ⚠️',
         cut500 === '2026-12-05' && notes.length === 0 && flagged.length === 2 && flagged.every(t => t.includes('L600') || t.includes('R2G1-TBA-01')), JSON.stringify({ cut500, notes, flagged }));
     g1 = await projected('R1G1');
-    check('…and Grow 1\'s projections didn\'t move', chainOf(L500.h[1], g1).join(' | ') === tight(5) && g1[0].transplant === '2027-01-04', chainOf(L500.h[1], g1).join(' | '));
+    check('…and Grow 1\'s projections didn\'t move', chainOf(L500.h[1], g1).join(' | ') === tight(10) && g1[0].transplant === '2027-01-04', chainOf(L500.h[1], g1).join(' | '));
 
     // ---- Projections made the old way (6 days late: Sunday transplants, Thursday flips) are put right by Project Crop ----
     await b.run(clw, `
@@ -133,7 +133,7 @@ export async function run(b, BASE) {
     asked = await project('R2G1');
     const again = await projected('R2G1');
     check('Project Crop again brings them back: TBA-01 transplants Monday Jan 25, every lot on the Monday / Friday rhythm, nothing asked',
-        again[0]?.transplant === '2027-01-25' && chainOf(L600.h[1], again).join(' | ') === tight(5) && asked.length === 0, chainOf(L600.h[1], again).join(' | '));
+        again[0]?.transplant === '2027-01-25' && chainOf(L600.h[1], again).join(' | ') === tight(10) && asked.length === 0, chainOf(L600.h[1], again).join(' | '));
 
     // ---- Reproject: a real lot takes Grow 1's first slot (SitkaTools' hook removes TBA-01) and harvests a week late ----
     await b.run(clw, `
@@ -150,8 +150,8 @@ export async function run(b, BASE) {
     const re = await projected('R1G1');
     check('Reproject: the next lot moves in Monday Mar 22, the Monday after the new lot\'s two-day harvest ends on Friday Mar 19 (no Tank & Irrigation Clean: harvest end + 2), and flips Friday Mar 26',
         re[0]?.transplant === '2027-03-22' && re[0]?.flip === '2027-03-26', JSON.stringify(re[0]));
-    check('…5 projected lots again, every one moving in the Monday after the previous harvest ends and flipping that Friday, the fresh TBA-05 too',
-        re.length === 5 && chainOf(L700.h[1], re).join(' | ') === tight(5), chainOf(L700.h[1], re).join(' | '));
+    check('…10 projected lots again, every one moving in the Monday after the previous harvest ends and flipping that Friday, the fresh TBA-10 too',
+        re.length === 10 && chainOf(L700.h[1], re).join(' | ') === tight(10), chainOf(L700.h[1], re).join(' | '));
     check('…it asked first, listing TBA-01 pushed back a week', asked.length === 1 && /TBA-01: \+7d \(Mar 15 → Mar 22\)/.test(asked[0] || ''), asked[0] || '(not asked)');
 
     // ---- Unticking Multi-day: L600's Thursday–Friday harvest becomes one day on the Friday, nothing else moves ----
