@@ -123,6 +123,37 @@ export async function run(b, BASE) {
     await b.run(main, `document.getElementById('viewMonthBtn').click();`, { user: true });
     v = await b.run(main, READ);
     check('back to Monthly: still man-hours', v.btn.pressed === 'true' && v.today.tasks === 0 && v.today.lines[0] === '⏱ 4 h', JSON.stringify(v.today));
+
+    // ---- 👥 People: the man-hours as people in 8-hour days first, the hours second (user request 2026-11-01) ----
+    const people = () => b.run(main, `const p = document.getElementById('hoursPeopleBtn'), order = [...p.parentElement.children].map(c => c.id).filter(Boolean);
+        return { shown: getComputedStyle(p).display !== 'none', pressed: p.getAttribute('aria-pressed'), text: p.textContent, after: order[order.indexOf('hoursPeopleBtn') - 1] };`);
+    let pb = await people();
+    check('👥 People beside ⏱ Man-hours while it\'s on, not pressed', pb.shown && pb.pressed === 'false' && pb.text === '👥 People' && pb.after === 'hoursModeBtn', JSON.stringify(pb));
+    await b.run(main, `document.getElementById('hoursPeopleBtn').click();`, { user: true });
+    v = await b.run(main, READ);
+    pb = await people();
+    check('pressed: each day shows its people first, the hours under them — today "👥 0.5 people", "⏱ 4 h", "🔮 0.4 people projected"; the trim "👥 8 people", "⏱ 64 h"',
+        pb.pressed === 'true' && JSON.stringify(v.today.lines) === JSON.stringify(['👥 0.5 people', '⏱ 4 h', '🔮 0.4 people projected', '⚠️ 2 tasks, no estimate'])
+        && JSON.stringify(v.trim?.lines) === JSON.stringify(['👥 8 people', '⏱ 64 h']) && v.trim.load === '1.000', JSON.stringify([v.today.lines, v.trim]));
+    check('…the line leads with eight-hour shifts, then the hours; projected and the busiest day in people too',
+        !!v.note && v.note.includes(`${monthName}: ${Math.round(total / 8 * 10) / 10} eight-hour shifts of estimated work = ${total} h`) && v.note.includes('🔮 0.4 shifts of it projected')
+        && (trimDaysInMonth ? v.note.includes('👥 8 people, 64 h') : v.note.includes('👥 0.5 people, 4 h')), v.note);
+    const ptip = await b.run(main, `Calendar._showDayTooltip('${T}', 20, 20); const t = Calendar._getTooltipEl().textContent; Calendar._hideEventTooltip(); return t;`);
+    check('…the day\'s tooltip: "👥 0.5 people in 8-hour days ≈ ⏱ 4 h of estimated work (0.4 people projected)"', ptip.includes('👥 0.5 people in 8-hour days ≈ ⏱ 4 h of estimated work (0.4 people projected)'), ptip.slice(0, 200));
+    const pw = await b.run(main, `document.getElementById('viewWeekBtn').click(); Calendar.weekAnchorDate = '${T}'; Calendar.render();
+        const card = d => document.querySelector('#weekView .week-day[data-date="' + d + '"]');
+        const row = id => document.querySelector('#weekView .week-event[data-event-id="' + id + '"] .week-hours')?.textContent ?? '';
+        return { today: card('${T}').querySelector('.week-count').textContent.replace(/\\s+/g, ' ').trim(), rows: [row('ev_cropb1'), row('ev_mh_proj'), row('ev_equipb1'), row('ev_mh_trim')],
+            shown: getComputedStyle(document.getElementById('hoursPeopleBtn')).display !== 'none' };`, { user: true });
+    check('…the 7-Day view: "👥 0.5 people · ⏱ 4 h · 6 tasks", each task in people (0.1, 0.4, no estimate, 8)', pw.shown && pw.today === '👥 0.5 people · ⏱ 4 h · 6 tasks'
+        && JSON.stringify(pw.rows) === JSON.stringify(['0.1 people', '0.4 people', 'no estimate', '8 people']), JSON.stringify(pw));
+    const pa = await b.run(main, `document.getElementById('viewYearBtn').click(); Calendar.currentYear = ${Number(T.slice(0, 4))}; Calendar.render();
+        const n = d => document.querySelector('#annualGrid .annual-day[data-date="' + d + '"] .annual-hours')?.textContent ?? null;
+        return [n('${T}'), n('${T1}')];`, { user: true });
+    check('…Annual: each day\'s people, digits only — today "0.5", the trim day "8"', JSON.stringify(pa) === '["0.5","8"]', JSON.stringify(pa));
+    await b.run(main, `document.getElementById('viewMonthBtn').click(); document.getElementById('hoursPeopleBtn').click();`, { user: true });
+    v = await b.run(main, READ);
+    check('👥 People again: hours first as before', JSON.stringify(v.today.lines) === JSON.stringify(['⏱ 4 h', '👥 0.5 people', '🔮 3 h projected', '⚠️ 2 tasks, no estimate']) && (await people()).pressed === 'false', JSON.stringify(v.today.lines));
     await b.send('browsingContext.setViewport', { context: main, viewport: { width: 800, height: 1280 } });
     const wide = await b.run(main, `await new Promise(r => setTimeout(r, 100)); return { page: document.documentElement.scrollWidth, view: innerWidth };`);
     check('at 800 px the page doesn\'t scroll sideways', wide.page <= wide.view, JSON.stringify(wide));

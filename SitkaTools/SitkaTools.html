@@ -1088,6 +1088,10 @@
         .day-hours .dh-warn { font-size: 0.72rem; color: var(--warning); }
         .week-count .wc-hours { color: var(--text-primary); font-weight: 700; }
         .week-count .wc-people { color: var(--accent); font-weight: 700; }
+        /* 👥 People: the people first and large, the hours under them */
+        .day-hours.people .dh-people { font-size: 1.05rem; font-weight: 700; }
+        .day-hours.people .dh-hours { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+        .week-count.people .wc-hours { color: var(--text-secondary); font-weight: 600; }
         .week-event .week-hours { margin-left: auto; padding-left: 8px; white-space: nowrap; font-size: 0.8rem; font-weight: 700; color: var(--accent); }
         .week-event .week-hours.none { font-weight: 400; color: var(--text-secondary); }
         .week-event.week-chores { cursor: help; background: rgba(83, 216, 168, 0.08); border-left: 3px solid var(--accent); }
@@ -7854,6 +7858,8 @@
                     <span>🏛️ Holidays</span>
                 </label>
                 <button type="button" class="hours-toggle" id="hoursModeBtn" aria-pressed="false" title="Show each day's estimated man-hours, and the people that is in 8-hour days, in place of its tasks (Monthly, 7-Day and Annual views). Click again to show the tasks.">⏱ Man-hours</button>
+                <!-- 👥 People (user request 2026-11-01): the man-hours as people in 8-hour days (hours ÷ 8) first, the hours second -->
+                <button type="button" class="hours-toggle hidden" id="hoursPeopleBtn" aria-pressed="false" title="Show the man-hours as people: each day's hours ÷ an 8-hour day, first (the hours under them). Click again to show hours first.">👥 People</button>
                 <button type="button" class="hours-toggle hidden" id="hoursChoresBtn" aria-pressed="false" title="Add DailyWizard's daily tasks (each building's chores on their days) to the man-hours. A room's chores count only on days a lot is in the room.">📋 Daily tasks</button>
                 <!-- ⏱ The man-hours shown, as a CSV file: a link to click or right-click → Save Link As…, like 💾 Save DB's -->
                 <div class="export-wrapper hidden" id="hoursCsvWrap">
@@ -16950,6 +16956,7 @@
             showHolidays: true,
             hoursMode: false,   // ⏱ Man-hours in place of tasks (Monthly, 7-Day and Annual; this page session only)
             hoursChores: false, // 📋 …with DailyWizard's daily tasks added
+            hoursPeople: false, // 👥 …as people in 8-hour days first (hours ÷ 8), the hours second
 
             // ---- View mode: 'month' | 'week' (7-day stacked) | 'year' (12-month annual) | 'launch' (🚀 launch windows) ----
             viewMode: 'month',
@@ -17025,6 +17032,11 @@
                 // ⏱ Man-hours: each day's estimated hours and people in place of its tasks (user request 2026-11-01)
                 $('hoursModeBtn').addEventListener('click', () => {
                     this.hoursMode = !this.hoursMode;
+                    this.render();
+                });
+                // 👥 People: the man-hours as people in 8-hour days first (user request 2026-11-01)
+                $('hoursPeopleBtn').addEventListener('click', () => {
+                    this.hoursPeople = !this.hoursPeople;
                     this.render();
                 });
                 // 📋 Daily tasks: DailyWizard's chores added to the man-hours (user request 2026-11-01)
@@ -17289,9 +17301,12 @@
                 let html = `<div class="tt-day-header">📅 ${escapeHtml(dateStr)} — ${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}</div>`;
                 if (this.hoursMode && (this.viewMode === 'month' || this.viewMode === 'year')) {
                     const m = this._dayHours(dateStr);
-                    const of = [m.chores?.hours > 0 ? `📋 ${fmtHours(m.chores.hours)} h daily tasks` : '', m.projected > 0 ? `${fmtHours(m.projected)} h projected` : ''].filter(Boolean);
-                    if (m.tasks || m.chores?.chores.length) html += `<div class="tt-row">⏱ ${fmtHours(m.hours)} h of estimated work ≈ 👥 ${fmtPeople(m.people)} in ${WORKDAY_HOURS}-hour days${of.length ? ` (${of.join(', ')})` : ''}${m.missing.length ? ` · ⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'} with no estimate` : ''}</div>`;
-                    if (m.chores?.chores.length) html += `<div class="tt-row">📋 ${m.chores.chores.map(c => `${escapeHtml(c.task.emoji || '')} ${escapeHtml(c.task.name || c.task.code)} ${fmtHours(c.hours)} h`).join(' · ')}</div>`;
+                    const of = [m.chores?.hours > 0 ? `📋 ${this._amount(m.chores.hours)} daily tasks` : '', m.projected > 0 ? `${this._amount(m.projected)} projected` : ''].filter(Boolean);
+                    const lead = this.hoursPeople   // 👥 People: the people first
+                        ? `👥 ${fmtPeople(m.people)} in ${WORKDAY_HOURS}-hour days ≈ ⏱ ${fmtHours(m.hours)} h of estimated work`
+                        : `⏱ ${fmtHours(m.hours)} h of estimated work ≈ 👥 ${fmtPeople(m.people)} in ${WORKDAY_HOURS}-hour days`;
+                    if (m.tasks || m.chores?.chores.length) html += `<div class="tt-row">${lead}${of.length ? ` (${of.join(', ')})` : ''}${m.missing.length ? ` · ⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'} with no estimate` : ''}</div>`;
+                    if (m.chores?.chores.length) html += `<div class="tt-row">📋 ${m.chores.chores.map(c => `${escapeHtml(c.task.emoji || '')} ${escapeHtml(c.task.name || c.task.code)} ${this._amount(c.hours)}`).join(' · ')}</div>`;
                 }
 
                 // Holiday + cluster context (previously shown in the native title)
@@ -17816,7 +17831,9 @@
                         ${holiday ? `<span class="week-holiday">🏛️ ${escapeHtml(holiday.name)}</span>` : ''}
                         ${this.hoursMode ? (() => {
                             const m = this._dayHours(dateStr);
-                            return `<span class="week-count">${m.hours > 0 ? `<span class="wc-hours">⏱ ${fmtHours(m.hours)} h</span> · <span class="wc-people">👥 ${fmtPeople(m.people)}</span> · ` : ''}${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>`;
+                            const both = [`<span class="wc-hours">⏱ ${fmtHours(m.hours)} h</span>`, `<span class="wc-people">👥 ${fmtPeople(m.people)}</span>`];
+                            if (this.hoursPeople) both.reverse();   // 👥 People: the people first
+                            return `<span class="week-count${this.hoursPeople ? ' people' : ''}">${m.hours > 0 ? `${both.join(' · ')} · ` : ''}${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>`;
                         })() : `<span class="week-count">${dayEvents.length} task${dayEvents.length !== 1 ? 's' : ''}</span>`}
                     </div>`;
 
@@ -17828,7 +17845,7 @@
                         for (const [bid, list] of byB) {
                             const h = list.reduce((t, c) => t + c.hours, 0);
                             const tip = list.map(c => `${c.task.emoji || '📋'} ${c.task.name || c.task.code} — 👥 ${Number.isInteger(c.task.staff) && c.task.staff >= 1 ? c.task.staff : 1} × ${c.task.minutes}m = ${fmtHours(c.hours)} h`).join('\n');
-                            choreRows += `<div class="week-event week-chores" title="${escapeHtml(tip)}"><span class="week-title">📋 Daily tasks · ${escapeHtml(DB.data?.buildings?.[bid]?.name || bid)} — ${list.length} task${list.length === 1 ? '' : 's'}</span><span class="week-hours">${fmtHours(h)} h</span></div>`;
+                            choreRows += `<div class="week-event week-chores" title="${escapeHtml(tip)}"><span class="week-title">📋 Daily tasks · ${escapeHtml(DB.data?.buildings?.[bid]?.name || bid)} — ${list.length} task${list.length === 1 ? '' : 's'}</span><span class="week-hours">${this._amount(h)}</span></div>`;
                         }
                     }
 
@@ -17867,7 +17884,7 @@
                             let hoursTag = '';
                             if (this.hoursMode && isWorkTask(event)) {
                                 const h = taskDayHours(event);
-                                hoursTag = h == null ? '<span class="week-hours none">no estimate</span>' : `<span class="week-hours">${fmtHours(h)} h</span>`;
+                                hoursTag = h == null ? '<span class="week-hours none">no estimate</span>' : `<span class="week-hours">${this._amount(h)}</span>`;
                             }
                             html += `<div class="${cssClass}" data-event-id="${escapeHtml(event.id || '')}"><span class="week-title">${escapeHtml(displayText)}</span>${hoursTag}</div>`;
                         });
@@ -18268,10 +18285,10 @@
                         }).join('') + '</div>';
                 }
 
-                // ⏱ Man-hours: just the day's hours, digits only (user request 2026-11-01)
+                // ⏱ Man-hours: just the day's hours, digits only (user request 2026-11-01); 👥 People: its people in 8-hour days
                 if (this.hoursMode) {
-                    const h = this._dayHours(dateStr).hours;
-                    const digits = h <= 0 ? '' : String(h >= 10 ? Math.round(h) : Math.round(h * 10) / 10);
+                    const h = this._dayHours(dateStr).hours, n = this.hoursPeople ? h / WORKDAY_HOURS : h;
+                    const digits = h <= 0 ? '' : String(n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
                     const cls = ['annual-day'];
                     if (dateStr === todayStr) cls.push('today');
                     if (holiday) cls.push('has-holiday');
@@ -18804,7 +18821,11 @@
                 $('printYearBtn')?.classList.toggle('hidden', this.viewMode !== 'year');
                 // ⏱ Man-hours only in the views with days of tasks: Monthly, 7-Day and Annual; 📋 Daily tasks while it's on
                 const hoursView = this.viewMode === 'month' || this.viewMode === 'week' || this.viewMode === 'year';
-                const hb = $('hoursModeBtn'), cb = $('hoursChoresBtn');
+                const hb = $('hoursModeBtn'), cb = $('hoursChoresBtn'), pb = $('hoursPeopleBtn');
+                if (pb) {
+                    pb.classList.toggle('hidden', !hoursView || !this.hoursMode);
+                    pb.setAttribute('aria-pressed', String(this.hoursPeople));
+                }
                 if (hb) {
                     hb.classList.toggle('hidden', !hoursView);
                     hb.setAttribute('aria-pressed', String(this.hoursMode));
@@ -18903,6 +18924,11 @@
                 return out;
             },
 
+            // ⏱ An amount of work as shown: "3 h", or with 👥 People the people that is in 8-hour days ("0.4 people")
+            _amount(h) {
+                return this.hoursPeople ? fmtPeople(h / WORKDAY_HOURS) : `${fmtHours(h)} h`;
+            },
+
             // ⏱ A day's man-hours: its tasks' (manHours), plus its daily tasks while 📋 Daily tasks is on
             _dayHours(dateStr) {
                 const m = manHours(this._eventsOnDay(dateStr));
@@ -18995,10 +19021,15 @@
                     if (m.hours > 0 && (!busiest || m.hours > busiest.hours)) busiest = { date: d, hours: m.hours, people: m.people };
                 }
                 const day = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
-                const parts = [`⏱ <b>${escapeHtml(span)}: ${fmtHours(total)} h</b> of estimated work = ${fmtHours(total / WORKDAY_HOURS)} eight-hour shifts`];
-                if (this.hoursChores) parts.push(`📋 ${fmtHours(chores)} h of it daily tasks`);
-                if (projected > 0) parts.push(`🔮 ${fmtHours(projected)} h of it projected`);
-                if (busiest) parts.push(`busiest ${escapeHtml(day(busiest.date))}: ${fmtHours(busiest.hours)} h, 👥 ${fmtPeople(busiest.people)}`);
+                // 👥 People: the work in eight-hour shifts (a person for a day each) first, the hours after
+                const people = this.hoursPeople, shifts = h => `${fmtHours(h / WORKDAY_HOURS)} shift${Math.round(h / WORKDAY_HOURS * 10) === 10 ? '' : 's'}`;
+                const parts = [people
+                    ? `👥 <b>${escapeHtml(span)}: ${fmtHours(total / WORKDAY_HOURS)} eight-hour shifts</b> of estimated work = ${fmtHours(total)} h`
+                    : `⏱ <b>${escapeHtml(span)}: ${fmtHours(total)} h</b> of estimated work = ${fmtHours(total / WORKDAY_HOURS)} eight-hour shifts`];
+                if (this.hoursChores) parts.push(`📋 ${people ? shifts(chores) : `${fmtHours(chores)} h`} of it daily tasks`);
+                if (projected > 0) parts.push(`🔮 ${people ? shifts(projected) : `${fmtHours(projected)} h`} of it projected`);
+                if (busiest) parts.push(people ? `busiest ${escapeHtml(day(busiest.date))}: 👥 ${fmtPeople(busiest.people)}, ${fmtHours(busiest.hours)} h`
+                    : `busiest ${escapeHtml(day(busiest.date))}: ${fmtHours(busiest.hours)} h, 👥 ${fmtPeople(busiest.people)}`);
                 if (missing.size) parts.push(`<span class="warn">⚠️ ${missing.size} task${missing.size === 1 ? '' : 's'} with no estimate</span>`);
                 const how = this.hoursChores
                     ? `📋 Daily tasks: each building's DailyWizard chores on their days (staff × minutes); a room's chores only on days a lot is in the room — today where the lots are now, other days by their schedules (a lot with no schedule stays where it is).`
@@ -19048,13 +19079,15 @@
                     if (m.tasks || m.chores?.chores.length) {
                         const lines = [];
                         if (m.hours > 0) {
-                            lines.push(`<div class="dh-hours">⏱ ${fmtHours(m.hours)} h</div>`, `<div class="dh-people">👥 ${fmtPeople(m.people)}</div>`);
-                            if (m.chores?.hours > 0) lines.push(`<div class="dh-note">📋 ${fmtHours(m.chores.hours)} h daily tasks</div>`);
-                            if (m.projected > 0) lines.push(`<div class="dh-note">🔮 ${fmtHours(m.projected)} h projected</div>`);
+                            // 👥 People: the people first, the hours under them
+                            const both = [`<div class="dh-hours">⏱ ${fmtHours(m.hours)} h</div>`, `<div class="dh-people">👥 ${fmtPeople(m.people)}</div>`];
+                            lines.push(...(this.hoursPeople ? both.reverse() : both));
+                            if (m.chores?.hours > 0) lines.push(`<div class="dh-note">📋 ${this._amount(m.chores.hours)} daily tasks</div>`);
+                            if (m.projected > 0) lines.push(`<div class="dh-note">🔮 ${this._amount(m.projected)} projected</div>`);
                         }
                         if (m.missing.length) lines.push(`<div class="dh-warn">⚠️ ${m.missing.length} task${m.missing.length === 1 ? '' : 's'}, no estimate</div>`);
                         const box = document.createElement('div');
-                        box.className = 'day-hours';
+                        box.className = this.hoursPeople ? 'day-hours people' : 'day-hours';
                         box.innerHTML = lines.join('');
                         cell.appendChild(box);
                     }
