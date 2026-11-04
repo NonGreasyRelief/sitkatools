@@ -192,6 +192,60 @@ export async function run(b, BASE) {
     const sel = await b.run(main, `return { id: Calendar.selectedEvent?.id, selected: !!document.querySelector('#launchView .launch-bar.selected[data-event-id="ev_lw_f100"]'), panel: document.getElementById('eventPanelBody').textContent };`);
     check('clicking a bar selects its flip task (event panel, bar outlined)', sel.id === 'ev_lw_f100' && sel.selected && sel.panel.includes('flip L100'), JSON.stringify(sel).slice(0, 200));
 
+    // ---- A bar's tooltip (user request 2026-11-04): as the month and annual views' day tooltips, the flip and harvest at
+    // the top, then the lot's key tasks by date — its first Cutting Clones, Transplanting, the leaf picks, Flip, Harvest ----
+    const F100 = fri(-5);
+    const ev = (id, lotId, taskType, date, extra = {}) => ({ id, date, title: `${taskType} ${lotId}`, sourceTool: 'CropLabourWizard', lotId, taskType, roomPhase: 'flower', ...extra });
+    await b.run(main, `DB.data.calendarEvents.push(
+            ${JSON.stringify(ev('ev_lw_t_cut', 'L100', 'clone_cut_prep', add(F100, -34)))}, ${JSON.stringify(ev('ev_lw_t_cut2', 'L100', 'clone_cut_prep', add(F100, -20)))},
+            ${JSON.stringify(ev('ev_lw_t_tp', 'L100', 'transplant', add(F100, -4), { completed: true }))}, ${JSON.stringify(ev('ev_lw_t_top', 'L100', 'topping', add(F100, -10)))},
+            ${JSON.stringify(ev('ev_lw_t_e1', 'L100', 'leafpick_early1', add(F100, 13)))}, ${JSON.stringify(ev('ev_lw_t_e2', 'L100', 'leafpick_early2', add(F100, 22)))},
+            ${JSON.stringify(ev('ev_lw_t_late', 'L100', 'leafpick_late', add(F100, 40), { endDate: add(F100, 41) }))}, ${JSON.stringify(ev('ev_lw_t_repl', 'L100', 'clone_cut', add(F100, 36)))},
+            ${JSON.stringify({ ...ev('ev_lw_t_copy', 'L100', 'leafpick_late', add(F100, 44)), copyOf: 'ev_lw_t_late' })}, ${JSON.stringify(ev('ev_lw_t_other', 'L101', 'transplant', add(F100, -4)))});
+        Calendar.render();`);
+    const D = s => new Date(s + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '') + (s.slice(0, 4) !== TODAY.slice(0, 4) ? `, ${s.slice(0, 4)}` : '');
+    const hover = async (id) => {
+        const p = await b.run(main, `const el = document.querySelector('#launchView .launch-bar[data-event-id="${id}"]'); el.scrollIntoView({ block: 'center', inline: 'nearest' });
+            const r = el.getBoundingClientRect(); return { x: Math.round(r.left + Math.min(30, r.width / 2)), y: Math.round(r.top + r.height / 2) };`);
+        await b.send('input.performActions', { context: main, actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+            actions: [{ type: 'pointerMove', x: 2, y: 2, duration: 0 }, { type: 'pointerMove', x: p.x, y: p.y, duration: 40 }] }] });
+        await b.sleep(500);
+    };
+    const TIP = `const t = document.querySelector('.event-tooltip'); if (!t) return null;
+        return { visible: t.classList.contains('visible'), launch: t.classList.contains('launch-tip'), head: t.querySelector('.tt-day-header')?.textContent || '',
+            key: [...t.querySelectorAll('.tt-key > *')].map(x => x.textContent), rows: [...t.querySelectorAll('.tt-row')].map(x => x.textContent),
+            tasks: [...t.querySelectorAll('.ts-row')].map(r => ({ name: r.querySelector('.ts-name').textContent, date: r.querySelector('.ts-date').textContent, cls: r.className })),
+            foot: t.querySelector('.tt-foot')?.textContent || '' };`;
+    const noTitle = await b.run(main, `return [...document.querySelectorAll('#launchView .launch-bar')].every(el => !el.hasAttribute('title'));`);
+    check('the bars have no plain browser tooltip (title) any more', noTitle);
+    await hover('ev_lw_f100');
+    let tip = await b.run(main, TIP);
+    check('hovering L100\'s bar: the calendar\'s tooltip box, "Lot L100 · Test Kush", "🏠 Grow 1 · Building 1"',
+        tip?.visible && tip.launch && tip.head.endsWith('Lot L100 · Test Kush') && tip.rows[0] === '🏠 Grow 1 · Building 1', JSON.stringify(tip));
+    check('…the flip and the harvest first, large', JSON.stringify(tip?.key) === JSON.stringify(['🌸 Flip', D(F100), '🌾 Harvest', D(add(F100, 63))]), JSON.stringify(tip?.key));
+    check('…then its bloom: 63 days, in bloom week N of 9', tip?.rows[1] === `63 days of bloom · in bloom: week ${wk} of 9`, JSON.stringify(tip?.rows));
+    const want = [['Cutting Clones', D(add(F100, -34))], ['Transplanting to Flower Room', D(add(F100, -4)) + ' ✓'], ['Flip to Flower', D(F100)], ['Early Flower Leaf Pick 1', D(add(F100, 13))],
+        ['Early Flower Leaf Pick 2', D(add(F100, 22))], ['Late Flower Leaf Pick', `${D(add(F100, 40))} – ${D(add(F100, 41)).replace(/, \d{4}$/, '')}`], ['Harvest', D(add(F100, 63))]];
+    check('…its key tasks by date: the first Cutting Clones only, Transplanting (✓ done), Flip, the two early leaf picks, the two-day late leaf pick, Harvest — not Topping, the replacement cut, a 📋 copy or another lot\'s',
+        JSON.stringify(tip?.tasks.map(x => [x.name, x.date.replace(' · today', '')])) === JSON.stringify(want), JSON.stringify(tip?.tasks.map(x => [x.name, x.date])));
+    check('…Flip and Harvest stand out; the days gone by are dimmed', tip?.tasks.filter(x => x.cls.includes('key')).map(x => x.name).join() === 'Flip to Flower,Harvest'
+        && tip.tasks.slice(0, 3).every(x => x.cls.includes('past')) && !tip.tasks[6].cls.includes('past'), JSON.stringify(tip?.tasks.map(x => x.cls)));
+    check('…and says a click opens its Flip to Flower task', tip?.foot === 'Click to open its Flip to Flower task', tip?.foot);
+    await hover('ev_lw_pA1');
+    tip = await b.run(main, TIP);
+    check('a projected lot\'s bar: "🔮 Projected lot R2G1-TBA-01", Grow A · Building 2 · projected, its flip and harvest',
+        tip?.visible && tip.head === '🔮 Projected lot R2G1-TBA-01' && tip.rows[0] === '🏠 Grow A · Building 2 · projected' && tip.key[1] === D(fri(3)) && tip.key[3] === D(add(fri(3), 63))
+        && tip.tasks.map(x => x.name).join() === 'Flip to Flower,Harvest', JSON.stringify(tip));
+    await b.send('input.performActions', { context: main, actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [{ type: 'pointerMove', x: 2, y: 2, duration: 30 }] }] });
+    await b.sleep(450);
+    check('…and it goes when the mouse leaves', (await b.run(main, TIP))?.visible === false);
+    await b.run(main, `document.querySelector('#launchView .launch-bar[data-event-id="ev_lw_f100"]').focus();`);
+    const focused = await b.run(main, TIP);
+    await b.run(main, `document.querySelector('#launchView .launch-bar[data-event-id="ev_lw_f100"]').blur();`);
+    focused.after = (await b.run(main, TIP))?.visible;
+    check('keyboard focus shows it too, and leaving the bar hides it', focused.visible && focused.head.endsWith('Lot L100 · Test Kush') && focused.after === false, JSON.stringify(focused).slice(0, 200));
+    await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => !e.id.startsWith('ev_lw_t_')); Calendar.render();`);
+
     // ---- Filters: building B2 only; a task-type filter changes nothing; a lot filter ----
     v = await b.run(main, `Calendar.filters = [{ key: 'building', value: 'Building 2 (B2)' }]; Calendar.render(); ${READ}`);
     const allIds = x => x.rows.flatMap(r => r.bars.map(b => b.id)).sort();
