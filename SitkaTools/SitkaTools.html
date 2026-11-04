@@ -1948,6 +1948,20 @@
         .day-event.cut-mismatch, .week-event.cut-mismatch { border-left: 3px solid var(--warning); }
         .day-event.projection.cut-mismatch, .week-event.projection.cut-mismatch { border-left-style: dashed; }
         .event-tooltip .tt-warn { color: var(--warning); font-weight: 600; }
+        /* 🚀 A launch window's crop: flip and harvest large at the top, then its key tasks by date */
+        .event-tooltip.launch-tip { max-width: 380px; min-width: 260px; }
+        .event-tooltip .tt-key { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 4px; font-size: 0.85rem; }
+        .event-tooltip .tt-key span { color: var(--text-secondary); }
+        .event-tooltip .tt-key b { color: var(--text-primary); }
+        .event-tooltip .tt-sched { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 6px; }
+        .event-tooltip .tt-sched-head { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 2px; }
+        .event-tooltip .ts-row { display: grid; grid-template-columns: 1.5em 1fr auto; gap: 8px; align-items: baseline; padding: 1px 0; }
+        .event-tooltip .ts-name { color: var(--text-primary); }
+        .event-tooltip .ts-date { text-align: right; white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+        .event-tooltip .ts-row.key .ts-name, .event-tooltip .ts-row.key .ts-date { color: var(--accent); font-weight: 700; }
+        .event-tooltip .ts-row.past { opacity: 0.55; }
+        .event-tooltip .ts-row.now { background: rgba(83, 216, 168, 0.12); border-radius: 4px; }
+        .event-tooltip .tt-foot { margin-top: 6px; font-size: 0.72rem; color: var(--text-secondary); }
         .cut-mismatch-banner {
             background: rgba(243, 156, 18, 0.15);
             border: 1px solid var(--warning);
@@ -15922,6 +15936,9 @@
         const LAUNCH_MAX_WEEKS = 156;
         // The weekly windows listed under the chart: the next 12 months (user request 2026-10-30)
         const LAUNCH_LIST_WEEKS = 52;
+        // A crop's key tasks in its bar's tooltip (user request 2026-11-04): Cutting Clones (its first), Transplanting, the
+        // early and late leaf picks (leafpick_early1 / 2, the Monday–Tuesday built-in's leafpick_early, leafpick_late), Flip, Harvest
+        const LAUNCH_TIP_TASK = t => t === 'clone_cut_prep' || t === 'transplant' || /^leafpick/.test(t || '') || t === 'flip' || t === 'harvest';
         const launchDay = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
         const launchIso = n => new Date(n * 86400000).toISOString().slice(0, 10);
         const launchAdd = (s, n) => launchIso(launchDay(s) + n);
@@ -17254,11 +17271,24 @@
 
             _showEventTooltip(event, x, y) {
                 const el = this._getTooltipEl();
-                el.classList.remove('multi');
+                el.classList.remove('multi', 'launch-tip');
                 el.innerHTML = this._eventTooltipHtml(event);
                 el.classList.add('visible');
+                this._placeTooltip(el, x, y);
+            },
 
-                // Position near the cursor, clamped to the viewport
+            // A tooltip of ready-made HTML (🚀 a launch window's crop), in the same box as the calendar's
+            _showHtmlTooltip(html, x, y, cls = '') {
+                const el = this._getTooltipEl();
+                el.classList.remove('multi', 'launch-tip');
+                if (cls) el.classList.add(cls);
+                el.innerHTML = html;
+                el.classList.add('visible');
+                this._placeTooltip(el, x, y);
+            },
+
+            // Near the cursor, clamped to the viewport
+            _placeTooltip(el, x, y) {
                 const pad = 12;
                 const rect = el.getBoundingClientRect();
                 let left = x + pad;
@@ -17328,6 +17358,7 @@
                     html += '</div>';
                 }
 
+                el.classList.remove('launch-tip');
                 el.classList.add('multi');
                 el.innerHTML = html;
                 el.classList.add('visible');
@@ -17339,19 +17370,7 @@
                     el.addEventListener('mouseleave', () => this._scheduleHideTooltip());
                 }
 
-                // Position near the cursor, clamped to the viewport
-                const pad = 12;
-                const rect = el.getBoundingClientRect();
-                let left = x + pad;
-                let top = y + pad;
-                if (left + rect.width > window.innerWidth - 8) {
-                    left = Math.max(8, x - rect.width - pad);
-                }
-                if (top + rect.height > window.innerHeight - 8) {
-                    top = Math.max(8, y - rect.height - pad);
-                }
-                el.style.left = `${left}px`;
-                el.style.top = `${top}px`;
+                this._placeTooltip(el, x, y);
             },
 
             _hideEventTooltip() {
@@ -17963,28 +17982,59 @@
                 const bloomTag = c => c.bloomDays === LAUNCH.BLOOM ? '' : (c.bloomDays % 7 === 0 ? `${c.bloomDays / 7}-wk bloom` : `${c.bloomDays}-day bloom`);
                 const cropName = c => c.projected ? c.lotId.replace(/^.*-(TBA-\d+)$/, '$1') : c.lotId;
 
-                // A crop's bar: its label and the lines of its tooltip
+                // A crop's tooltip (user request 2026-11-04: as the month and annual views' day tooltips): the lot, its flip and
+                // harvest first, how it stands, then its key tasks by date — the first Cutting Clones, Transplanting, the leaf
+                // picks, Flip and Harvest — from its own schedule (whatever the filters hide)
+                const tipHtml = c => {
+                    const weeks = Math.ceil(c.bloomDays / 7), wk = Math.floor((launchDay(M.day) - launchDay(c.flip)) / 7) + 1;
+                    const over = M.overlapping.has(c), lot = data.lots?.[c.lotId], room = rooms[c.roomId];
+                    const where = [roomName(c.roomId), room?.buildingId ? (data.buildings?.[room.buildingId]?.name || room.buildingId) : ''].filter(Boolean).join(' · ');
+                    const range = (a, b) => b && b !== a ? `${fmtY(a)} – ${fmt(b)}` : fmtY(a);
+                    let html = `<div class="tt-day-header">${c.projected ? '🔮 Projected lot' : `${escapeHtml(lotPhaseEmoji(c.lotId) || '🌸')} Lot`} ${escapeHtml(c.lotId)}${lot?.strain ? ` · ${escapeHtml(lot.strain)}` : ''}</div>`;
+                    html += `<div class="tt-row">🏠 ${escapeHtml(where)}${c.projected ? ' · projected' : ''}</div>`;
+                    html += `<div class="tt-key"><span>🌸 Flip</span><b>${escapeHtml(fmtY(c.flip))}</b>`
+                        + `<span>🌾 Harvest</span><b>${escapeHtml(range(c.harvestStart, c.harvestEnd))}${c.estimated ? ' (est.)' : ''}</b></div>`;
+                    html += `<div class="tt-row">${c.bloomDays} days of bloom${bloomTag(c) ? ` (${escapeHtml(bloomTag(c))})` : ''}${M.inBloom(c) ? ` · in bloom: week ${Math.min(wk, weeks)} of ${weeks}` : ''}</div>`;
+                    for (const w of [c.estimated ? 'No harvest task: harvest estimated 63 days after the flip' : '',
+                        over ? `Harvest overlap: another crop harvests the week of ${fmt(launchMonday(launchWeekOf(c.harvestStart)))}` : '',
+                        c.stale ? 'Its flip day has passed and no lot was made for it' : '']) if (w) html += `<div class="tt-row tt-warn">⚠️ ${escapeHtml(w)}</div>`;
+                    if (c.superseded) html += `<div class="tt-row tt-warn">⏳ Overlaps a real lot in this room: Reproject in CropLabourWizard</div>`;
+                    // Its key tasks, by date: its first Cutting Clones, then every Transplanting, leaf pick, Flip and Harvest
+                    const mine = (data.calendarEvents || []).filter(ev => ev && ev.lotId === c.lotId && ev.sourceTool === c.flipEv.sourceTool
+                        && !('copyOf' in ev) && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || '') && LAUNCH_TIP_TASK(ev.taskType))
+                        .sort((a, b) => a.date.localeCompare(b.date) || (a.repeat || 0) - (b.repeat || 0));
+                    const cut = mine.find(ev => ev.taskType === 'clone_cut_prep');
+                    const tasks = mine.filter(ev => ev.taskType !== 'clone_cut_prep' || ev === cut);
+                    if (tasks.length) {
+                        html += '<div class="tt-sched"><div class="tt-sched-head">Key tasks</div>';
+                        for (const ev of tasks) {
+                            const end = ev.endDate && ev.endDate > ev.date ? ev.endDate : ev.date;
+                            const name = this._taskTypeName(ev.taskType) || String(ev.title || '').replace(/^.*?,\s*/, '');
+                            const cls = ['ts-row', ev.taskType === 'flip' || ev.taskType === 'harvest' ? 'key' : '', end < today ? 'past' : '',
+                                ev.date <= today && today <= end ? 'now' : ''].filter(Boolean).join(' ');
+                            html += `<div class="${cls}"><span class="ts-emoji">${escapeHtml(this._eventEmoji(ev))}</span><span class="ts-name">${escapeHtml(name)}</span>`
+                                + `<span class="ts-date">${escapeHtml(range(ev.date, end))}${ev.completed ? ' ✓' : ''}${ev.date <= today && today <= end ? ' · today' : ''}</span></div>`;
+                        }
+                        html += '</div>';
+                    }
+                    html += `<div class="tt-foot">Click to open its Flip to Flower task</div>`;
+                    return html;
+                };
+                const barCrops = [];
+
+                // A crop's bar and its label (its tooltip: tipHtml)
                 const bar = (c, lane) => {
                     const weeks = Math.ceil(c.bloomDays / 7), wk = Math.floor((launchDay(M.day) - launchDay(c.flip)) / 7) + 1;
                     const status = M.day < c.flip ? `flips ${fmt(c.flip)}` : M.inBloom(c) ? `wk ${Math.min(wk, weeks)}/${weeks}` : 'harvested';
                     const over = M.overlapping.has(c), tag = bloomTag(c);
-                    const lot = data.lots?.[c.lotId];
                     const text = [c.stale ? '⚠️' : c.superseded ? '⏳' : over ? '⚠️' : (c.projected ? '' : lotPhaseEmoji(c.lotId)),
                         `${cropName(c)} · ${roomName(c.roomId)}`, '·', c.projected ? 'projected' : status, tag ? `· ${tag}` : '', c.estimated ? '· est.' : '']
                         .filter(Boolean).join(' ');
-                    const tip = [c.projected ? `Projected lot ${c.lotId}` : `Lot ${c.lotId}${lot?.strain ? ' · ' + lot.strain : ''}`,
-                        roomName(c.roomId),
-                        `Flip ${fmtY(c.flip)} → harvest ${fmtY(c.harvestStart)}${c.harvestEnd !== c.harvestStart ? '–' + fmtY(c.harvestEnd) : ''} (${c.bloomDays} days)`,
-                        M.inBloom(c) ? `In bloom: week ${Math.min(wk, weeks)} of ${weeks}` : '',
-                        c.estimated ? '⚠️ No harvest task: harvest estimated 63 days after the flip' : '',
-                        over ? `⚠️ Harvest overlap: another crop harvests the week of ${fmt(launchMonday(launchWeekOf(c.harvestStart)))}` : '',
-                        c.stale ? '⚠️ Its flip day has passed and no lot was made for it' : '',
-                        c.superseded ? '⏳ Overlaps a real lot in this room: Reproject in CropLabourWizard' : '',
-                        'Click to open its Flip to Flower task'].filter(Boolean).join('\n');
                     const cls = ['launch-bar', c.projected ? 'projection' : '', c.stale ? 'stale' : '', c.superseded ? 'superseded' : '',
                         over ? 'overlap' : '', c.estimated ? 'estimated' : '', !c.projected && c.harvestEnd < M.day ? 'done' : '',
                         this.selectedEvent === c.flipEv ? 'selected' : ''].filter(Boolean).join(' ');
-                    return `<button type="button" class="${cls}" style="${place(c.flip, c.harvestEnd)};--lane:${lane}" data-event-id="${escapeHtml(c.flipEv.id || '')}" title="${escapeHtml(tip)}">${escapeHtml(text)}</button>`;
+                    barCrops.push(c);
+                    return `<button type="button" class="${cls}" style="${place(c.flip, c.harvestEnd)};--lane:${lane}" data-event-id="${escapeHtml(c.flipEv.id || '')}" data-tip="${barCrops.length - 1}">${escapeHtml(text)}</button>`;
                 };
 
                 // The month labels, the as-of week and today, drawn on every row
@@ -18099,7 +18149,8 @@
                     </div></div>
                     <div class="launch-panels">${checkPanel}${yearPanel}</div>`;
 
-                // Click a bar → its Flip to Flower task in the event panel
+                // Click a bar → its Flip to Flower task in the event panel. Hover (or focus) → its tooltip, as a day's in the
+                // month view: after a moment, near the pointer, gone a moment after it leaves
                 view.querySelectorAll('.launch-bar').forEach(el => {
                     el.addEventListener('click', () => {
                         const ev = this.eventById(el.dataset.eventId);
@@ -18107,6 +18158,18 @@
                         this.selectEvent(ev);
                         $('eventPanel')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
                     });
+                    const crop = barCrops[Number(el.dataset.tip)];
+                    if (!crop) return;
+                    el.addEventListener('mouseenter', (e) => {
+                        this._hideEventTooltip();
+                        this._tooltipTimer = setTimeout(() => this._showHtmlTooltip(tipHtml(crop), e.clientX, e.clientY, 'launch-tip'), 300);
+                    });
+                    el.addEventListener('mouseleave', () => {
+                        if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
+                        this._scheduleHideTooltip();
+                    });
+                    el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); this._showHtmlTooltip(tipHtml(crop), r.left, r.bottom, 'launch-tip'); });
+                    el.addEventListener('blur', () => this._hideEventTooltip());
                 });
             },
 
