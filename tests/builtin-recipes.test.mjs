@@ -1,6 +1,6 @@
 // The built-in bloom recipe: the agreed Sitka Standard (user decision 2026-10-30; it replaced the 20-, 19- and 18-day-veg
 // built-ins): 20-day veg, clones cut on a Saturday, every room harvesting on a Friday, the next lot transplanting the Monday after
-// (the day after Tank & Irrigation Clean) and flipping on the Friday, a new lot every 70 days; two one-day early leaf picks
+// (the day after Tank & Irrigation Clean) and flipping on the Friday, a new lot every 70 days; two early leaf picks (a day, then four)
 // (bloom days 13 and 22) and the team's labour estimates. Plus the built-in 🌿 mother recipe (the user's own, 2026-10-27):
 // mothers retired 110 days after planting, every task once, the replacement cut off by default.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
@@ -60,12 +60,12 @@ export async function run(b, BASE) {
     const r = await b.run(clw, `const r = getRecipeById('sitka-9week'); const t = tt => r.tasks.find(x => x.taskType === tt);
         return { n: r.tasks.length, valid: validateRecipe(r).length, old: !!t('leafpick_early'), p1: t('leafpick_early1'), p2: t('leafpick_early2'), late: t('leafpick_late'),
             est: r.tasks.filter(x => x.minutes).map(x => x.taskType + ' ' + x.staff + '×' + x.minutes).join(', '), none: r.tasks.filter(x => !x.minutes).map(x => x.taskType).join() };`);
-    check('33 tasks, valid; the one early leaf pick is now two one-day picks, flip + 13 and flip + 22; the late one flip + 40 for 2 days',
-        r.n === 33 && r.valid === 0 && !r.old && r.p1?.reference === 'flip' && r.p1.defaultOffset === 13 && !r.p1.days && r.p2?.defaultOffset === 22 && !r.p2.days &&
-        r.late?.defaultOffset === 40 && r.late.days === 2, JSON.stringify({ p1: r.p1, p2: r.p2, late: r.late }));
-    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, leaf pick 2 8 people × 8 h, trim 8 people × 8 h a day, and the rest from labourhours.json',
+    check('33 tasks, valid; two early leaf picks, flip + 13 for a day and flip + 17 for 4 days; the late one flip + 38 for 4 days (user request 2026-11-04)',
+        r.n === 33 && r.valid === 0 && !r.old && r.p1?.reference === 'flip' && r.p1.defaultOffset === 13 && !r.p1.days && r.p2?.defaultOffset === 17 && r.p2.days === 4 &&
+        r.late?.defaultOffset === 38 && r.late.days === 4, JSON.stringify({ p1: r.p1, p2: r.p2, late: r.late }));
+    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, the 4-day picks 6 people × 4 h a day, trim 8 people × 8 h a day, and the rest from labourhours.json',
         r.est === 'clone_cut_prep 3×360, planting 2×120, clone_room_clean 2×60, topping 2×90, layout_coco_blocks 2×180, undercanopy_lights 2×240, transplant 4×300, ' +
-            'veg_room_clean 2×90, deploy_ipm 3×90, prune 3×360, trellis_layout 2×240, leafpick_early1 4×360, leafpick_early2 8×480, leafpick_late 6×960, harvest 10×480, ' +
+            'veg_room_clean 2×90, deploy_ipm 3×90, prune 3×360, trellis_layout 2×240, leafpick_early1 4×360, leafpick_early2 6×240, leafpick_late 6×240, harvest 10×480, ' +
             'tank_irrigation_clean 1×240, tote_prep 2×120, bucking 3×480, trim_room_prep 1×60, trim 8×480, machine_trim 1×240, dry_room_clean 2×120, weigh_ship 1×60' &&
         r.none === 'ipm_spray_veg_early,order_ipm,hydrate_coco_blocks,ipm_spray_veg_second,flip,ipm_spray_flower_start,ipm_spray_flower_week2,clone_cut,room_clean,lab_sample', JSON.stringify(r));
 
@@ -78,8 +78,8 @@ export async function run(b, BASE) {
             agreedKept: a.tasks.some(t => t.taskType === 'leafpick_early1'), default: BUILTIN_RECIPE.id };`);
     check('the Monday–Tuesday leaf pick: a valid built-in of 32 tasks, the agreed recipe in every other task, timing and labour; the agreed one stays the default',
         mt.builtin && mt.n === 32 && mt.valid === 0 && mt.same && mt.chain && mt.agreedKept && mt.default === 'sitka-9week', JSON.stringify(mt));
-    check('…its early leaf pick is one pick over two days, flip + 17 (bloom days 17–18), 6 people × 16 h a day (labourhours.json), where the two picks were',
-        !mt.split && mt.at && mt.early?.reference === 'flip' && mt.early.defaultOffset === 17 && mt.early.days === 2 && mt.early.staff === 6 && mt.early.minutes === 960 && mt.early.name === 'Early Flower Leaf Pick',
+    check('…its early leaf pick is one pick over four days, flip + 17 (Monday–Thursday), 6 people × 4 h a day, where the two picks were (user request 2026-11-04)',
+        !mt.split && mt.at && mt.early?.reference === 'flip' && mt.early.defaultOffset === 17 && mt.early.days === 4 && mt.early.staff === 6 && mt.early.minutes === 240 && mt.early.name === 'Early Flower Leaf Pick',
         JSON.stringify(mt.early));
 
     // ---- Generate with it, clones cut on a Saturday ----
@@ -98,7 +98,7 @@ export async function run(b, BASE) {
     const a = await gen('L300', 'sitka-9week', '2026-10-24');
     check('it saves its id on the lot', a.cfg?.recipeId === 'sitka-9week', JSON.stringify(a.cfg));
     const plan = [[['clone_cut_prep', 'planting'], 'Sat'], [['layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights'], 'Sun'], [['transplant'], 'Mon'],
-        [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri'], [['leafpick_early1'], 'Thu'], [['leafpick_early2'], 'Sat'], [['room_clean'], 'Sat'],
+        [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri'], [['leafpick_early1'], 'Thu'], [['leafpick_early2', 'leafpick_late'], 'Mon'], [['room_clean'], 'Sat'],
         [['tank_irrigation_clean'], 'Sun'], [['clone_cut'], 'Sat'], [['tote_prep'], 'Thu'], [['bucking', 'lab_sample', 'trim_room_prep'], 'Wed'], [['trim'], 'Thu'], [['weigh_ship'], 'Fri']];
     for (const [types, d] of plan) check(`20-day veg, cut Saturday: ${types.join(', ')} on ${d}`, days(a.on, types) === want(types, d), days(a.on, types));
     check('…planting Day 0 + 14, transplant planting + 16, flip + 20, harvest 9 weeks after flip',
@@ -107,11 +107,11 @@ export async function run(b, BASE) {
     check('…12 days drying: Bucking 12 days after harvest, Trim from day 13 (7 days), Weigh & Ship 21 days after harvest',
         daysBetween(a.on.harvest, a.on.bucking) === 12 && daysBetween(a.on.harvest, a.on.trim) === 13 && daysBetween(a.on.trim, a.end.trim) === 6 && daysBetween(a.on.harvest, a.on.weigh_ship) === 21, JSON.stringify([a.on.harvest, a.on.bucking, a.on.trim, a.end.trim, a.on.weigh_ship]));
     const pick = (l, t) => [daysBetween(l.on.flip, l.on[t]), l.end[t] && daysBetween(l.on.flip, l.end[t]), weekday(l.on[t]), l.end[t] && weekday(l.end[t])].filter(x => x !== null).join(' ');
-    check('…leaf picks, flip day = day 0: early 1 on bloom day 13 (Thu), early 2 on day 22 (Sat), one day each; late on days 40–41 (Wed–Thu)',
-        pick(a, 'leafpick_early1') === '13 Thu' && pick(a, 'leafpick_early2') === '22 Sat' && pick(a, 'leafpick_late') === '40 41 Wed Thu' && !a.on.leafpick_early,
+    check('…leaf picks, flip day = day 0: early 1 on bloom day 13 (Thu), one day; early 2 on days 17–20 and late on days 38–41, Monday to Thursday',
+        pick(a, 'leafpick_early1') === '13 Thu' && pick(a, 'leafpick_early2') === '17 20 Mon Thu' && pick(a, 'leafpick_late') === '38 41 Mon Thu' && !a.on.leafpick_early,
         `${pick(a, 'leafpick_early1')} | ${pick(a, 'leafpick_early2')} | ${pick(a, 'leafpick_late')}`);
-    check('…each task carries its labour estimate (leaf pick 1: 4 × 360 min, leaf pick 2: 8 × 480, transplant 4 × 300)',
-        a.est.leafpick_early1 === '4×360' && a.est.leafpick_early2 === '8×480' && a.est.transplant === '4×300' && !a.est.flip, JSON.stringify(a.est));
+    check('…each task carries its labour estimate (leaf pick 1: 4 × 360 min; leaf pick 2 and the late pick: 6 × 240 a day; transplant 4 × 300)',
+        a.est.leafpick_early1 === '4×360' && a.est.leafpick_early2 === '6×240' && a.est.leafpick_late === '6×240' && a.est.transplant === '4×300' && !a.est.flip, JSON.stringify(a.est));
     check('…the off-by-default IPM sprays aren\'t generated', !a.on.ipm_spray_veg_second && !a.on.ipm_spray_flower_start, JSON.stringify(Object.keys(a.on)));
     // The next lot: Day 0 = this lot's clone cut, transplanted planting + 16 later
     const nextTransplant = daysBetween(a.on.harvest, a.on.clone_cut) + 14 + 16;
@@ -120,8 +120,8 @@ export async function run(b, BASE) {
 
     // Generated with the Monday–Tuesday leaf pick: its early leaf pick on the Monday and Tuesday, everything else on the agreed days
     const m = await gen('L400', 'sitka-9week-montue', '2026-10-24');
-    check('generated with the Monday–Tuesday leaf pick: it saves its id; the early leaf pick on bloom days 17–18, Monday–Tuesday, 6 × 960 a day',
-        m.cfg?.recipeId === 'sitka-9week-montue' && pick(m, 'leafpick_early') === '17 18 Mon Tue' && m.est.leafpick_early === '6×960' && !m.on.leafpick_early1 && !m.on.leafpick_early2,
+    check('generated with the Monday–Tuesday leaf pick: it saves its id; the early leaf pick on bloom days 17–20, Monday–Thursday, 6 × 240 a day',
+        m.cfg?.recipeId === 'sitka-9week-montue' && pick(m, 'leafpick_early') === '17 20 Mon Thu' && m.est.leafpick_early === '6×240' && !m.on.leafpick_early1 && !m.on.leafpick_early2,
         JSON.stringify({ id: m.cfg?.recipeId, pick: pick(m, 'leafpick_early'), est: m.est.leafpick_early }));
     check('…every other task on the same day as the agreed recipe\'s', Object.keys(a.on).filter(t => !/^leafpick_early/.test(t)).every(t => m.on[t] === a.on[t]) && Object.keys(m.on).length === Object.keys(a.on).length - 1,
         JSON.stringify(Object.keys(a.on).filter(t => m.on[t] !== a.on[t])));

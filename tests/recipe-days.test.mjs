@@ -25,8 +25,8 @@ export async function run(b, BASE) {
     await b.run(clw, `openRecipeManager(); duplicateRecipe(BUILTIN_RECIPE);`, { user: true });
     let ed = await editorDays();
     const want = { clone_cut_prep: "day 1 of the plant's life", planting: "day 15 of the plant's life", transplant: "day 31 of the plant's life",
-        ipm_spray_veg_second: "day 32 of the plant's life", flip: "day 35 of the plant's life", leafpick_early1: "day 48 of the plant's life", leafpick_early2: "day 57 of the plant's life",
-        clone_cut: "day 71 of the plant's life", leafpick_late: "days 75–76 of the plant's life", harvest: "day 98 of the plant's life",
+        ipm_spray_veg_second: "day 32 of the plant's life", flip: "day 35 of the plant's life", leafpick_early1: "day 48 of the plant's life", leafpick_early2: "days 52–55 of the plant's life",
+        clone_cut: "day 71 of the plant's life", leafpick_late: "days 73–76 of the plant's life", harvest: "day 98 of the plant's life",
         room_clean: 'day 1 after harvest', tank_irrigation_clean: 'day 2 after harvest', bucking: 'day 12 after harvest', trim: 'days 13–19 after harvest', weigh_ship: 'day 21 after harvest' };
     for (const [tt, w] of Object.entries(want)) check(`editor, default recipe: ${tt} on ${w}`, ed[tt] === w, ed[tt]);
     // Typing a new flip day moves everything after it, as you type
@@ -50,8 +50,8 @@ export async function run(b, BASE) {
         out[e.def.taskType] = row?.querySelector('.preview-task-life')?.textContent; }); return { out, label: document.getElementById('anchorDateLabel').textContent };`);
     let pv = await preview();
     check('preview: the date reads "Cloning Date (day 1)"', pv.label === 'Cloning Date (day 1)', pv.label);
-    check('preview: early leaf picks on days 48 and 57 of the plant\'s life, harvest on day 98, Grow-Room Clean on day 1 after harvest, Weigh & Ship day 21 after',
-        pv.out.leafpick_early1 === "day 48 of the plant's life" && pv.out.leafpick_early2 === "day 57 of the plant's life" && pv.out.harvest === "day 98 of the plant's life" && pv.out.room_clean === 'day 1 after harvest' && pv.out.weigh_ship === 'day 21 after harvest', JSON.stringify(pv.out));
+    check('preview: early leaf picks on day 48 and days 52–55 of the plant\'s life, harvest on day 98, Grow-Room Clean on day 1 after harvest, Weigh & Ship day 21 after',
+        pv.out.leafpick_early1 === "day 48 of the plant's life" && pv.out.leafpick_early2 === "days 52–55 of the plant's life" && pv.out.harvest === "day 98 of the plant's life" && pv.out.room_clean === 'day 1 after harvest' && pv.out.weigh_ship === 'day 21 after harvest', JSON.stringify(pv.out));
     check('…a switched-off task still says where it would land (second veg spray, day 32)', pv.out.ipm_spray_veg_second === "day 32 of the plant's life", pv.out.ipm_spray_veg_second);
     await b.run(clw, `document.getElementById('harvestMultiCheck').click();`, { user: true });
     pv = await preview();
@@ -84,7 +84,7 @@ export async function run(b, BASE) {
     check('…every task in order, with when, its day, how long it runs, its labour and whether it\'s optional (no Repeats column: no task repeats)',
         p?.rows?.length === 33 && p.heads.join() === '#,Task,When,Day,Runs,Labour,Optional' && row('Harvest').When === '+63 days after Flip to Flower' && row('Harvest').Day === "day 98 of the plant's life"
         && row('Early Flower Leaf Pick 1').Day === "day 48 of the plant's life" && row('Early Flower Leaf Pick 1').Runs === '1 day' && row('Early Flower Leaf Pick 1').Labour === '👥 4 · ⏱ 6h'
-        && row('Early Flower Leaf Pick 2').Day === "day 57 of the plant's life" && row('Early Flower Leaf Pick 2').Labour === '👥 8 · ⏱ 8h'
+        && row('Early Flower Leaf Pick 2').Day === "days 52–55 of the plant's life" && row('Early Flower Leaf Pick 2').Runs === '4 days' && row('Early Flower Leaf Pick 2').Labour === '👥 6 · ⏱ 4h/day'
         && row('Weigh Final').Day === 'day 21 after harvest' && row('Second veg IPM').Optional === 'yes · off by default' && row('Second veg IPM').Labour === '' && row('Cutting Clones').When === 'On Cloning',
         JSON.stringify([row('Harvest'), row('Early Flower Leaf Pick 1'), row('Early Flower Leaf Pick 2'), row('Weigh Final'), row('Second veg IPM'), row('Cutting Clones')]));
     // A recipe with supplies prints them
