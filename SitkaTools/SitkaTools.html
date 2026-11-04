@@ -22203,10 +22203,12 @@
         // One bloom built-in, the recipe the team agreed (it replaced the 20-, 19- and 18-day-veg built-ins of 2026-10-23):
         // 20 days of veg, clones cut on the Saturday, flip on the Friday 34 days later, harvest 63 days after that on a
         // Friday, and the room's next lot in on the Monday after (the day after Tank & Irrigation Clean), flipped on the
-        // Friday: a new lot every 70 days (10 weeks), so the weekdays never drift. The early leaf pick is two one-day picks,
-        // a Thursday (bloom day 13) and a Saturday (bloom day 22). Each task's labour estimate (minutes per person per day,
-        // staff) is the team's (labourhours.json), the leaf picks' and the trim's as the user gave them: 4 people 6 hours,
-        // 8 people 8 hours, and the trim 8 people 8 hours every day it runs (7 by default).
+        // Friday: a new lot every 70 days (10 weeks), so the weekdays never drift. The early leaf pick is two picks: a
+        // one-day pick on the Thursday of bloom day 13, and a four-day one Monday to Thursday from bloom day 17; the late leaf
+        // pick runs Monday to Thursday from bloom day 38 (user request 2026-11-04: they were bloom day 22, one day, and bloom
+        // days 40–41). Each task's labour estimate (minutes per person per day, staff) is the team's (labourhours.json), the
+        // leaf picks' and the trim's as the user gave them: leaf pick 1 4 people 6 hours, the four-day picks 6 people 4 hours
+        // a day (16 hours each over the four days), and the trim 8 people 8 hours every day it runs (7 by default).
         // Recipe schema: { id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...] }
         // Task fields — reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
         // defaultOffset: days from the reference point. Array order = chronological display order
@@ -22241,9 +22243,9 @@
             { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1, minutes: 240, staff: 2 },
             { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
             { name: 'Early Flower Leaf Pick 1', emoji: '🍃', taskType: 'leafpick_early1', reference: 'flip', defaultOffset: 13, minutes: 360, staff: 4 },
-            { name: 'Early Flower Leaf Pick 2', emoji: '🍃', taskType: 'leafpick_early2', reference: 'flip', defaultOffset: 22, minutes: 480, staff: 8 },
+            { name: 'Early Flower Leaf Pick 2', emoji: '🍃', taskType: 'leafpick_early2', reference: 'flip', defaultOffset: 17, days: 4, minutes: 240, staff: 6 },
             { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -27 },
-            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 40, days: 2, minutes: 960, staff: 6 },
+            { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 38, days: 4, minutes: 240, staff: 6 },
             { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63, minutes: 480, staff: 10 },
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2, minutes: 240, staff: 1 },
@@ -22290,15 +22292,15 @@
         };
         // ---- The Monday–Tuesday leaf pick (user request 2026-11-01) ----
         // The 20-day-veg built-in of 2026-10-24 brought back as a second bloom built-in, not the default: the agreed recipe
-        // (the weekend leaf pick) in every task but the early leaf pick, which is one pick over two days, bloom days 17–18
-        // (flip + 17, the Monday and Tuesday), as it was before 2026-10-30. Its labour is the team's (labourhours.json),
-        // the early leaf pick's as that file gave it, 6 people × 16 h a day, as the late leaf pick's.
+        // (the weekend leaf pick) in every task but the early leaf pick, which is one pick, no pick on bloom day 13: from
+        // 2026-11-04 over four days from bloom day 17 (flip + 17, Monday to Thursday), 6 people × 4 h a day, as the agreed
+        // recipe's second early pick and late pick (it was bloom days 17–18, 6 people × 16 h a day, as before 2026-10-30).
         const SITKA_MONTUE_RECIPE = {
             ...SITKA_STANDARD_RECIPE,
             id: 'sitka-9week-montue',
             name: 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick',
             tasks: SITKA_STANDARD_RECIPE.tasks.flatMap(t =>
-                t.taskType === 'leafpick_early1' ? [{ name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 17, days: 2, minutes: 960, staff: 6 }]
+                t.taskType === 'leafpick_early1' ? [{ name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 17, days: 4, minutes: 240, staff: 6 }]
                 : t.taskType === 'leafpick_early2' ? [] : [{ ...t }])
         };
         // The default bloom built-in keeps the old default's id, so lots scheduled with it still resolve (their dates stay as
