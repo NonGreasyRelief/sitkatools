@@ -1,14 +1,16 @@
-// The built-in bloom recipe: the agreed Sitka Standard (user decision 2026-10-30; it replaced the 20-, 19- and 18-day-veg
-// built-ins): 20-day veg, clones cut on a Saturday, every room harvesting on a Friday, the next lot transplanting the Monday after
-// (the day after Tank & Irrigation Clean) and flipping on the Friday, a new lot every 70 days; two early leaf picks (a day, then four)
-// (bloom days 13 and 22) and the team's labour estimates. Plus the built-in 🌿 mother recipe (the user's own, 2026-10-27):
-// mothers retired 110 days after planting, every task once, the replacement cut off by default.
+// The default bloom built-in: the Sitka Standard, Monday Tuesday Leaf Pick (user request 2026-11-07: the agreed recipe of 2026-10-30
+// with its one-day early leaf pick on bloom day 13 optional, off by default; the Weekend Leaf Pick built-in removed): 20-day veg,
+// clones cut on a Saturday, every room harvesting on a Friday, the next lot transplanting the Monday after (the day after Tank &
+// Irrigation Clean) and flipping on the Friday, a new lot every 70 days; the four-day leaf picks Monday to Thursday from bloom days 17
+// and 38, and the team's labour estimates. Its Albatross variant (2026-11-07): the same, with a two-day harvest Thursday–Friday (bloom
+// days 62–63), 7 people both days. Plus the built-in 🌿 mother recipe (the user's own, 2026-10-27): mothers retired 110 days after
+// planting, every task once, the replacement cut off by default.
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool } from './lib/helpers.mjs';
 
-export const title = 'built-in recipes: the agreed Sitka Standard (harvest Friday, transplant Monday, every 70 days, two early leaf picks, labour); the Sitka Default mother recipe';
+export const title = 'built-in recipes: the Sitka Standard Monday Tuesday Leaf Pick (harvest Friday, transplant Monday, every 70 days, leaf pick 1 optional, labour), its Albatross variant (Thursday–Friday harvest); the Sitka Default mother recipe';
 
-const AGREED = 'Sitka Standard: 20-day veg, Saturday Cuts Weekend Leaf Pick';
-const MONTUE = 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick';   // the second bloom built-in (user request 2026-11-01)
+const AGREED = 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick';   // the default (user request 2026-11-07)
+const ALBATROSS = 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick (Albatross variant)';
 const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekday = s => { const [y, m, d] = s.split('-').map(Number); return DAY[new Date(y, m - 1, d, 12).getDay()]; };
 const daysBetween = (a, b) => { const p = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); }; return Math.round((p(b) - p(a)) / 86400000); };
@@ -40,47 +42,50 @@ export async function run(b, BASE) {
     await pickLot('L300');
     const sel = await b.run(clw, `const o = s => [...document.getElementById(s).options].map(x => [x.value, x.textContent]);
         return { form: o('recipeSelect'), formValue: document.getElementById('recipeSelect').value, proj: o('projectionRecipeSelect'), projValue: document.getElementById('projectionRecipeSelect').value };`);
-    check('the Task Recipe dropdown lists the agreed recipe (weekend leaf pick) first, under the old default\'s id',
-        JSON.stringify(sel.form[0]) === JSON.stringify(['sitka-9week', `${AGREED} (built-in)`]) && !sel.form.some(x => /19veg|18veg/.test(x[0])), JSON.stringify(sel.form));
-    check('…then the Monday–Tuesday leaf pick, the second bloom built-in', JSON.stringify(sel.form[1]) === JSON.stringify(['sitka-9week-montue', `${MONTUE} (built-in)`]), JSON.stringify(sel.form));
+    check('the Task Recipe dropdown lists the Monday Tuesday Leaf Pick first, under the old default\'s id; no Weekend Leaf Pick',
+        JSON.stringify(sel.form[0]) === JSON.stringify(['sitka-9week', `${AGREED} (built-in)`]) && !sel.form.some(x => /19veg|18veg|montue/.test(x[0]) || /Weekend/.test(x[1])), JSON.stringify(sel.form));
+    check('…then its Albatross variant, the second bloom built-in', JSON.stringify(sel.form[1]) === JSON.stringify(['sitka-9week-albatross', `${ALBATROSS} (built-in)`]), JSON.stringify(sel.form));
     check('…then the built-in mother recipe, marked 🌿', JSON.stringify(sel.form[2]) === JSON.stringify(['sitka-mother', '🌿 Sitka Default mother recipe (built-in)']), JSON.stringify(sel.form));
     check('…and a lot with no schedule starts on it', sel.formValue === 'sitka-9week', sel.formValue);
-    check('the projection recipe dropdown offers both bloom built-ins (not the mother recipe), the agreed one picked',
-        sel.projValue === 'sitka-9week' && sel.proj.filter(x => x[1].endsWith('(built-in)')).map(x => x[0]).join() === 'sitka-9week,sitka-9week-montue' && !sel.proj.some(x => x[0] === 'sitka-mother'), JSON.stringify(sel.proj));
+    check('the projection recipe dropdown offers both bloom built-ins (not the mother recipe), the default picked',
+        sel.projValue === 'sitka-9week' && sel.proj.filter(x => x[1].endsWith('(built-in)')).map(x => x[0]).join() === 'sitka-9week,sitka-9week-albatross' && !sel.proj.some(x => x[0] === 'sitka-mother'), JSON.stringify(sel.proj));
     await b.run(clw, `openRecipeManager();`, { user: true });
     const rows = await b.run(clw, `return [...document.querySelectorAll('#recipeList .recipe-row')].map(r => ({ name: r.querySelector('.recipe-row-name').textContent, btns: [...r.querySelectorAll('.recipe-actions button')].map(x => x.textContent) }));`);
     const builtinRows = rows.filter(r => r.name.includes('built-in'));
-    check('the Recipe Manager shows three built-ins (both bloom ones and the mother recipe), each with only Duplicate, Export and Print', builtinRows.length === 3 && builtinRows.some(r => r.name.includes(AGREED)) && builtinRows.some(r => r.name.includes(MONTUE)) && builtinRows.some(r => r.name.includes('Sitka Default mother recipe')) && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export,🖨️ Print'), JSON.stringify(rows));
+    check('the Recipe Manager shows three built-ins (both bloom ones and the mother recipe), each with only Duplicate, Export and Print', builtinRows.length === 3 && builtinRows.some(r => r.name.includes(AGREED) && !r.name.includes('Albatross')) && builtinRows.some(r => r.name.includes(ALBATROSS)) && builtinRows.some(r => r.name.includes('Sitka Default mother recipe')) && builtinRows.every(r => r.btns.join() === '⧉ Duplicate,⬇️ Export,🖨️ Print'), JSON.stringify(rows));
     await b.run(clw, `closeRecipeManager();`);
 
-    // ---- The recipe: its room turnaround, its 33 tasks, the two early leaf picks and the labour ----
+    // ---- The recipe: its room turnaround, its 33 tasks, the early leaf picks (the first optional) and the labour ----
     const turn = await b.run(clw, `return BUILTIN_RECIPES.filter(r => !isVegRecipe(r)).map(r => { const t = recipeTurnaround(r); return [r.id, t.cutBefore, t.plantAfter, t.transplantAfter, t.spare, t.cycle]; });`);
     check('clones cut 27 days before harvest, planted 13 before, transplanted 3 days after, the day after Tank & Irrigation Clean, every 70 days',
-        JSON.stringify(turn) === JSON.stringify([['sitka-9week', 27, -13, 3, 0, 70], ['sitka-9week-montue', 27, -13, 3, 0, 70]]), JSON.stringify(turn));
+        JSON.stringify(turn) === JSON.stringify([['sitka-9week', 27, -13, 3, 0, 70], ['sitka-9week-albatross', 27, -13, 3, 0, 70]]), JSON.stringify(turn));
     const r = await b.run(clw, `const r = getRecipeById('sitka-9week'); const t = tt => r.tasks.find(x => x.taskType === tt);
         return { n: r.tasks.length, valid: validateRecipe(r).length, old: !!t('leafpick_early'), p1: t('leafpick_early1'), p2: t('leafpick_early2'), late: t('leafpick_late'),
             est: r.tasks.filter(x => x.minutes).map(x => x.taskType + ' ' + x.staff + '×' + x.minutes).join(', '), none: r.tasks.filter(x => !x.minutes).map(x => x.taskType).join() };`);
     check('33 tasks, valid; two early leaf picks, flip + 13 for a day and flip + 17 for 4 days; the late one flip + 38 for 4 days (user request 2026-11-04)',
         r.n === 33 && r.valid === 0 && !r.old && r.p1?.reference === 'flip' && r.p1.defaultOffset === 13 && !r.p1.days && r.p2?.defaultOffset === 17 && r.p2.days === 4 &&
         r.late?.defaultOffset === 38 && r.late.days === 4, JSON.stringify({ p1: r.p1, p2: r.p2, late: r.late }));
-    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, the 4-day picks 6 people × 4 h a day, trim 8 people × 8 h a day, and the rest from labourhours.json',
+    check('…Early Flower Leaf Pick 1 (bloom day 13) is optional, off by default; the four-day picks always on (user request 2026-11-07)',
+        r.p1?.hasToggle === true && r.p1.defaultEnabled === false && r.p1.name === 'Early Flower Leaf Pick 1' && !r.p2.hasToggle && !r.late.hasToggle, JSON.stringify(r.p1));
+    check('…with the team\'s labour: leaf pick 1 4 people × 6 h, the 4-day picks 6 people × 4 h a day, trim 8 people × 8 h a day, harvest 12 people × 8 h, and the rest from labourhours.json',
         r.est === 'clone_cut_prep 3×360, planting 2×120, clone_room_clean 2×60, topping 2×90, layout_coco_blocks 2×180, undercanopy_lights 2×240, transplant 4×300, ' +
-            'veg_room_clean 2×90, deploy_ipm 3×90, prune 3×360, trellis_layout 2×240, leafpick_early1 4×360, leafpick_early2 6×240, leafpick_late 6×240, harvest 10×480, ' +
+            'veg_room_clean 2×90, deploy_ipm 3×90, prune 3×360, trellis_layout 2×240, leafpick_early1 4×360, leafpick_early2 6×240, leafpick_late 6×240, harvest 12×480, ' +
             'tank_irrigation_clean 1×240, tote_prep 2×120, bucking 3×480, trim_room_prep 1×60, trim 8×480, machine_trim 1×240, dry_room_clean 2×120, weigh_ship 1×60' &&
         r.none === 'ipm_spray_veg_early,order_ipm,hydrate_coco_blocks,ipm_spray_veg_second,flip,ipm_spray_flower_start,ipm_spray_flower_week2,clone_cut,room_clean,lab_sample', JSON.stringify(r));
 
-    // ---- The Monday–Tuesday leaf pick (user request 2026-11-01): the old 20-day built-in's early leaf pick, the agreed recipe otherwise ----
-    const mt = await b.run(clw, `const a = getRecipeById('sitka-9week'), m = getRecipeById('sitka-9week-montue');
-        const key = t => JSON.stringify(t), rest = r => r.tasks.filter(t => !/^leafpick_early/.test(t.taskType)).map(key);
-        return { builtin: isBuiltinRecipe(m), n: m.tasks.length, valid: validateRecipe(m).length, early: m.tasks.find(t => t.taskType === 'leafpick_early'),
-            split: m.tasks.some(t => t.taskType === 'leafpick_early1' || t.taskType === 'leafpick_early2'), same: JSON.stringify(rest(a)) === JSON.stringify(rest(m)),
-            at: m.tasks.findIndex(t => t.taskType === 'leafpick_early') === a.tasks.findIndex(t => t.taskType === 'leafpick_early1'), chain: JSON.stringify(m.chain) === JSON.stringify(a.chain),
-            agreedKept: a.tasks.some(t => t.taskType === 'leafpick_early1'), default: BUILTIN_RECIPE.id };`);
-    check('the Monday–Tuesday leaf pick: a valid built-in of 32 tasks, the agreed recipe in every other task, timing and labour; the agreed one stays the default',
-        mt.builtin && mt.n === 32 && mt.valid === 0 && mt.same && mt.chain && mt.agreedKept && mt.default === 'sitka-9week', JSON.stringify(mt));
-    check('…its early leaf pick is one pick over four days, flip + 17 (Monday–Thursday), 6 people × 4 h a day, where the two picks were (user request 2026-11-04)',
-        !mt.split && mt.at && mt.early?.reference === 'flip' && mt.early.defaultOffset === 17 && mt.early.days === 4 && mt.early.staff === 6 && mt.early.minutes === 240 && mt.early.name === 'Early Flower Leaf Pick',
-        JSON.stringify(mt.early));
+    // ---- The Albatross variant (user request 2026-11-07): the default in every task but a two-day harvest, Thursday–Friday ----
+    const al = await b.run(clw, `const a = getRecipeById('sitka-9week'), m = getRecipeById('sitka-9week-albatross');
+        const key = t => JSON.stringify(t), rest = r => r.tasks.filter(t => t.taskType !== 'harvest').map(key);
+        return { builtin: isBuiltinRecipe(m), n: m.tasks.length, valid: validateRecipe(m).length, harvest: m.tasks.find(t => t.taskType === 'harvest'),
+            same: JSON.stringify(rest(a)) === JSON.stringify(rest(m)), at: m.tasks.findIndex(t => t.taskType === 'harvest') === a.tasks.findIndex(t => t.taskType === 'harvest'),
+            chain: JSON.stringify(m.chain) === JSON.stringify(a.chain), days: recipeHarvestDays(m), defaultDays: recipeHarvestDays(a), default: BUILTIN_RECIPE.id,
+            life: recipeLifeDays(m.tasks).life === recipeLifeDays(a.tasks).life, fresh: JSON.stringify(freshLotDay0Offsets(m)) === JSON.stringify(freshLotDay0Offsets(a)) };`);
+    check('the Albatross variant: a valid built-in of 33 tasks, the default in every other task, timing and labour; the default stays the default',
+        al.builtin && al.n === 33 && al.valid === 0 && al.same && al.at && al.chain && al.default === 'sitka-9week', JSON.stringify(al));
+    check('…its harvest starts on flip + 62 (the Thursday) and runs 2 days, 7 people × 8 h both days; the default\'s is one day',
+        al.harvest?.reference === 'flip' && al.harvest.defaultOffset === 62 && al.harvest.days === 2 && al.harvest.staff === 7 && al.harvest.minutes === 480 && al.days === 2 && al.defaultDays === 1,
+        JSON.stringify(al.harvest));
+    check('…so the harvest ends on the default\'s day: the plants live as long, and the next lot starts on the same spans', al.life && al.fresh, JSON.stringify(al));
 
     // ---- Generate with it, clones cut on a Saturday ----
     const gen = async (lot, recipeId, day0) => {
@@ -98,7 +103,7 @@ export async function run(b, BASE) {
     const a = await gen('L300', 'sitka-9week', '2026-10-24');
     check('it saves its id on the lot', a.cfg?.recipeId === 'sitka-9week', JSON.stringify(a.cfg));
     const plan = [[['clone_cut_prep', 'planting'], 'Sat'], [['layout_coco_blocks', 'hydrate_coco_blocks', 'undercanopy_lights'], 'Sun'], [['transplant'], 'Mon'],
-        [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri'], [['leafpick_early1'], 'Thu'], [['leafpick_early2', 'leafpick_late'], 'Mon'], [['room_clean'], 'Sat'],
+        [['veg_room_clean', 'deploy_ipm'], 'Tue'], [['prune', 'flip', 'harvest'], 'Fri'], [['leafpick_early2', 'leafpick_late'], 'Mon'], [['room_clean'], 'Sat'],
         [['tank_irrigation_clean'], 'Sun'], [['clone_cut'], 'Sat'], [['tote_prep'], 'Thu'], [['bucking', 'lab_sample', 'trim_room_prep'], 'Wed'], [['trim'], 'Thu'], [['weigh_ship'], 'Fri']];
     for (const [types, d] of plan) check(`20-day veg, cut Saturday: ${types.join(', ')} on ${d}`, days(a.on, types) === want(types, d), days(a.on, types));
     check('…planting Day 0 + 14, transplant planting + 16, flip + 20, harvest 9 weeks after flip',
@@ -107,30 +112,65 @@ export async function run(b, BASE) {
     check('…12 days drying: Bucking 12 days after harvest, Trim from day 13 (7 days), Weigh & Ship 21 days after harvest',
         daysBetween(a.on.harvest, a.on.bucking) === 12 && daysBetween(a.on.harvest, a.on.trim) === 13 && daysBetween(a.on.trim, a.end.trim) === 6 && daysBetween(a.on.harvest, a.on.weigh_ship) === 21, JSON.stringify([a.on.harvest, a.on.bucking, a.on.trim, a.end.trim, a.on.weigh_ship]));
     const pick = (l, t) => [daysBetween(l.on.flip, l.on[t]), l.end[t] && daysBetween(l.on.flip, l.end[t]), weekday(l.on[t]), l.end[t] && weekday(l.end[t])].filter(x => x !== null).join(' ');
-    check('…leaf picks, flip day = day 0: early 1 on bloom day 13 (Thu), one day; early 2 on days 17–20 and late on days 38–41, Monday to Thursday',
-        pick(a, 'leafpick_early1') === '13 Thu' && pick(a, 'leafpick_early2') === '17 20 Mon Thu' && pick(a, 'leafpick_late') === '38 41 Mon Thu' && !a.on.leafpick_early,
-        `${pick(a, 'leafpick_early1')} | ${pick(a, 'leafpick_early2')} | ${pick(a, 'leafpick_late')}`);
-    check('…each task carries its labour estimate (leaf pick 1: 4 × 360 min; leaf pick 2 and the late pick: 6 × 240 a day; transplant 4 × 300)',
-        a.est.leafpick_early1 === '4×360' && a.est.leafpick_early2 === '6×240' && a.est.leafpick_late === '6×240' && a.est.transplant === '4×300' && !a.est.flip, JSON.stringify(a.est));
+    check('…leaf picks, flip day = day 0: early 2 on days 17–20 and late on days 38–41, Monday to Thursday; leaf pick 1 is off by default, so not generated',
+        pick(a, 'leafpick_early2') === '17 20 Mon Thu' && pick(a, 'leafpick_late') === '38 41 Mon Thu' && !a.on.leafpick_early1 && !a.on.leafpick_early,
+        `${a.on.leafpick_early1 || '—'} | ${pick(a, 'leafpick_early2')} | ${pick(a, 'leafpick_late')}`);
+    check('…each task carries its labour estimate (leaf pick 2 and the late pick: 6 × 240 a day; transplant 4 × 300; harvest 12 × 480, user request 2026-11-07)',
+        a.est.leafpick_early2 === '6×240' && a.est.leafpick_late === '6×240' && a.est.transplant === '4×300' && a.est.harvest === '12×480' && !a.est.flip, JSON.stringify(a.est));
     check('…the off-by-default IPM sprays aren\'t generated', !a.on.ipm_spray_veg_second && !a.on.ipm_spray_flower_start, JSON.stringify(Object.keys(a.on)));
+    check('…a one-day harvest: no end date, and the lot saved with Multi-day harvest off', !a.end.harvest && a.cfg?.harvestMultiDay === false, JSON.stringify({ end: a.end.harvest, cfg: a.cfg }));
+
+    // Leaf pick 1 switched on: generated on bloom day 13, the Thursday, 4 × 360; reopening the lot keeps it on, so Overwrite keeps it
+    const p1Box = `document.getElementById('check_' + taskOffsets.findIndex(e => e.def.taskType === 'leafpick_early1'))`;
+    check('the preview offers Early Flower Leaf Pick 1 unticked', await b.run(clw, `const c = ${p1Box}; return !!c && !c.checked && !c.disabled;`));
+    await b.run(clw, `${p1Box}.click();`, { user: true });
+    await b.run(clw, `window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    const on1 = async () => Object.fromEntries((await b.run(main, `return DB.data.calendarEvents.filter(e => e.lotId === 'L300').map(e => [e.taskType, [e.date, e.estStaff && e.estStaff + '×' + e.estMinutes]]);`)));
+    let p1 = (await on1()).leafpick_early1;
+    check('…ticked and generated: Early Flower Leaf Pick 1 on bloom day 13, a Thursday, 4 people × 6 h', p1 && daysBetween(a.on.flip, p1[0]) === 13 && weekday(p1[0]) === 'Thu' && p1[1] === '4×360', JSON.stringify(p1));
+    await pickLot('L400'); await pickLot('L300');
+    check('…reopening the lot shows it ticked (a task off by default stays on where the schedule has it)', await b.run(clw, `return ${p1Box}.checked && taskOffsets.find(e => e.def.taskType === 'leafpick_early1').enabled === true;`));
+    await b.run(clw, `window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    p1 = (await on1()).leafpick_early1;
+    check('…and Overwrite Schedule keeps it on its day', p1 && daysBetween(a.on.flip, p1[0]) === 13, JSON.stringify(p1));
+    await b.run(clw, `${p1Box}.click(); window.confirm = () => true; document.getElementById('generateBtn').click();`, { user: true });
+    await b.sleep(200);
+    check('…unticked and overwritten, it\'s gone', !(await on1()).leafpick_early1);
     // The next lot: Day 0 = this lot's clone cut, transplanted planting + 16 later
     const nextTransplant = daysBetween(a.on.harvest, a.on.clone_cut) + 14 + 16;
     check('…the next lot (cut on the clone-cut day) transplants 3 days after this harvest, the day after Tank & Irrigation Clean',
         nextTransplant === 3 && daysBetween(a.on.tank_irrigation_clean, a.on.harvest) === -2, `${nextTransplant}`);
 
-    // Generated with the Monday–Tuesday leaf pick: its early leaf pick on the Monday and Tuesday, everything else on the agreed days
-    const m = await gen('L400', 'sitka-9week-montue', '2026-10-24');
-    check('generated with the Monday–Tuesday leaf pick: it saves its id; the early leaf pick on bloom days 17–20, Monday–Thursday, 6 × 240 a day',
-        m.cfg?.recipeId === 'sitka-9week-montue' && pick(m, 'leafpick_early') === '17 20 Mon Thu' && m.est.leafpick_early === '6×240' && !m.on.leafpick_early1 && !m.on.leafpick_early2,
-        JSON.stringify({ id: m.cfg?.recipeId, pick: pick(m, 'leafpick_early'), est: m.est.leafpick_early }));
-    check('…every other task on the same day as the agreed recipe\'s', Object.keys(a.on).filter(t => !/^leafpick_early/.test(t)).every(t => m.on[t] === a.on[t]) && Object.keys(m.on).length === Object.keys(a.on).length - 1,
+    // Generated with the Albatross variant: the harvest Thursday–Friday, everything else on the default's days
+    await pickLot('L400');
+    await b.run(clw, `const r = document.getElementById('recipeSelect'); r.value = 'sitka-9week-albatross'; r.dispatchEvent(new Event('change'));`);
+    const pv = await b.run(clw, `const h = taskOffsets.find(e => e.def.taskType === 'harvest'); return { multi: harvestMultiDay, days: harvestDays, offset: h.offset,
+        box: document.getElementById('harvestMultiCheck')?.checked, n: document.getElementById('harvestDaysInput')?.value };`);
+    check('picking the Albatross variant ticks Multi-day harvest with 2 days in the preview, the harvest at flip + 62',
+        pv.multi === true && pv.days === 2 && pv.offset === 62 && pv.box === true && pv.n === '2', JSON.stringify(pv));
+    const m = await gen('L400', 'sitka-9week-albatross', '2026-10-24');
+    check('generated with the Albatross variant: it saves its id and a 2-day harvest; the harvest on bloom days 62–63, Thursday to Friday, 7 people × 8 h a day',
+        m.cfg?.recipeId === 'sitka-9week-albatross' && m.cfg.harvestMultiDay === true && m.cfg.harvestDays === 2 && pick(m, 'harvest') === '62 63 Thu Fri' && m.est.harvest === '7×480',
+        JSON.stringify({ cfg: m.cfg, harvest: pick(m, 'harvest'), est: m.est.harvest }));
+    check('…every other task on the same day as the default\'s (after harvest counts from its last day, the Friday)',
+        Object.keys(a.on).filter(t => t !== 'harvest').every(t => m.on[t] === a.on[t]) && Object.keys(m.on).length === Object.keys(a.on).length && m.end.harvest === a.on.harvest,
         JSON.stringify(Object.keys(a.on).filter(t => m.on[t] !== a.on[t])));
+    await pickLot('L300'); await pickLot('L400');
+    const back = await b.run(clw, `return [document.getElementById('recipeSelect').value, harvestMultiDay, harvestDays, taskOffsets.find(e => e.def.taskType === 'harvest').offset].join();`);
+    check('…reopening the lot shows its recipe and its 2-day harvest at flip + 62', back === 'sitka-9week-albatross,true,2,62', back);
+    await b.run(clw, `const r = document.getElementById('recipeSelect'); r.value = 'sitka-9week'; r.dispatchEvent(new Event('change'));`);
+    check('…picking the default again puts the harvest back to one day, at flip + 63', await b.run(clw, `return [harvestMultiDay, taskOffsets.find(e => e.def.taskType === 'harvest').offset].join();`) === 'false,63');
     await b.run(main, `DB.data.calendarEvents = DB.data.calendarEvents.filter(e => e.lotId !== 'L400'); delete DB.data.lots.L400._tool_CropLabourWizard;`);
 
     // ---- A lot scheduled with a removed built-in (the 19-day recipe) opens on the agreed recipe ----
     await b.run(main, `DB.data.lots.L400._tool_CropLabourWizard = { plantingDate: '2026-10-25', recipeId: 'sitka-9week-19veg', trimDays: 7, harvestMultiDay: false, harvestDays: 1 };`);
     await pickLot('L400');
-    check('a lot scheduled with the removed 19-day built-in shows the agreed recipe (its fallback)', await b.run(clw, `return document.getElementById('recipeSelect').value + '|' + getRecipeById('sitka-9week-19veg').id;`) === 'sitka-9week|sitka-9week');
+    check('a lot scheduled with the removed 19-day built-in shows the default recipe (its fallback)', await b.run(clw, `return document.getElementById('recipeSelect').value + '|' + getRecipeById('sitka-9week-19veg').id;`) === 'sitka-9week|sitka-9week');
+    await b.run(main, `DB.data.lots.L400._tool_CropLabourWizard.recipeId = 'sitka-9week-montue';`);
+    await pickLot('L300'); await pickLot('L400');
+    check('…so does one scheduled with the removed Monday–Tuesday built-in of 2026-11-01', await b.run(clw, `return document.getElementById('recipeSelect').value + '|' + getRecipeById('sitka-9week-montue').id + '|' + isBuiltinRecipe('sitka-9week-montue');`) === 'sitka-9week|sitka-9week|false');
     await pickLot('L300');
     check('picking the first lot again shows its recipe', await b.run(clw, `return document.getElementById('recipeSelect').value;`) === 'sitka-9week');
 
@@ -147,6 +187,27 @@ export async function run(b, BASE) {
     check('Project Crop: 10 lots, harvests 70 days apart, every one on a Friday', ids.length === 10 && gaps.every(g => g === 70) && chain.every(l => weekday(l.harvest) === 'Fri'), JSON.stringify({ ids, gaps }));
     check('…each moves in the Monday 3 days after the previous harvest, with nothing pushed back', moveIn.every(g => g === 3) && chain.every(l => weekday(l.transplant) === 'Mon') && asked.length === 0, JSON.stringify({ moveIn, asked }));
 
+    // ---- Projected with the Albatross variant: every lot harvests Thursday–Friday, the chain still 70 days from each Friday ----
+    const projAll = () => b.run(main, `const by = {}; for (const e of DB.data.calendarEvents.filter(e => e.sourceTool === 'CropProjection' && e.roomId === 'R1G1')) (by[e.lotId] ||= {})[e.taskType] = [e.date, e.endDate || null, e.estStaff || null]; return by;`);
+    await b.run(clw, `clearAllProjectionsForRoom('R1G1'); const s = document.getElementById('projectionRecipeSelect'); s.value = 'sitka-9week-albatross'; s.dispatchEvent(new Event('change'));
+        window.__asked = []; window.confirm = m => { window.__asked.push(m); return true; }; generateProjectionsForRoom('R1G1');`);
+    await b.sleep(200);
+    const pa = await projAll(), paIds = Object.keys(pa).sort();
+    const paCfg = await b.run(main, `return Object.values(DB.data._CropLabourWizard.projectedLots).filter(p => p.roomId === 'R1G1').map(p => [p.config?.recipeId, p.config?.harvestMultiDay, p.config?.harvestDays].join()).join('|');`);
+    const lastDays = [a.on.harvest, ...paIds.map(id => pa[id].harvest[1])];
+    check('Project Crop with the Albatross variant: 10 lots, each harvesting Thursday to Friday (flip + 62, 2 days), 7 people a day, saved with its 2-day harvest',
+        paIds.length === 10 && paIds.every(id => weekday(pa[id].harvest[0]) === 'Thu' && weekday(pa[id].harvest[1]) === 'Fri' && daysBetween(pa[id].flip[0], pa[id].harvest[0]) === 62 && pa[id].harvest[2] === 7)
+        && paCfg.split('|').every(c => c === 'sitka-9week-albatross,true,2'), JSON.stringify({ paIds, paCfg, h: paIds.map(id => pa[id].harvest) }));
+    check('…the harvests\' last days 70 days apart, each next lot moving in the Monday 3 days after, nothing pushed back',
+        lastDays.slice(1).every((d, i) => daysBetween(lastDays[i], d) === 70) && paIds.every((id, i) => daysBetween(lastDays[i], pa[id].transplant[0]) === 3 && weekday(pa[id].transplant[0]) === 'Mon') && (await b.run(clw, `return window.__asked.length;`)) === 0,
+        JSON.stringify(lastDays));
+    // Project Crop again with the default picked: the lots keep their own recipe and harvest, ending on the chain's Friday, so nothing moves
+    await b.run(clw, `const s = document.getElementById('projectionRecipeSelect'); s.value = 'sitka-9week'; s.dispatchEvent(new Event('change')); generateProjectionsForRoom('R1G1');`);
+    await b.sleep(200);
+    const pb = await projAll();
+    check('…Project Crop again with the default picked leaves them on their Thursday–Friday harvests (aligned on the harvest\'s last day)',
+        paIds.every(id => JSON.stringify(pb[id].harvest) === JSON.stringify(pa[id].harvest) && pb[id].transplant[0] === pa[id].transplant[0]), JSON.stringify(paIds.map(id => [pa[id].harvest, pb[id].harvest])));
+
     // ---- An exported built-in, imported again, comes back as a copy ----
     const exported = await b.run(clw, `return JSON.stringify(BUILTIN_RECIPES[0]);`);
     await b.run(clw, `const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(exported)}], 'recipe-sitka-9week.json', { type: 'application/json' }));
@@ -156,7 +217,7 @@ export async function run(b, BASE) {
     const toast = await b.run(clw, `return document.getElementById('toast')?.textContent || document.querySelector('.toast')?.textContent || '';`);
     check('importing an exported built-in saves it under a new id, so the built-in doesn\'t hide it',
         imp.length === 1 && imp[0][0] !== 'sitka-9week' && imp[0][1] === AGREED && toast.includes('copy of the built-in'), JSON.stringify(imp) + ' ' + toast);
-    check('…and the built-in is still the built-in', await b.run(clw, `return getRecipeById('sitka-9week') === BUILTIN_RECIPES[0] && [...document.getElementById('recipeSelect').options].filter(o => o.textContent.startsWith(${JSON.stringify(AGREED)})).length === 2;`));
+    check('…and the built-in is still the built-in', await b.run(clw, `return getRecipeById('sitka-9week') === BUILTIN_RECIPES[0] && [...document.getElementById('recipeSelect').options].filter(o => [${JSON.stringify(AGREED)}, ${JSON.stringify(AGREED + ' (built-in)')}].includes(o.textContent)).length === 2;`));
 
     // ---- 🌿 The built-in mother recipe (the user's own, 2026-10-27) ----
     const mr = await b.run(clw, `const r = getRecipeById('sitka-mother'); return { builtin: isBuiltinRecipe(r), kind: r.kind, errs: validateRecipe(r),

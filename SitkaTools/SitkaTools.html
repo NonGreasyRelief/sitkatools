@@ -6115,6 +6115,19 @@
             font-size: 11px; line-height: 1;
             color: #f3c14b; pointer-events: none;
         }
+        /* 🧮 Formula box — worked out when the page prints (user request 2026-11-07) */
+        .field-box.calc { border-style: dashed; }
+        .field-box .box-calc { position: absolute; top: 1px; right: 2px; font-size: 11px; line-height: 1; pointer-events: none; }
+
+        /* 🧮 Formula editor (Field properties and the question cards) */
+        .fx-input { width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; min-height: 54px; resize: vertical; }
+        .fx-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+        .fx-tools select { flex: 1 1 140px; min-width: 0; font-size: 0.8rem; }
+        .fx-reads { font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; overflow-wrap: anywhere; }
+        .fx-reads:empty { display: none; }
+        .fx-probs { font-size: 0.8rem; margin-top: 4px; overflow-wrap: anywhere; }
+        .fx-probs .fx-err { color: var(--danger); }
+        .fx-probs .fx-warn { color: var(--warning); }
 
         .field-box .handle {
             position: absolute;
@@ -6442,6 +6455,13 @@
         .ent-actions { display: flex; gap: 8px; margin-top: 4px; }
         .ent-actions .btn { min-height: 42px; }
         .ent-cap { color: var(--text-secondary); font-size: 0.8rem; margin: 12px 0 6px; }
+        /* 🧮 Worked-out answers: an entry's (read-only) and the page's (under the entries count) */
+        .ent-calc {
+            min-height: 44px; display: flex; align-items: center; padding: 8px 12px; font-size: 1rem; font-weight: 700;
+            background: var(--bg-secondary); border: 1px dashed var(--border); border-radius: 6px; color: var(--accent);
+        }
+        .ent-calc-sum { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.85rem; color: var(--text-primary); margin: 0 0 8px; }
+        .ent-calc-sum b { color: var(--text-secondary); font-weight: 600; margin-right: 4px; }
         .ent-list { display: flex; flex-direction: column; gap: 4px; }
         .ent-row {
             display: flex; align-items: center; gap: 8px; padding: 6px 8px;
@@ -8656,8 +8676,8 @@
                                     <th title="Event tag (snake_case)">Type</th>
                                     <th title="Reference anchor">Ref</th>
                                     <th title="Days from reference">+d</th>
-                                    <th title="The day of the plants' life it lands on (day 1 = clones cut), or the day after harvest — for a fresh lot with a one-day harvest and a 7-day trim">Day</th>
-                                    <th title="How many days the task runs (blank = 1). Trim and Harvest are set in the preview.">Days</th>
+                                    <th title="The day of the plants' life it lands on (day 1 = clones cut), or the day after harvest — for a fresh lot with the recipe's harvest length (one day unless Harvest's Days says more) and a 7-day trim">Day</th>
+                                    <th title="How many days the task runs (blank = 1). Trim is set in the preview; Harvest's is where each lot starts (the preview can change it).">Days</th>
                                     <th title="Repeat every N days until the crop's end — Retire Mothers, or Harvest (blank = once)">Every</th>
                                     <th title="Room phase override (optional)">Phase</th>
                                     <th title="Estimated time per day, in minutes (blank = no estimate)">Min</th>
@@ -15937,7 +15957,7 @@
         // The weekly windows listed under the chart: the next 12 months (user request 2026-10-30)
         const LAUNCH_LIST_WEEKS = 52;
         // A crop's key tasks in its bar's tooltip (user request 2026-11-04): Cutting Clones (its first), Transplanting, the
-        // early and late leaf picks (leafpick_early1 / 2, the Monday–Tuesday built-in's leafpick_early, leafpick_late), Flip, Harvest
+        // early and late leaf picks (leafpick_early1 / 2, older lots' leafpick_early, leafpick_late), Flip, Harvest
         const LAUNCH_TIP_TASK = t => t === 'clone_cut_prep' || t === 'transplant' || /^leafpick/.test(t || '') || t === 'flip' || t === 'harvest';
         const launchDay = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
         const launchIso = n => new Date(n * 86400000).toISOString().slice(0, 10);
@@ -18457,7 +18477,8 @@
             // Task-type registry fallback: CropLabourWizard recipes can define custom task
             // types; their labels/emojis live in _CropLabourWizard.taskTypes (merged on every
             // recipe import/save). The hard-coded maps above win for the known types (the built-in recipe's 33, and
-            // leafpick_early, the one early leaf pick: the Monday–Tuesday built-in's, and the built-ins' before 2026-10-30).
+            // leafpick_early, the one early leaf pick of the built-ins before 2026-10-30 and of the Monday–Tuesday built-in of
+            // 2026-11-01 to 11-07, on lots scheduled with them).
             _taskTypeName(tt) {
                 if (!tt) return null;
                 return this.TASK_TYPE_NAMES[tt] || DB.data?._CropLabourWizard?.taskTypes?.[tt]?.name || tt;
@@ -22199,16 +22220,19 @@
 
         const $ = id => document.getElementById(id);
 
-        // ---- Built-in bloom recipe: the agreed Sitka Standard (user decision 2026-10-30) ----
-        // One bloom built-in, the recipe the team agreed (it replaced the 20-, 19- and 18-day-veg built-ins of 2026-10-23):
-        // 20 days of veg, clones cut on the Saturday, flip on the Friday 34 days later, harvest 63 days after that on a
-        // Friday, and the room's next lot in on the Monday after (the day after Tank & Irrigation Clean), flipped on the
-        // Friday: a new lot every 70 days (10 weeks), so the weekdays never drift. The early leaf pick is two picks: a
-        // one-day pick on the Thursday of bloom day 13, and a four-day one Monday to Thursday from bloom day 17; the late leaf
-        // pick runs Monday to Thursday from bloom day 38 (user request 2026-11-04: they were bloom day 22, one day, and bloom
-        // days 40–41). Each task's labour estimate (minutes per person per day, staff) is the team's (labourhours.json), the
-        // leaf picks' and the trim's as the user gave them: leaf pick 1 4 people 6 hours, the four-day picks 6 people 4 hours
-        // a day (16 hours each over the four days), and the trim 8 people 8 hours every day it runs (7 by default).
+        // ---- Built-in bloom recipe: the Sitka Standard, Monday Tuesday Leaf Pick (user request 2026-11-07) ----
+        // The default bloom built-in: the recipe the team agreed (user decision 2026-10-30; it replaced the 20-, 19- and
+        // 18-day-veg built-ins of 2026-10-23): 20 days of veg, clones cut on the Saturday, flip on the Friday 34 days later,
+        // harvest 63 days after that on a Friday, and the room's next lot in on the Monday after (the day after Tank &
+        // Irrigation Clean), flipped on the Friday: a new lot every 70 days (10 weeks), so the weekdays never drift. The early
+        // leaf pick runs four days, Monday to Thursday from bloom day 17, and the late leaf pick Monday to Thursday from bloom
+        // day 38 (user request 2026-11-04: they were bloom day 22, one day, and bloom days 40–41). The one-day early pick on
+        // the Thursday of bloom day 13 (Early Flower Leaf Pick 1) is optional, off by default (user request 2026-11-07: the
+        // Monday Tuesday Leaf Pick became the default and the Weekend Leaf Pick, which always had it, was removed). Each
+        // task's labour estimate (minutes per person per day, staff) is the team's (labourhours.json), the leaf picks' and
+        // the trim's as the user gave them: leaf pick 1 4 people 6 hours, the four-day picks 6 people 4 hours a day (16 hours
+        // each over the four days), the trim 8 people 8 hours every day it runs (7 by default), and the one-day harvest 12
+        // people 8 hours (user request 2026-11-07; it was 10).
         // Recipe schema: { id, name, version, chain: { cloneCutBeforeHarvest }, tasks: [...] }
         // Task fields — reference: 'cloning' | 'planting' | 'flip' | 'harvest' | 'trim' (start of trim day)
         // defaultOffset: days from the reference point. Array order = chronological display order
@@ -22217,10 +22241,11 @@
         // happen in the flower room too, except the veg-room clean). Optional IPM sprays are toggleable, off by default.
         // The clone cut is the next lot's Day 0, counted back from harvest end (27 days: cut 14 days before its planting,
         // in 3 days after this harvest). Trim runs 7 days by default; machine trim, the dry-room clean and weigh & ship
-        // count from trim start and land after it ends for any length (resolveTaskAnchor).
+        // count from trim start and land after it ends for any length (resolveTaskAnchor). Harvest may carry `days`: the
+        // harvest's length for a lot scheduled with the recipe (recipeHarvestDays; each lot can change it in the preview).
         const SITKA_STANDARD_RECIPE = {
             id: 'sitka-9week',
-            name: 'Sitka Standard: 20-day veg, Saturday Cuts Weekend Leaf Pick',
+            name: 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick',
             version: 1,
             chain: { cloneCutBeforeHarvest: 27 },
             tasks: [
@@ -22242,11 +22267,11 @@
             { name: 'Preventative IPM Spray (Start of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_start', reference: 'flip', defaultOffset: 0, hasToggle: true, defaultEnabled: false },
             { name: 'Layout Trellis and Secure', emoji: '🕸️', taskType: 'trellis_layout', reference: 'flip', defaultOffset: 1, minutes: 240, staff: 2 },
             { name: 'Preventative IPM Spray (Second week of flower IPM)', emoji: '🧴', taskType: 'ipm_spray_flower_week2', reference: 'flip', defaultOffset: 7, hasToggle: true, defaultEnabled: false },
-            { name: 'Early Flower Leaf Pick 1', emoji: '🍃', taskType: 'leafpick_early1', reference: 'flip', defaultOffset: 13, minutes: 360, staff: 4 },
+            { name: 'Early Flower Leaf Pick 1', emoji: '🍃', taskType: 'leafpick_early1', reference: 'flip', defaultOffset: 13, hasToggle: true, defaultEnabled: false, minutes: 360, staff: 4 },
             { name: 'Early Flower Leaf Pick 2', emoji: '🍃', taskType: 'leafpick_early2', reference: 'flip', defaultOffset: 17, days: 4, minutes: 240, staff: 6 },
             { name: 'Cut Clones to Replace Lot', emoji: '🌿', taskType: 'clone_cut', reference: 'harvest', defaultOffset: -27 },
             { name: 'Late Flower Leaf Pick', emoji: '🍂', taskType: 'leafpick_late', reference: 'flip', defaultOffset: 38, days: 4, minutes: 240, staff: 6 },
-            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63, minutes: 480, staff: 10 },
+            { name: 'Harvest', emoji: '🌾', taskType: 'harvest', reference: 'flip', defaultOffset: 63, minutes: 480, staff: 12 },
             { name: 'Grow-Room Clean', emoji: '🧹', taskType: 'room_clean', reference: 'harvest', defaultOffset: 1 },
             { name: 'Tank and Irrigation Line Clean', emoji: '🚿', taskType: 'tank_irrigation_clean', reference: 'harvest', defaultOffset: 2, minutes: 240, staff: 1 },
             { name: 'Clean and Prepare Totes for Bucking', emoji: '🧺', taskType: 'tote_prep', reference: 'harvest', defaultOffset: 6, minutes: 120, staff: 2 },
@@ -22290,24 +22315,22 @@
                 { name: 'Retire Mothers', emoji: '🍂', taskType: 'retire', reference: 'planting', defaultOffset: 110 }
             ]
         };
-        // ---- The Monday–Tuesday leaf pick (user request 2026-11-01) ----
-        // The 20-day-veg built-in of 2026-10-24 brought back as a second bloom built-in, not the default: the agreed recipe
-        // (the weekend leaf pick) in every task but the early leaf pick, which is one pick, no pick on bloom day 13: from
-        // 2026-11-04 over four days from bloom day 17 (flip + 17, Monday to Thursday), 6 people × 4 h a day, as the agreed
-        // recipe's second early pick and late pick (it was bloom days 17–18, 6 people × 16 h a day, as before 2026-10-30).
-        const SITKA_MONTUE_RECIPE = {
+        // ---- The Albatross variant (user request 2026-11-07) ----
+        // The default in every task but the harvest, which runs two days, Thursday and Friday (bloom days 62–63, flip + 62),
+        // 7 people both days (the default's is one day, the Friday, 12 people). Everything counted from harvest counts from its last
+        // day, the Friday, so every other task lands on the default's day, and the room's chain keeps its 70 days.
+        const SITKA_ALBATROSS_RECIPE = {
             ...SITKA_STANDARD_RECIPE,
-            id: 'sitka-9week-montue',
-            name: 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick',
-            tasks: SITKA_STANDARD_RECIPE.tasks.flatMap(t =>
-                t.taskType === 'leafpick_early1' ? [{ name: 'Early Flower Leaf Pick', emoji: '🍃', taskType: 'leafpick_early', reference: 'flip', defaultOffset: 17, days: 4, minutes: 240, staff: 6 }]
-                : t.taskType === 'leafpick_early2' ? [] : [{ ...t }])
+            id: 'sitka-9week-albatross',
+            name: 'Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick (Albatross variant)',
+            tasks: SITKA_STANDARD_RECIPE.tasks.map(t => t.taskType === 'harvest' ? { ...t, defaultOffset: 62, days: 2, staff: 7 } : { ...t })
         };
         // The default bloom built-in keeps the old default's id, so lots scheduled with it still resolve (their dates stay as
-        // generated). A lot scheduled with the removed 19- or 18-day built-in (sitka-9week-19veg / -18veg) falls back to it
-        // too, as any lot whose recipe is missing does (getRecipeById). The bloom built-ins first, the default leading, then
-        // the mother recipe.
-        const BUILTIN_RECIPES = [SITKA_STANDARD_RECIPE, SITKA_MONTUE_RECIPE, SITKA_MOTHER_RECIPE];
+        // generated, an Early Flower Leaf Pick 1 they have included). A lot scheduled with a removed built-in (the 19- or
+        // 18-day one, sitka-9week-19veg / -18veg, or the Monday–Tuesday leaf pick of 2026-11-01, sitka-9week-montue, whose
+        // one early pick was leafpick_early) falls back to it, as any lot whose recipe is missing does (getRecipeById). The
+        // bloom built-ins first, the default leading, then the mother recipe.
+        const BUILTIN_RECIPES = [SITKA_STANDARD_RECIPE, SITKA_ALBATROSS_RECIPE, SITKA_MOTHER_RECIPE];
         // The default: new lots, projections, ＋ New Recipe, and any lot whose recipe is missing
         const BUILTIN_RECIPE = BUILTIN_RECIPES[0];
         const isBuiltinRecipe = idOrRecipe => { const id = typeof idOrRecipe === 'string' ? idOrRecipe : idOrRecipe?.id; return BUILTIN_RECIPES.some(b => b.id === id); };
@@ -22457,7 +22480,7 @@
             };
         }
 
-        // The same, worked out from a recipe's default offsets (single-day harvest)
+        // The same, worked out from a recipe's default offsets (its harvest length: one day unless it sets one)
         function recipeTurnaround(recipe) {
             if (isVegRecipe(recipe)) return null;   // mothers: no room-ready rule
             const tasks = recipe?.tasks || [];
@@ -22466,7 +22489,8 @@
             if (!cut || !find('transplant')) return null;
             const a = recipeAnchorDefaults(recipe);
             const day0 = '2026-01-05';
-            const anchors = computeAnchors(day0, a.flip, true, a.planting, a.harvest, a.trim, false, 1);
+            const h = recipeHarvestDays(recipe);
+            const anchors = computeAnchors(day0, a.flip, true, a.planting, a.harvest, a.trim, h > 1, h);
             const dateOf = t => t ? computeTaskDate(t.reference === 'harvest' ? anchors.harvestEnd : anchors[t.reference], t.defaultOffset) : null;
             return nextLotTurnaround({
                 day0,
@@ -22543,12 +22567,13 @@
         const matureFromLabel = m => m ? `${m.def.emoji ? m.def.emoji + ' ' : ''}${m.def.name || m.def.taskType}${m.day ? `, ${m.day} of the plant's life` : ''}` : '';
 
         // Each recipe task's day of the plants' life, worked out from its default offsets as a fresh lot would have
-        // them: clones on, a one-day harvest, a 7-day trim. Also the length of the life and of the work after it.
+        // them: clones on, the recipe's harvest length (one day unless it sets one), a 7-day trim. Also the length of the
+        // life and of the work after it.
         function recipeLifeDays(tasks, kind) {
             const veg = kind === 'vegetative';
             const offsets = (tasks || []).map(t => ({ def: t, offset: Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0, enabled: true }));
-            const day0 = '2026-01-05';
-            const a = scheduleAnchors(day0, offsets, { trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: 1 });
+            const day0 = '2026-01-05', d = recipeDurations({ tasks });
+            const a = scheduleAnchors(day0, offsets, d);
             const lifeEnd = veg ? a.retire : a.harvestEnd;
             const life = daysBetween(day0, lifeEnd) + 1;
             let afterDays = 0;
@@ -22557,7 +22582,7 @@
                 const anchor = t.reference === 'harvest' ? a.harvestEnd : RECIPE_ANCHORS.includes(t.reference) ? a[t.reference] : null;
                 if (!anchor) return null;
                 const start = computeTaskDate(anchor, o.offset);
-                const len = t.taskType === 'trim' ? DEFAULT_TRIM_DAYS : recipeTaskDays(t);
+                const len = t.taskType === 'trim' ? DEFAULT_TRIM_DAYS : t.taskType === 'harvest' ? recipeHarvestDays({ tasks }) : recipeTaskDays(t);
                 const end = len > 1 ? computeTaskDate(start, len - 1) : null;
                 afterDays = Math.max(afterDays, daysBetween(lifeEnd, end || start));
                 // from / to: days after day 1 it starts and ends (the editor's 📅 weekdays)
@@ -22598,15 +22623,15 @@
             );
         }
 
-        // A fresh lot's spans under `recipe`, as projections are generated (the recipe's default offsets, clones on, a
-        // one-day harvest, a 7-day trim), read from the shared builder so they always agree with Generate (review G5).
+        // A fresh lot's spans under `recipe`, as projections are generated (the recipe's default offsets, clones on, its
+        // harvest length, a 7-day trim), read from the shared builder so they always agree with Generate (review G5).
         // Days from Day 0: planting, flip, transplant, harvestEnd, irrSpan (Tank & Irrigation Clean); irrClean counts
         // from the harvest's end. The default built-in: 14, 34, 30, 97, 99 and 2. A recipe without one of the tasks
         // falls back to the old spacing (planting 14, flip planting + 20, transplant planting + 10, Tank & Irrigation
         // Clean harvest end + 2); a switched-off Tank & Irrigation Clean counts where it would be.
         function freshLotDay0Offsets(recipe) {
             recipe = recipe || BUILTIN_RECIPE;
-            const day0 = '2026-01-05', d = { trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: 1 };
+            const day0 = '2026-01-05', d = recipeDurations(recipe);
             const offsets = defaultOffsetsSnapshot(recipeBloomDays(recipe), recipe).map(e => ({
                 ...e,
                 offset: Number.isInteger(e.offset) ? e.offset : 0,   // a half-typed row in the recipe editor
@@ -22730,7 +22755,8 @@
                 if (t.staff != null && (!Number.isInteger(t.staff) || t.staff < 1)) {
                     errors.push(`${label} ${who}: staff must be a whole number, at least 1`);
                 }
-                // Optional length in days (Trim and Harvest set theirs in the preview instead)
+                // Optional length in days (Trim sets its own in the preview; Harvest's is the length a lot starts with, which the
+                // preview can change)
                 if (t.days != null && (!Number.isInteger(t.days) || t.days < 1 || t.days > 30)) {
                     errors.push(`${label} ${who}: days must be a whole number from 1 to 30`);
                 }
@@ -22917,6 +22943,7 @@
                 populateProjectionRecipeSelector(true);
                 recipeSelect.value = parsed.id;
                 activeRecipe = getRecipeById(parsed.id);
+                useRecipeHarvestLength();
                 buildDefaultOffsets();
                 refreshPreview();
                 renderRecipeList(); // keep the manager list in sync if it's open
@@ -22942,7 +22969,7 @@
             if (!recipe || !Array.isArray(recipe.tasks)) return;
             const veg = isVegRecipe(recipe), esc = escapeHtml;
             const { rows: days, life, afterDays } = recipeLifeDays(recipe.tasks, recipe.kind);
-            const a = recipeAnchorDefaults(recipe);
+            const a = recipeAnchorDefaults(recipe), hDays = recipeHarvestDays(recipe);
             const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
             const facts = [];
             if (veg) {
@@ -22952,14 +22979,14 @@
                 const mf = recipeMatureFrom(recipe);
                 facts.push(mf ? `Mothers are mature from ${matureFromLabel(mf)}. Clones can be cut from them until they retire.` : 'No 🌿 Mature from task set.');
             } else {
-                facts.push(`Veg ${plural(a.flip, 'day')} (planting → flip) · bloom ${plural(a.harvest, 'day')} (flip → harvest).`);
-                facts.push(`The plants live ${plural(life, 'day')}, from cutting the clones (day 1) to harvest (day ${life}), with a one-day harvest.` +
+                facts.push(`Veg ${plural(a.flip, 'day')} (planting → flip) · bloom ${plural(a.harvest, 'day')} (flip → harvest)${hDays > 1 ? `, then a ${hDays}-day harvest` : ''}.`);
+                facts.push(`The plants live ${plural(life, 'day')}, from cutting the clones (day 1) to ${hDays > 1 ? 'the harvest\'s last day' : 'harvest'} (day ${life}), with a ${hDays > 1 ? `${hDays}-day` : 'one-day'} harvest.` +
                     (afterDays > 0 ? ` The work after harvest runs to day ${afterDays} after harvest, with a 7-day trim.` : ''));
                 const t = recipeTurnaround(recipe);
                 if (t) facts.push(`Next lot in the room: clones cut ${relHarvest(-t.cutBefore)}, transplanted ${relHarvest(t.transplantAfter)}. ${turnaroundStatus(t).text}` +
                     (t.cycle != null ? ` A new lot every ${plural(t.cycle, 'day')}.` : ''));
             }
-            const runs = t => t.taskType === 'trim' ? '7 days (set per lot)' : t.taskType === 'harvest' ? '1 day (multi-day per lot)' : plural(recipeTaskDays(t), 'day');
+            const runs = t => t.taskType === 'trim' ? '7 days (set per lot)' : t.taskType === 'harvest' ? (hDays > 1 ? `${plural(hDays, 'day')} (set per lot)` : '1 day (multi-day per lot)') : plural(recipeTaskDays(t), 'day');
             const when = t => {
                 const ref = REF_LABELS[t.reference] || t.reference, n = Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0;
                 return n === 0 ? `On ${ref}` : `${n > 0 ? '+' : '−'}${plural(Math.abs(n), 'day')} ${n > 0 ? 'after' : 'before'} ${ref}`;
@@ -22972,7 +22999,7 @@
                 return `<tr><td class="n">${i + 1}</td><td>${esc(t.emoji || '')} ${esc(t.name || '')}</td><td>${esc(when(t))}</td>` +
                     `<td class="day"><strong>${d ? esc(d.num) : '—'}</strong>${d ? `<br><span class="sub">${esc(d.of)}</span>` : ''}</td><td>${esc(runs(t))}</td>` +
                     (hasRepeat ? `<td>${every ? `every ${plural(every, 'day')}` : ''}</td>` : '') +
-                    (hasEst ? `<td>${est ? esc(estimateLabel(est, recipeTaskDays(t) > 1 || t.taskType === 'trim')) : ''}</td>` : '') + `<td>${esc(optional)}</td></tr>`;
+                    (hasEst ? `<td>${est ? esc(estimateLabel(est, recipeTaskDays(t) > 1 || t.taskType === 'trim' || (t.taskType === 'harvest' && hDays > 1))) : ''}</td>` : '') + `<td>${esc(optional)}</td></tr>`;
             }).join('');
             const atName = tt => { const t = recipe.tasks.find(x => x.taskType === tt); return t ? `${t.emoji || ''} ${t.name}` : tt; };
             const supplies = (recipe.inputs || []).map(x => `<tr><td>${esc(x.name || '')}</td><td>${esc(String(x.qty ?? ''))} ${esc(x.unit || '')}</td>` +
@@ -23145,6 +23172,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             activeRecipe = getRecipeById(recipeId);
             populateRecipeSelector(true);
             recipeSelect.value = activeRecipe.id;
+            useRecipeHarvestLength();
             buildDefaultOffsets();
             refreshPreview();
             closeRecipeManager();
@@ -23466,9 +23494,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <td class="t-ref"><select class="t-ref" ${t.taskType === 'clone_cut' ? `disabled title="${isVegRecipe(editorRecipe) ? 'Counted back from Retire Mothers — it starts the next mother lot' : 'Counted back from harvest — it starts the next lot'}"` : ANCHOR_REFS[t.taskType] ? `disabled title="An anchor: always counted from ${ANCHOR_REFS[t.taskType]}"` : 'title="Reference anchor"'}>${refOpts}</select></td>
                     <td class="t-offset"><input type="number" class="t-offset" step="1" min="${recipeOffsetRange(t).min}" max="${recipeOffsetRange(t).max}" value="${Number.isInteger(t.defaultOffset) ? t.defaultOffset : 0}" title="Days from reference"></td>
                     <td class="t-life"></td>
-                    <td class="t-days">${t.taskType === 'trim' || t.taskType === 'harvest'
-                        ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length / Multi-day harvest)">'
-                        : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="How many days the task runs (blank = 1)">`}</td>
+                    <td class="t-days">${t.taskType === 'trim'
+                        ? '<input type="number" class="t-days" disabled placeholder="—" title="Set in the preview (Trim length)">'
+                        : `<input type="number" class="t-days" min="1" max="30" step="1" value="${Number.isInteger(t.days) && t.days > 1 ? t.days : ''}" placeholder="1" title="${t.taskType === 'harvest'
+                            ? 'How many days the harvest runs for a lot scheduled with this recipe (blank = 1): it ends on its last day, where everything after harvest counts from. Each lot can change it in the preview (Multi-day harvest)'
+                            : 'How many days the task runs (blank = 1)'}">`}</td>
                     <td class="t-days"><input type="number" class="t-every" min="1" max="365" step="1" value="${canRepeat && Number.isInteger(t.every) ? t.every : ''}" placeholder="—" ${canRepeat ? `title="Repeat every N days until ${isVegRecipe(editorRecipe) ? 'Retire Mothers' : 'Harvest'} (blank = once)"` : 'disabled title="Anchors, the transplant and the clone cuts happen once"'}></td>
                     <td class="t-phase"><select class="t-phase" title="Room phase (optional override)">${phaseOpts}</select></td>
                     <td class="t-est"><input type="number" class="t-min" min="5" step="5" value="${Number.isInteger(t.minutes) ? t.minutes : ''}" placeholder="—" title="Estimated minutes per day (blank = no estimate)"></td>
@@ -23508,7 +23538,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     reference: tr.querySelector('select.t-ref').value,
                     defaultOffset: parseInt(tr.querySelector('input.t-offset').value, 10)
                 };
-                // Length in days: blank or 1 = a one-day task (Trim / Harvest are set in the preview)
+                // Length in days: blank or 1 = a one-day task (Trim is set in the preview; Harvest's is where a lot starts)
                 const daysInput = tr.querySelector('input.t-days');
                 const days = daysInput.disabled ? NaN : parseInt(daysInput.value, 10);
                 if (Number.isFinite(days) && days !== 1) t.days = days;
@@ -23628,6 +23658,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // If this is the active recipe, refresh the preview from its (possibly changed) defaults.
             if (activeRecipe?.id === editorRecipe.id) {
                 activeRecipe = getRecipeById(editorRecipe.id);
+                useRecipeHarvestLength();
                 buildDefaultOffsets();
                 refreshPreview();
             }
@@ -23646,7 +23677,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (!confirm(msg)) return;
             DB.ensureStructure();
             delete DB.data._CropLabourWizard.recipes[r.id];
-            if (activeRecipe?.id === r.id) { activeRecipe = BUILTIN_RECIPE; buildDefaultOffsets(); refreshPreview(); }
+            if (activeRecipe?.id === r.id) { activeRecipe = BUILTIN_RECIPE; useRecipeHarvestLength(); buildDefaultOffsets(); refreshPreview(); }
             if (projectionRecipeId === r.id) projectionRecipeId = BUILTIN_RECIPE.id;
             populateRecipeSelector(true);
             populateProjectionRecipeSelector(true);
@@ -24044,6 +24075,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 // Mother Room too, for a lot generated with its clones off)
                 if (canSwitchOff(def, clonesEnabled) && !ev && !momsFromClones) entry.enabled = false;
                 if (!ev) continue; // task absent from schedule — keep default
+                // …and one in it was switched on, even if it's off by default (an IPM spray; Early Flower Leaf Pick 1, off by
+                // default since 2026-11-07, on every lot scheduled before): Overwrite keeps it
+                if (canSwitchOff(def, clonesEnabled)) entry.enabled = true;
 
                 // When clones disabled, planting is locked to Day 0
                 if (def.taskType === 'planting' && !clonesEnabled) {
@@ -24113,9 +24147,28 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return anchors[ref];
         }
 
-        // A recipe task's own length in days (`days`, e.g. the 2-day leaf picks). Trim and Harvest use the preview's
-        // length controls instead, so their `days` is ignored.
+        // A recipe task's own length in days (`days`, e.g. the 4-day leaf picks). Trim and Harvest use the preview's
+        // length controls instead (a recipe's Harvest `days` only sets where a lot starts: recipeHarvestDays).
         const recipeTaskDays = def => (def.taskType === 'trim' || def.taskType === 'harvest') ? 1 : clampDuration(def.days, 1);
+
+        // A recipe's harvest length (user request 2026-11-07, the Albatross variant's Thursday–Friday harvest): its Harvest
+        // task's `days`, 1 when unset. A lot scheduled with the recipe, and its projections, start with it (Multi-day harvest
+        // ticked when it's more than 1); each lot can still change it in the preview.
+        function recipeHarvestDays(recipe) {
+            const h = recipe?.tasks?.find(t => t?.taskType === 'harvest');
+            return Number.isInteger(h?.days) && h.days > 1 ? Math.min(30, h.days) : 1;
+        }
+        // The lengths a fresh lot gets from a recipe: its harvest, and the 7-day trim
+        function recipeDurations(recipe) {
+            const h = recipeHarvestDays(recipe);
+            return { trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: h > 1, harvestDays: h > 1 ? h : DEFAULT_HARVEST_DAYS };
+        }
+        // The preview takes the active recipe's harvest length (a recipe picked, or a lot with no schedule yet)
+        function useRecipeHarvestLength() {
+            const d = recipeDurations(activeRecipe);
+            harvestMultiDay = d.harvestMultiDay;
+            harvestDays = d.harvestDays;
+        }
 
         // End date for multi-day tasks (null for single-day)
         function taskEndDate(def, startDate, isEnabled) {
@@ -24828,10 +24881,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         });
 
         // ---- Recipe Selector Change Handler ----
-        // Switching recipes rebuilds the preview from that recipe's defaults. Any unsaved
+        // Switching recipes rebuilds the preview from that recipe's defaults, its harvest length included. Any unsaved
         // offset edits are discarded (nothing is written to the DB until Generate).
         recipeSelect.addEventListener('change', () => {
             activeRecipe = getRecipeById(recipeSelect.value);
+            useRecipeHarvestLength();
             buildDefaultOffsets();
             refreshPreview();
         });
@@ -24849,9 +24903,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             } else {
                 // No stored schedule — reset durations + recipe to defaults (fresh generation)
                 trimDays = DEFAULT_TRIM_DAYS;
-                harvestMultiDay = false;
-                harvestDays = DEFAULT_HARVEST_DAYS;
                 activeRecipe = BUILTIN_RECIPE;
+                useRecipeHarvestLength();
                 populateRecipeSelector(false);
                 // Suggested cloning day defaults to the lot's created date (real lots only)
                 const lot = isProjectedLot(lotId) ? null : (DB.lots[lotId] || null);
@@ -25040,17 +25093,19 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             const events = eventsForLot(lotId);
             const oldDay0 = entry.config?.plantingDate;
+            // The chain's bloom (flip → harvest) for this lot's recipe: its harvest ends on the day the chain recipe's does (the
+            // chain counts from the harvest's last day), so a two-day Thursday–Friday harvest (the Albatross variant, 2026-11-07)
+            // in a chain of one-day Friday harvests stays Thursday–Friday, and the other way round
+            const lotBloom = bloomDays == null ? null : bloomDays + recipeHarvestDays(recipe || lotRecipe) - recipeHarvestDays(lotRecipe);
 
             if (events.length === 0 || !oldDay0) {
                 // Stale (or no stored Day 0 to shift from) — fresh generation from the lot's recipe
                 // defaults at the new Day 0, with that recipe's own bloom unless one is given
                 if (events.length) reconcileLotSchedule(lotId);
                 // Mothers from clones count their Day 0 from the clone cut (their Transplanting is the flower lot's)
-                const offsets = defaultOffsetsSnapshot(bloomDays ?? recipeBloomDays(lotRecipe), lotRecipe)
+                const offsets = defaultOffsetsSnapshot(lotBloom ?? recipeBloomDays(lotRecipe), lotRecipe)
                     .map(e => mothersFromClones && e.def.taskType === 'clone_cut_prep' ? { ...e, enabled: true } : e);
-                const { events: fresh } = generateLotSchedule(lotId, day0, offsets, {
-                    trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
-                }, lotRecipe);
+                const { events: fresh } = generateLotSchedule(lotId, day0, offsets, recipeDurations(lotRecipe), lotRecipe);
                 carryOverAnnotations(events, fresh, annotationKey); // no-op for a stale lot
                 return;
             }
@@ -25065,7 +25120,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const flipEv = events.find(ev => ev.taskType === 'flip');
                 const harvestEv = events.find(ev => ev.taskType === 'harvest');
                 if (flipEv && harvestEv) {
-                    deltaBloom = bloomDays - daysBetween(flipEv.date, harvestEv.date);
+                    deltaBloom = lotBloom - daysBetween(flipEv.date, harvestEv.date);
                 }
             }
 
@@ -25698,9 +25753,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const planned = plan?.find(s => s.index === i && s.day0)?.day0;
                 const day0 = planned || nextLotDay0(i === 1 ? gatedLotId : projectedLotId(roomId, i - 1), projRecipe) || localDateStr(new Date());
                 map[id] = { name: id, roomId, roomName: room.name, strain: 'TBA', index: i };
-                generateLotSchedule(id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), {
-                    trimDays: DEFAULT_TRIM_DAYS, harvestMultiDay: false, harvestDays: DEFAULT_HARVEST_DAYS
-                }, projRecipe);
+                generateLotSchedule(id, day0, defaultOffsetsSnapshot(recipeBloomDays(projRecipe), projRecipe), recipeDurations(projRecipe), projRecipe);
                 added.push(i);
             }
 
@@ -30799,8 +30852,9 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const multi = !sel && kind === 'field' && cfgMultiSel.has(item.id);
             const isInitBox = kind === 'field' && fieldIsInitialsBox(item.id);
             const isConst = kind === 'field' && !!item.constant;
-            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${isInitBox ? ' initials' : ''}${isConst ? ' constant' : ''}${sel ? ' selected' : multi ? ' multi-sel' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
-                (item.checkbox ? '<span class="box-check" title="Checkbox field">☑</span>' : '') +
+            const isCalc = kind === 'field' && item.source === 'calc';
+            return `<div class="field-box${kind === 'signature' ? ' sig' : ''}${isInitBox ? ' initials' : ''}${isConst ? ' constant' : ''}${isCalc ? ' calc' : ''}${sel ? ' selected' : multi ? ' multi-sel' : ''}" data-id="${item.id}" data-kind="${kind}" style="left:${(item.x * 100)}%;top:${(item.y * 100)}%;width:${(item.w * 100)}%;height:${(item.h * 100)}%;">` +
+                (isCalc ? `<span class="box-calc" title="🧮 ${escapeHtml(item.calc || 'Formula')}">🧮</span>` : item.checkbox ? '<span class="box-check" title="Checkbox field">☑</span>' : '') +
                 (isInitBox ? '<span class="box-initials" title="Initials box — bound to an initials question">✍️</span>' : '') +
                 (isConst ? '<span class="box-constant" title="Constant field — set once per lot via Initialize paperwork">📌</span>' : '') +
                 `<span class="box-label">${escapeHtml(item.label || item.id)}</span>` +
@@ -31339,11 +31393,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             ['year.current', 'year.current — last digit of the year (at save time)'],
             ['entry.number', 'entry.number — entry # (1, 2, 3 … continuing on each extra page; repeating rows only)'],
             ['page.number', 'page.number — this page\'s number in the printout'],
-            ['page.count', 'page.count — number of pages in the printout']
+            ['page.count', 'page.count — number of pages in the printout'],
+            // user request 2026-11-07 (the harvest pack)
+            ['copy.number', 'copy.number — this copy of a repeating page (1, 2 …: "Start of Drying Page _ of _")'],
+            ['copy.count', 'copy.count — how many copies of this repeating page print'],
+            ['lot.startPlantCount', 'lot.startPlantCount — plants the lot started with'],
+            ['lot.clonesProduced', 'lot.clonesProduced — clones cut from this lot (its sub-lots\' starting counts)'],
+            ['log.plantsHarvested', 'log.plantsHarvested — plants harvested (the daily logs\' plant-count reasons)'],
+            ['log.plantsDestroyed', 'log.plantsDestroyed — plants destroyed or culled (the daily logs\' plant-count reasons)'],
+            ['log.vegStart', 'log.vegStart — first day of the Vegetation grow log (else the scheduled Planting)'],
+            ['today.date', 'today.date — today (a box keeps the day its page was first saved)'],
+            ['signature.strokes', 'signature.strokes — the master grower\'s ✍️ signature again, in this box too'],
+            ['calc', '🧮 Formula — worked out from other boxes (totals, subtotals, differences …)']
         ];
         // Print-time only: they depend on where a box lands in the printout, so they are never
         // snapshotted and can't prefill a question.
-        const PRINT_ONLY_BINDINGS = ['entry.number', 'page.number', 'page.count'];
+        const PRINT_ONLY_BINDINGS = ['entry.number', 'page.number', 'page.count', 'copy.number', 'copy.count', 'signature.strokes', 'calc'];
+        // Worked out when the page prints, from the records as they are now — never kept with the page
+        const LIVE_BINDINGS = ['log.plantsHarvested', 'log.plantsDestroyed', 'log.vegStart', 'lot.clonesProduced'];
 
         // Candidate values for a checkbox field's "checked when value equals" — derived from
         // the field's auto-fill source so the user picks instead of typing (no typos). Phase
@@ -31430,6 +31497,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         </select></div>
                     </div>
                     <div class="form-group"><label for="fpSource">Auto-fill source</label><select id="fpSource">${srcOpts}</select></div>
+                    ${item.source === 'calc' ? `
+                    <div class="form-group" id="fpCalcWrap">
+                        <label for="fpCalc">🧮 Formula${item.dayGroup ? ` <span style="text-transform:none; letter-spacing:0;">(every ${item.repeat ? 'row' : 'day'} of this column)</span>` : ''}</label>
+                        ${formulaEditorHtml('fpCalc', item.calc || '', { f: item })}
+                        <p class="cfg-hint" style="margin:6px 0 0;">Worked out when the page prints, from what's saved — nothing is typed and nothing is kept, so it always agrees with the answers. ${item.repeat ? 'In a repeating row, {…} means that entry\'s answer; runsum() is the total through the row.' : 'sum() adds up a column; pagesum() just the entries on this copy of the page.'} A blank answer prints N/A. To count it in Reports, use a 🧮 worked-out question instead.</p>
+                    </div>` : ''}
                     <div class="form-group" id="fpQuestionWrap" style="display:${item.source ? 'none' : ''};">
                         <label for="fpQuestionLink">Filled by question</label>
                         <select id="fpQuestionLink">
@@ -31515,9 +31588,20 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     const src = $('fpSource').value || null;
                     const col = cfgColumnOf(item);
                     // A constant field is quiz-filled, not binding-filled — same exclusivity as questionId.
-                    for (const t of col) { if (src) { t.questionId = null; t.constant = false; } t.source = src; }
+                    // 🧮 A formula box keeps its formula on the box; any other source drops it.
+                    for (const t of col) {
+                        if (src) { t.questionId = null; t.constant = false; }
+                        t.source = src;
+                        if (src === 'calc') t.calc = t.calc ?? item.calc ?? ''; else delete t.calc;
+                    }
                     refreshCfgOverlays();
                     refreshWizardBuilder();
+                });
+                // 🧮 The formula follows down the column, like the binding
+                wireFormulaEditor('fpCalc', { f: item }, text => {
+                    for (const t of cfgColumnOf(item)) t.calc = text;
+                    const badge = document.querySelector(`.field-box[data-id="${item.id}"] .box-calc`);
+                    if (badge) badge.title = '🧮 ' + text;
                 });
                 const qWrap = $('fpQuestionWrap');
                 if (qWrap) {
@@ -31633,16 +31717,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function rowScopedQuestionIds(sheetId) {
             const wiz = wizardForSheet(sheetId);
             if (!wiz) return [];
-            return (wiz.questions || []).filter(q => q.rowScoped).map(q => q.id);
+            return (wiz.questions || []).filter(q => q.rowScoped && !isCalcQ(q)).map(q => q.id);
         }
 
         // Instance-level questions (one-shot / event completion). Repeating questions are answered
-        // per entry (inst.rows), not once — they are not in this list.
+        // per entry (inst.rows), not once — they are not in this list. Nor are 🧮 worked-out ones: nobody answers them.
         function instanceQuestionIds(sheetId) {
             const wiz = wizardForSheet(sheetId);
             if (!wiz) return [];
             const sheet = DB.paperWizard?.sheets?.[sheetId];
-            return (wiz.questions || []).filter(q => !q.rowScoped && !isRepeatingQ(sheet, q)).map(q => q.id);
+            return (wiz.questions || []).filter(q => !q.rowScoped && !isRepeatingQ(sheet, q) && !isCalcQ(q)).map(q => q.id);
         }
 
         // ---- Repeating rows (event / one-shot sheets) ----
@@ -32045,7 +32129,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // Are the page's own answers on file? (all answered, or already corrected once)
         function headerOnFile(inst, sheetId) {
             if (!inst) return false;
-            const qs = headerQuestions(sheetId);
+            // 🧮 Worked-out answers may be blank (nothing to work from yet): they don't hold the page back
+            const qs = headerQuestions(sheetId).filter(q => !isCalcQ(q));
             if (!qs.length) return false;
             return qs.every(q => hasAnswer(inst.header, q.id))
                 || (inst.changes || []).some(c => !c.row && c.day == null && CORR_KINDS.has(c.kind));
@@ -32096,7 +32181,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const headQs = tracked.filter(q => !q.rowScoped && !isRepeatingQ(sheet, q));
             const repQs = tracked.filter(q => isRepeatingQ(sheet, q));
             const bInsts = before?.instances || {}, aInsts = after?.instances || {};
-            const kindOf = (key, day) => (key === edited.key && (day == null || day === edited.day)) ? 'edit' : 'carried';
+            // A 🧮 worked-out answer is never typed: when it changes, it was carried forward from the answer that changed it
+            const kindOf = (key, day, q) => isCalcQ(q) ? 'carried' : (key === edited.key && (day == null || day === edited.day)) ? 'edit' : 'carried';
             const summary = (qs, row) => qs.map(q => corrVal(row?.[q.id])).filter(Boolean).join(' · ');
             const out = [];
             for (const [bKey, bInst] of Object.entries(bInsts)) {
@@ -32117,7 +32203,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     const bRow = bInst.days[ds], aRow = aInsts[aKey].days[ds];
                     for (const q of dayQs) {
                         const from = corrVal(bRow?.[q.id]), to = corrVal(aRow?.[q.id]);
-                        if (!sameAnswer(q, from, to)) out.push({ key: aKey, day: ds, q, label: q.label, from, to, kind: kindOf(bKey, ds) });
+                        if (!sameAnswer(q, from, to)) out.push({ key: aKey, day: ds, q, label: q.label, from, to, kind: kindOf(bKey, ds, q) });
                     }
                 }
                 if (!aInst) continue;
@@ -32140,7 +32226,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (headerOnFile(bInst, sheetId)) {
                     for (const q of headQs) {
                         const from = corrVal(bInst.header?.[q.id]), to = corrVal(aInst.header?.[q.id]);
-                        if (!sameAnswer(q, from, to)) out.push({ key: bKey, day: null, q, label: q.label, from, to, kind: kindOf(bKey, null) });
+                        if (!sameAnswer(q, from, to)) out.push({ key: bKey, day: null, q, label: q.label, from, to, kind: kindOf(bKey, null, q) });
                     }
                 }
                 // Repeating entries: every saved one is on file
@@ -32156,7 +32242,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     for (const q of repQs) {
                         if (!(q.id in bRow) && !(q.id in aRow)) continue;
                         const from = corrVal(bRow[q.id]), to = corrVal(aRow[q.id]);
-                        if (from !== to) out.push({ key: bKey, row: bRow.id, entry: place.entry, where: place.where, q, label: q.label, from, to, kind: 'edit' });
+                        if (from !== to) out.push({ key: bKey, row: bRow.id, entry: place.entry, where: place.where, q, label: q.label, from, to, kind: isCalcQ(q) ? 'carried' : 'edit' });
                     }
                 }
             }
@@ -33509,7 +33595,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 const b = roomBuildingFor(DB.lots[ctx.lotId]?.currentRoom);
                 return b ? buildingName(b) : null;
             }
-            if (kind === 'lot' && isScopedId(ctx.lotId)) return null;   // facility / building forms have no lot: N/A
+            // Today's date (YYYY-MM-DD): a prefill, or a box that keeps the day its page was first saved
+            if (kind === 'today' && field === 'date') return todayStr();
+            if ((kind === 'lot' || kind === 'log') && isScopedId(ctx.lotId)) return null;   // facility / building forms have no lot: N/A
+            // From the lot's daily logs (user request 2026-11-07, the harvest pack's lot summary): print time, never kept
+            if (kind === 'log') return logFigure(ctx.lotId, field);
+            if (kind === 'lot' && field === 'clonesProduced') {
+                // Clones cut from this lot: its sub-lots' starting counts (a split lot's plants were moved, not cut)
+                const subs = Object.values(DB.lots || {}).filter(l => l?.parentLotId === ctx.lotId && l.type === 'sub-lot');
+                return subs.length ? String(subs.reduce((n, l) => n + (Number(l.startPlantCount ?? l.plantCount) || 0), 0)) : '0';
+            }
             if (kind === 'lot') {
                 const lot = DB.lots[ctx.lotId];
                 const v = lot ? lot[field] : null;
@@ -33560,15 +33655,586 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return null;
         }
 
-        // Every binding a sheet uses: field sources + question prefillFrom values.
+        // log.* bindings: what the lot's daily logs recorded. A day on two pages (a move day) counts once, as its newest
+        // page has it (as the CTLS numbers do). null when the lot has no daily log.
+        //   plantsHarvested / plantsDestroyed (destroyed + culled): the plant-count reasons (days[day]._removed)
+        //   vegStart: the first day of its Vegetation grow log, else its scheduled Planting
+        function logFigure(lotId, field) {
+            const store = pageStore(lotId) || {};
+            const days = new Map();   // day → { key, rec }
+            let vegStart = null, anyLog = false;
+            for (const [sheetId, sd] of Object.entries(store)) {
+                if (DB.paperWizard?.sheets?.[sheetId]?.cadence !== 'daily-weekly') continue;
+                for (const [key, inst] of Object.entries(sd?.instances || {})) {
+                    anyLog = true;
+                    if (normalizeStage(inst?.phase) === 'Vegetation') {
+                        const first = Object.keys(inst.days || {}).sort()[0] || key;
+                        if (!vegStart || first < vegStart) vegStart = first;
+                    }
+                    for (const [ds, rec] of Object.entries(inst?.days || {})) {
+                        const had = days.get(ds);
+                        if (!had || key > had.key) days.set(ds, { key, rec });
+                    }
+                }
+            }
+            if (field === 'vegStart') {
+                if (vegStart) return vegStart;
+                const plant = (DB.calendarEvents || []).filter(e => e?.lotId === lotId && e.taskType === 'planting' && e.sourceTool === 'CropLabourWizard' && !e.copyOf)
+                    .map(e => e.date).sort()[0];
+                return plant || null;
+            }
+            if (!anyLog) return null;
+            const reasons = field === 'plantsHarvested' ? ['harvested'] : field === 'plantsDestroyed' ? ['destroyed', 'culled'] : null;
+            if (!reasons) return null;
+            let n = 0;
+            for (const { rec } of days.values()) for (const r of reasons) n += Number(rec?._removed?.[r]) || 0;
+            return String(n);
+        }
+
+        // Every binding a sheet uses: field sources, question prefillFrom values, and the bindings its 🧮 formulas read
+        // (so a formula's lot values are kept with the page like any other box's).
         function sheetBindings(sheetId) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet) return [];
             const set = new Set();
-            for (const f of sheet.fields || []) if (f.source) set.add(f.source);
+            for (const f of sheet.fields || []) {
+                if (f.source === 'calc') fxBindingsIn(f.calc).forEach(b => set.add(b));
+                else if (f.source) set.add(f.source);
+            }
             const wiz = wizardForSheet(sheetId);
-            for (const q of wiz?.questions || []) if (q.prefillFrom) set.add(q.prefillFrom);
+            for (const q of wiz?.questions || []) {
+                if (q.prefillFrom) set.add(q.prefillFrom);
+                if (isCalcQ(q)) fxBindingsIn(q.calc).forEach(b => set.add(b));
+            }
             return [...set];
+        }
+
+        // ---- 🧮 Formulas (user request 2026-11-07) ----
+        // A box can be worked out instead of filled by a question (Field properties → Auto-fill source → 🧮 Formula), and a
+        // question can be worked out instead of asked (its card → 🧮 Worked out, not asked). A subtotal, a running total,
+        // a total of the flower bins, a difference, the days between two dates, a value from another sheet of the lot.
+        //   - A formula box is worked out when the page prints, from what's saved; nothing is stored, so it always agrees.
+        //   - A worked-out question is worked out as an entry is typed (shown on the Entries form) and again on every save;
+        //     its answer is stored like any other, so Reports can count it and a change to it on file is a correction
+        //     ("carried forward" from the answer that changed it).
+        // Syntax: numbers, "text", + - * / ( ), = != < <= > >=, and
+        //   {id}           a box or question on this sheet: its answer (in a repeating row, that entry's; in a day row, that day's)
+        //   {sheet/id}     a box or question on another sheet of the same lot (its pages, oldest first: the first answer;
+        //                  in sum() and the like, every page's entries)
+        //   lot.trimRoom   an auto-fill binding (lot.*, sheet.periodStart, today.date, log.*, entry.number …)
+        //   sum(x, if?)    x added up over a repeating table's entries (or a daily log's days), only those where `if` holds
+        //   pagesum(x, if?) the same, over the entries printed on this copy of the page   ·   runsum(x, if?) through this row
+        //   count(x, if?)  entries where x has an answer   ·   days(a, b) days from date a to date b
+        //   if(c, a, b), first(a, b, …) (the first with an answer), building(room) (its building id), round(x, n), abs, min, max
+        // A blank or unreadable value makes the result blank (it prints N/A) — never a guess. No eval(): a small parser.
+        const FX_FUNCS = { sum: [1, 2], pagesum: [1, 2], runsum: [1, 2], count: [1, 2], days: [2, 2], if: [3, 3], first: [1, 20],
+            building: [1, 1], round: [1, 2], abs: [1, 1], min: [1, 20], max: [1, 20] };
+        const FX_AGG = new Set(['sum', 'pagesum', 'runsum', 'count']);
+        function isCalcQ(q) { return typeof q?.calc === 'string' && (q.type === 'number' || q.type === 'text'); }
+        const fxCache = new Map();
+
+        function fxTokens(src) {
+            const out = [];
+            let i = 0;
+            const s = String(src);
+            while (i < s.length) {
+                const c = s[i];
+                if (/\s/.test(c)) { i++; continue; }
+                if (c === '{') {
+                    const j = s.indexOf('}', i);
+                    if (j < 0) throw new Error('a { has no closing }');
+                    const body = s.slice(i + 1, j).trim();
+                    const slash = body.lastIndexOf('/');
+                    const ref = slash >= 0 ? { sheet: body.slice(0, slash).trim(), id: body.slice(slash + 1).trim() } : { sheet: null, id: body };
+                    if (!ref.id) throw new Error('an empty {} reference');
+                    out.push({ k: 'ref', ...ref });
+                    i = j + 1;
+                    continue;
+                }
+                if (c === '"' || c === "'") {
+                    const j = s.indexOf(c, i + 1);
+                    if (j < 0) throw new Error('text in quotes has no closing quote');
+                    out.push({ k: 'str', v: s.slice(i + 1, j) });
+                    i = j + 1;
+                    continue;
+                }
+                const num = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i));
+                if (num) { out.push({ k: 'num', v: Number(num[0]) }); i += num[0].length; continue; }
+                const word = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?/.exec(s.slice(i));
+                if (word) { out.push({ k: 'word', v: word[0] }); i += word[0].length; continue; }
+                const op = /^(<=|>=|!=|<>|[-+*/×÷()<>=,])/.exec(s.slice(i));
+                if (op) { out.push({ k: 'op', v: { '×': '*', '÷': '/', '<>': '!=' }[op[0]] || op[0] }); i += op[0].length; continue; }
+                throw new Error(`"${c}" isn't something a formula understands`);
+            }
+            return out;
+        }
+
+        // Parse once, kept by text: { ast } or { error }
+        function fxParse(src) {
+            const text = String(src ?? '');
+            if (fxCache.has(text)) return fxCache.get(text);
+            let res;
+            try {
+                const t = fxTokens(text);
+                let p = 0;
+                const peek = () => t[p];
+                const isOp = v => peek()?.k === 'op' && peek().v === v;
+                const take = v => { if (!isOp(v)) throw new Error(peek() ? `expected "${v}"` : `expected "${v}" at the end`); p++; };
+                const primary = () => {
+                    const tk = t[p++];
+                    if (!tk) throw new Error('the formula ends too soon');
+                    if (tk.k === 'num') return { t: 'num', v: tk.v };
+                    if (tk.k === 'str') return { t: 'str', v: tk.v };
+                    if (tk.k === 'ref') return { t: 'ref', sheet: tk.sheet, id: tk.id };
+                    if (tk.k === 'op' && tk.v === '(') { const e = expr(); take(')'); return e; }
+                    if (tk.k === 'op' && tk.v === '-') return { t: 'neg', a: primary() };
+                    if (tk.k === 'word') {
+                        if (isOp('(')) {
+                            const fn = tk.v.toLowerCase();
+                            if (!FX_FUNCS[fn]) throw new Error(`${tk.v}() isn't a formula function`);
+                            p++;
+                            const args = [];
+                            if (!isOp(')')) { args.push(expr()); while (isOp(',')) { p++; args.push(expr()); } }
+                            take(')');
+                            const [lo, hi] = FX_FUNCS[fn];
+                            if (args.length < lo || args.length > hi) throw new Error(`${fn}() takes ${lo === hi ? lo : `${lo} to ${hi}`} value${hi === 1 ? '' : 's'}`);
+                            return { t: 'call', fn, args };
+                        }
+                        if (!tk.v.includes('.')) throw new Error(`"${tk.v}" — put box and question ids in braces, like {${tk.v}}`);
+                        return { t: 'bind', name: tk.v };
+                    }
+                    throw new Error(`"${tk.v}" is out of place`);
+                };
+                const mul = () => { let a = primary(); while (isOp('*') || isOp('/')) { const op = t[p++].v; a = { t: 'bin', op, a, b: primary() }; } return a; };
+                const add = () => { let a = mul(); while (isOp('+') || isOp('-')) { const op = t[p++].v; a = { t: 'bin', op, a, b: mul() }; } return a; };
+                const expr = () => {
+                    const a = add();
+                    for (const op of ['=', '!=', '<=', '>=', '<', '>']) if (isOp(op)) { p++; return { t: 'bin', op, a, b: add() }; }
+                    return a;
+                };
+                if (!t.length) throw new Error('the formula is empty');
+                const ast = expr();
+                if (p < t.length) throw new Error(`"${t[p].v ?? t[p].id}" is out of place`);
+                res = { ast };
+            } catch (e) { res = { error: e.message }; }
+            fxCache.set(text, res);
+            return res;
+        }
+
+        // Every node of a parsed formula
+        function fxWalk(node, fn) {
+            if (!node) return;
+            fn(node);
+            if (node.t === 'bin') { fxWalk(node.a, fn); fxWalk(node.b, fn); }
+            else if (node.t === 'neg') fxWalk(node.a, fn);
+            else if (node.t === 'call') node.args.forEach(a => fxWalk(a, fn));
+        }
+        function fxBindingsIn(src) {
+            const out = [];
+            fxWalk(fxParse(src).ast, n => { if (n.t === 'bind') out.push(n.name); });
+            return out;
+        }
+
+        // A sheet's boxes and questions by id (the saved configuration, or Configure Sheets' working copy)
+        function fxModel(sheetId, live = false) {
+            if (live && sheetId === configSheetId && cfgWizard) {
+                return { id: sheetId, sheet: { cadence: cfgCadence, fields: cfgFields }, wiz: cfgWizard,
+                    qById: new Map(cfgWizard.questions.map(q => [q.id, q])), fById: new Map(cfgFields.map(f => [f.id, f])) };
+            }
+            const sheet = DB.paperWizard?.sheets?.[sheetId];
+            if (!sheet) return null;
+            const wiz = wizardForSheet(sheetId);
+            return { id: sheetId, sheet, wiz, qById: new Map((wiz?.questions || []).map(q => [q.id, q])), fById: new Map((sheet.fields || []).map(f => [f.id, f])) };
+        }
+        // What a reference points at: { q } a question, { f, q? } a box (and the question that fills it)
+        function fxTarget(model, id) {
+            if (!model) return null;
+            const q = model.qById.get(id);
+            if (q) return { q };
+            const f = model.fById.get(id);
+            return f ? { f, q: f.questionId ? model.qById.get(f.questionId) || null : null } : null;
+        }
+        // Per entry (a repeating question or a box in repeating rows) or per day (a day-row question or box)?
+        function fxRowKind(model, tg) {
+            if (!tg) return null;
+            if (tg.q && isRepeatingQ(model.sheet, tg.q)) return 'entry';
+            if (tg.f?.repeat && tg.f.dayGroup && model.sheet.cadence !== 'daily-weekly') return 'entry';
+            if (tg.q?.rowScoped || (tg.f?.dayGroup && model.sheet.cadence === 'daily-weekly')) return 'day';
+            return null;
+        }
+
+        const fxBlank = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '') || (typeof v === 'number' && !Number.isFinite(v));
+        // A number from an answer, read leniently like Reports ("1,250", "12 kg"); null when it isn't one
+        function fxNum(v) {
+            if (fxBlank(v) || typeof v === 'object') return null;
+            if (typeof v === 'number') return v;
+            if (typeof v === 'boolean') return v ? 1 : 0;
+            const m = /^[-+]?(\d+\.?\d*|\.\d+)/.exec(String(v).replace(/,/g, '').trim());
+            return m ? Number(m[0]) : null;
+        }
+        // A date from an answer: 2026-11-07, 2026/11/07 or 11/07/2026; null otherwise
+        function fxDate(v) {
+            if (fxBlank(v) || typeof v === 'object') return null;
+            const s = String(v).trim();
+            let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(s);
+            if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+            m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/.exec(s);
+            return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
+        }
+        const fxTrue = v => typeof v === 'boolean' ? v : typeof v === 'number' ? v !== 0 : !fxBlank(v) && typeof v !== 'object';
+        // How a result prints: numbers to at most 3 decimals, yes / no for a comparison
+        function fxText(v) {
+            if (fxBlank(v) || typeof v === 'object') return '';
+            if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+            if (typeof v === 'number') { const r = Math.round(v * 1000) / 1000; return String(Object.is(r, -0) ? 0 : r); }
+            return String(v).trim();
+        }
+        function fxCompare(op, a, b) {
+            if (op === '=' || op === '!=') {
+                let eq;
+                if (fxBlank(a) || fxBlank(b)) eq = fxBlank(a) && fxBlank(b);
+                else if (typeof a === 'number' || typeof b === 'number' || (/^[-+]?\d+(\.\d+)?$/.test(String(a).trim()) && /^[-+]?\d+(\.\d+)?$/.test(String(b).trim()))) eq = fxNum(a) === fxNum(b);
+                else eq = checkboxMatches(String(a).trim(), String(b).trim());
+                return op === '=' ? eq : !eq;
+            }
+            const x = fxNum(a), y = fxNum(b);
+            if (x === null || y === null) return null;
+            return op === '<' ? x < y : op === '>' ? x > y : op === '<=' ? x <= y : x >= y;
+        }
+
+        // A binding inside a formula, as the page has it: its kept value first, the print-time ones from the print
+        function fxBindingValue(name, c) {
+            if (name === 'entry.number') return c.rowIdx != null ? c.rowIdx + 1 : null;
+            if (name === 'day.date') return c.day || null;
+            if (['page.number', 'page.count', 'copy.number', 'copy.count'].includes(name)) {
+                const pi = c.pageInfo;
+                return !pi ? null : { 'page.number': pi.number, 'page.count': pi.count, 'copy.number': pi.copy, 'copy.count': pi.copies }[name] ?? null;
+            }
+            if (name === 'signature.date') return c.inst?.signature?.date || null;
+            if (name === 'lot.currentRoom' || name === 'lot.roomBuilding' || name === 'lot.roomDesignation') {
+                const room = c.inst?.room || DB.lots?.[c.lotId]?.currentRoom || null;
+                return name === 'lot.currentRoom' ? room : name === 'lot.roomBuilding' ? roomBuildingFor(room) : roomDesignationFor(room);
+            }
+            const kept = c.inst?.snapshots?.[name];
+            if (kept != null && kept !== '') return kept;
+            return resolveBinding(name, { lotId: c.lotId, sheetId: c.sheetId, key: c.key, inst: c.inst, dayDate: c.day || null });
+        }
+
+        // A question's answer where the formula is looking: this entry's, this day's, or the page's
+        function fxQuestionValue(model, q, c) {
+            if (isCalcQ(q)) {
+                const fx = fxParse(q.calc);
+                return fx.ast ? fxNode(fx.ast, { ...c, sheetId: model.id, depth: (c.depth || 0) + 1 }) : null;
+            }
+            let v;
+            if (isRepeatingQ(model.sheet, q)) v = c.row && Object.prototype.hasOwnProperty.call(c.row, q.id) ? c.row[q.id] : null;
+            else if (q.rowScoped) v = c.day ? (c.dayAnswers && c.sheetId === model.id ? c.dayAnswers : c.inst?.days?.[c.day])?.[q.id] : null;
+            else if (constantQuestionIds(model.id).includes(q.id)) v = lotConstants(c.lotId, model.id)?.[q.id];
+            else v = (c.header && c.sheetId === model.id ? c.header : c.inst?.header)?.[q.id];
+            if (v && typeof v === 'object') return v.name || null;   // drawn initials: who
+            return v ?? null;
+        }
+
+        function fxBoxValue(model, f, c) {
+            if (f.questionId) {
+                const q = model.qById.get(f.questionId);
+                if (!q) return null;
+                if (f.constant) return lotConstants(c.lotId, model.id)?.[q.id] ?? null;
+                return fxQuestionValue(model, q, c);
+            }
+            if (f.source === 'calc') {
+                const fx = fxParse(f.calc);
+                return fx.ast ? fxNode(fx.ast, { ...c, sheetId: model.id, depth: (c.depth || 0) + 1 }) : null;
+            }
+            if (f.source === 'signature.strokes') return c.inst?.signature?.name || null;
+            if (f.source === 'day.date') return c.day || (f.dayGroup && c.key ? addDaysStr(c.key, (f.day || 1) - 1) : null);
+            return f.source ? fxBindingValue(f.source, c) : null;
+        }
+
+        // The lot's pages of another sheet, oldest first
+        function fxPagesOf(c, sheetId) {
+            const insts = pageStore(c.lotId)?.[sheetId]?.instances || {};
+            return Object.keys(insts).sort().map(key => ({ key, inst: insts[key] }));
+        }
+
+        function fxRef(n, c) {
+            if (n.sheet && n.sheet !== c.sheetId) {
+                const model = fxModel(n.sheet);
+                const tg = fxTarget(model, n.id);
+                if (!tg) return null;
+                // Another sheet: the first of its pages (oldest first) that has an answer
+                for (const pg of fxPagesOf(c, n.sheet)) {
+                    const sub = { lotId: c.lotId, sheetId: n.sheet, key: pg.key, inst: pg.inst, depth: (c.depth || 0) + 1 };
+                    const v = tg.f ? fxBoxValue(model, tg.f, sub) : fxQuestionValue(model, tg.q, sub);
+                    if (!fxBlank(v)) return v;
+                }
+                return null;
+            }
+            const model = fxModel(c.sheetId);
+            const tg = fxTarget(model, n.id);
+            if (!tg) return null;
+            return tg.f ? fxBoxValue(model, tg.f, c) : fxQuestionValue(model, tg.q, c);
+        }
+
+        // sum / pagesum / runsum / count: the entries (or days) the formula's first per-entry reference belongs to
+        function fxAggregate(fn, args, c) {
+            let found = null;
+            for (const a of args) fxWalk(a, n => {
+                if (found || n.t !== 'ref') return;
+                const sid = n.sheet || c.sheetId;
+                const model = fxModel(sid);
+                const kind = fxRowKind(model, fxTarget(model, n.id));
+                if (kind) found = { model, kind, id: n.id };
+            });
+            if (!found) {
+                // Nothing per entry: just the value (sum of one answer is that answer)
+                const v = fxNode(args[0], c);
+                if (fn === 'count') return fxBlank(v) ? 0 : 1;
+                return fxNum(v);
+            }
+            const { model, kind } = found;
+            const same = model.id === c.sheetId;
+            const items = [];   // { sub ctx, slot } in order
+            if (kind === 'entry') {
+                const tables = repeatTables(model.sheet, model.wiz);
+                const tg = fxTarget(model, found.id);
+                const qid = tg.q?.id || null;
+                const t = tables.find(x => (qid && x.qs.some(q => q.id === qid)) || (tg.f && x.slotOf.has(tg.f.id))) || null;
+                if (!t) return null;
+                const pages = same ? [{ key: c.key, inst: c.inst }] : fxPagesOf(c, model.id);
+                for (const pg of pages) {
+                    const rows = same && c.rows ? c.rows : pg.inst?.rows;
+                    const { per } = splitRows(tables, rows);
+                    const list = per[tables.indexOf(t)] || [];
+                    let upTo = list.length - 1;
+                    if (fn === 'runsum' && same && c.row) {
+                        const at = list.findIndex(r => r === c.row || (r?.id && r.id === c.row.id));
+                        if (at >= 0) upTo = at;
+                    }
+                    let from = 0, to = upTo;
+                    // pagesum: the slots printed on this copy of the table's page
+                    if (fn === 'pagesum' && same && c.pageInfo && c.pageInfo.page === t.page && t.perPage) {
+                        from = (c.pageInfo.copy - 1) * t.perPage;
+                        to = Math.min(upTo, from + t.perPage - 1);
+                    }
+                    for (let i = from; i <= to; i++) {
+                        const r = list[i];
+                        if (!r || r.void) continue;
+                        items.push({ lotId: c.lotId, sheetId: model.id, key: pg.key, inst: pg.inst, rows: same ? c.rows : undefined,
+                            header: same ? c.header : undefined, row: r, rowIdx: i, depth: (c.depth || 0) + 1, pageInfo: same ? c.pageInfo : null });
+                    }
+                }
+            } else {
+                // A daily log's days, in order
+                const pages = same ? [{ key: c.key, inst: c.inst }] : fxPagesOf(c, model.id);
+                for (const pg of pages) {
+                    for (const ds of Object.keys(pg.inst?.days || {}).sort()) {
+                        if (fn === 'runsum' && same && c.day && ds > c.day) continue;
+                        items.push({ lotId: c.lotId, sheetId: model.id, key: pg.key, inst: pg.inst, day: ds, depth: (c.depth || 0) + 1 });
+                    }
+                }
+            }
+            if (!items.length) return null;
+            let total = 0;
+            for (const sub of items) {
+                if (args[1] && !fxTrue(fxNode(args[1], sub))) continue;
+                const v = fxNode(args[0], sub);
+                if (fn === 'count') { if (!fxBlank(v)) total++; continue; }
+                const x = fxNum(v);
+                if (x !== null) total += x;
+            }
+            return total;
+        }
+
+        function fxNode(n, c) {
+            if ((c.depth || 0) > 40) return null;   // a formula that leads back to itself
+            switch (n.t) {
+                case 'num': return n.v;
+                case 'str': return n.v;
+                case 'ref': return fxRef(n, c);
+                case 'bind': return fxBindingValue(n.name, c);
+                case 'neg': { const x = fxNum(fxNode(n.a, c)); return x === null ? null : -x; }
+                case 'bin': {
+                    const a = fxNode(n.a, c), b = fxNode(n.b, c);
+                    if (['=', '!=', '<', '>', '<=', '>='].includes(n.op)) return fxCompare(n.op, a, b);
+                    const x = fxNum(a), y = fxNum(b);
+                    if (x === null || y === null) return null;
+                    return n.op === '+' ? x + y : n.op === '-' ? x - y : n.op === '*' ? x * y : (y === 0 ? null : x / y);
+                }
+                case 'call': {
+                    if (FX_AGG.has(n.fn)) return fxAggregate(n.fn, n.args, c);
+                    const v = i => fxNode(n.args[i], c);
+                    switch (n.fn) {
+                        case 'if': return fxTrue(v(0)) ? v(1) : v(2);
+                        case 'first': for (let i = 0; i < n.args.length; i++) { const x = v(i); if (!fxBlank(x)) return x; } return null;
+                        case 'building': { const r = v(0); return fxBlank(r) ? null : roomBuildingFor(String(r)); }
+                        case 'days': { const a = fxDate(v(0)), b = fxDate(v(1)); return a && b ? Math.round((b - a) / 86400000) : null; }
+                        case 'round': { const x = fxNum(v(0)), d = n.args[1] ? fxNum(v(1)) ?? 0 : 0; if (x === null) return null; const k = 10 ** Math.max(0, Math.min(6, Math.round(d))); return Math.round(x * k) / k; }
+                        case 'abs': { const x = fxNum(v(0)); return x === null ? null : Math.abs(x); }
+                        case 'min': case 'max': {
+                            const xs = n.args.map((_, i) => fxNum(v(i)));
+                            return xs.some(x => x === null) ? null : Math[n.fn](...xs);
+                        }
+                    }
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        // Work a formula out. `c` = { lotId, sheetId, key, inst } plus, where it applies, `row` (this entry), `rowIdx`,
+        // `day`, `pageInfo` ({ number, count, copy, copies, page } while printing), and the runner's unsaved `header` / `rows`.
+        function fxEvaluate(src, c) {
+            const fx = fxParse(src);
+            if (!fx.ast) return null;
+            try { return fxNode(fx.ast, c); } catch (_) { return null; }
+        }
+
+        // The page's worked-out questions, stored like answers: each entry's, the page's and (a daily log) the day's.
+        // Run on every save, after the answers and entries are in place.
+        function applyCalcAnswers(sheetId, lotId, key, inst, day = null) {
+            const model = fxModel(sheetId);
+            const calc = (model?.wiz?.questions || []).filter(isCalcQ);
+            if (!calc.length) return;
+            const base = { lotId, sheetId, key, inst };
+            for (const q of calc) {
+                if (isRepeatingQ(model.sheet, q)) {
+                    for (const [i, r] of (Array.isArray(inst.rows) ? inst.rows : []).entries()) {
+                        if (!r || r.void || !Object.prototype.hasOwnProperty.call(r, q.id)) continue;
+                        r[q.id] = fxText(fxEvaluate(q.calc, { ...base, row: r, rowIdx: i }));
+                    }
+                } else if (q.rowScoped) {
+                    if (day && inst.days?.[day]) inst.days[day][q.id] = fxText(fxEvaluate(q.calc, { ...base, day }));
+                } else {
+                    if (!inst.header) inst.header = {};
+                    inst.header[q.id] = fxText(fxEvaluate(q.calc, base));
+                }
+            }
+        }
+
+        // ---- Formulas in Configure Sheets: what a formula reads as, and what's wrong with it ----
+        // A reference's name for people: the question's label, or the box's label (and where it is)
+        function fxRefLabel(model, id) {
+            const tg = fxTarget(model, id);
+            if (!tg) return null;
+            if (tg.q && !tg.f) return tg.q.label || tg.q.id;
+            return tg.q ? (tg.q.label || tg.q.id) : (tg.f.label || tg.f.id);
+        }
+        function fxReadsAs(src, sheetId) {
+            const fx = fxParse(src);
+            if (fx.error) return '';
+            const here = fxModel(sheetId, true);
+            return String(src).replace(/\{([^}]*)\}/g, (all, body) => {
+                const slash = body.lastIndexOf('/');
+                const sid = slash >= 0 ? body.slice(0, slash).trim() : null;
+                const id = (slash >= 0 ? body.slice(slash + 1) : body).trim();
+                const model = sid && sid !== sheetId ? fxModel(sid) : here;
+                const label = fxRefLabel(model, id);
+                const sheetName = sid && sid !== sheetId ? (DB.paperWizard?.sheets?.[sid]?.name || sid) + ' → ' : '';
+                return label ? `«${sheetName}${label}»` : all;
+            });
+        }
+        // Problems with a formula in a sheet being configured: { errors: [], warnings: [] }. `where` = the box or question
+        // it's on ({ f } or { q }), so a reference to an entry's answer from outside the rows is caught.
+        function fxProblems(src, sheetId, where = {}) {
+            const out = { errors: [], warnings: [] };
+            const fx = fxParse(src);
+            if (fx.error) { out.errors.push(fx.error); return out; }
+            const here = fxModel(sheetId, true);
+            const known = new Set(BINDING_OPTIONS.map(([v]) => v));
+            const ownRow = where.f ? fxRowKind(here, { f: where.f, q: where.f.questionId ? here.qById.get(where.f.questionId) : null })
+                : where.q ? fxRowKind(here, { q: where.q }) : null;
+            const visit = (n, inAgg) => {
+                if (!n) return;
+                if (n.t === 'call') { n.args.forEach(a => visit(a, inAgg || FX_AGG.has(n.fn))); return; }
+                if (n.t === 'bin') { visit(n.a, inAgg); visit(n.b, inAgg); return; }
+                if (n.t === 'neg') { visit(n.a, inAgg); return; }
+                if (n.t === 'bind' && (!known.has(n.name) || n.name === 'calc' || n.name === 'signature.strokes')) out.errors.push(`${n.name} isn't an auto-fill binding`);
+                if (n.t !== 'ref') return;
+                const other = n.sheet && n.sheet !== sheetId;
+                const model = other ? fxModel(n.sheet) : here;
+                if (!model) { out.warnings.push(`there's no sheet "${n.sheet}" yet — {${n.sheet}/${n.id}} stays blank until it's set up`); return; }
+                const tg = fxTarget(model, n.id);
+                if (!tg) { (other ? out.warnings : out.errors).push(`${other ? `${model.sheet.name || n.sheet} has` : 'this sheet has'} no box or question "${n.id}"`); return; }
+                if (where.q && tg.q === where.q && !tg.f) out.errors.push('a question can\'t be worked out from itself');
+                if (where.f && tg.f === where.f) out.errors.push('a box can\'t be worked out from itself');
+                const kind = fxRowKind(model, tg);
+                if (kind && !inAgg && (other || kind !== ownRow)) out.warnings.push(`«${fxRefLabel(model, n.id)}» has an answer per ${kind === 'entry' ? 'entry' : 'day'} — add them up with sum(${'{' + (other ? n.sheet + '/' : '') + n.id + '}'})`);
+            };
+            visit(fx.ast, false);
+            return out;
+        }
+
+        // The formula editor: the formula, two pickers that insert a reference or a function at the cursor, what it reads
+        // as, and what's wrong with it. `where` = { f } or { q } (fxProblems).
+        function fxStatusHtml(src, where) {
+            const text = String(src ?? '');
+            if (!text.trim()) return { reads: '', probs: '<div class="fx-warn">⚠️ Type a formula, or insert a box or question below — until then it prints N/A.</div>' };
+            const p = fxProblems(text, configSheetId, where);
+            return {
+                reads: p.errors.length ? '' : `= ${escapeHtml(fxReadsAs(text, configSheetId))}`,
+                probs: [...p.errors.map(e => `<div class="fx-err">⛔ ${escapeHtml(e)}</div>`), ...p.warnings.map(w => `<div class="fx-warn">⚠️ ${escapeHtml(w)}</div>`)].join('')
+            };
+        }
+        function fxInsertOptions() {
+            const opt = (v, l) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`;
+            const group = (label, items) => items ? `<optgroup label="${escapeHtml(label)}">${items}</optgroup>` : '';
+            const qs = (cfgWizard?.questions || []).map(q => opt(`{${q.id}}`, `${q.label || q.id}${isCalcQ(q) ? ' 🧮' : ''}`)).join('');
+            // Auto-filled boxes (the form's own values: a binding or a formula) — row 1 of a group stands for its column
+            const boxes = cfgFields.filter(f => !f.questionId && f.source && f.source !== 'signature.strokes' && (f.day || 1) === 1)
+                .map(f => opt(`{${f.id}}`, `${f.source === 'calc' ? '🧮 ' : ''}${f.label || f.id} · page ${f.page ?? 1}`)).join('');
+            const others = Object.entries(DB.paperWizard?.sheets || {}).filter(([sid]) => sid !== configSheetId).map(([sid, s]) => group(`Sheet: ${s.name || sid}`, [
+                ...(wizardForSheet(sid)?.questions || []).map(q => opt(`{${sid}/${q.id}}`, `${q.label || q.id}${isCalcQ(q) ? ' 🧮' : ''}`)),
+                ...(s.fields || []).filter(f => f.source === 'calc' && (f.day || 1) === 1).map(f => opt(`{${sid}/${f.id}}`, `🧮 ${f.label || f.id} · page ${f.page ?? 1}`))
+            ].join(''))).join('');
+            const binds = BINDING_OPTIONS.filter(([v]) => v !== 'calc' && v !== 'signature.strokes').map(([v, l]) => opt(v, l)).join('');
+            return `<option value="">＋ Insert a box or question…</option>${group('This sheet — questions', qs)}${group('This sheet — auto-filled boxes', boxes)}${others}${group('Lot and page values', binds)}`;
+        }
+        const FX_FN_HELP = [
+            ['sum()', 'sum(x) — add up a column, every entry (sum(x, {type} = "Flower"): only those)'],
+            ['pagesum()', 'pagesum(x) — add up the entries on this copy of the page'],
+            ['runsum()', 'runsum(x) — running total, through this row'],
+            ['count()', 'count(x) — entries with an answer'],
+            ['days(, )', 'days(from, to) — days between two dates'],
+            ['if(, , )', 'if(test, then, else)'],
+            ['first(, )', 'first(a, b) — the first one with an answer'],
+            ['building()', 'building(room) — the building id of a room'],
+            ['round(, 1)', 'round(x, decimals)'], ['abs()', 'abs(x)'], ['min(, )', 'min(a, b)'], ['max(, )', 'max(a, b)']];
+        function formulaEditorHtml(id, src, where) {
+            const st = fxStatusHtml(src, where);
+            return `<textarea id="${id}" class="fx-input" rows="2" spellcheck="false" autocomplete="off" placeholder="e.g. sum({wet1})   ·   {gros} - {tare}">${escapeHtml(src || '')}</textarea>
+                <div class="fx-tools">
+                    <select class="fx-insert" data-for="${id}" title="Insert a reference at the cursor">${fxInsertOptions()}</select>
+                    <select class="fx-fn" data-for="${id}" title="Insert a function at the cursor"><option value="">ƒ Insert a function…</option>${FX_FN_HELP.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('')}</select>
+                </div>
+                <div class="fx-reads" data-for="${id}">${st.reads}</div>
+                <div class="fx-probs" data-for="${id}">${st.probs}</div>`;
+        }
+        // `set(text)` keeps the formula as it's typed. Nothing is redrawn while typing (the cursor stays put); what it reads
+        // as and its problems follow.
+        function wireFormulaEditor(id, where, set) {
+            const ta = $(id);
+            if (!ta) return;
+            const sel = cls => document.querySelector(`.${cls}[data-for="${id}"]`);
+            const status = () => {
+                const st = fxStatusHtml(ta.value, where);
+                const r = sel('fx-reads'), p = sel('fx-probs');
+                if (r) r.innerHTML = st.reads;
+                if (p) p.innerHTML = st.probs;
+            };
+            ta.addEventListener('input', () => { set(ta.value); status(); });
+            const insert = text => {
+                const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+                ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+                const caret = text.includes('(') ? s + text.indexOf('(') + 1 : s + text.length;   // a function: inside its ( )
+                ta.focus();
+                ta.setSelectionRange(caret, caret);
+                ta.dispatchEvent(new Event('input'));
+            };
+            for (const cls of ['fx-insert', 'fx-fn']) {
+                const el = sel(cls);
+                el?.addEventListener('change', () => { if (el.value) insert(el.value); el.value = ''; });
+            }
         }
 
         // Capture save-time binding snapshots on the instance (spec: captured at creation and
@@ -33581,7 +34247,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 // time too — snapshotting them would freeze the room as of the last save, which is
                 // wrong for a log that later moved rooms (the struck-out page must keep printing
                 // the room it was actually kept in).
-                if (b === 'day.date' || b === 'day.plantsRemoved' || b === 'signature.date' || PRINT_ONLY_BINDINGS.includes(b)
+                if (b === 'day.date' || b === 'day.plantsRemoved' || b === 'signature.date' || PRINT_ONLY_BINDINGS.includes(b) || LIVE_BINDINGS.includes(b)
                     || b === 'lot.roomDesignation' || b === 'lot.roomBuilding' || b === 'lot.currentRoom') continue;
                 // A page is a record of when it was made (review D1): each value is taken once, the first time it's
                 // known, so a later save never re-reads today's lot into an older page (a struck-out Veg page keeps
@@ -33688,6 +34354,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             for (const q of wiz?.questions || []) {
                 if (cids.has(q.id)) continue;
                 const t = tableOf.get(q.id);
+                // 🧮 Worked out, not asked (an entry's is shown on its Entries form)
+                if (!t && isCalcQ(q)) continue;
                 if (!t) { steps.push(q); continue; }
                 if (done.has(t.key)) continue;
                 done.add(t.key);
@@ -33768,6 +34436,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     form[q.id] = { name: (q.sameAsLast && last?.[q.id]?.name) || '', strokes: [] };
                     continue;
                 }
+                if (isCalcQ(q)) { form[q.id] = ''; continue; }   // 🧮 worked out from the others
                 let v = '';
                 if (q.sameAsLast && last && last[q.id] != null && String(last[q.id]).trim() !== '') v = String(last[q.id]);
                 else if (q.prefillFrom) {
@@ -33789,6 +34458,45 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         }
 
         const entryFormDirty = ts => !!ts?.form && JSON.stringify(ts.form) !== ts.base;
+
+        // 🧮 Worked-out answers before anything is saved. The form as an entry (its own id when it changes one), and the
+        // runner's entries as they stand — every table's, in order — with that entry in its place.
+        function formAsRow(ts, qs) {
+            const row = { id: (ts.edit != null && ts.entries[ts.edit]?.id) || '__form' };
+            for (const q of qs) row[q.id] = isCalcQ(q) ? '' : q.type === 'initials' ? ts.form[q.id] : String(ts.form[q.id] ?? '').trim();
+            return row;
+        }
+        function runnerRowsNow(ctx, t = null, formRow = null) {
+            const rows = [];
+            for (const step of runnerSteps(ctx.sheetId)) {
+                const ts = step.type === 'entries' ? ctx.rep?.[step.table.key] : null;
+                if (!ts) continue;
+                const list = ts.entries.slice();
+                if (formRow && t && step.table.key === t.key) {
+                    if (ts.edit != null && list[ts.edit]) list[ts.edit] = formRow; else list.push(formRow);
+                }
+                rows.push(...list);
+            }
+            rows.push(...(ctx.repRest || []));
+            return rows;
+        }
+        // The entry being typed: its worked-out answers, by question id
+        function entryCalcValues(ctx, t, ts, row = formAsRow(ts, t.qs)) {
+            const calc = t.qs.filter(isCalcQ);
+            if (!calc.length) return {};
+            const rows = runnerRowsNow(ctx, t, row);
+            const rowIdx = ts.edit != null ? ts.edit : ts.entries.length;
+            const c = { lotId: ctx.lotId, sheetId: ctx.sheetId, key: ctx.key, inst: ctx.inst, header: ctx.draft, rows, row, rowIdx };
+            return Object.fromEntries(calc.map(q => [q.id, fxText(fxEvaluate(q.calc, c))]));
+        }
+        // The page's worked-out answers as the runner has them now (shown on the Entries steps)
+        function pageCalcSummaryHtml(ctx) {
+            const sheet = DB.paperWizard.sheets[ctx.sheetId];
+            const qs = (wizardForSheet(ctx.sheetId)?.questions || []).filter(q => isCalcQ(q) && !q.rowScoped && !isRepeatingQ(sheet, q));
+            if (!qs.length) return '';
+            const c = { lotId: ctx.lotId, sheetId: ctx.sheetId, key: ctx.key, inst: ctx.inst, header: ctx.draft, rows: runnerRowsNow(ctx) };
+            return `<div class="ent-calc-sum">🧮 ${qs.map(q => `<span><b>${escapeHtml(q.label || q.id)}</b> ${escapeHtml(fxText(fxEvaluate(q.calc, c)) || '—')}</span>`).join('')}</div>`;
+        }
 
         // The runner's repeating-table state, fresh from the instance's saved rows.
         function loadRunnerTables(ctx) {
@@ -33824,8 +34532,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const has = q => q.type === 'initials'
                 ? !!(form[q.id]?.strokes || []).length
                 : String(form[q.id] ?? '').trim() !== '';
-            if (!qs.some(has)) { showToast('Fill in the entry first'); return false; }
-            const missing = qs.find(q => q.mandatory && !has(q));
+            // 🧮 Worked-out answers aren't typed: they neither fill an entry nor are missing from one
+            const asked = qs.filter(q => !isCalcQ(q));
+            if (!asked.some(has)) { showToast('Fill in the entry first'); return false; }
+            const missing = asked.find(q => q.mandatory && !has(q));
             if (missing) { showToast(`"${missing.label}" is mandatory — answer it for every entry`); return false; }
             const editing = ts.edit != null && ts.entries[ts.edit];
             const unnamed = qs.find(q => q.type === 'initials' && initialsNeedName(form[q.id], editing ? editing[q.id] : null));
@@ -33841,6 +34551,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     ? (has(q) ? { name: String(form[q.id].name || '').trim(), strokes: form[q.id].strokes.map(st => st.slice()) } : null)
                     : String(form[q.id] ?? '').trim();
             }
+            const tKey = Object.keys(ctx.rep || {}).find(k => ctx.rep[k] === ts) || null;
+            Object.assign(row, entryCalcValues(ctx, { key: tKey, qs }, ts, row));
             if (editing) ts.entries[ts.edit] = row; else ts.entries.push(row);
             ts.edit = null;
             resetEntryForm(ctx, ts, qs);
@@ -33876,7 +34588,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const editingFiled = editing && ctx.repFiled?.has(ts.entries[ts.edit].id);
             const form = ts.form;
             const mand = q => q.mandatory ? '<span class="wiz-mandatory" title="Every entry needs this answer">⚠️ Mandatory</span>' : '';
+            const calcNow = entryCalcValues(ctx, t, ts);
             const fields = qs.map(q => {
+                // 🧮 Worked out as the others are typed — shown, not asked
+                if (isCalcQ(q)) return `<div class="ent-field"><label>🧮 ${escapeHtml(q.label)}</label><div class="ent-calc" data-qid="${q.id}" title="Worked out — not typed">${escapeHtml(calcNow[q.id] || '—')}</div></div>`;
                 if (q.type === 'initials') {
                     return `<div class="ent-field"><label>✍️ ${escapeHtml(q.label)}${mand(q)}</label>
                         <div class="sig-pad-wrap"><canvas id="entPad_${q.id}" class="sig-pad init-pad"></canvas></div>
@@ -33936,6 +34651,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     <div class="wiz-hint">Enter moves to the next box; Enter on the last box adds the entry.</div>
                 </div>
                 <div class="ent-cap">${escapeHtml(cap)}</div>
+                ${pageCalcSummaryHtml(ctx)}
                 <div class="ent-list">${list}</div>`;
         }
 
@@ -33943,15 +34659,22 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const ts = ctx.rep[t.key];
             const qs = t.qs;
             const ov = $('wizOverlay');
+            // 🧮 The entry's worked-out answers follow what's typed
+            const refreshCalc = () => {
+                if (!ov.querySelector('.ent-calc')) return;
+                const vals = entryCalcValues(ctx, t, ts);
+                ov.querySelectorAll('.ent-calc').forEach(el => { el.textContent = vals[el.dataset.qid] || '—'; });
+            };
             ov.querySelectorAll('.ent-ctl').forEach(el => {
                 wireNumberCtl(el);
-                const set = () => { ts.form[el.dataset.qid] = el.value; };
+                const set = () => { ts.form[el.dataset.qid] = el.value; refreshCalc(); };
                 el.addEventListener('input', set);
                 el.addEventListener('change', set);
             });
             ov.querySelectorAll('.ent-choice').forEach(b => b.addEventListener('click', () => {
                 const qid = b.dataset.qid;
                 ts.form[qid] = ts.form[qid] === b.dataset.v ? '' : b.dataset.v;
+                refreshCalc();
                 // Restyle just this question's buttons — a full re-render would move the focus
                 ov.querySelectorAll(`.ent-choice[data-qid="${qid}"]`).forEach(x => {
                     const on = x.dataset.v === ts.form[qid];
@@ -34038,6 +34761,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const headFiled = headerOnFile(inst, sheetId);
             for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
                 if (isRepeatingQ(sheet, q)) continue;   // answered per entry (the Entries step)
+                if (isCalcQ(q)) continue;               // 🧮 worked out on save, never drafted
                 if (q.type === 'initials') {
                     // Drawn initials: the answer is a {name, strokes} object stored in the same
                     // slot as any other answer (per-day for row-scoped, instance-level otherwise).
@@ -34166,7 +34890,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             let n = 0;
             const sheet = DB.paperWizard.sheets[runnerCtx.sheetId];
             for (const q of (wiz.questions || []).filter(q => !cids.has(q.id))) {
-                if (!q.sameAsLast) continue;
+                if (!q.sameAsLast || isCalcQ(q)) continue;
                 if (isRepeatingQ(sheet, q)) continue; // each new entry starts from the previous one instead
                 if (q.type === 'initials') continue; // never copy drawn strokes
                 // Phase / room questions are deliberate change actions, not routine data —
@@ -34923,7 +35647,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
             // Mandatory questions must be answered before the entry can save — same rule that
             // hides the Save button; this is the guard for direct calls / stale renders.
-            for (const q of (wiz.questions || []).filter(x => !cids.has(x.id) && !isRep(x))) {
+            for (const q of (wiz.questions || []).filter(x => !cids.has(x.id) && !isRep(x) && !isCalcQ(x))) {
                 const why = runnerStepBlock(ctx, q);
                 if (why) { showToast(why.replace('before continuing', 'before saving')); return; }
             }
@@ -35062,7 +35786,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // 1) Save the day's FULL entry — every question as answered, including the change
             //    question. The old log's move-day row is a complete entry under the old value;
             //    the rollover below stamps the previous value onto it (the double entry).
-            for (const q of (wiz.questions || []).filter(q => !cids.has(q.id) && !isRep(q))) {
+            for (const q of (wiz.questions || []).filter(q => !cids.has(q.id) && !isRep(q) && !isCalcQ(q))) {
                 let v = ctx.draft[q.id];
                 if (q.type === 'initials') {
                     // Drawn initials: store the {name, strokes} object (or null when the pad is
@@ -35098,6 +35822,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 rows.push(...(ctx.repRest || []));
                 inst.rows = rows.map(r => JSON.parse(JSON.stringify(r)));
             }
+            // 🧮 Worked-out answers, from everything above (each entry's, the page's, the day's)
+            applyCalcAnswers(ctx.sheetId, ctx.lotId, ctx.key, inst, sheet.cadence === 'daily-weekly' ? ctx.day : null);
             // The master grower's signature is never captured by the daily wizard — it is set
             // only via the cabinet leaf's ✍️ Sign button (openSignatureModal), later, when he
             // reviews the paperwork at the end of a crop. Saving a day's entry leaves any
@@ -35322,6 +36048,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             } else if (f.source === 'page.number' || f.source === 'page.count') {
                 // Where this page lands in the printout — a repeating page's copies count too.
                 v = pageInfo ? pageInfo[f.source === 'page.number' ? 'number' : 'count'] : null;
+            } else if (f.source === 'copy.number' || f.source === 'copy.count') {
+                // Which copy of a repeating page this is, and how many print ("Start of Drying Page 2 of 3")
+                v = pageInfo ? pageInfo[f.source === 'copy.number' ? 'copy' : 'copies'] : null;
+            } else if (f.source === 'calc') {
+                // 🧮 Worked out now, from what's saved (a day row: that day's answers)
+                v = fxText(fxEvaluate(f.calc, { lotId, sheetId, key, inst, day: dayDate || null, pageInfo: pageInfo || null }));
+            } else if (f.source === 'signature.strokes') {
+                v = '';   // drawn in the box by the print (the signature's strokes), no text
             } else if (f.source) {
                 // day.date / day.plantsRemoved are derived per row — never snapshotted.
                 // sheetId is in the ctx: day.plantsRemoved needs it to find the plant-count question.
@@ -35367,6 +36101,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // every used row (e.g. the harvest date down a Date column).
         function printRepeatValue(sheet, sheetId, inst, lotId, key, f, entry, entryNo, pageInfo) {
             if (!entry) return { checked: false, text: '' };
+            if (f.source === 'calc') {
+                // 🧮 This entry's (a deleted entry, struck out, has nothing worked out)
+                if (entry.void) return { checked: false, text: '' };
+                const s = fxText(fxEvaluate(f.calc, { lotId, sheetId, key, inst, row: entry, rowIdx: entryNo - 1, pageInfo: pageInfo || null }));
+                if (f.checkbox) return { checked: checkboxMatches(s, f.checkValue || ''), text: '' };
+                return { checked: false, text: s || 'N/A' };
+            }
             if (f.source && f.source !== 'entry.number') return printFieldValue(sheetId, inst, lotId, key, f, null, pageInfo);
             const v = f.source === 'entry.number' ? entryNo : entry[f.questionId];
             const s = (v === null || v === undefined || typeof v === 'object') ? '' : String(v).trim();
@@ -35474,6 +36215,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 let html = '';
                 for (const f of sheet.fields || []) {
                     if ((f.page ?? 1) !== pageNum) continue;
+                    // The master grower's ✍️ signature again (a form with a second "Reviewed by" box)
+                    if (f.source === 'signature.strokes') {
+                        if (inst.signature?.strokes?.length) html += strokesSvgHtml(f, inst.signature);
+                        continue;
+                    }
                     // Repeating row: prints the entry of its table that lands in its slot on this copy of
                     // the page. Rows that belong to no table (no repeating question bound) print nothing.
                     if (f.repeat && f.dayGroup && sheet.cadence !== 'daily-weekly') {
@@ -35555,7 +36301,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     printed++;
                     out += `<section class="pp-page" style="width:${W}in;height:${H}in;">
                     <img src="${pg.url}" data-pg="${i}" alt="" draggable="false">
-                    ${overlayFor(n, c, { number: printed, count: pageCount })}
+                    ${overlayFor(n, c, { number: printed, count: pageCount, copy: c + 1, copies: times, page: n })}
                 </section>`;
                 }
                 return out;
@@ -36482,10 +37228,14 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                         ${q.type === 'select' ? `<div class="form-group q-full"><label>Options (one per line)</label><textarea class="q-options" rows="3" placeholder="Veg&#10;Bloom">${escapeHtml((q.options || []).join('\n'))}</textarea></div>` : ''}
                         ${q.type === 'phase' ? `<p class="cfg-hint" style="margin:6px 0 0;">The runner shows a drop-down of the phases the lot can change TO (the fixed vocabulary minus its current phase). Picking a different phase writes it back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
                         ${q.type === 'room' ? `<p class="cfg-hint" style="margin:6px 0 0;">Options are the rooms known to the DB (no custom list). Picking a different room writes lot.currentRoom back to the main DB and strikes out this log once that day's entry is saved — a fresh 7-day page starts on the same day for the double entry.</p>` : ''}
+                        ${isCalcQ(q) ? `<div class="form-group q-full"><label for="qCalc_${q.id}">🧮 Formula — worked out${repeatingQ ? ' for each entry' : ''}, never asked</label>
+                            ${formulaEditorHtml('qCalc_' + q.id, q.calc, { q })}
+                            <p class="cfg-hint" style="margin:6px 0 0;">${repeatingQ ? 'Shown on the Entries form as the entry is typed, and' : 'Shown on the Entries steps, and'} worked out again on every save; the answer is kept like a typed one, so a Report metric counts it. When it changes on a page on file, the correction lists it as carried forward.</p></div>` : ''}
                         <div class="form-group"><label>Prefill from</label><select class="q-prefill">${prefillOpts}</select></div>
                         ${metricControlsHtml(q)}
                     </div>
                     <div class="q-checks">
+                        ${q.type === 'text' || q.type === 'number' ? `<label class="q-check" title="Worked out from other answers with a formula, never asked (totals, differences, a running total)"><input type="checkbox" class="q-calc-on"${isCalcQ(q) ? ' checked' : ''}> 🧮 Worked out (not asked)</label>` : ''}
                         ${cfgCadence === 'daily-weekly' || q.rowScoped ? `<label class="q-check"><input type="checkbox" class="q-row"${q.rowScoped ? ' checked' : ''}> Row-scoped (per day)</label>` : ''}
                         ${canRepeat ? `<label class="q-check" title="Answered once per entry — the wizard collects any number of entries for a repeating table"><input type="checkbox" class="q-rep"${repeatingQ ? ' checked' : ''}> 🔁 Repeating (one answer per entry)</label>` : ''}
                         <label class="q-check"><input type="checkbox" class="q-same"${q.sameAsLast ? ' checked' : ''}> ⏪ Same-as-last offered</label>
@@ -36517,8 +37267,15 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     if (!['text', 'number', 'select'].includes(q.type)) { delete q.metric; delete q.metricUnit; delete q.metricProduct; }   // only typed answers feed report metrics
                     if (!REPEAT_TYPES.includes(q.type)) delete q.repeating;   // write-back types are never repeating
                     if (q.type !== 'plant-count') delete q.reasonsTo;
+                    if (q.type !== 'text' && q.type !== 'number') delete q.calc;   // only a text or number answer is worked out
                     refreshWizardBuilder();
                 });
+                // 🧮 Worked out, not asked
+                card.querySelector('.q-calc-on')?.addEventListener('change', (e) => {
+                    if (e.target.checked) q.calc = q.calc || ''; else delete q.calc;
+                    refreshWizardBuilder();
+                });
+                wireFormulaEditor('qCalc_' + q.id, { q }, text => { q.calc = text; });
                 const optsEl = card.querySelector('.q-options');
                 if (optsEl) optsEl.addEventListener('change', () => {
                     q.options = optsEl.value.split(/\n|,/).map(s => s.trim()).filter(Boolean);
@@ -36629,6 +37386,21 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (!q.label.trim()) { alert(`Question ${q.id} needs a label.`); return; }
                 if (q.type === 'select' && !(q.options || []).length) { alert(`"${q.label}" is a select question but has no options.`); return; }
             }
+            // 🧮 A formula that can't be worked out isn't saved (a reference to a sheet not set up yet is only a warning)
+            const badFx = [];
+            for (const q of cfgWizard.questions) {
+                if (!isCalcQ(q)) continue;
+                const p = fxProblems(q.calc, configSheetId, { q });
+                if (p.errors.length) badFx.push(`"${q.label}": ${p.errors[0]}`);
+            }
+            const fxCols = new Set();
+            for (const f of cfgFields) {
+                if (f.source !== 'calc' || fxCols.has(cfgColumnKey(f))) continue;
+                fxCols.add(cfgColumnKey(f));
+                const p = fxProblems(f.calc || '', configSheetId, { f });
+                if (p.errors.length) badFx.push(`Box "${f.label || f.id}" (page ${f.page ?? 1}): ${p.errors[0]}`);
+            }
+            if (badFx.length) { alert(`These formulas can't be worked out:\n\n${badFx.join('\n')}\n\nFix them (or change the box's source), then save.`); return; }
             // A repeating table's rows must be on one page — that page prints again when they fill up.
             // (A sheet may have several tables, on the same page or different ones.)
             for (const t of repeatTables({ cadence: cfgCadence, fields: cfgFields }, cfgWizard)) {
@@ -36798,6 +37570,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 if (f.day != null) f.day = Math.round(num(f.day, 1, 400, 1));
                 for (const k of ['dayGroup', 'questionId']) if (f[k] != null && !IMPORT_ID.test(String(f[k]))) return { error: `Box "${f.id}" has an unusual ${k} ("${String(f[k])}").` };
                 for (const k of ['label', 'source', 'checkValue', 'name']) if (f[k] != null) f[k] = str(f[k]);
+                // 🧮 A formula is text that only fxParse reads (no eval) and whose result prints escaped
+                if (f.calc != null) f.calc = str(f.calc).slice(0, 2000);
                 for (const k of ['repeat', 'constant', 'checkbox', 'row']) if (f[k] != null) f[k] = !!f[k];
             }
             if (out.signature != null) {
@@ -36820,6 +37594,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     q.options = Array.isArray(q.options) ? q.options.filter(o => typeof o === 'string') : [];
                     for (const k of ['rowScoped', 'repeating', 'mandatory', 'sameAsLast']) if (q[k] != null) q[k] = !!q[k];
                     for (const k of ['prefillFrom', 'metric', 'metricUnit', 'reasonsTo']) if (q[k] != null) q[k] = str(q[k]) || null;
+                    if (q.calc != null) q.calc = str(q.calc).slice(0, 2000);
                     if (q.metricProduct != null && (typeof q.metricProduct !== 'object' || !(typeof q.metricProduct.name === 'string' || IMPORT_ID.test(String(q.metricProduct.from ?? ''))))) delete q.metricProduct;
                 }
                 wz[id] = c;

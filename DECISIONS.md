@@ -6,6 +6,9 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-07 · the default recipe's harvest is 12 people for its one day, 8 h each (it was 10); the Albatross variant's stays 7 people on each of its two days
+- 2026-11-07 · the Monday Tuesday Leaf Pick is the default bloom built-in (under the old default's id, sitka-9week) and the Weekend Leaf Pick built-in is gone; Early Flower Leaf Pick 1 (bloom day 13, one day) stays in it as an optional task, off by default; lots scheduled with the removed Monday–Tuesday built-in (sitka-9week-montue) fall back to it
+- 2026-11-07 · a second bloom built-in, "…Monday Tuesday Leaf Pick (Albatross variant)" (sitka-9week-albatross): the default but a two-day harvest Thursday–Friday (bloom days 62–63), 7 people both days; a recipe's Harvest task may now set the harvest's length a lot starts with
 - 2026-11-04 · the built-ins' leaf picks land Monday to Thursday: Early Flower Leaf Pick 2 (the Monday–Tuesday built-in's one early pick) four days from bloom day 17, and the Late Flower Leaf Pick four days from bloom day 38 (they were bloom day 22 for a day, and days 40–41), each 6 people × 4 h a day (16 h each over the four days); Early Flower Leaf Pick 1 stays a day on bloom day 13
 - 2026-11-04 · a 🚀 launch window bar's tooltip is the calendar's own tooltip box, as a day's in the month and annual views, not the browser's plain one: the flip and harvest first, then the lot's key tasks by date — its first Cutting Clones, Transplanting to Flower Room, the early and late leaf picks, Flip to Flower and Harvest
 - 2026-11-01 · ⏱ Man-hours gets a 👥 People toggle: the people in 8-hour days (hours ÷ 8) first and the hours second, in the Monthly, 7-Day and Annual views, the tooltip and the summary line (in eight-hour shifts); the CSV keeps both columns

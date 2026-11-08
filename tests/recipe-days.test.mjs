@@ -36,6 +36,21 @@ export async function run(b, BASE) {
     check('typing flip +21 moves flip to day 36, the first early leaf pick to 49 and harvest to 98 → 99; after harvest stays put',
         ed.flip === "day 36 of the plant's life" && ed.leafpick_early1 === "day 49 of the plant's life" && ed.harvest === "day 99 of the plant's life" && ed.room_clean === 'day 1 after harvest', JSON.stringify(ed));
     await b.run(clw, `document.getElementById('recipeFooterBackBtn').click();`, { user: true });
+    // The Albatross variant (2026-11-07): a two-day harvest from flip + 62 ends on the default's day; its Days box can be changed
+    await b.run(clw, `duplicateRecipe(getRecipeById('sitka-9week-albatross'));`, { user: true });
+    ed = await editorDays();
+    const hBox = await b.run(clw, `const i = [...document.querySelectorAll('#recipeTaskBody tr')].find(r => r.querySelector('input.t-type').value === 'harvest').querySelector('input.t-days');
+        return { disabled: i.disabled, value: i.value, trim: [...document.querySelectorAll('#recipeTaskBody tr')].find(r => r.querySelector('input.t-type').value === 'trim').querySelector('input.t-days').disabled };`);
+    check('editor, Albatross variant: harvest on days 97–98 of the plant\'s life, after harvest from its last day (Grow-Room Clean day 1, Weigh & Ship day 21), every other task as the default',
+        ed.harvest === "days 97–98 of the plant's life" && ed.room_clean === 'day 1 after harvest' && ed.weigh_ship === 'day 21 after harvest' && ed.leafpick_late === "days 73–76 of the plant's life" && ed.clone_cut === "day 71 of the plant's life",
+        JSON.stringify([ed.harvest, ed.room_clean, ed.weigh_ship, ed.leafpick_late, ed.clone_cut]));
+    check('…its Harvest Days box reads 2 and can be changed (Trim\'s is still set in the preview)', !hBox.disabled && hBox.value === '2' && hBox.trim, JSON.stringify(hBox));
+    await b.run(clw, `const i = [...document.querySelectorAll('#recipeTaskBody tr')].find(r => r.querySelector('input.t-type').value === 'harvest').querySelector('input.t-days');
+        i.value = '3'; i.dispatchEvent(new Event('input', { bubbles: true }));`);
+    ed = await editorDays();
+    const h3 = await b.run(clw, `return readTaskTable().find(t => t.taskType === 'harvest').days;`);
+    check('…typed 3: harvest on days 97–99, the recipe saves days: 3', ed.harvest === "days 97–99 of the plant's life" && h3 === 3, JSON.stringify([ed.harvest, h3]));
+    await b.run(clw, `document.getElementById('recipeFooterBackBtn').click();`, { user: true });
     // A mother recipe: the life ends at Retire Mothers
     await b.run(clw, `document.getElementById('recipeNewVegBtn').click();`, { user: true });
     ed = await editorDays();
@@ -76,17 +91,25 @@ export async function run(b, BASE) {
     };
     await b.run(clw, `openRecipeManager();`, { user: true });
     const p = await printed(`[...document.querySelectorAll('#recipeList .recipe-row')].find(r => r.textContent.includes('20-day veg')).querySelector('.recipe-actions button:last-child').click();`);
-    check('🖨️ Print on a recipe row opens a print window with a Print / Save as PDF button', p?.h1?.includes('Sitka Standard: 20-day veg, Saturday Cuts Weekend Leaf Pick') && p.btn === '🖨️ Print / Save as PDF', JSON.stringify(p && { h1: p.h1, btn: p.btn }));
+    check('🖨️ Print on a recipe row opens a print window with a Print / Save as PDF button', p?.h1?.includes('Sitka Standard: 20-day veg, Saturday Cuts Monday Tuesday Leaf Pick') && p.btn === '🖨️ Print / Save as PDF', JSON.stringify(p && { h1: p.h1, btn: p.btn }));
     const facts = (p?.facts || []).join(' | ');
     check('…saying veg 20 / bloom 63 days, the plants live 98 days, the work after harvest runs to day 21, a new lot every 70 days',
         facts.includes('Veg 20 days') && facts.includes('bloom 63 days') && facts.includes('The plants live 98 days') && facts.includes('day 21 after harvest') && facts.includes('A new lot every 70 days'), facts);
     const row = name => p?.rows?.find(r => r.Task.includes(name)) || {};
     check('…every task in order, with when, its day, how long it runs, its labour and whether it\'s optional (no Repeats column: no task repeats)',
         p?.rows?.length === 33 && p.heads.join() === '#,Task,When,Day,Runs,Labour,Optional' && row('Harvest').When === '+63 days after Flip to Flower' && row('Harvest').Day === "day 98 of the plant's life"
-        && row('Early Flower Leaf Pick 1').Day === "day 48 of the plant's life" && row('Early Flower Leaf Pick 1').Runs === '1 day' && row('Early Flower Leaf Pick 1').Labour === '👥 4 · ⏱ 6h'
+        && row('Early Flower Leaf Pick 1').Day === "day 48 of the plant's life" && row('Early Flower Leaf Pick 1').Runs === '1 day' && row('Early Flower Leaf Pick 1').Labour === '👥 4 · ⏱ 6h' && row('Early Flower Leaf Pick 1').Optional === 'yes · off by default'
         && row('Early Flower Leaf Pick 2').Day === "days 52–55 of the plant's life" && row('Early Flower Leaf Pick 2').Runs === '4 days' && row('Early Flower Leaf Pick 2').Labour === '👥 6 · ⏱ 4h/day'
         && row('Weigh Final').Day === 'day 21 after harvest' && row('Second veg IPM').Optional === 'yes · off by default' && row('Second veg IPM').Labour === '' && row('Cutting Clones').When === 'On Cloning',
         JSON.stringify([row('Harvest'), row('Early Flower Leaf Pick 1'), row('Early Flower Leaf Pick 2'), row('Weigh Final'), row('Second veg IPM'), row('Cutting Clones')]));
+    // The Albatross variant: its two-day harvest, 7 people a day
+    const pa = await printed(`printRecipe(getRecipeById('sitka-9week-albatross'));`);
+    const fa = (pa?.facts || []).join(' | '), ha = pa?.rows?.find(r => r.Task.includes('Harvest')) || {};
+    check('printing the Albatross variant: bloom 62 days then a 2-day harvest, the plants living 98 days to the harvest\'s last day, a new lot every 70 days',
+        pa?.h1?.includes('(Albatross variant)') && fa.includes('bloom 62 days (flip → harvest), then a 2-day harvest') && fa.includes("The plants live 98 days, from cutting the clones (day 1) to the harvest's last day (day 98), with a 2-day harvest")
+        && fa.includes('day 21 after harvest') && fa.includes('A new lot every 70 days'), fa);
+    check('…its Harvest row: flip + 62, days 97–98, 2 days, 7 people × 8 h a day',
+        ha.When === '+62 days after Flip to Flower' && ha.Day === "days 97–98 of the plant's life" && ha.Runs === '2 days (set per lot)' && ha.Labour === '👥 7 · ⏱ 8h/day', JSON.stringify(ha));
     // A recipe with supplies prints them
     const p2 = await printed(`DB.data._CropLabourWizard.recipes.sup1 = Object.assign(cloneRecipeData(BUILTIN_RECIPE), { id: 'sup1', name: 'With supplies',
         inputs: [{ name: 'Coco block', unit: 'block', qty: 1, per: 'plant', at: 'transplant' }, { name: 'Trellis', unit: 'ft', qty: 120, per: 'crop' }] });
