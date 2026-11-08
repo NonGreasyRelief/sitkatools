@@ -6,6 +6,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## Suite and SitkaTools
 
+- 2026-11-07 · in 📁 folder mode SitkaTools saves what's unsaved into the folder at 4:30 PM, with no question (a file saved elsewhere since opening gets its conflict copy), and reloads at 6:00 AM (moved from 6:00 PM the same day, to give OneDrive the night to sync), once idle for 2 minutes, saving anything newer first, then opens the folder and the tool that was open again; trouble with a save holds the reload, and it says why
+- 2026-11-07 · building laptops replace building tablets: IT's laptops run SitkaTools in Chrome or Edge in 📁 folder mode on the OneDrive-synced SharePoint folder, with signing pads in a central area; the Android app is shelved again (the app, id `com.sitkalegends.sitkatools`, its page hooks and its test kept on branch `android-app`, as of commit 82dd768)
 - 2026-11-07 · the default recipe's harvest is 12 people for its one day, 8 h each (it was 10); the Albatross variant's stays 7 people on each of its two days
 - 2026-11-07 · the Monday Tuesday Leaf Pick is the default bloom built-in (under the old default's id, sitka-9week) and the Weekend Leaf Pick built-in is gone; Early Flower Leaf Pick 1 (bloom day 13, one day) stays in it as an optional task, off by default; lots scheduled with the removed Monday–Tuesday built-in (sitka-9week-montue) fall back to it
 - 2026-11-07 · a second bloom built-in, "…Monday Tuesday Leaf Pick (Albatross variant)" (sitka-9week-albatross): the default but a two-day harvest Thursday–Friday (bloom days 62–63), 7 people both days; a recipe's Harvest task may now set the harvest's length a lot starts with
@@ -200,6 +202,8 @@ Format: `date · decision`. "undated" means the doc recorded no date.
 
 ## PaperWizard
 
+- 2026-11-07 · 🧮 formulas, so a form's subtotals, totals and differences fill without a question: a formula box (worked out when the page prints, nothing kept) and a worked-out question (never asked, worked out as entries are typed and on every save, kept like a typed answer so Reports count it; a change on file is carried forward); sum / pagesum / runsum / pagerunsum (a running subtotal starting again on each copy of a page), values from another sheet of the lot, days(), building(); new lot values copy.number / copy.count, signature.strokes, lot.startPlantCount, lot.clonesProduced, log.plantsHarvested / plantsDestroyed / vegStart, today.date
+- 2026-11-07 · the harvest pack (CVS-CV-FRM-0026-011) is five sheets by when each part is filled: harvest-log (pages 1–3, harvest day), drying-log and trim-log (page 4, the same page image saved twice), curing-log (pages 5–7), lot-summary (pages 8–9); ready to import in examples/harvest-pack. Staff draw their initials on every bin; Building # ticks itself from the room's building id
 - 2026-10-25 · paperwork tied to no lot: Configure Sheets → Document marks a sheet 🏭 Facility form or 🏢 Building form; the Active Lot dropdown opens a 🏭 Facility cabinet and a 🏢 cabinet per building; no plant count, phase or room questions on them
 - 2026-10-22 · plants sold / transferred need the company they went to (required), samples may name the testing lab (optional); kept as days[day]._removedTo and printed in the comments note
 - 2026-10-22 · the wizard closes only by its ✕ (a tap beside the card or Escape no longer closes it and loses the entry); the ✕, and switching days, ask first when something entered would be lost

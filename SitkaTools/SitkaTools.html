@@ -9852,8 +9852,9 @@
             updateFolderUi();
             renderOverlayFolder();
 
-            // Working copy (crash recovery): offer back unsaved work left from a previous session (once)
-            checkWorkCopyOnStart();
+            // Working copy (crash recovery): offer back unsaved work left from a previous session (once); then, on the page
+            // 🕓 the 6:00 AM reload opened, the folder and the tool open again
+            checkWorkCopyOnStart().then(() => FolderClock.resume());
 
             // Building split: this device's role comes from its link (?device=…), never from browser storage
             DbSplit.linkRole = new URLSearchParams(location.search).get('device')?.trim() || null;
@@ -10076,11 +10077,6 @@
                     showSyncToast(`${filename} was not saved — the share was cancelled. Tap its link again to save it.`);
                     return false;
                 });
-            } else if (/; wv\)/.test(navigator.userAgent)) {
-                // An app's built-in browser on Android (Teams, Outlook…) has no share sheet and drops downloads: the file
-                // would be lost while the save counted as done (user request 2026-10-29)
-                alert(`${filename} was not saved: this app's built-in browser can't save files. Open SitkaTools in Chrome (or the SitkaTools app) to save.`);
-                return Promise.resolve(false);
             } else {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -10379,10 +10375,13 @@
 
             // Save into the open folder. Re-reads the folder first; if a DB file was saved there after
             // ours was opened, writes a separate conflict copy instead of overwriting it.
-            async save() {
+            // auto (🕓 FolderClock): nothing is asked or alerted — a conflict gets its copy, as OK does — and the result
+            // comes back: { saved } or { copy, newer } or { error }.
+            async save({ auto = false } = {}) {
                 const dir = this.handle;
                 try {
                     if (!await this.ensurePermission(dir)) {
+                        if (auto) return { error: 'no permission to save in the folder' };
                         alert(`SitkaTools needs permission to save in "${dir.name}".`);
                         return;
                     }
@@ -10406,9 +10405,10 @@
                         const msg = `⚠️ ${await this.describe(newer)} was saved in "${dir.name}" after you opened ` +
                             `${this.base ? this.base.name : 'this database'}.\n\nSaving over it would erase those changes.\n\n` +
                             `OK — save your version as a separate file, ${copyName}, so nothing is lost.\nCancel — don't save.`;
-                        if (!confirm(msg)) return;
+                        if (!auto && !confirm(msg)) return;
                         await this.writeFile(dir, copyName, save.json);
                         commitSave(save);
+                        if (auto) return { copy: copyName, newer: newer.name };
                         alert(`Saved your version as ${copyName}.\n\nNothing was overwritten. Open ${newer.name} to see the other changes, ` +
                             `then re-apply yours there — or keep working from your copy.`);
                         return;
@@ -10419,7 +10419,9 @@
                     DB.fileName = save.filename.replace('.json', '');
                     commitSave(save);
                     showSyncToast(`Saved ${save.filename} to "${dir.name}"`);
+                    return { saved: save.filename };
                 } catch (err) {
+                    if (auto) return { error: err.message };
                     alert('Save failed: ' + err.message + '\n\nYour changes are still here. Try again, or pick 📁 Folder → "Stop using this folder" and Save DB to download a copy.');
                 }
             }
@@ -11968,12 +11970,14 @@
                 updateSplitCard();
             },
 
-            // Folder: write each file this device owns, refusing to overwrite one saved elsewhere since opening
-            async saveToFolder(plan) {
+            // Folder: write each file this device owns, refusing to overwrite one saved elsewhere since opening.
+            // auto (🕓 FolderClock): nothing is asked or alerted — a file saved elsewhere gets its copy, as OK does.
+            // → { written, copies } (the file names), plus `error` when nothing could be written.
+            async saveToFolder(plan, { auto = false } = {}) {
                 const dir = DbFolder.handle;
                 if (!await DbFolder.ensurePermission(dir)) {
-                    alert(`SitkaTools needs permission to save in "${dir.name}".`);
-                    return;
+                    if (!auto) alert(`SitkaTools needs permission to save in "${dir.name}".`);
+                    return { written: [], copies: [], error: 'no permission to save in the folder' };
                 }
                 const written = [];
                 const copies = [];
@@ -11987,7 +11991,7 @@
                         const stamp = new Date();
                         const hhmm = String(stamp.getHours()).padStart(2, '0') + String(stamp.getMinutes()).padStart(2, '0');
                         const copyName = name.replace('.json', `-conflict-${hhmm}.json`);
-                        if (!confirm(`⚠️ ${name} in "${dir.name}" was saved from another device after you opened it.\n\n` +
+                        if (!auto && !confirm(`⚠️ ${name} in "${dir.name}" was saved from another device after you opened it.\n\n` +
                             `Saving over it would erase those changes.\n\nOK — save your version as ${copyName} so nothing is lost.\nCancel — skip this file.`)) continue;
                         await DbFolder.writeFile(dir, copyName, text);
                         copies.push(copyName);
@@ -11998,10 +12002,11 @@
                     written.push(name);
                 }
                 if (written.length === plan.toSave.length) this.finish(plan);
-                if (copies.length) {
+                if (copies.length && !auto) {
                     alert(`Saved your version as ${copies.join(', ')} — nothing was overwritten. Reopen the folder to see the other device's changes.`);
                 }
                 if (written.length) showSyncToast(`Saved ${written.join(', ')} to "${dir.name}"`);
+                return { written, copies };
             },
 
             // Save button → popup: "Save to folder" (when a folder is open) + one right-click link per file
@@ -13914,8 +13919,7 @@
                 // waits on its card instead
                 const office = copy.split?.role === 'office';
                 const gate = () => !office || OfficeGate.ask(copy.db, 'Bringing back the office session needs office access: scan your badge, or pick your name and type your PIN.');
-                // 📱 The Android app bringing the page back after Android stopped it (window.sitkaNative.resumed) counts as a reload
-                if ((document.wasDiscarded === true || nav?.type === 'reload' || window.sitkaNative?.resumed === true) && await gate()) { restoreWorkCopy(copy); return; }
+                if ((document.wasDiscarded === true || nav?.type === 'reload') && await gate()) { restoreWorkCopy(copy); return; }
                 for (;;) {
                     const choice = await RestoreCard.ask(copy);
                     if (choice === 'restore') {
@@ -15680,10 +15684,6 @@
 
         // ---- Unsaved Changes Tracking ----
         let hasUnsavedChanges = false;
-        // 📱 For the Android app: may it reload the page now? (nothing unsaved, no tool open)
-        function sitkaPageState() {
-            return { unsaved: !!hasUnsavedChanges, tool: (typeof Tools !== 'undefined' && Tools.current) || null };
-        }
 
         function markUnsaved() {
             hasUnsavedChanges = true;
@@ -20618,6 +20618,140 @@
             }
         };
 
+        // ---- 🕓 Folder mode saves at 4:30 PM and reloads at 6:00 AM by itself (user request 2026-11-07) ----
+        // Building laptops keep SitkaTools open all day in 📁 folder mode, on the OneDrive-synced SharePoint folder. At 4:30 PM
+        // (the end of the shift) what's unsaved is saved into the folder; at 6:00 the next morning, after a night for every
+        // device's save to sync, the page reloads and opens the folder again with the tool that was open, so the day starts
+        // from every building's newest files and the newest SitkaTools. Nothing is asked and nothing is dropped: a file saved
+        // elsewhere since it was opened gets its -conflict-HHMM copy (the folder save's OK), and the reload waits until no one
+        // has used the page for 2 minutes, saves first, and doesn't happen when something would be lost (it says why). Checked
+        // every 30 s, when the tab is shown and on focus, so a laptop that slept through either catches up as it wakes. Only in
+        // folder mode.
+        var FolderClock = {
+            SAVE_AT: [16, 30], RELOAD_AT: [6, 0], IDLE_MS: 2 * 60000,
+            last: 0,            // the previous check (ms)
+            input: 0,           // when someone last used the page (ms)
+            reloadDue: false,   // 6:00 AM passed in folder mode: reloads once the page is idle
+            trouble: null,      // why this day's automatic save couldn't finish: no reload until after the next 4:30 PM
+            busy: false,
+            // The latest h:m at or before `now` (today's, else yesterday's), in ms
+            lastAt([h, m], now) {
+                const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+                if (t > now) t.setDate(t.getDate() - 1);
+                return t.getTime();
+            },
+            inFolder() { return !!(DbFolder.active && DbFolder.handle); },
+            time: ([h, m]) => `${(h + 11) % 12 + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`,
+            async check() {
+                if (this.busy) return;
+                const now = new Date(), was = this.last;
+                this.last = now.getTime();
+                if (!was) return;
+                this.busy = true;
+                try {
+                    if (this.lastAt(this.SAVE_AT, now) > was) {
+                        this.reloadDue = false;
+                        this.trouble = null;
+                        if (this.inFolder()) await this.save(this.time(this.SAVE_AT));
+                    }
+                    if (this.lastAt(this.RELOAD_AT, now) > was && this.inFolder()) this.reloadDue = true;
+                    if (this.reloadDue) await this.reloadWhenIdle();
+                } catch (err) {
+                    console.error('[SitkaTools] 🕓 folder clock', err);
+                } finally {
+                    this.busy = false;
+                }
+            },
+            // What's unsaved goes into the folder, as 💾 Save DB → Save to folder would, with no question. True when it all went.
+            async save(when) {
+                if (!hasUnsavedChanges) return true;
+                const dir = DbFolder.handle;
+                let allowed = false;
+                try { allowed = await dir.queryPermission({ mode: 'readwrite' }) === 'granted'; } catch (_) { /* no answer: not allowed */ }
+                // The browser asks for the folder again only on a click: nothing can be saved without one
+                if (!allowed) return this.problem(when, `SitkaTools may no longer save in "${dir.name}" by itself — click 💾 Save DB`);
+                closeSavePopup();
+                try {
+                    if (DbSplit.active) {
+                        const plan = DbSplit.plan();
+                        // Every file already matches (an edit undone): nothing is unsaved any more, as the save popup finds
+                        if (!plan.toSave.length && !plan.cannot.length) { DbSplit.finish(plan); return !hasUnsavedChanges; }
+                        const r = plan.toSave.length ? await DbSplit.saveToFolder(plan, { auto: true }) : { written: [], copies: [] };
+                        if (r.error) return this.problem(when, r.error);
+                        if (r.copies.length) return this.problem(when, `${r.copies.map(c => c.replace(/-conflict-\d{4}\.json$/, '.json')).join(', ')} had been saved from another device since it was opened, so this device's version went into ${r.copies.join(', ')} — nothing was overwritten; reopen the folder to see both`);
+                        if (plan.cannot.length && hasUnsavedChanges) return this.problem(when, `changes this device can't save stay unsaved (${plan.cannot.join('; ')})`);
+                        if (r.written.length) showSyncToast(`🕓 Saved by itself at ${when}: ${r.written.join(', ')} to "${dir.name}"`, { ms: 10000 });
+                    } else {
+                        const r = await DbFolder.save({ auto: true }) || {};
+                        if (r.error) return this.problem(when, `the save failed (${r.error})`);
+                        if (r.copy) return this.problem(when, `${r.newer} had been saved elsewhere since this one was opened, so this device's version went into ${r.copy} — nothing was overwritten`);
+                        if (r.saved) showSyncToast(`🕓 Saved by itself at ${when}: ${r.saved} to "${dir.name}"`, { ms: 10000 });
+                    }
+                } catch (err) {
+                    return this.problem(when, `the save failed (${err.message})`);
+                }
+                return !hasUnsavedChanges;
+            },
+            problem(when, why) {
+                this.trouble = why;
+                showSyncToast(`🕓 Not saved by itself at ${when}: ${why}.`, { warn: true, ms: 5 * 60000 });
+                return false;
+            },
+            async reloadWhenIdle() {
+                if (!this.inFolder()) { this.reloadDue = false; return; }        // folder mode was left meanwhile
+                if (Date.now() - this.input < this.IDLE_MS) return;              // someone's using the page: after a pause
+                const api = Tools.current && Tools.defs[Tools.current]?.run?.api;
+                if (api?.pending?.()) return;                                    // the open tool holds work not in the DB yet
+                if (!this.trouble && hasUnsavedChanges && !await this.save(this.time(this.RELOAD_AT)) && !this.trouble) return;   // a change came in while saving: next check
+                if (this.trouble) {
+                    this.reloadDue = false;
+                    showSyncToast(`🕕 Not reloaded at ${this.time(this.RELOAD_AT)}: ${this.trouble}. Save with 💾 Save DB, then 📁 → 🔄 Reload newest.`, { warn: true, ms: 5 * 60000 });
+                    return;
+                }
+                this.reloadDue = false;
+                await WorkCopy.flush();   // the copy says saved, so the new page has nothing to offer back
+                this.reload(this.reloadUrl());
+            },
+            // This page again, with ?reopen=<the tool open>: the new page opens the folder and the tool (resume)
+            reloadUrl() {
+                const u = new URL(location.href);
+                u.searchParams.set('reopen', Tools.current || '');
+                return u.href;
+            },
+            reload(url) { location.replace(url); },
+            // The page the 6:00 AM reload opened: once the start check is done and nothing came back instead, it opens the most
+            // recent folder (the one that was open) and the tool. Without a click a page may use a folder only while the
+            // browser still lets it (Chrome and Edge keep the permission while the tab stays open, or with "Allow on every
+            // visit"); otherwise the start screen's 📁 Open button does it with one click.
+            async resume() {
+                const u = new URL(location.href);
+                if (!u.searchParams.has('reopen')) return;
+                const tool = u.searchParams.get('reopen');
+                u.searchParams.delete('reopen');
+                history.replaceState(history.state, '', u.href);   // a reload by hand later is an ordinary one
+                if (DB.fileName || hasUnsavedChanges || !DbFolder.supported) return;   // a session came back instead
+                const row = (await FolderStore.list())[0];
+                if (!row || await otherSitkaOpen()) return;
+                let allowed = false;
+                try { allowed = await row.handle.queryPermission({ mode: 'readwrite' }) === 'granted'; } catch (_) { /* not allowed */ }
+                if (!allowed) {
+                    showSyncToast(`🕕 Reloaded for the newest files — click 📁 Open "${row.name}" to open them`, { ms: 60000 });
+                    return;
+                }
+                if (!await DbFolder.open(row.handle) || !DbFolder.active) return;
+                if (tool && Tools.has(tool)) Tools.open(tool);
+            },
+            start() {
+                this.last = Date.now();
+                setInterval(() => this.check(), 30000);
+                const used = () => { this.input = Date.now(); };
+                for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(type, used, { capture: true, passive: true });
+                // Coming back to the laptop counts as using it, so the reload doesn't happen under someone who just sat down
+                document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { used(); this.check(); } });
+                window.addEventListener('focus', () => { used(); this.check(); });
+            }
+        };
+
         // ---- Start ----
         init();
         RoomManager.init();
@@ -20625,6 +20759,7 @@
         Calendar.init();
         CalendarIO.init();
         DayRollover.start();
+        FolderClock.start();
     </script>
     <!-- ═══ TOOL GeneralEvent: script ═══ -->
     <script>
@@ -23798,6 +23933,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // ---- DOM References ----
         const scheduleForm = $('scheduleForm');
         const plantingDateInput = $('plantingDate');
+        // A whole date in the box: not a year still being typed (0002, 0202) or one with too many digits
+        function fullDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v || '') && v >= '1900'; }
         const clearFormBtn = $('clearFormBtn');
         const generateBtn = $('generateBtn');
         const configSummaryEl = $('configSummary');
@@ -24487,6 +24624,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 previewTaskList.innerHTML = '<div class="empty-state">Set a date to see the schedule.</div>';
                 return;
             }
+            if (!fullDate(plantingDate)) {
+                previewTaskList.innerHTML = '<div class="empty-state">Finish typing the date (all four digits of the year) to see the schedule.</div>';
+                return;
+            }
 
             // Determine if clones are enabled
             const clonePrepEntry = taskOffsets.find(e => e.def.taskType === 'clone_cut_prep');
@@ -24782,7 +24923,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     if (!harvestMultiDay && wasDays > 1 && h) {
                         h.offset = Math.min(offsetMax(h.def), h.offset + wasDays - 1);
                         refreshPreview();
-                        const day = plantingDateInput.value ? scheduleAnchors(plantingDateInput.value, taskOffsets, { trimDays, harvestMultiDay, harvestDays }).harvest : null;
+                        const day = fullDate(plantingDateInput.value) ? scheduleAnchors(plantingDateInput.value, taskOffsets, { trimDays, harvestMultiDay, harvestDays }).harvest : null;
                         if (day) showToast(`🌾 Harvest is one day now, on its last day: ${day} · ${weekdayShort(day)}`);
                         return;
                     }
@@ -24912,8 +25053,30 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
         }
 
-        // ---- Auto-refresh preview when planting date changes ----
-        plantingDateInput.addEventListener('input', () => refreshPreview());
+        // ---- The preview follows the date box ----
+        // Typed by hand, Chrome and Edge change the box with every digit, a year passing through 0002, 0020 and 0202
+        // (user bug 2026-11-07: typing the cloning date put the digits out of order). While it's typed, the preview
+        // waits for a whole date and a short pause, or for the box to be left; a date picked from the calendar
+        // (no key just pressed) redraws it at once, as before.
+        const dateTyping = { keyAt: 0, timer: null, pending: false };
+        const redrawTypedDate = () => {
+            clearTimeout(dateTyping.timer);
+            dateTyping.timer = null;
+            if (!dateTyping.pending) return;
+            dateTyping.pending = false;
+            refreshPreview();
+        };
+        plantingDateInput.addEventListener('keydown', () => { dateTyping.keyAt = Date.now(); });
+        plantingDateInput.addEventListener('input', () => {
+            clearTimeout(dateTyping.timer);
+            dateTyping.timer = null;
+            // (not :focus: Firefox leaves it for a moment as the cursor hops from the year to the month)
+            const typing = Date.now() - dateTyping.keyAt < 250;
+            if (!typing) { dateTyping.pending = false; refreshPreview(); return; }
+            dateTyping.pending = true;
+            if (fullDate(plantingDateInput.value)) dateTyping.timer = setTimeout(redrawTypedDate, 800);
+        });
+        plantingDateInput.addEventListener('blur', redrawTypedDate);
 
         // ---- Reconcile: Remove existing schedule events for a lot (sourceTool depends on lot type) ----
         // keepCopies: tasks duplicated in SitkaTools (copyOf) are the user's, not the schedule's — Generate keeps them
@@ -25927,6 +26090,10 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 alert('Please set a planting date.');
                 return;
             }
+            if (!fullDate(plantingDate)) {
+                alert(`Please finish typing the date: its year reads ${plantingDate.split('-')[0]}. Nothing was changed.`);
+                return;
+            }
 
             DB.ensureStructure();
 
@@ -26529,7 +26696,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         init();
 
         // beforeClose: ✕ Close in the bar asks first, as Close Tool does (Tools.requestClose)
-        return { receive: receiveDb, beforeClose: askBeforeClose, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
+        // pending: schedule changes not saved yet, asked without a question (🕓 the 6:00 AM reload waits for them)
+        return { receive: receiveDb, beforeClose: askBeforeClose, pending: scheduleChangesUnsaved, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
     });
     </script>
     <!-- ═══ TOOL DailyWizard: script ═══ -->
@@ -33724,12 +33892,13 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         //   lot.trimRoom   an auto-fill binding (lot.*, sheet.periodStart, today.date, log.*, entry.number …)
         //   sum(x, if?)    x added up over a repeating table's entries (or a daily log's days), only those where `if` holds
         //   pagesum(x, if?) the same, over the entries printed on this copy of the page   ·   runsum(x, if?) through this row
+        //   pagerunsum(x, if?) through this row, starting again on each copy of the page (its last row = that page's subtotal)
         //   count(x, if?)  entries where x has an answer   ·   days(a, b) days from date a to date b
         //   if(c, a, b), first(a, b, …) (the first with an answer), building(room) (its building id), round(x, n), abs, min, max
         // A blank or unreadable value makes the result blank (it prints N/A) — never a guess. No eval(): a small parser.
-        const FX_FUNCS = { sum: [1, 2], pagesum: [1, 2], runsum: [1, 2], count: [1, 2], days: [2, 2], if: [3, 3], first: [1, 20],
+        const FX_FUNCS = { sum: [1, 2], pagesum: [1, 2], runsum: [1, 2], pagerunsum: [1, 2], count: [1, 2], days: [2, 2], if: [3, 3], first: [1, 20],
             building: [1, 1], round: [1, 2], abs: [1, 1], min: [1, 20], max: [1, 20] };
-        const FX_AGG = new Set(['sum', 'pagesum', 'runsum', 'count']);
+        const FX_AGG = new Set(['sum', 'pagesum', 'runsum', 'pagerunsum', 'count']);
         function isCalcQ(q) { return typeof q?.calc === 'string' && (q.type === 'number' || q.type === 'text'); }
         const fxCache = new Map();
 
@@ -33882,11 +34051,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
         }
         const fxTrue = v => typeof v === 'boolean' ? v : typeof v === 'number' ? v !== 0 : !fxBlank(v) && typeof v !== 'object';
-        // How a result prints: numbers to at most 3 decimals, yes / no for a comparison
+        // How a result prints: numbers to at most 4 decimals, yes / no for a comparison
         function fxText(v) {
             if (fxBlank(v) || typeof v === 'object') return '';
             if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-            if (typeof v === 'number') { const r = Math.round(v * 1000) / 1000; return String(Object.is(r, -0) ? 0 : r); }
+            if (typeof v === 'number') { const r = Math.round(v * 10000) / 10000; return String(Object.is(r, -0) ? 0 : r); }
             return String(v).trim();
         }
         function fxCompare(op, a, b) {
@@ -34006,12 +34175,16 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     const rows = same && c.rows ? c.rows : pg.inst?.rows;
                     const { per } = splitRows(tables, rows);
                     const list = per[tables.indexOf(t)] || [];
-                    let upTo = list.length - 1;
-                    if (fn === 'runsum' && same && c.row) {
+                    let upTo = list.length - 1, from = 0;
+                    if ((fn === 'runsum' || fn === 'pagerunsum') && same && c.row) {
                         const at = list.findIndex(r => r === c.row || (r?.id && r.id === c.row.id));
-                        if (at >= 0) upTo = at;
+                        if (at >= 0) {
+                            upTo = at;
+                            // pagerunsum: from the first slot of the copy of the page this row prints on
+                            if (fn === 'pagerunsum' && t.perPage) from = Math.floor(at / t.perPage) * t.perPage;
+                        }
                     }
-                    let from = 0, to = upTo;
+                    let to = upTo;
                     // pagesum: the slots printed on this copy of the table's page
                     if (fn === 'pagesum' && same && c.pageInfo && c.pageInfo.page === t.page && t.perPage) {
                         from = (c.pageInfo.copy - 1) * t.perPage;
@@ -34065,7 +34238,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     if (FX_AGG.has(n.fn)) return fxAggregate(n.fn, n.args, c);
                     const v = i => fxNode(n.args[i], c);
                     switch (n.fn) {
-                        case 'if': return fxTrue(v(0)) ? v(1) : v(2);
+                        // A test that can't be worked out (a blank reading) gives a blank, not the "else"
+                        case 'if': { const test = v(0); return test === null ? null : fxTrue(test) ? v(1) : v(2); }
                         case 'first': for (let i = 0; i < n.args.length; i++) { const x = v(i); if (!fxBlank(x)) return x; } return null;
                         case 'building': { const r = v(0); return fxBlank(r) ? null : roomBuildingFor(String(r)); }
                         case 'days': { const a = fxDate(v(0)), b = fxDate(v(1)); return a && b ? Math.round((b - a) / 86400000) : null; }
@@ -34194,6 +34368,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             ['sum()', 'sum(x) — add up a column, every entry (sum(x, {type} = "Flower"): only those)'],
             ['pagesum()', 'pagesum(x) — add up the entries on this copy of the page'],
             ['runsum()', 'runsum(x) — running total, through this row'],
+            ['pagerunsum()', 'pagerunsum(x) — running total, starting again on each copy of the page'],
             ['count()', 'count(x) — entries with an answer'],
             ['days(, )', 'days(from, to) — days between two dates'],
             ['if(, , )', 'if(test, then, else)'],

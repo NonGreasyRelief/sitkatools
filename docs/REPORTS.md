@@ -68,6 +68,7 @@ Configuration only — the charts are already wired to these metrics.
    - **Percentages and counts take the latest answer**, so a later re-test replaces the first.
    - Instance-level answers (the log header), per-day answers and 📌 constants are all read.
    - Tags can sit on any sheet: harvest, drying, trim or a separate lab-results sheet.
+   - A 🧮 worked-out question (PaperWizard → "🧮 Formulas") is stored like a typed answer, so it can carry a metric too: a bin's net (gross − tare) as dry weight, the flower bins' total as `harvest.flowerTotal` (user request 2026-11-07). A 🧮 formula box isn't stored, so it can't.
    - If grades are weighed, flower yield = the sum of the grades and `harvest.flowerTotal` is ignored.
 3. **Check Setup & data → Report metrics:** each tagged metric's sheet, question and answer count. Untagged core harvest metrics show **Not tagged yet** (amber).
 4. **Set canopy sq ft** per flower room in SitkaTools' Room Manager; g/sq ft and g/sq ft/year show "—" until then.

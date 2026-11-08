@@ -44,7 +44,8 @@ Two tabs:
 | `x`, `y`, `w`, `h` | Top-left and size as 0–1 fractions of page width / height. |
 | `fontSize` | pt at 100 % print scale. |
 | `align` | `'left' \| 'center' \| 'right'`. |
-| `source` | Auto-fill binding (see "Auto-Fill Bindings"), or null when a question fills it. |
+| `source` | Auto-fill binding (see "Auto-Fill Bindings"), or null when a question fills it. `'calc'` = a 🧮 formula box. |
+| `calc` | The formula of a `source: 'calc'` box (see "🧮 Formulas"); follows down its column like a binding. |
 | `questionId` | When `source` is null, the question that fills the box — **the only binding point** (questions carry no target). Set in Field properties → "Filled by question". A group member gets that day's / that entry's answer. |
 | `dayGroup` / `day` | Group id (4 chars) and row number (1 = the placed first row). Null for header / one-shot / event fields. |
 | `repeat` | Repeating-row member (event / one-shot sheets): `dayGroup` is the row group, `day` the row. See "Repeating Rows". |
@@ -129,10 +130,20 @@ The grow log is the record of every plant (user decision 2026-10-22). Before a d
 | `day.plantsRemoved` | Yesterday's count − today's, at least 0 (group members only; needs a row-scoped plant-count question). Today must be an explicit answer on that day (a walk-back would understate removals); yesterday walks back through this instance, then earlier instances at a chain start. `N/A` when either is missing. |
 | `entry.number` | Entry number on a repeating row, counting on across copies (21, 22 … on a 20-row page's second copy) |
 | `page.number` / `page.count` | This page's number and the printout's page total, extra copies included ("Page _ of _") |
+| `copy.number` / `copy.count` | Which copy of a repeating page this is, and how many print ("Start of Drying Page _ of _") |
 | `signature.date` | Date signed, `yyyy/mm/dd`; `N/A` until signed |
+| `signature.strokes` | The master grower's ✍️ signature again, drawn in this box too (a form with two "Reviewed by" boxes) |
+| `lot.startPlantCount` | The plants the lot started with |
+| `lot.clonesProduced` | Clones cut from the lot: its sub-lots' starting counts (split lots are plants moved, not cut) |
+| `log.plantsHarvested` / `log.plantsDestroyed` | From the lot's daily logs' plant-count reasons (`_removed`): harvested; destroyed + culled. A move day on two pages counts once (its newest page). `N/A` with no daily log |
+| `log.vegStart` | The first day of the lot's Vegetation grow log, else its scheduled Planting |
+| `today.date` | Today (`YYYY-MM-DD`): a prefill, or a box that keeps the day its page was first saved |
+| `calc` | A 🧮 formula box (see "🧮 Formulas") |
+
+User request 2026-11-07 (the harvest pack): `copy.*`, `signature.strokes`, `lot.startPlantCount`, `lot.clonesProduced`, `log.*`, `today.date` and `calc`.
 
 - **Snapshot once:** each binding the sheet uses goes into `inst.snapshots` the first time it's known (creating the instance, or its first save); later saves fill only what's still missing, never re-reading today's lot into an older page (review D1). `lot.stage` and `instance.phase` follow the page's own phase. Print uses the snapshot, never live values — paperwork is a historical record (a Veg log keeps printing "Veg" after the lot moves to Bloom).
-- **Never snapshotted (print time):** `day.date`, `day.plantsRemoved`, `signature.date`, `entry.number`, `page.number`, `page.count`, and the room bindings (`lot.currentRoom`, `lot.roomDesignation`, `lot.roomBuilding`), which print the log's own `inst.room` so a struck-out page keeps its old room.
+- **Never snapshotted (print time):** `day.date`, `day.plantsRemoved`, `signature.date`, `signature.strokes`, `entry.number`, `page.number`, `page.count`, `copy.*`, `calc`, the records' figures (`log.*`, `lot.clonesProduced`: the logs as they are now), and the room bindings (`lot.currentRoom`, `lot.roomDesignation`, `lot.roomBuilding`), which print the log's own `inst.room` so a struck-out page keeps its old room. A binding a formula reads is kept like a box's (`sheetBindings` includes them).
 - An instance without `snapshots` falls back to live resolution.
 - So a one-shot sheet can bind a live value and keep printing it as captured (the propagation worksheet's starting count via `lot.plantCount`). Use `prefillFrom` for values that need a person to confirm them.
 - **Pending SitkaTools change (not PaperWizard):** the parent-lot picker should also accept free text, for a parent that isn't in the system.
@@ -165,6 +176,7 @@ The ordered questions that fill a sheet's non-auto-filled boxes: `{ id (4 chars)
 | `metric` | Report tag (text / number / select) for the Labour & Cost Wizard's Reports, e.g. `harvest.wetWeight`, `env.temp`, `ipm.pests`. Set from **Report metric**; cleared on a type change. PaperWizard never reads it. `REPORT_METRIC_GROUPS` must match EmployeeWizard's `REPORT_METRICS` (`docs/REPORTS.md`). Plant-count questions feed reports untagged. |
 | `metricUnit` | `'g' \| 'kg' \| 'lb' \| 'F' \| 'C'` for weight / temperature metrics (**Answered in**); reports convert to g / °F. |
 | `metricProduct` | `feed.nutrient` only: `{ name }` (always this product) or `{ from: questionId }` (that day's answer to another question; a "No" answer leaves it unlinked). The **Product** row shows only for `feed.nutrient`; changing metric or type clears it. The name must match CropLabourWizard's price list. |
+| `calc` | Text and number questions: **🧮 Worked out (not asked)** — the answer is a formula's result, never asked (see "🧮 Formulas"). Dropped when the type changes to another. |
 
 A question's box binding is derived from the fields; one no field references is notes-only (stored, printed nowhere). Its write-back is derived from its type.
 
@@ -325,6 +337,34 @@ For forms like the harvest log: a wet weight per tote on harvest day (often more
 - **Reports:** the Labour & Cost Wizard reads `inst.rows` like other answers (dated by the instance), so a summed metric (`harvest.wetWeight`, `harvest.dryWeight`) adds every entry; a Net column tagged dry weight sums every bin, flower, trim and other alike (`docs/REPORTS.md`).
 - SitkaTools' split files treat a page as a whole, so `rows` needs nothing there.
 
+### 🧮 Formulas (worked out, not asked)
+
+User request 2026-11-07 (the harvest pack: subtotals, totals and differences the form asks for, filled without a question). Two kinds, one formula language (`fxParse` / `fxEvaluate`: a small parser, never `eval`):
+
+- **🧮 Formula box** (Field properties → Auto-fill source → **🧮 Formula**, `source: 'calc'` + `calc`): worked out when the page prints, from what's saved. Nothing is typed or kept, so it always agrees with the answers. In a repeating row or a day row it's that entry's or day's; the formula follows down the column. A tick box with a formula is ticked when the result equals its value (e.g. `building(lot.destRoom)` ticks B6).
+- **🧮 Worked-out question** (its card → **🧮 Worked out (not asked)**, text and number only, `question.calc`): never a runner step. A repeating one shows on the Entries form, read-only, worked out as the entry is typed (Net = Gross − Tare). Every Entries step also lists the page's worked-out answers. On every save (`applyCalcAnswers`, after the answers and entries are in place) each is worked out again and **stored like a typed answer**, so a Report metric counts it (a bin's net as `harvest.dryWeight`, the flower total as `harvest.flowerTotal`).
+  - It doesn't count for completion, and a blank one doesn't hold the page off file (`instanceQuestionIds`, `rowScopedQuestionIds`, `headerOnFile`). Same as last time, prefill and mandatory don't apply.
+  - On a page on file, a changed one is a correction recorded as **carried forward** from the answer that changed it (`findCorrections`). Its old value prints struck out like any correction.
+  - It's worked out again only when its own page is saved. Values from another sheet belong in formula boxes, which are worked out at print.
+
+**Syntax.** Numbers, `"text"`, `+ - * /` (`×`, `÷` too), `( )`, and `= != < <= > >=` (text compares like a tick box: any case, phase words). A blank or unreadable value makes the result blank, which prints `N/A`: never a guess. An `if` whose test is blank is blank too.
+
+| Reference / function | Means |
+|---|---|
+| `{id}` | A box or question on this sheet: its answer. In a repeating row, that entry's; in a day row, that day's. Drawn initials give the name |
+| `{sheet/id}` | A box or question on another sheet of the same lot: the first answer among its pages, oldest first. In `sum()` and the like, every page's entries |
+| `lot.trimRoom`, `sheet.periodStart`, `today.date` … | An auto-fill binding, as the page keeps it |
+| `sum(x, if?)` | `x` added up over the entries of the repeating table (or the days of the daily log) its first per-entry reference belongs to, only where `if` holds: `sum({net}, {type} = "Flower")` |
+| `pagesum(x, if?)` | The same, over the entries printed on this copy of the page (a page subtotal) |
+| `runsum(x, if?)` / `pagerunsum(x, if?)` | Running total through this row, or through this row starting again on each copy of the page (its last row = that copy's `pagesum`) |
+| `count(x, if?)` | Entries where `x` has an answer |
+| `days(a, b)` | Days from date `a` to date `b` (`2026-11-07`, `2026/11/07` or `11/07/2026`) |
+| `if(test, a, b)`, `first(a, b, …)`, `building(room)`, `round(x, n)`, `abs`, `min`, `max` | `first`: the first with an answer. `building`: the building id of a room name |
+
+Numbers print to at most 4 decimals; a comparison prints Yes / No.
+
+**Configure Sheets.** The formula box has an **＋ Insert a box or question…** picker (this sheet's questions and auto-filled boxes, every other sheet's, the lot and page values) and an **ƒ Insert a function…** picker, both inserting at the cursor. Under them is what it reads as, with labels (`= «Gross (g)» - «Tare (g)»`), and what's wrong. **💾 Save sheet** refuses a formula that can't be worked out (`fxProblems`): it doesn't parse, it names an unknown box or question on this sheet, or it's worked out from itself. A per-entry answer used outside `sum()` gets a warning, and so does a reference to a sheet not set up yet. A formula box shows 🧮 and a dashed outline. An import keeps a formula as plain text (`cleanSheetImport`); its result prints escaped.
+
 ### Corrections & Change Log (QAP traceability)
 
 A value on file that is changed keeps its old value on the printed page, struck out with drawn initials and the date, and every change goes in a printable change log. A reason is required, and a signed log can still be corrected (it is flagged).
@@ -422,6 +462,17 @@ _PaperWizard: {
 | `harvest-log` | event | Harvest-day entries (repeating tables for weights); printed on demand. |
 | `drying-log` / `trim-log` | daily-weekly | Post-harvest daily logs, grow-log machinery (incl. room rollover), no coverage rule. Separate documents even when dry and trim are one room. |
 
+**The harvest pack** (CVS-CV-FRM-0026-011, issued 2026-10-22; user request 2026-11-07): `examples/harvest-pack/` holds five ready configurations to 📥 Import, and the script that measured them (`make-harvest-pack.mjs`). A sheet's pages must be one cadence and one wizard is saved from its last step, so the nine-page form is five sheets by when each is filled:
+
+| Sheet | Form pages | Filled | Document |
+|---|---|---|---|
+| `harvest-log` | 1–3 | harvest day: checks, methods, 🏠 drying room (moves the lot), scale checks, the bins' wet weights (`harvest.wetWeight`); the drying end date last, when drying ends | Harvest |
+| `drying-log` / `trim-log` | 4 (one page image, saved under both names) | daily, 7 days a page (the drying table's rows 8–10 stay blank) | Drying / Trim Log |
+| `curing-log` | 5–7 | start of curing: checks, moisture readings, scale checks, the bins (net = gross − tare, `harvest.dryWeight`), the totals (c) flower (`harvest.flowerTotal`), (d) trim (`harvest.trim`), (e) = c + d; the curing end date last | Harvest |
+| `lot-summary` | 8–9 | close-out: (a), (b), (e), (f) from the other sheets, the lot's figures, the records attached, QA; the master grower ✍️ signs once (both pages) | Harvest |
+
+Page 7's own bin rows stay blank (a table's rows are on one page; page 6 prints again past 21 bins). Precision and C / NC on the scale checks are worked out (floor: 3 × the last digit; bench: 0.05 % of the weight used).
+
 ## Relationship to SitkaTools
 
 - **Where its code is:** in `SitkaTools/SitkaTools.html`, under the `═══ TOOL PaperWizard` markers (root `CLAUDE.md` → "Tool Overlays"). It opens over SitkaTools, one tool at a time, and starts afresh each time.
@@ -469,4 +520,4 @@ Root UI Standards apply. Specifics:
 
 ## Tests
 
-`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tests/runner-close.test.mjs` covers closing the runner only by its ✕; `tests/grow-log-changes.test.mjs` covers phase / room changes recorded on edited days (newest day, earlier days, a page's only day, moved earlier, taken back, re-paged up to a later change, Cancel at the correction pad); `tests/lot-handoff.test.mjs` covers moving a lot to another building from the grow log (the grouped room list, the newest-day rule, the strike-out and blank page, read-only until picked up, the receiving building filling the new page); `tests/scoped-paperwork.test.mjs` covers facility and building paperwork (dropdowns, filling, printing, two buildings adding to one facility page at once, the office merging them into Main, what's on file locked on a building device, the queues released); `tools-smoke`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").
+`tests/repeating-rows.test.mjs` and `tests/paper-corrections.test.mjs` cover repeating rows and corrections; `tests/runner-close.test.mjs` covers closing the runner only by its ✕; `tests/grow-log-changes.test.mjs` covers phase / room changes recorded on edited days (newest day, earlier days, a page's only day, moved earlier, taken back, re-paged up to a later change, Cancel at the correction pad); `tests/lot-handoff.test.mjs` covers moving a lot to another building from the grow log (the grouped room list, the newest-day rule, the strike-out and blank page, read-only until picked up, the receiving building filling the new page); `tests/paper-formulas.test.mjs` covers 🧮 formulas (formula boxes and worked-out questions set up in Configure Sheets, the Entries form working them out, page subtotals and running subtotals per copy, the copy number, values from another sheet, a correction carried forward, Reports counting them, the new lot values, the harvest pack's five sheets importing); `tests/scoped-paperwork.test.mjs` covers facility and building paperwork (dropdowns, filling, printing, two buildings adding to one facility page at once, the office merging them into Main, what's on file locked on a building device, the queues released); `tools-smoke`, `cost-inputs` and `cost-per-gram` also open PaperWizard. Run with `node tests/run.mjs` (root `CLAUDE.md` → "Tests").

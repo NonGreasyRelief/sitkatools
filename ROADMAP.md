@@ -109,13 +109,12 @@ To do:
   - **For now:** the 🗣️ Talk button links to Google Translate set to the language pair; its Conversation mode does the job (`docs/DailyWizard.md` → "🌐 Language").
   - **Speech:** Chrome's Web Speech API does speech to text on Android (through Google's servers). `speechSynthesis` reads aloud, but voices differ by tablet.
   - **Blocker — translation:** Chrome's built-in Translator API is desktop-only. On Android it needs a cloud service (Google Cloud Translation or Microsoft Translator) with billing and a key. A key in the page can be copied, so that needs a server or IT.
-  - **Revisit** if the Translator API reaches Android, or once IT sets up Microsoft's translation and speech services in the tenant (Phase 3).
+  - **Revisit** if the Translator API reaches Android, or once IT sets up Microsoft's translation and speech services in the tenant (Phase 3). Building laptops (2026-11-07) run desktop Chrome or Edge, where the translation blocker may not apply: worth a look.
 
 ### Phase 3: Live Sync (optional)
 
 - Load and save the Phase 1 files directly through Microsoft Graph, with version-tag conflict checks.
 - Needs IT to register the app. Still no server of ours.
-- **Building tablets:** planned in the Android app (`android/README.md`; user decision 2026-10-29). Phase A, the app shell, is built: tablets work as in Chrome without its tab troubles. Phase B reads and writes the SharePoint folder directly from the app (Graph, conflict-checked writes, per-building write rules). What to ask IT for is in `android/README.md` → "Asking IT".
 
 ---
 
@@ -125,7 +124,7 @@ To do:
 
 - Devices reach SharePoint through a OneDrive-synced folder.
 - One office PC edits the plan.
-- Building devices run Chrome or Edge.
-- Staff log their own hours on the building tablet (DailyWizard).
+- Building devices run Chrome or Edge: on laptops since 2026-11-07, in 📁 folder mode on the OneDrive-synced SharePoint folder, saved at 4:30 PM and reloaded at 6:00 AM by themselves (the Android app is shelved on branch `android-app`).
+- Staff log their own hours on the building's device (DailyWizard; a laptop since 2026-11-07).
 
-**App registration:** the director can register the app in the company's Entra ID (2026-10-30), so the Android app's phase B (direct to SharePoint, user decision 2026-10-29) can go ahead. What to register is in `android/README.md` → "Asking IT".
+**App registration:** the director can register an app in the company's Entra ID (2026-10-30). It matters only for Phase 3 (and the shelved Android app).
