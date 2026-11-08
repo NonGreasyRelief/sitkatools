@@ -1,11 +1,12 @@
-// 🕓 Folder mode saves at 4:30 PM and reloads at 6:00 AM by itself (user request 2026-11-07: building laptops in Chrome or
-// Edge, in folder mode on the OneDrive-synced SharePoint folder). The folder here is a real one, in the browser's private
+// 🕓 Folder mode saves at 8:30, 12:30 and 4:30, brings in the other devices' saves 15 minutes later (and with a save by hand,
+// and every 10 minutes while nothing here is unsaved), and reloads at 6:00 AM, by itself (user requests 2026-11-07: building
+// laptops and the office in Chrome or Edge, in folder mode on the OneDrive-synced SharePoint folder). The folder here is a real one, in the browser's private
 // storage (navigator.storage.getDirectory()), picked through a stand-in showDirectoryPicker set before every page; its
 // handle is remembered in IndexedDB as a picked folder is. The page's clock is moved to test it, and the 6:00 AM reload
 // really reloads the page, which then opens the folder and the tool again by itself.
 import { today, fixtureDb, makeChecker, fresh, openSitka, loadSingle, splitFiles, leave } from './lib/helpers.mjs';
 
-export const title = 'folder mode: saved at 4:30 PM and reloaded at 6:00 AM by itself';
+export const title = 'folder mode: saved at 8:30, 12:30 and 4:30, the others\' saves brought in, reloaded at 6:00 AM'
 
 // Before every page: the picker opens a folder of the browser's private storage (window.__pickFolder, else "Shared"),
 // and the folder's permission is window.__folderPermission (Firefox has no permission methods for these folders)
@@ -74,13 +75,67 @@ export async function run(b, BASE) {
         st = await b.run(main, `${FILES} return read(await dir('Shared'), 'Building-B1.json');`);
         check('nothing unsaved: 4:30 writes nothing', st === b1Saved);
 
+        // ---- 12:30 and 12:45: saved, then Building 2's 12:30 save brought in, in place, once no one has used the laptop
+        //      for 2 minutes; sign-ins made meanwhile are saved first and stay ----
+        const b2Write = note => `{ ${FILES} const d = await dir('Shared'); const b2 = JSON.parse(await read(d, 'Building-B2.json'));
+            b2._DailyWizard = b2._DailyWizard || { buildings: {} }; b2._DailyWizard.buildings.B2 = { tasks: [], ...(b2._DailyWizard.buildings.B2 || {}), note: ${JSON.stringify(note)} };
+            await write(d, 'Building-B2.json', JSON.stringify(b2, null, 2)); }`;
+        const signIn = (id, who) => `DB.data._DailyWizard.buildings.B1.signIns = { ...(DB.data._DailyWizard.buildings.B1.signIns || {}),
+            ${id}: { item: 'misc', title: 'Miscellaneous labour', employee: '${who}', since: new Date().toISOString(), by: 'B1', badge: '' } }; markUnsaved();`;
+        await b.run(main, `Tools.open('DailyWizard');`);
+        await b.waitFor(main, `return Tools.current === 'DailyWizard';`);
+        await b.run(main, `${from(12, 20)} ${signIn('si_noon1', 'Alex')} ${at(12, 31)} await FolderClock.check(); ${b2Write('b2 at 12:30')}
+            ${at(12, 40)} ${signIn('si_noon2', 'Blair')} window.__marker = 5; ${at(12, 45)} FolderClock.input = Date.now(); ${at(12, 46)} await FolderClock.check();`);
+        st = await b.run(main, `return { b2: DB.data._DailyWizard.buildings.B2?.note || null, due: FolderClock.takeInDue, unsaved: hasUnsavedChanges };`);
+        check('12:46 with the laptop used a minute ago: nothing brought in yet', st.b2 === null && !!st.due && st.unsaved, JSON.stringify(st));
+        await b.run(main, `${at(12, 47)} await FolderClock.check();`);
+        st = await b.run(main, `${FILES} const d = await dir('Shared'), file = JSON.parse(await read(d, 'Building-B1.json'));
+            return { b2: DB.data._DailyWizard.buildings.B2?.note || null, signIns: Object.keys(DB.data._DailyWizard.buildings.B1.signIns || {}).sort().join(),
+                fileSignIns: Object.keys(file._DailyWizard.buildings.B1.signIns || {}).sort().join(), unsaved: hasUnsavedChanges, marker: window.__marker,
+                tool: Tools.current, toolHasIt: Tools.defs.DailyWizard.run.data === DB.data, toast: ${toast} };`);
+        check('12:47: Building 2\'s 12:30 save is brought in', st.b2 === 'b2 at 12:30' && /Updated at 12:45 PM with the newest Building-B2\.json from "Shared"/.test(st.toast), JSON.stringify(st));
+        check('…both sign-ins (one before 12:30, one after) are in the DB and in this building\'s file: nobody is signed out', st.signIns === 'si_noon1,si_noon2' && st.fileSignIns === 'si_noon1,si_noon2' && !st.unsaved, JSON.stringify(st));
+        check('…in place: no reload, DailyWizard still open and holding the new DB', st.marker === 5 && st.tool === 'DailyWizard' && st.toolHasIt, JSON.stringify(st));
+
+        // A badge scan while the files are being read calls the take-in off: the scan stays, and comes in with the next one
+        st = await b.run(main, `${b2Write('b2 later')} const p = FolderClock.takeIn('test');
+            DB.data._DailyWizard.buildings.B1.note = 'scanned meanwhile'; markUnsaved(); const r = await p;
+            return { r, note: DB.data._DailyWizard.buildings.B1.note, b2: DB.data._DailyWizard.buildings.B2?.note };`);
+        check('a change while the files are read: the take-in is called off, and the change stays', st.r === 'retry' && st.note === 'scanned meanwhile' && st.b2 === 'b2 at 12:30', JSON.stringify(st));
+
+        // 💾 Save to folder by hand brings the others' new files in too, and the open tool has the new DB at once
+        await b.run(main, `document.getElementById('exportBtn').click(); document.getElementById('saveToFolderBtn').click();`, { user: true });
+        st = await b.waitFor(main, `return DB.data._DailyWizard.buildings.B2?.note === 'b2 later' ? { note: DB.data._DailyWizard.buildings.B1.note, unsaved: hasUnsavedChanges,
+            toolHasIt: Tools.defs.DailyWizard.run.data === DB.data, toast: ${toast} } : null;`);
+        check('💾 Save to folder by hand saves this building and brings in Building 2\'s newest', st && st.note === 'scanned meanwhile' && !st.unsaved && st.toolHasIt &&
+            /Updated with the newest Building-B2\.json/.test(st.toast), JSON.stringify(st));
+
+        // Every 10 minutes, with nothing unsaved here: another device's save comes in, and nothing is saved for it
+        const b1Now = await b.run(main, `${FILES} return read(await dir('Shared'), 'Building-B1.json');`);
+        await b.run(main, `${b2Write('b2 at 1:10')} FolderClock.input = 0; ${from(13, 0)} FolderClock.peeked = Date.now(); ${at(13, 5)} await FolderClock.check();`);
+        st = await b.run(main, `return DB.data._DailyWizard.buildings.B2?.note;`);
+        check('the 10-minute look: not before 10 minutes', st === 'b2 later', st);
+        await b.run(main, `${at(13, 11)} await FolderClock.check();`);
+        st = await b.run(main, `${FILES} return { b2: DB.data._DailyWizard.buildings.B2?.note, b1: await read(await dir('Shared'), 'Building-B1.json'), unsaved: hasUnsavedChanges };`);
+        check('…after 10 minutes, with nothing unsaved here, Building 2\'s save comes in, and this building\'s file isn\'t written', st.b2 === 'b2 at 1:10' && st.b1 === b1Now && !st.unsaved, JSON.stringify({ b2: st.b2, unsaved: st.unsaved }));
+
+        // A file caught while OneDrive writes it (half a file): skipped with no alert, brought in the next time
+        await b.run(main, `${FILES} window.__alerts = []; window.alert = m => window.__alerts.push(m); await write(await dir('Shared'), 'Building-B2.json', '{"_building": "B2", "_Dai');
+            ${at(13, 22)} await FolderClock.check();`);
+        st = await b.run(main, `return { b2: DB.data._DailyWizard.buildings.B2?.note, alerts: window.__alerts };`);
+        check('a file caught half-written: nothing changes and nothing pops up', st.b2 === 'b2 at 1:10' && st.alerts.length === 0, JSON.stringify(st));
+        await b.run(main, `${FILES} await write(await dir('Shared'), 'Building-B2.json', ${JSON.stringify(files['Building-B2.json'])}); ${b2Write('b2 whole again')} ${at(13, 33)} await FolderClock.check();`);
+        st = await b.run(main, `return DB.data._DailyWizard.buildings.B2?.note;`);
+        check('…and it comes in once it\'s whole', st === 'b2 whole again', st);
+        await b.run(main, `Tools.close();`);
+
         // ---- 6:00 AM: waits while someone uses the page, saves what came in after 4:30 PM, reloads, opens the folder and the tool again ----
         await b.run(main, `Tools.open('DailyWizard');`);
         await b.waitFor(main, `return Tools.current === 'DailyWizard';`);
         await b.run(main, `${from(17, 0)} DB.data._DailyWizard.buildings.B1.note = 'evening'; markUnsaved(); window.__marker = 1;
             ${at(6, 0, 1)} FolderClock.input = Date.now() + 30000; ${at(6, 1, 1)} await FolderClock.check();`);
         st = await b.run(main, `${FILES} return { marker: window.__marker, due: FolderClock.reloadDue, unsaved: hasUnsavedChanges, b1: JSON.parse(await read(await dir('Shared'), 'Building-B1.json'))._DailyWizard.buildings.B1.note };`);
-        check('6:01 AM with someone using the page a minute ago: no reload yet, nothing saved yet', st.marker === 1 && st.due && st.unsaved && st.b1 === 'afternoon', JSON.stringify(st));
+        check('6:01 AM with someone using the page a minute ago: no reload yet, nothing saved yet', st.marker === 1 && st.due && st.unsaved && st.b1 !== 'evening', JSON.stringify(st));
         await b.run(main, `${at(6, 3, 1)} FolderClock.check(); return true;`);
         const after = await reloaded('DailyWizard');
         check('after 2 minutes idle the page reloads, opens the folder again by itself, and DailyWizard again', !!after && !after.unsaved, JSON.stringify(after));
@@ -105,13 +160,34 @@ export async function run(b, BASE) {
         st = await b.run(main, `return { marker: window.__marker, due: FolderClock.reloadDue, toast: ${toast} };`);
         check('…so 6:00 AM doesn\'t reload, and says why', st.marker === 2 && !st.due && /Not reloaded at 6:00 AM: Building-B1\.json had been saved from another device/.test(st.toast), JSON.stringify(st));
 
+        // Opening the folder again by hand lets the automatic saves go on
+        st = await b.run(main, `window.confirm = () => true; await DbFolder.open(DbFolder.handle); return { trouble: FolderClock.trouble, note: DB.data._DailyWizard.buildings.B1.note };`);
+        check('…until the folder is opened again by hand', st.trouble === null && st.note === 'from another laptop', JSON.stringify(st));
+
         // ---- The browser no longer lets the page use the folder: nothing written, it says to click Save DB ----
         await b.run(main, `${FILES} window.__folderPermission = 'prompt'; window.__before = (await list(await dir('Shared'))).join();
+            DB.data._DailyWizard.buildings.B1.note = 'no permission'; markUnsaved();
             ${from(16, 29)} ${at(16, 32)} await FolderClock.check();`);
         st = await b.run(main, `${FILES} return { files: (await list(await dir('Shared'))).join(), before: window.__before, unsaved: hasUnsavedChanges, toast: ${toast} };`);
         check('no permission any more: nothing is written, and it says to click 💾 Save DB', st.files === st.before && st.unsaved &&
             /Not saved by itself at 4:30 PM: SitkaTools may no longer save in "Shared" by itself — click 💾 Save DB/.test(st.toast), JSON.stringify(st));
         await b.run(main, `window.__folderPermission = 'granted'; clearUnsaved();`);
+
+        // ---- The office on the same schedule: 12:30 saves Main.json only; 12:45 brings in Building 1's 12:30 save ----
+        await openSitka(b, main, BASE, 'office');
+        await b.run(main, `window.__pickFolder = 'Shared'; await DbFolder.choose();`);
+        await b.waitFor(main, `return DbFolder.active && DbSplit.role === 'office';`);
+        const disk = await b.run(main, `${FILES} const d = await dir('Shared'); return { b1: await read(d, 'Building-B1.json'), b2: await read(d, 'Building-B2.json') };`);
+        await b.run(main, `${from(12, 20)} DB.data.lots.L100.name = 'Planned at the office'; markUnsaved(); FolderClock.input = 0; ${at(12, 31)} await FolderClock.check();`);
+        st = await b.run(main, `${FILES} const d = await dir('Shared'); return { main: JSON.parse(await read(d, 'Main.json')).lots.L100.name, b1: await read(d, 'Building-B1.json'),
+            b2: await read(d, 'Building-B2.json'), unsaved: hasUnsavedChanges, toast: ${toast} };`);
+        check('the office at 12:30: Main.json is saved by itself, and no building\'s file is written', st.main === 'Planned at the office' && st.b1 === disk.b1 && st.b2 === disk.b2 && !st.unsaved &&
+            /Saved by itself at 12:30 PM: Main\.json to "Shared"/.test(st.toast), JSON.stringify({ main: st.main, unsaved: st.unsaved, toast: st.toast }));
+        await b.run(main, `${FILES} const d = await dir('Shared'); const b1 = JSON.parse(await read(d, 'Building-B1.json'));
+            b1._DailyWizard.buildings.B1.note = 'B1 at 12:30'; await write(d, 'Building-B1.json', JSON.stringify(b1, null, 2)); ${at(12, 46)} await FolderClock.check();`);
+        st = await b.run(main, `return { note: DB.data._DailyWizard.buildings.B1.note, name: DB.data.lots.L100.name, toast: ${toast} };`);
+        check('…and at 12:45 brings in Building 1\'s 12:30 save, keeping its own', st.note === 'B1 at 12:30' && st.name === 'Planned at the office' && /Updated at 12:45 PM with the newest Building-B1\.json/.test(st.toast), JSON.stringify(st));
+        await b.run(main, `clearUnsaved();`);
 
         // ---- One DB file: a laptop that slept through 4:30 PM and 6:00 AM catches up as it wakes; the reload waits for
         //      CropLabourWizard's schedule changes not saved yet ----

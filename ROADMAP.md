@@ -124,7 +124,7 @@ To do:
 
 - Devices reach SharePoint through a OneDrive-synced folder.
 - One office PC edits the plan.
-- Building devices run Chrome or Edge: on laptops since 2026-11-07, in 📁 folder mode on the OneDrive-synced SharePoint folder, saved at 4:30 PM and reloaded at 6:00 AM by themselves (the Android app is shelved on branch `android-app`).
+- Building devices run Chrome or Edge: on laptops since 2026-11-07, in 📁 folder mode on the OneDrive-synced SharePoint folder, saved at 8:30, 12:30 and 4:30, bringing in each other's saves 15 minutes later, and reloaded at 6:00 AM, by themselves (the Android app is shelved on branch `android-app`).
 - Staff log their own hours on the building's device (DailyWizard; a laptop since 2026-11-07).
 
 **App registration:** the director can register an app in the company's Entra ID (2026-10-30). It matters only for Phase 3 (and the shelved Android app).

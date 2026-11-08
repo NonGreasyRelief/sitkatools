@@ -10295,6 +10295,7 @@
                     if (!await DbSplit.open(split)) return false;
                     this.active = true;
                     this.base = null;
+                    FolderClock.trouble = null;   // opened again by hand: a conflict copy that held the saves is sorted out
                     updateIOStatusBar();
                     updateFolderUi();
                     showSyncToast(`Opened ${DbSplit.loaded.size} building-split files from "${dir.name}"`);
@@ -10318,6 +10319,7 @@
                 if (!loadDbFromText(text, newest.name)) return false;
                 this.active = true;
                 this.base = { name: newest.name, hash: contentHash(text) };
+                FolderClock.trouble = null;
                 updateIOStatusBar();
                 updateFolderUi();
                 showSyncToast(`Opened ${newest.name} from "${dir.name}"`);
@@ -11672,14 +11674,16 @@
             // ---- Opening ----
             // files: { main: {name, text}, wages: {name, text}|null, buildings: [{name, text}], folder: dir|null }
             // gate: false when this page is open as the office already (addFiles), so the office gate isn't asked again
-            async open(files, { gate = true } = {}) {
+            // quiet (🔄 FolderClock's refresh): no "Database loaded" toast, and a warning shown once this page session.
+            // abortIf: asked last, just before the swap — true leaves the open DB as it is (something changed meanwhile).
+            async open(files, { gate = true, quiet = false, abortIf = null } = {}) {
                 let main, wages = null;
                 let buildings = [];
                 try {
                     main = JSON.parse(files.main.text);
                     for (const f of files.buildings) buildings.push({ name: f.name, data: JSON.parse(f.text), text: f.text });
                 } catch (err) {
-                    alert('Could not read the database files: ' + err.message);
+                    if (!quiet) alert('Could not read the database files: ' + err.message);
                     return false;
                 }
                 // OneDrive conflict copies ("Building-B1-OFFICEPC.json", "Building-B1 (1).json") hold the same
@@ -11708,9 +11712,12 @@
                     return false;
                 }
                 if (this.role === 'office' && files.wages) {
-                    try { wages = JSON.parse(files.wages.text); } catch (_) { alert('Wages.json could not be read — wages are not loaded.'); }
+                    try { wages = JSON.parse(files.wages.text); } catch (_) { this.tell('Wages.json could not be read — wages are not loaded.', quiet); }
                 }
 
+                // Nothing awaits from here to the swap, so nothing can change in between: a change made while the files were
+                // being read (a badge scan) calls the refresh off, rather than being replaced by files that don't have it
+                if (abortIf?.()) return false;
                 const db = this.merge(main, wages, buildings.map(b => b.data));
                 this.active = true;
                 this.loaded = new Set();
@@ -11762,18 +11769,29 @@
                     setTimeout(() => showSyncToast(`⏰ ${settled.filed} closing time${settled.filed === 1 ? '' : 's'} from the office filed as hours — 💾 Save DB to keep ${settled.filed === 1 ? 'it' : 'them'} in this building's file`), 0);
                 }
                 refreshAllViews();
+                // The open tool gets the new DB now, in this same step: a change it made a moment later (a badge scan) would
+                // otherwise land in the DB just replaced and be lost (the working copy's push comes 250 ms later)
+                Tools.push();
                 hideOverlay();
-                toastDbLoaded();
+                if (!quiet) toastDbLoaded();
                 if (pickups) this.promptFacility();
                 if (arrived.length) this.promptPickups(arrived);
                 if (closedHere.length) setTimeout(() => showSyncToast(`🗄️ The office closed out lot${closedHere.length === 1 ? '' : 's'} ${closedHere.join(', ')} — ${closedHere.length === 1 ? 'it leaves' : 'they leave'} this building's file with your next save`), 0);
-                if (lateHere.length) setTimeout(() => alert(`🗄️ The office closed out lot${lateHere.length === 1 ? '' : 's'} ${lateHere.join(', ')}, but this building's file has paperwork or hours for ${lateHere.length === 1 ? 'it' : 'them'} saved after the office made the archive.\n\nThey're kept in this building's file, so nothing is lost. Tell the office, so the archive can be completed.`), 0);
+                if (lateHere.length) setTimeout(() => this.tell(`🗄️ The office closed out lot${lateHere.length === 1 ? '' : 's'} ${lateHere.join(', ')}, but this building's file has paperwork or hours for ${lateHere.length === 1 ? 'it' : 'them'} saved after the office made the archive.\n\nThey're kept in this building's file, so nothing is lost. Tell the office, so the archive can be completed.`, quiet), 0);
                 if (skipped.length) {
-                    alert(`Heads up: these files were not opened:\n\n• ${skipped.join('\n• ')}\n\n` +
+                    this.tell(`Heads up: these files were not opened:\n\n• ${skipped.join('\n• ')}\n\n` +
                         `They are copies of building files that were opened (for example a OneDrive conflict copy). ` +
-                        `They may hold changes that aren't in the files you just opened.`);
+                        `They may hold changes that aren't in the files you just opened.`, quiet);
                 }
                 return true;
+            },
+
+            // An alert; with quiet (a refresh every few hours), only the first time this page session
+            told: new Set(),
+            tell(message, quiet = false) {
+                if (quiet && this.told.has(message)) return;
+                this.told.add(message);
+                alert(message);
             },
 
             // "Main + Wages + 2 building files" — what the status bars call the open split files
@@ -12049,6 +12067,8 @@
                         e.stopPropagation();
                         closeSavePopup();
                         await this.saveToFolder(folderPlan);
+                        // 🔄 Saving by hand also brings in what the other devices have saved since
+                        if (!hasUnsavedChanges) FolderClock.afterSave();
                     });
                     saveFolderAction.appendChild(btn);
                     saveFolderAction.classList.remove('hidden');
@@ -20618,30 +20638,52 @@
             }
         };
 
-        // ---- 🕓 Folder mode saves at 4:30 PM and reloads at 6:00 AM by itself (user request 2026-11-07) ----
-        // Building laptops keep SitkaTools open all day in 📁 folder mode, on the OneDrive-synced SharePoint folder. At 4:30 PM
-        // (the end of the shift) what's unsaved is saved into the folder; at 6:00 the next morning, after a night for every
-        // device's save to sync, the page reloads and opens the folder again with the tool that was open, so the day starts
-        // from every building's newest files and the newest SitkaTools. Nothing is asked and nothing is dropped: a file saved
-        // elsewhere since it was opened gets its -conflict-HHMM copy (the folder save's OK), and the reload waits until no one
-        // has used the page for 2 minutes, saves first, and doesn't happen when something would be lost (it says why). Checked
-        // every 30 s, when the tab is shown and on focus, so a laptop that slept through either catches up as it wakes. Only in
-        // folder mode.
+        // ---- 🕓 Folder mode: saved at 8:30, 12:30 and 4:30, the other devices' saves brought in, reloaded at 6:00 AM ----
+        // (user requests 2026-11-07). Building laptops and the office keep SitkaTools open all day in 📁 folder mode, on the
+        // OneDrive-synced SharePoint folder. Each saves only its own files (one writer per file), so nothing it writes can
+        // overwrite another device's work.
+        //  • 8:30 AM, 12:30 PM, 4:30 PM: what's unsaved is saved into the folder, with no question. A file saved elsewhere since
+        //    it was opened gets its -conflict-HHMM copy (the folder save's OK), and the automatic saves, take-ins and reload
+        //    then wait until the folder is opened again by hand.
+        //  • 15 minutes later, once OneDrive has synced every device's save: anything newer is saved, then the other devices'
+        //    files that changed are brought in, in place (takeIn): no reload, so the open tool and its dialogs stay as they
+        //    are. 💾 Save to folder by hand does the same, and so does a look every 10 minutes while nothing here is unsaved.
+        //  • 6:00 AM, after a night for OneDrive to sync: anything unsaved is saved, then the page reloads and opens the folder
+        //    and the tool that was open again: the newest files and the newest SitkaTools.
+        // Nothing is dropped: these wait until no one has used the page for 2 minutes and the open tool holds no work outside
+        // the DB, save first, and are called off (saying why) when something would be lost. A change made while the files are
+        // read (a badge scan) calls the take-in off instead of being replaced (DbSplit.open's abortIf), and the open tool gets
+        // the new DB in the same step. Checked every 30 s, when the tab is shown and on focus, so a laptop that slept through
+        // a time catches up as it wakes. At most 6 saves a day per file, for SharePoint's version history.
         var FolderClock = {
-            SAVE_AT: [16, 30], RELOAD_AT: [6, 0], IDLE_MS: 2 * 60000,
+            SAVES: [[8, 30], [12, 30], [16, 30]], TAKE_IN_AFTER: 15, RELOAD_AT: [6, 0],
+            IDLE_MS: 2 * 60000, PEEK_MS: 10 * 60000,
             last: 0,            // the previous check (ms)
             input: 0,           // when someone last used the page (ms)
+            peeked: 0,          // the last 10-minute look at the folder (ms)
+            takeInDue: null,    // { when }: a take-in time passed (or a save by hand couldn't bring the files in yet)
             reloadDue: false,   // 6:00 AM passed in folder mode: reloads once the page is idle
-            trouble: null,      // why this day's automatic save couldn't finish: no reload until after the next 4:30 PM
+            trouble: null,      // a conflict copy was written: no automatic save, take-in or reload until the folder is opened again
+            why: '',            // the last automatic save's problem
             busy: false,
+            taking: false,
             // The latest h:m at or before `now` (today's, else yesterday's), in ms
             lastAt([h, m], now) {
                 const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
                 if (t > now) t.setDate(t.getDate() - 1);
                 return t.getTime();
             },
-            inFolder() { return !!(DbFolder.active && DbFolder.handle); },
+            plus: ([h, m], min) => [h + Math.floor((m + min) / 60), (m + min) % 60],
             time: ([h, m]) => `${(h + 11) % 12 + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`,
+            inFolder() { return !!(DbFolder.active && DbFolder.handle); },
+            idle() { return Date.now() - this.input >= this.IDLE_MS; },
+            toolPending() {
+                const api = Tools.current && Tools.defs[Tools.current]?.run?.api;
+                return !!api?.pending?.();   // the open tool holds work not in the DB yet (CropLabourWizard's schedule changes)
+            },
+            async allowed(dir) {
+                try { return await dir.queryPermission({ mode: 'readwrite' }) === 'granted'; } catch (_) { return false; }
+            },
             async check() {
                 if (this.busy) return;
                 const now = new Date(), was = this.last;
@@ -20649,67 +20691,134 @@
                 if (!was) return;
                 this.busy = true;
                 try {
-                    if (this.lastAt(this.SAVE_AT, now) > was) {
-                        this.reloadDue = false;
-                        this.trouble = null;
-                        if (this.inFolder()) await this.save(this.time(this.SAVE_AT));
+                    const passed = t => this.lastAt(t, now) > was;
+                    // The latest of these times that passed since the last check (more than one: the laptop slept through them)
+                    const latest = times => times.filter(passed).sort((a, b) => this.lastAt(b, now) - this.lastAt(a, now))[0];
+                    if (this.inFolder()) {
+                        const saveAt = latest(this.SAVES);
+                        if (saveAt) await this.save(this.time(saveAt));
+                        const takeAt = latest(this.SAVES.map(t => this.plus(t, this.TAKE_IN_AFTER)));
+                        if (takeAt) this.takeInDue = { when: this.time(takeAt) };
+                        if (passed(this.RELOAD_AT)) this.reloadDue = true;
                     }
-                    if (this.lastAt(this.RELOAD_AT, now) > was && this.inFolder()) this.reloadDue = true;
-                    if (this.reloadDue) await this.reloadWhenIdle();
+                    if (this.reloadDue) {
+                        this.takeInDue = null;   // the reload brings in everything
+                        await this.reloadWhenIdle();
+                    } else if (this.takeInDue) {
+                        await this.takeInWhenIdle();
+                    } else if (now.getTime() - this.peeked >= this.PEEK_MS || now.getTime() < this.peeked) {
+                        // Every 10 minutes, with nothing unsaved here, another device's save comes in (nothing is saved for it)
+                        this.peeked = now.getTime();
+                        if (this.inFolder() && DbSplit.active && !hasUnsavedChanges && !this.trouble && this.idle() && !this.toolPending()) await this.takeIn();
+                    }
                 } catch (err) {
                     console.error('[SitkaTools] 🕓 folder clock', err);
                 } finally {
                     this.busy = false;
                 }
             },
-            // What's unsaved goes into the folder, as 💾 Save DB → Save to folder would, with no question. True when it all went.
+            // What's unsaved goes into the folder, as 💾 Save DB → Save to folder would, with no question.
+            // → 'saved' (nothing unsaved now), 'changed' (a change came in while saving) or 'problem' (it says why)
             async save(when) {
-                if (!hasUnsavedChanges) return true;
+                if (!hasUnsavedChanges) return 'saved';
+                if (this.trouble) return this.problem(when, this.trouble);
                 const dir = DbFolder.handle;
-                let allowed = false;
-                try { allowed = await dir.queryPermission({ mode: 'readwrite' }) === 'granted'; } catch (_) { /* no answer: not allowed */ }
                 // The browser asks for the folder again only on a click: nothing can be saved without one
-                if (!allowed) return this.problem(when, `SitkaTools may no longer save in "${dir.name}" by itself — click 💾 Save DB`);
+                if (!await this.allowed(dir)) return this.problem(when, `SitkaTools may no longer save in "${dir.name}" by itself — click 💾 Save DB`);
                 closeSavePopup();
                 try {
                     if (DbSplit.active) {
                         const plan = DbSplit.plan();
                         // Every file already matches (an edit undone): nothing is unsaved any more, as the save popup finds
-                        if (!plan.toSave.length && !plan.cannot.length) { DbSplit.finish(plan); return !hasUnsavedChanges; }
-                        const r = plan.toSave.length ? await DbSplit.saveToFolder(plan, { auto: true }) : { written: [], copies: [] };
-                        if (r.error) return this.problem(when, r.error);
-                        if (r.copies.length) return this.problem(when, `${r.copies.map(c => c.replace(/-conflict-\d{4}\.json$/, '.json')).join(', ')} had been saved from another device since it was opened, so this device's version went into ${r.copies.join(', ')} — nothing was overwritten; reopen the folder to see both`);
-                        if (plan.cannot.length && hasUnsavedChanges) return this.problem(when, `changes this device can't save stay unsaved (${plan.cannot.join('; ')})`);
-                        if (r.written.length) showSyncToast(`🕓 Saved by itself at ${when}: ${r.written.join(', ')} to "${dir.name}"`, { ms: 10000 });
+                        if (!plan.toSave.length && !plan.cannot.length) DbSplit.finish(plan);
+                        else {
+                            const r = plan.toSave.length ? await DbSplit.saveToFolder(plan, { auto: true }) : { written: [], copies: [] };
+                            if (r.error) return this.problem(when, r.error);
+                            if (r.copies.length) return this.problem(when, this.trouble = `${r.copies.map(c => c.replace(/-conflict-\d{4}\.json$/, '.json')).join(', ')} had been saved from another device since it was opened, so this device's version went into ${r.copies.join(', ')} — nothing was overwritten; reopen the folder to see both`);
+                            if (plan.cannot.length && hasUnsavedChanges) return this.problem(when, `changes this device can't save stay unsaved (${plan.cannot.join('; ')})`);
+                            if (r.written.length) showSyncToast(`🕓 Saved by itself at ${when}: ${r.written.join(', ')} to "${dir.name}"`, { ms: 10000 });
+                        }
                     } else {
                         const r = await DbFolder.save({ auto: true }) || {};
                         if (r.error) return this.problem(when, `the save failed (${r.error})`);
-                        if (r.copy) return this.problem(when, `${r.newer} had been saved elsewhere since this one was opened, so this device's version went into ${r.copy} — nothing was overwritten`);
+                        if (r.copy) return this.problem(when, this.trouble = `${r.newer} had been saved elsewhere since this one was opened, so this device's version went into ${r.copy} — nothing was overwritten`);
                         if (r.saved) showSyncToast(`🕓 Saved by itself at ${when}: ${r.saved} to "${dir.name}"`, { ms: 10000 });
                     }
                 } catch (err) {
                     return this.problem(when, `the save failed (${err.message})`);
                 }
-                return !hasUnsavedChanges;
+                return hasUnsavedChanges ? 'changed' : 'saved';
             },
             problem(when, why) {
-                this.trouble = why;
+                this.why = why;
                 showSyncToast(`🕓 Not saved by itself at ${when}: ${why}.`, { warn: true, ms: 5 * 60000 });
-                return false;
+                return 'problem';
+            },
+            // The other devices' files that changed since they were opened (or a building's new file) come into the open session,
+            // in place, as opening the folder again would — only while nothing here is unsaved, and called off if anything changes
+            // before the swap. → 'same' (nothing new), 'done', 'retry' (a change came in, or a file was caught mid-sync) or 'skip'
+            async takeIn(when = null) {
+                if (this.taking || !this.inFolder() || !DbSplit.active || hasUnsavedChanges) return 'skip';
+                this.taking = true;
+                const started = Date.now();
+                try {
+                    const dir = DbFolder.handle;
+                    if (!await this.allowed(dir)) return 'skip';
+                    let set;
+                    try { set = await DbFolder.readSplitFolder(dir); } catch (_) { return 'retry'; }
+                    if (!set) return 'skip';
+                    const office = DbSplit.role === 'office';
+                    const own = office ? [SPLIT_MAIN, SPLIT_WAGES] : [buildingFileName(DbSplit.role)];
+                    const changed = [];
+                    for (const f of [set.main, ...(office && set.wages ? [set.wages] : []), ...set.buildings]) {
+                        let data;
+                        try { data = JSON.parse(f.text); } catch (_) { return 'retry'; }   // caught while OneDrive writes it: next time
+                        // A OneDrive copy of a building's file ("Building-B1-PC.json") isn't the file itself
+                        if (f !== set.main && f !== set.wages && f.name !== buildingFileName(data?._building)) continue;
+                        if (contentHash(f.text) === DbSplit.hashes[f.name]) continue;
+                        if (own.includes(f.name)) {
+                            if (DbSplit.loaded.has(f.name)) return 'skip';   // this device's own file changed elsewhere: its next save says so
+                            continue;
+                        }
+                        changed.push(f.name);
+                    }
+                    if (!changed.length) return 'same';
+                    const opened = await DbSplit.open(set, { gate: false, quiet: true, abortIf: () => hasUnsavedChanges || this.input > started });
+                    if (!opened) return 'retry';
+                    showSyncToast(`🔄 ${when ? `Updated at ${when}` : 'Updated'} with the newest ${changed.join(', ')} from "${dir.name}"`, { ms: 10000 });
+                    return 'done';
+                } finally {
+                    this.taking = false;
+                }
+            },
+            async takeInWhenIdle() {
+                const { when } = this.takeInDue;
+                // One DB file holds everything: there's nothing of the other devices' to bring in (the 6:00 AM reload does it)
+                if (!this.inFolder() || !DbSplit.active || this.trouble) { this.takeInDue = null; return; }
+                if (!this.idle() || this.toolPending()) return;
+                const s = await this.save(when);
+                if (s === 'changed') return;                                 // a change came in while saving: next check
+                if (s === 'problem') { this.takeInDue = null; return; }      // it said why; this device's work stays as it is
+                if (await this.takeIn(when) !== 'retry') this.takeInDue = null;
+            },
+            // 💾 Save to folder by hand: the other devices' newest files come in too (once the page is idle, if not now)
+            async afterSave() {
+                if (!this.inFolder() || !DbSplit.active || this.trouble) return;
+                if (await this.takeIn() === 'retry' && !this.takeInDue) this.takeInDue = { when: null };
             },
             async reloadWhenIdle() {
                 if (!this.inFolder()) { this.reloadDue = false; return; }        // folder mode was left meanwhile
-                if (Date.now() - this.input < this.IDLE_MS) return;              // someone's using the page: after a pause
-                const api = Tools.current && Tools.defs[Tools.current]?.run?.api;
-                if (api?.pending?.()) return;                                    // the open tool holds work not in the DB yet
-                if (!this.trouble && hasUnsavedChanges && !await this.save(this.time(this.RELOAD_AT)) && !this.trouble) return;   // a change came in while saving: next check
-                if (this.trouble) {
+                if (!this.idle() || this.toolPending()) return;                   // someone's using the page: after a pause
+                const s = this.trouble ? 'problem' : await this.save(this.time(this.RELOAD_AT));
+                if (s === 'changed') return;                                     // a change came in while saving: next check
+                if (s === 'problem') {
                     this.reloadDue = false;
-                    showSyncToast(`🕕 Not reloaded at ${this.time(this.RELOAD_AT)}: ${this.trouble}. Save with 💾 Save DB, then 📁 → 🔄 Reload newest.`, { warn: true, ms: 5 * 60000 });
+                    showSyncToast(`🕕 Not reloaded at ${this.time(this.RELOAD_AT)}: ${this.trouble || this.why}. Save with 💾 Save DB, then 📁 → 🔄 Reload newest.`, { warn: true, ms: 5 * 60000 });
                     return;
                 }
-                this.reloadDue = false;
                 await WorkCopy.flush();   // the copy says saved, so the new page has nothing to offer back
+                if (hasUnsavedChanges) return;   // a change came in meanwhile: saved first, at the next check
+                this.reloadDue = false;
                 this.reload(this.reloadUrl());
             },
             // This page again, with ?reopen=<the tool open>: the new page opens the folder and the tool (resume)
@@ -20742,7 +20851,7 @@
                 if (tool && Tools.has(tool)) Tools.open(tool);
             },
             start() {
-                this.last = Date.now();
+                this.last = this.peeked = Date.now();
                 setInterval(() => this.check(), 30000);
                 const used = () => { this.input = Date.now(); };
                 for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(type, used, { capture: true, passive: true });
@@ -26696,7 +26805,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         init();
 
         // beforeClose: ✕ Close in the bar asks first, as Close Tool does (Tools.requestClose)
-        // pending: schedule changes not saved yet, asked without a question (🕓 the 6:00 AM reload waits for them)
+        // pending: schedule changes not saved yet, asked without a question (🕓 folder mode's automatic take-ins and 6:00 AM reload wait for them)
         return { receive: receiveDb, beforeClose: askBeforeClose, pending: scheduleChangesUnsaved, run(code) { return eval('(async () => {\n' + code + '\n})()'); } };
     });
     </script>
