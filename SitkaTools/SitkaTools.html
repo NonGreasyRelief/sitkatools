@@ -2968,6 +2968,11 @@
         /* …and its footer (Close Tool) the same */
         .tool-overlay > .tool-root > footer { zoom: 0.85; }
         .tool-overlay > .tool-root > header .logo { white-space: nowrap; }
+        /* Date and time fields everywhere, the hub's and every tool's: a white calendar button on the dark theme (user request
+           2026-11-11: the browser's black one was hard to see). Chrome and Edge; a field drawn dark already (color-scheme:
+           dark, the Labour & Cost Wizard's report dates) has a light one, so it's left alone. */
+        input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+        .report-controls input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
         .tool-overlay > .tool-root > header .form-group { margin-bottom: 0; }   /* the same height in every tool */
         /* A tool's own full-window view (Hub.subview): the bar on top of it with 💾 Save DB only — the view has its own ‹ Back */
         #toolHost.tool-sub .tool-bar { z-index: 400; }
@@ -5411,6 +5416,8 @@
         .capture-lang input { width: 20px; height: 20px; accent-color: var(--accent); }
         .capture-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         .capture-actions .btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; flex: 1 1 160px; }
+        .capture-actions [hidden] { display: none; }
+        .cam-live { width: 100%; max-height: 55vh; background: #000; border-radius: var(--radius); border: 1px solid var(--border); display: block; }
 
         .chip.missing { color: var(--text-secondary); }
         /* 🌐 A name or step with no translation in the chosen language shows the English, tagged "EN" */
@@ -5441,7 +5448,8 @@
         /* Same look as PaperWizard's signature pads: dark dashed box, white ink */
         .hours-pad { width: 100%; height: 150px; background: var(--input-bg); border: 1px dashed var(--border); border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
         #hoursOther, #hoursWage { margin-top: 8px; }
-        .hours-card input, .hours-card select { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
+        /* The note box too: dark blue like every other field, not the browser's white (user request 2026-11-11) */
+        .hours-card input, .hours-card select, .hours-card textarea { min-height: 48px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 1rem; }
         .hours-note { font-size: 0.82rem; color: var(--text-secondary); max-width: 60%; }
 
         /* ---- ⏲ Timers: four stopwatches on a second line inside each row that takes hours ---- */
@@ -8908,7 +8916,22 @@
             <div class="capture-text" id="captureText"></div>
             <div class="capture-actions">
                 <button type="button" class="btn btn-secondary" id="captureDoneBtn" data-t>Done</button>
+                <button type="button" class="btn btn-secondary" id="captureRetakeBtn" hidden></button>
                 <a class="btn btn-primary" id="captureSaveLink" href="#" download></a>
+                <button type="button" class="btn btn-primary" id="captureFolderBtn" hidden></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📷 / 🎥 The laptop's webcam, for a step's picture or training video (user request 2026-11-11) -->
+    <div class="capture-ask" id="camAsk" hidden role="dialog" aria-modal="true" aria-labelledby="camTitle">
+        <div class="capture-card">
+            <div class="capture-title" id="camTitle"></div>
+            <video class="cam-live" id="camLive" autoplay muted playsinline></video>
+            <div class="capture-text" id="camStatus"></div>
+            <div class="capture-actions">
+                <button type="button" class="btn btn-secondary" id="camCancelBtn" data-t>Cancel</button>
+                <button type="button" class="btn btn-primary" id="camShotBtn"></button>
             </div>
         </div>
     </div>
@@ -10354,6 +10377,62 @@
                 this.base = null;
                 updateIOStatusBar();
                 updateFolderUi();
+            },
+
+            // 📁 The files in a subfolder of the open folder (user request 2026-11-11: DailyWizard's pictures and videos in
+            // "Media", PaperWizard's documents in "Docs"), its own subfolders included, the name matched in any capitals.
+            // Read when asked, nothing kept: null with no folder open or no such subfolder.
+            async subfolderFiles(name) {
+                const dir = this.active && this.handle;
+                if (!dir) return null;
+                try {
+                    let sub = null;
+                    for await (const e of dir.values()) if (e.kind === 'directory' && e.name.toLowerCase() === name.toLowerCase()) { sub = e; break; }
+                    if (!sub) return null;
+                    const files = [];
+                    const walk = async (d, depth) => {
+                        for await (const e of d.values()) {
+                            if (e.kind === 'file') files.push(await e.getFile());
+                            else if (depth < 3) await walk(e, depth + 1);
+                        }
+                    };
+                    await walk(sub, 0);
+                    return files;
+                } catch (err) {
+                    console.warn(`[SitkaTools] couldn't read the "${name}" folder`, err);
+                    return null;
+                }
+            },
+
+            // 📁 Write a file into a subfolder of the open folder (made when missing; an existing one matched in any capitals),
+            // then remove the files there that `replaces(name)` picks, its own subfolders included: the old versions of what
+            // this file replaces (user request 2026-11-11: DailyWizard saving a step's picture or video into Media, where
+            // OneDrive syncs it to SharePoint). Written first, so a failed write removes nothing.
+            // → { saved: 'Media/wat1_2.jpg', removed: ['Media/…'] } or { error }
+            async saveSubfolderFile(name, fileName, blob, replaces = () => false) {
+                const dir = this.active && this.handle;
+                if (!dir) return { error: 'no database folder is open' };
+                try {
+                    if (!await this.ensurePermission(dir)) return { error: `no permission to save in "${dir.name}"` };
+                    let sub = null;
+                    for await (const e of dir.values()) if (e.kind === 'directory' && e.name.toLowerCase() === name.toLowerCase()) { sub = e; break; }
+                    sub = sub || await dir.getDirectoryHandle(name, { create: true });
+                    await this.writeFile(sub, fileName, blob);
+                    const removed = [];
+                    const walk = async (d, path, depth) => {
+                        const gone = [];
+                        for await (const e of d.values()) {
+                            if (e.kind === 'directory') { if (depth < 3) await walk(e, `${path}/${e.name}`, depth + 1); continue; }
+                            if (depth === 0 && e.name === fileName) continue;   // the file just written
+                            if (replaces(e.name)) gone.push(e.name);
+                        }
+                        for (const n of gone) { await d.removeEntry(n); removed.push(`${path}/${n}`); }
+                    };
+                    await walk(sub, sub.name, 0);
+                    return { saved: `${sub.name}/${fileName}`, removed };
+                } catch (err) {
+                    return { error: err.message };
+                }
             },
 
             // Who saved a DB file and when, for conflict messages
@@ -14702,7 +14781,13 @@
                     // A full-window view of the tool's own (CropLabourWizard's recipes) shows 💾 Save DB over its header, and
                     // its own ‹ Back in place of ✕ Close; null puts the bar back on the tool's header (user request 2026-10-27)
                     subview: (head) => { if (isOpen()) this.subview(head); },
-                    get open() { return isOpen(); }
+                    get open() { return isOpen(); },
+                    // 📁 Folder mode: the open DB folder's name (null without one), and the files in one of its subfolders
+                    // (DbFolder.subfolderFiles: DailyWizard's Media, PaperWizard's Docs)
+                    folder: () => (DbFolder.active && DbFolder.handle?.name) || null,
+                    folderFiles: (name) => isOpen() ? DbFolder.subfolderFiles(name) : Promise.resolve(null),
+                    // …and a file written into one (DbFolder.saveSubfolderFile: a step's picture or video into Media)
+                    folderSave: (name, fileName, blob, replaces) => isOpen() ? DbFolder.saveSubfolderFile(name, fileName, blob, replaces) : Promise.resolve({ error: 'closed' })
                 };
                 const doc = scopedToolDocument(root, isOpen), win = scopedToolWindow(isOpen, hub.close), timers = toolTimers();
                 run.stops.push(doc.stop, win.stop, timers.stop);
@@ -14796,7 +14881,8 @@
                 let live = true;
                 def.run = run;
                 const isLive = () => live && def.run === run;
-                const hub = { changed: () => { if (isLive()) this.changed(name); }, close() {}, subview() {}, get open() { return isLive(); } };
+                const hub = { changed: () => { if (isLive()) this.changed(name); }, close() {}, subview() {}, get open() { return isLive(); },
+                    folder: () => null, folderFiles: () => Promise.resolve(null), folderSave: () => Promise.resolve({ error: 'closed' }) };
                 const doc = scopedToolDocument(def.template.cloneNode(true), isLive), win = scopedToolWindow(isLive, hub.close), timers = toolTimers();
                 run.stops.push(doc.stop, win.stop, timers.stop);
                 try {
@@ -27135,6 +27221,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             if (hoursCtx) renderHours();
             if (doneCtx) renderDone();    // the floor manager's name and initials being drawn are left alone
             if (scanState) renderScanDialog();   // a sign-in signed out meanwhile closes it
+            loadFolderMedia();            // 📁 a database folder open: its Media pictures and videos, once per folder
         }
 
         // ---- Rendering ----
@@ -27995,7 +28082,11 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const uploadedVids = DailyWizardKept.vids;   // `${lang_}${code}_${n}` → { url, file } (mp4)
         const MEDIA_NAME = /^(?:(fr|es|vi|zh)_)?([a-z0-9]{4})_0*(\d+)\.(png|jpe?g|webp|mp4)$/i;
         const PIC_RANK = { png: 0, jpg: 1, jpeg: 1, webp: 2 };
-        function loadPictureFiles(fileList) {
+        // A media file name's step key: `es_j234_2` / `j234_2` (leading zeros dropped), from MEDIA_NAME's match
+        const mediaKeyOf = m => `${m[1] ? m[1].toLowerCase() + '_' : ''}${m[2].toLowerCase()}_${Number(m[3])}`;
+        // from: 'Media' when the open database folder's Media subfolder loads by itself (loadFolderMedia): a file already
+        // loaded and unchanged (name, size, time) keeps its link, and nothing is said when none is new
+        function loadPictureFiles(fileList, { from = null } = {}) {
             const pics = new Map(), vids = new Map(), skipped = [];
             for (const f of [...(fileList || [])]) {
                 const m = MEDIA_NAME.exec(f.name);
@@ -28003,32 +28094,50 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                     if (!/^\./.test(f.name) && !/^(thumbs\.db|desktop\.ini)$/i.test(f.name)) skipped.push(f.name);
                     continue;
                 }
-                const key = `${m[1] ? m[1].toLowerCase() + '_' : ''}${m[2].toLowerCase()}_${Number(m[3])}`, ext = m[4].toLowerCase();
+                const key = mediaKeyOf(m), ext = m[4].toLowerCase();
                 if (ext === 'mp4') { vids.set(key, { f }); continue; }
                 const rank = PIC_RANK[ext], prev = pics.get(key);
                 if (!prev || rank < prev.rank) pics.set(key, { f, rank });
             }
             const known = new Set(Object.values(DB.dailyBuildings || {}).flatMap(b => (b?.tasks || []).map(t => t.code)));
             const noTask = [];
+            let fresh = 0;
             const take = (batch, store) => {
                 for (const [key, { f }] of batch) {
+                    const sig = `${f.name}|${f.size}|${f.lastModified}`;
+                    if (store.get(key)?.sig === sig) continue;   // the same file, already loaded
                     if (store.has(key)) URL.revokeObjectURL(store.get(key).url);
-                    store.set(key, { url: URL.createObjectURL(f), file: f.name });
+                    store.set(key, { url: URL.createObjectURL(f), file: f.name, sig });
+                    fresh++;
                     if (!known.has(key.split('_').at(-2))) noTask.push(f.name);
                 }
             };
             take(pics, uploadedPics);
             take(vids, uploadedVids);
+            if (from && !fresh) return;
             const loaded = pics.size + vids.size;
             const example = `${detailTaskCode || 'j234'}_1.jpg`;
             const list = names => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
             let msg = !loaded ? T('No pictures found — names must look like {example}', { example })
+                : from ? T('📁 {folder} folder — pictures: {n}, videos: {v}', { folder: from, n: pics.size, v: vids.size })
                 : T('Loaded — pictures: {n}, videos: {v}', { n: pics.size, v: vids.size });
             if (loaded && skipped.length) msg += T(' · {n} skipped (names must look like {example}): {files}', { n: skipped.length, example, files: list(skipped) });
             if (noTask.length) msg += T(' · {n} match no task: {files}', { n: noTask.length, files: list(noTask) });
             showToast(msg);
             renderPicsNote();
             if ($('detailOverlay').classList.contains('open')) renderDetail();
+        }
+        // 📁 Folder mode (user request 2026-11-11): the pictures and videos in the open database folder's "Media" subfolder
+        // (any capitals, its own subfolders too) load by themselves, as 📁 Picture folder would pick them — when DailyWizard
+        // opens, when a database folder opens while it's open, and with 🔄 Refresh images. Read from the folder each time;
+        // only new or changed files make new links.
+        let mediaFrom = null;   // the folder the Media pictures were last loaded from while DailyWizard has been open
+        async function loadFolderMedia({ force = false } = {}) {
+            const folder = Hub.folder?.();
+            if (!folder || (!force && mediaFrom === folder)) return;
+            mediaFrom = folder;
+            const files = await Hub.folderFiles?.(MEDIA_FOLDER);
+            if (files?.length) loadPictureFiles(files, { from: MEDIA_FOLDER });
         }
         // The main screen's count of the pictures and videos picked while SitkaTools has been open
         function renderPicsNote() {
@@ -28065,22 +28174,24 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // with no camera picks a file instead). What comes back shows on the step at once, in this window only, like
         // 🖼 Upload (uploadedPics / uploadedVids), and is offered to save under the step's name — {code}_{n}.jpg / .mp4, or
         // the version for the language on screen (es_{code}_{n}) — by the share sheet on a tablet (OneDrive → the folder),
-        // a download or right-click Save Link As… on a PC. Someone then puts it in the "Pictures and Videos" folder on
-        // SharePoint, next to the database folder, which 📁 Picture folder picks. A picture is made a JPEG of at most
+        // a download or right-click Save Link As… on a PC. Someone then puts it in the database folder's "Media" folder on
+        // SharePoint, which folder mode loads by itself (or 📁 Picture folder picks). A picture is made a JPEG of at most
         // 1280 px (as "Step Pictures" suggests); a video is kept as it is, and one this device can't play, or that isn't
         // an MP4, is flagged (DailyWizard plays MP4, H.264). Nothing goes in the database.
-        const PICS_FOLDER = 'Pictures and Videos';
+        const MEDIA_FOLDER = 'Media';   // the database folder's subfolder for step pictures and videos (user request 2026-11-11)
+        const PICS_FOLDER = MEDIA_FOLDER;
         const CAPTURE_MAX_PX = 1280;
         let capture = null;   // { kind, code, n, lang: '' | 'es' …, blob, url, ext, warn }
         let captureInput = null;
-        function startCapture(kind, bid, code, n) {
+        // camera: Take on a touch device (its camera app, the back camera); false: 🖼 / 🎞 Upload, a file picked
+        function startCapture(kind, bid, code, n, { camera = true } = {}) {
             if (!canEditTasks(bid)) return;
             EditMode.touch();
             captureInput?.remove();
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = kind === 'pic' ? 'image/*' : 'video/*';
-            input.setAttribute('capture', 'environment');   // the back camera
+            if (camera) input.setAttribute('capture', 'environment');   // the back camera
             input.hidden = true;
             input.className = 'capture-input';
             input.addEventListener('change', () => {
@@ -28128,7 +28239,8 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             });
         }
         const captureName = c => `${c.lang ? c.lang + '_' : ''}${c.code}_${c.n}`;
-        async function tookCapture(kind, code, n, file) {
+        // retake: the building, for a capture from the webcam (↺ Retake opens it again)
+        async function tookCapture(kind, code, n, file, { retake = null } = {}) {
             let blob = file, ext = 'mp4', warn = '';
             if (kind === 'pic') {
                 blob = await captureJpeg(file);
@@ -28147,7 +28259,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 else if (file.type && file.type !== 'video/mp4') warn = T('This video isn’t an MP4 ({type}): other tablets may not play it. DailyWizard plays MP4 (H.264).', { type: file.type });
             }
             if (capture && capture.url !== url) dropCapture();   // one at a time: the last one shown stays on its step
-            capture = { kind, code, n, lang: '', blob, url, ext, warn };
+            capture = { kind, code, n, lang: '', blob, url, ext, warn, retake };
             putCapture();
             showCapture();
         }
@@ -28194,17 +28306,29 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             const mb = c.blob.size / 1048576;
             const text = $('captureText');
             text.innerHTML = '';
-            text.append(T('It shows on this step in this window now. To keep it for every tablet, save it as '));
             const strong = document.createElement('strong');
             strong.textContent = file;
-            text.append(strong, T(' and put it in the “{folder}” folder on SharePoint, next to the database folder.', { folder: PICS_FOLDER }));
+            // 📁 Folder mode (user request 2026-11-11): 💾 Save to Media puts it straight into the database folder's Media
+            // folder, which OneDrive syncs to SharePoint; the 📤 link (a download) stays beside it
+            const folder = Hub.folder?.();
+            if (folder) text.append(T('It shows on this step in this window now. 💾 Save to {folder} puts it in “{db}/{folder}” as ', { folder: MEDIA_FOLDER, db: folder }),
+                strong, T(', in place of the step’s old one there, and OneDrive takes it to SharePoint for every laptop.'));
+            else text.append(T('It shows on this step in this window now. To keep it for every tablet, save it as '),
+                strong, T(' and put it in the database folder’s “{folder}” folder on SharePoint.', { folder: PICS_FOLDER }));
             if (c.kind === 'vid') text.append(' ' + T('{mb} MB — keep training videos short: every tablet loads them.', { mb: mb.toFixed(1) }));
             const a = $('captureSaveLink');
             a.href = c.url;
             a.download = file;
             a.textContent = T('📤 Save {file}', { file });
+            a.className = folder ? 'btn btn-secondary' : 'btn btn-primary';
+            const fb = $('captureFolderBtn');
+            fb.hidden = !folder;
+            fb.disabled = false;
+            fb.textContent = T('💾 Save to {folder}', { folder: MEDIA_FOLDER });
+            $('captureRetakeBtn').hidden = !c.retake;
+            $('captureRetakeBtn').textContent = T('↺ Retake');
             $('captureAsk').hidden = false;
-            $('captureSaveLink').focus();
+            (folder ? fb : a).focus();
         }
         $('captureLang').addEventListener('change', () => {
             if (!capture) return;
@@ -28228,6 +28352,135 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         const closeCapture = () => { $('captureAsk').hidden = true; dropCapture(); };
         $('captureDoneBtn').addEventListener('click', closeCapture);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('captureAsk').hidden) { e.preventDefault(); closeCapture(); } });
+        // 💾 Save to Media (folder mode): written into the database folder's Media folder under the step's name, the step's old
+        // versions there removed — the same name as another picture type (png outranks jpg when both are there) or with
+        // leading zeros (j234_02.jpg), anywhere in Media; the language versions stay. OneDrive takes it to SharePoint.
+        $('captureFolderBtn').addEventListener('click', async () => {
+            const c = capture, btn = $('captureFolderBtn');
+            if (!c) return;
+            btn.disabled = true;
+            const name = `${captureName(c)}.${c.ext}`, key = captureName(c).toLowerCase(), vid = c.kind === 'vid';
+            const replaces = f => { const m = MEDIA_NAME.exec(f); return !!m && mediaKeyOf(m) === key && (m[4].toLowerCase() === 'mp4') === vid; };
+            const r = await Hub.folderSave(MEDIA_FOLDER, name, c.blob, replaces);
+            if (capture !== c) return;
+            if (r.error) {
+                btn.disabled = false;
+                showToast(T('{file} wasn’t saved to {folder}: {error}', { file: name, folder: MEDIA_FOLDER, error: r.error }));
+                return;
+            }
+            showToast(T('✅ Saved {file} — OneDrive takes it to SharePoint', { file: r.saved }) + (r.removed.length ? T(' · replaced {files}', { files: r.removed.join(', ') }) : ''));
+            closeCapture();
+        });
+        // ↺ Retake (a webcam capture): off its step, and the webcam again
+        $('captureRetakeBtn').addEventListener('click', () => {
+            const c = capture;
+            if (!c?.retake) return;
+            unputCapture();
+            URL.revokeObjectURL(c.url);
+            capture = null;
+            $('captureAsk').hidden = true;
+            renderPicsNote();
+            if ($('detailOverlay').classList.contains('open')) renderDetail();
+            openCam(c.kind, c.retake, c.code, c.n);
+        });
+
+        // ---- 📷 / 🎥 The laptop's webcam (user request 2026-11-11: laptops in the buildings) ----
+        // Take picture / Take video on a device with a mouse opens its webcam here (getUserMedia): a live view, then 📸 Snap,
+        // or ⏺ Record and ⏹ Stop (MP4 with H.264, as DailyWizard plays it; at most 5 minutes). What it takes goes to the same
+        // dialog as a picked file (tookCapture, with ↺ Retake). On a touch device Take opens its camera app, as before
+        // (startCapture). The camera is let go when this dialog closes, and when DailyWizard closes.
+        const CAM_MAX_MS = 5 * 60000;
+        const CAM_VIDEO_TYPES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4;codecs=avc1', 'video/mp4'];
+        let cam = null;   // { kind, bid, code, n, type, stream, rec, chunks, started, timer }
+        const useWebcam = () => !!navigator.mediaDevices?.getUserMedia && !window.matchMedia('(pointer: coarse)').matches;
+        function takeCapture(kind, bid, code, n) {
+            if (!canEditTasks(bid)) return;
+            if (useWebcam()) openCam(kind, bid, code, n);
+            else startCapture(kind, bid, code, n);
+        }
+        async function openCam(kind, bid, code, n) {
+            if (!canEditTasks(bid)) return;
+            EditMode.touch();
+            closeCam();
+            const type = kind === 'vid' ? CAM_VIDEO_TYPES.find(t => window.MediaRecorder?.isTypeSupported?.(t)) : null;
+            if (kind === 'vid' && !type) { showToast(T('This browser can’t record MP4 video, which DailyWizard plays — use Chrome or Edge, or 🎞 Upload video')); return; }
+            const me = cam = { kind, bid, code, n, type, stream: null, rec: null, chunks: [], started: 0, timer: null };
+            $('camTitle').textContent = kind === 'pic' ? T('📷 Step {n}’s picture', { n }) : T('🎥 Step {n}’s training video', { n });
+            $('camStatus').textContent = T('Starting the camera…');
+            $('camShotBtn').disabled = true;
+            $('camShotBtn').textContent = kind === 'pic' ? T('📸 Snap') : T('⏺ Record');
+            $('camAsk').hidden = false;
+            const want = { video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
+            let stream = null, error = null;
+            try { stream = await navigator.mediaDevices.getUserMedia(kind === 'vid' ? { ...want, audio: true } : want); }
+            catch (err) { error = err; }
+            if (!stream && kind === 'vid') { try { stream = await navigator.mediaDevices.getUserMedia(want); } catch (_) { /* as below */ } }   // no microphone: the picture alone
+            if (cam !== me) { stream?.getTracks().forEach(t => t.stop()); return; }   // closed meanwhile
+            if (!stream) { $('camStatus').textContent = T('Couldn’t start the camera ({error}). Allow the camera for this page, or use 🖼 / 🎞 Upload.', { error: error?.message || error?.name || '?' }); return; }
+            me.stream = stream;
+            const live = $('camLive');
+            live.srcObject = stream;
+            live.play?.()?.catch?.(() => {});
+            $('camStatus').textContent = kind === 'pic' ? T('Frame the step, then 📸 Snap.') : T('⏺ Record, then ⏹ Stop. Keep it short: every laptop loads it.');
+            $('camShotBtn').disabled = false;
+        }
+        function closeCam() {
+            const c = cam;
+            if (!c) return;
+            cam = null;
+            clearInterval(c.timer);
+            if (c.rec && c.rec.state !== 'inactive') { c.rec.ondataavailable = null; c.rec.onstop = null; try { c.rec.stop(); } catch (_) { /* gone */ } }
+            c.stream?.getTracks().forEach(t => t.stop());
+            const live = $('camLive');
+            if (live) live.srcObject = null;
+            if ($('camAsk')) $('camAsk').hidden = true;
+        }
+        function stopRecording() {
+            if (!cam?.rec || cam.rec.state === 'inactive') return;
+            clearInterval(cam.timer);
+            $('camShotBtn').disabled = true;
+            cam.rec.stop();
+        }
+        $('camCancelBtn').addEventListener('click', closeCam);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('camAsk').hidden) { e.preventDefault(); closeCam(); } });
+        window.addEventListener('beforeunload', closeCam);   // DailyWizard closing lets the camera go
+        $('camShotBtn').addEventListener('click', async () => {
+            const c = cam;
+            if (!c?.stream) return;
+            if (c.kind === 'pic') {   // 📸 Snap: the frame as it is, made a JPEG of at most 1280 px by tookCapture
+                const live = $('camLive'), w = live.videoWidth, h = live.videoHeight;
+                if (!w || !h) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(live, 0, 0, w, h);
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+                if (cam !== c) return;
+                closeCam();
+                if (blob) tookCapture('pic', c.code, c.n, new File([blob], 'webcam.jpg', { type: 'image/jpeg' }), { retake: c.bid });
+                return;
+            }
+            if (c.rec) { stopRecording(); return; }   // ⏹ Stop
+            const rec = new MediaRecorder(c.stream, { mimeType: c.type });   // ⏺ Record
+            c.rec = rec;
+            rec.ondataavailable = e => { if (e.data?.size) c.chunks.push(e.data); };
+            rec.onstop = () => {
+                if (cam !== c) return;
+                const blob = new Blob(c.chunks, { type: c.type.split(';')[0] });
+                closeCam();
+                tookCapture('vid', c.code, c.n, new File([blob], 'webcam.mp4', { type: blob.type }), { retake: c.bid });
+            };
+            rec.start(1000);
+            c.started = Date.now();
+            $('camShotBtn').textContent = T('⏹ Stop');
+            const tick = () => {
+                const sec = Math.floor((Date.now() - c.started) / 1000);
+                $('camStatus').textContent = T('⏺ Recording {time}', { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
+                if (Date.now() - c.started >= CAM_MAX_MS) stopRecording();
+            };
+            tick();
+            c.timer = setInterval(tick, 500);
+        });
 
         // Probe-cache keys of a task: `${code}_${n}` and the language versions `${lang}_${code}_${n}`
         const isTaskMediaKey = (k, code) => k.startsWith(code + '_') || /^(fr|es|vi|zh)_/.test(k) && k.slice(3).startsWith(code + '_');
@@ -28412,16 +28665,18 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
 
             row.appendChild(top);
-            if (!viewOnly) {   // 📷 / 🎥 on the tablet's camera, saved under this step's name (startCapture)
+            if (!viewOnly) {   // 📷 / 🎥 from the camera or 🖼 / 🎞 from a file, saved under this step's name
                 const cap = document.createElement('div');
                 cap.className = 'step-capture';
-                for (const [kind, label] of [['pic', T('📷 Take picture')], ['vid', T('🎥 Record training video')]]) {
+                for (const [act, kind, label] of [['take', 'pic', T('📷 Take picture')], ['take', 'vid', T('🎥 Take video')],
+                    ['upload', 'pic', T('🖼 Upload picture')], ['upload', 'vid', T('🎞 Upload video')]]) {
                     const b = document.createElement('button');
                     b.type = 'button';
                     b.className = 'btn btn-secondary capture-btn';
                     b.dataset.kind = kind;
+                    b.dataset.act = act;
                     b.textContent = label;
-                    b.addEventListener('click', () => startCapture(kind, bid, code, n));
+                    b.addEventListener('click', () => act === 'take' ? takeCapture(kind, bid, code, n) : startCapture(kind, bid, code, n, { camera: false }));
                     cap.appendChild(b);
                 }
                 row.appendChild(cap);
@@ -28555,11 +28810,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
         // 🔄 Refresh images: clear this task's probe cache and re-probe with a
         // cache-busting query string (picks up pictures added since first load).
-        function refreshStepImages() {
+        async function refreshStepImages() {
             const task = getDetailTask();
             if (!task) return;
             const steps = task.steps || [];
             if (!steps.length) { showToast(T('No steps to refresh')); return; }
+            await loadFolderMedia({ force: true });   // 📁 folder mode: what's new in the Media folder first
             for (const cache of [stepImageCache, stepVideoCache]) for (const k of Object.keys(cache)) if (isTaskMediaKey(k, task.code)) delete cache[k];
             const prefixes = LANG !== 'en' ? [LANG + '_', ''] : [''];
             let remaining = steps.length * 2 * prefixes.length;   // a picture and a video per step, per version
@@ -29949,6 +30205,25 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "This room is no longer in this building — its hours are shared like a whole-building chore": { fr: "Cette salle ne fait plus partie de ce bâtiment — ses heures sont partagées comme une tâche de tout le bâtiment", es: "Esta sala ya no está en este edificio — sus horas se reparten como una tarea de todo el edificio", vi: "Phòng này không còn thuộc tòa nhà này — số giờ được chia như việc của cả tòa nhà", zh: "该房间已不在此楼栋——其工时按整栋楼任务分摊" },
             "📷 Take picture": { fr: "📷 Prendre une photo", es: "📷 Tomar foto", vi: "📷 Chụp ảnh", zh: "📷 拍照" },
             "🎥 Record training video": { fr: "🎥 Filmer une vidéo de formation", es: "🎥 Grabar video de capacitación", vi: "🎥 Quay video hướng dẫn", zh: "🎥 录制培训视频" },
+            "🎥 Take video": { fr: "🎥 Filmer une vidéo", es: "🎥 Grabar video", vi: "🎥 Quay video", zh: "🎥 录制视频" },
+            "🖼 Upload picture": { fr: "🖼 Téléverser une photo", es: "🖼 Subir foto", vi: "🖼 Tải ảnh lên", zh: "🖼 上传照片" },
+            "🎞 Upload video": { fr: "🎞 Téléverser une vidéo", es: "🎞 Subir video", vi: "🎞 Tải video lên", zh: "🎞 上传视频" },
+            "It shows on this step in this window now. 💾 Save to {folder} puts it in “{db}/{folder}” as ": { fr: "Elle s’affiche maintenant sur cette étape dans cette fenêtre. 💾 Enregistrer dans {folder} la met dans « {db}/{folder} » sous le nom ", es: "Ya se muestra en este paso en esta ventana. 💾 Guardar en {folder} lo pone en «{db}/{folder}» como ", vi: "Giờ nó đã hiện ở bước này trong cửa sổ này. 💾 Lưu vào {folder} sẽ đặt nó vào “{db}/{folder}” với tên ", zh: "它现在已显示在此窗口的这一步上。💾 保存到 {folder} 会把它放进“{db}/{folder}”，文件名为 " },
+            ", in place of the step’s old one there, and OneDrive takes it to SharePoint for every laptop.": { fr: ", à la place de l’ancienne de l’étape, et OneDrive l’envoie sur SharePoint pour tous les ordinateurs.", es: ", en lugar del anterior del paso, y OneDrive lo lleva a SharePoint para todas las computadoras.", vi: ", thay cho tệp cũ của bước, và OneDrive đưa nó lên SharePoint cho mọi máy tính.", zh: "，替换这一步原有的文件，OneDrive 会把它同步到 SharePoint，供每台电脑使用。" },
+            "💾 Save to {folder}": { fr: "💾 Enregistrer dans {folder}", es: "💾 Guardar en {folder}", vi: "💾 Lưu vào {folder}", zh: "💾 保存到 {folder}" },
+            "↺ Retake": { fr: "↺ Reprendre", es: "↺ Repetir", vi: "↺ Chụp lại", zh: "↺ 重拍" },
+            "{file} wasn’t saved to {folder}: {error}": { fr: "{file} n’a pas été enregistré dans {folder} : {error}", es: "{file} no se guardó en {folder}: {error}", vi: "Chưa lưu {file} vào {folder}: {error}", zh: "{file} 未保存到 {folder}：{error}" },
+            "✅ Saved {file} — OneDrive takes it to SharePoint": { fr: "✅ {file} enregistré — OneDrive l’envoie sur SharePoint", es: "✅ {file} guardado — OneDrive lo lleva a SharePoint", vi: "✅ Đã lưu {file} — OneDrive sẽ đưa lên SharePoint", zh: "✅ 已保存 {file} — OneDrive 会同步到 SharePoint" },
+            " · replaced {files}": { fr: " · remplace {files}", es: " · reemplaza {files}", vi: " · thay thế {files}", zh: " · 已替换 {files}" },
+            "This browser can’t record MP4 video, which DailyWizard plays — use Chrome or Edge, or 🎞 Upload video": { fr: "Ce navigateur ne peut pas enregistrer de vidéo MP4, le format de DailyWizard — utilisez Chrome ou Edge, ou 🎞 Téléverser une vidéo", es: "Este navegador no puede grabar video MP4, el formato de DailyWizard: use Chrome o Edge, o 🎞 Subir video", vi: "Trình duyệt này không quay được video MP4, định dạng DailyWizard dùng — hãy dùng Chrome hoặc Edge, hoặc 🎞 Tải video lên", zh: "此浏览器无法录制 DailyWizard 使用的 MP4 视频 — 请用 Chrome 或 Edge，或 🎞 上传视频" },
+            "Starting the camera…": { fr: "Démarrage de la caméra…", es: "Iniciando la cámara…", vi: "Đang bật máy ảnh…", zh: "正在启动摄像头…" },
+            "📸 Snap": { fr: "📸 Prendre", es: "📸 Capturar", vi: "📸 Chụp", zh: "📸 拍摄" },
+            "⏺ Record": { fr: "⏺ Enregistrer", es: "⏺ Grabar", vi: "⏺ Quay", zh: "⏺ 录制" },
+            "⏹ Stop": { fr: "⏹ Arrêter", es: "⏹ Detener", vi: "⏹ Dừng", zh: "⏹ 停止" },
+            "Couldn’t start the camera ({error}). Allow the camera for this page, or use 🖼 / 🎞 Upload.": { fr: "Impossible de démarrer la caméra ({error}). Autorisez la caméra pour cette page, ou utilisez 🖼 / 🎞 Téléverser.", es: "No se pudo iniciar la cámara ({error}). Permita la cámara para esta página, o use 🖼 / 🎞 Subir.", vi: "Không bật được máy ảnh ({error}). Hãy cho phép máy ảnh cho trang này, hoặc dùng 🖼 / 🎞 Tải lên.", zh: "无法启动摄像头（{error}）。请允许此页面使用摄像头，或使用 🖼 / 🎞 上传。" },
+            "Frame the step, then 📸 Snap.": { fr: "Cadrez l’étape, puis 📸 Prendre.", es: "Encuadre el paso y luego 📸 Capturar.", vi: "Căn khung bước này, rồi 📸 Chụp.", zh: "对准这一步，然后 📸 拍摄。" },
+            "⏺ Record, then ⏹ Stop. Keep it short: every laptop loads it.": { fr: "⏺ Enregistrer, puis ⏹ Arrêter. Restez bref : tous les ordinateurs la chargent.", es: "⏺ Grabar y luego ⏹ Detener. Que sea corto: todas las computadoras lo cargan.", vi: "⏺ Quay, rồi ⏹ Dừng. Giữ ngắn gọn: mọi máy tính đều tải nó.", zh: "⏺ 录制，然后 ⏹ 停止。请尽量简短：每台电脑都会加载它。" },
+            "⏺ Recording {time}": { fr: "⏺ Enregistrement {time}", es: "⏺ Grabando {time}", vi: "⏺ Đang quay {time}", zh: "⏺ 正在录制 {time}" },
             "Couldn’t read that picture — try again": { fr: "Impossible de lire cette photo — réessayez", es: "No se pudo leer esa foto; inténtelo de nuevo", vi: "Không đọc được ảnh đó — hãy thử lại", zh: "无法读取这张照片——请重试" },
             "This device can’t play this video. DailyWizard plays MP4 (H.264): set the camera to record that, then try again.": { fr: "Cet appareil ne peut pas lire cette vidéo. DailyWizard lit le MP4 (H.264) : réglez la caméra sur ce format, puis réessayez.", es: "Este dispositivo no puede reproducir este video. DailyWizard reproduce MP4 (H.264): configure la cámara para grabar así e inténtelo de nuevo.", vi: "Thiết bị này không phát được video này. DailyWizard phát MP4 (H.264): hãy đặt camera quay định dạng đó rồi thử lại.", zh: "此设备无法播放该视频。DailyWizard 播放 MP4（H.264）格式：请将相机设为该格式后重试。" },
             "This video isn’t an MP4 ({type}): other tablets may not play it. DailyWizard plays MP4 (H.264).": { fr: "Cette vidéo n’est pas un MP4 ({type}) : d’autres tablettes pourraient ne pas la lire. DailyWizard lit le MP4 (H.264).", es: "Este video no es MP4 ({type}): puede que otras tabletas no lo reproduzcan. DailyWizard reproduce MP4 (H.264).", vi: "Video này không phải MP4 ({type}): máy tính bảng khác có thể không phát được. DailyWizard phát MP4 (H.264).", zh: "该视频不是 MP4 格式（{type}）：其他平板可能无法播放。DailyWizard 播放 MP4（H.264）格式。" },
@@ -29956,7 +30231,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             "🎥 Step {n}’s training video": { fr: "🎥 Vidéo de formation de l’étape {n}", es: "🎥 Video de capacitación del paso {n}", vi: "🎥 Video hướng dẫn của bước {n}", zh: "🎥 第 {n} 步的培训视频" },
             "This is the {language} version ({file})": { fr: "C’est la version en {language} ({file})", es: "Es la versión en {language} ({file})", vi: "Đây là bản {language} ({file})", zh: "这是{language}版本（{file}）" },
             "It shows on this step in this window now. To keep it for every tablet, save it as ": { fr: "Elle s’affiche maintenant sur cette étape, dans cette fenêtre. Pour la garder sur toutes les tablettes, enregistrez-la sous ", es: "Ya se muestra en este paso, en esta ventana. Para que esté en todas las tabletas, guárdelo como ", vi: "Giờ nó hiện ở bước này trong cửa sổ này. Để mọi máy tính bảng đều có, hãy lưu với tên ", zh: "现在它已显示在此窗口的这一步上。要让每台平板都能看到，请保存为 " },
-            " and put it in the “{folder}” folder on SharePoint, next to the database folder.": { fr: " et mettez-la dans le dossier « {folder} » sur SharePoint, à côté du dossier de la base de données.", es: " y póngalo en la carpeta «{folder}» de SharePoint, junto a la carpeta de la base de datos.", vi: " rồi đặt vào thư mục “{folder}” trên SharePoint, cạnh thư mục cơ sở dữ liệu.", zh: "，并放入 SharePoint 上数据库文件夹旁的“{folder}”文件夹。" },
+            " and put it in the database folder’s “{folder}” folder on SharePoint.": { fr: " et mettez-la dans le dossier « {folder} » du dossier de la base de données sur SharePoint.", es: " y póngalo en la carpeta «{folder}» de la carpeta de la base de datos en SharePoint.", vi: " rồi đặt vào thư mục “{folder}” trong thư mục cơ sở dữ liệu trên SharePoint.", zh: "，并放入 SharePoint 上数据库文件夹里的“{folder}”文件夹。" },
             "{mb} MB — keep training videos short: every tablet loads them.": { fr: "{mb} Mo — gardez les vidéos de formation courtes : chaque tablette les charge.", es: "{mb} MB: mantenga los videos de capacitación cortos, cada tableta los carga.", vi: "{mb} MB — hãy giữ video hướng dẫn ngắn: máy tính bảng nào cũng phải tải.", zh: "{mb} MB——培训视频请尽量简短：每台平板都要加载。" },
             "📤 Save {file}": { fr: "📤 Enregistrer {file}", es: "📤 Guardar {file}", vi: "📤 Lưu {file}", zh: "📤 保存 {file}" },
             "Saved {file} — now put it in “{folder}” on SharePoint": { fr: "{file} enregistré — mettez-le maintenant dans « {folder} » sur SharePoint", es: "{file} guardado: ahora póngalo en «{folder}» de SharePoint", vi: "Đã lưu {file} — giờ hãy đặt vào “{folder}” trên SharePoint", zh: "已保存 {file}——现在请放入 SharePoint 上的“{folder}”" },
@@ -30008,6 +30283,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 es: "Elija imágenes o vídeos con nombres como j234_1.jpg o j234_1.mp4. Se muestran en sus pasos mientras esta ventana esté abierta; no se envía nada a ningún sitio.",
                 vi: "Chọn các tệp hình ảnh hoặc video đặt tên như j234_1.jpg hoặc j234_1.mp4. Chúng sẽ hiện ở bước tương ứng khi cửa sổ này còn mở; không có gì được gửi đi.",
                 zh: "选择名称如 j234_1.jpg 或 j234_1.mp4 的图片或视频文件。它们会在此窗口打开期间显示在对应步骤上；不会上传到任何地方。" },
+            "📁 {folder} folder — pictures: {n}, videos: {v}": { fr: "📁 Dossier {folder} — images : {n}, vidéos : {v}", es: "📁 Carpeta {folder} — imágenes: {n}, vídeos: {v}", vi: "📁 Thư mục {folder} — hình ảnh: {n}, video: {v}", zh: "📁 {folder} 文件夹 — 图片：{n}，视频：{v}" },
             "Loaded — pictures: {n}, videos: {v}": { fr: "Chargé — images : {n}, vidéos : {v}", es: "Cargado — imágenes: {n}, vídeos: {v}", vi: "Đã tải — hình ảnh: {n}, video: {v}", zh: "已加载 — 图片：{n}，视频：{v}" },
             "🖼 Uploaded in use — pictures: {n}, videos: {v} — this window only": { fr: "🖼 Importés utilisés — images : {n}, vidéos : {v} — dans cette fenêtre seulement", es: "🖼 Subidos en uso — imágenes: {n}, vídeos: {v} — solo en esta ventana", vi: "🖼 Đang dùng tệp đã tải lên — hình ảnh: {n}, video: {v} — chỉ trong cửa sổ này", zh: "🖼 正在使用上传的文件 — 图片：{n}，视频：{v} — 仅限此窗口" },
             "No pictures found — names must look like {example}": { fr: "Aucune image trouvée — les noms doivent ressembler à {example}", es: "No se encontraron imágenes — los nombres deben ser como {example}", vi: "Không tìm thấy hình ảnh — tên tệp phải có dạng {example}", zh: "未找到图片 — 文件名应类似 {example}" },
@@ -30875,11 +31151,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         let cfgQuestionSel = null;  // id of the question currently being edited
         let cfgDocument = null;     // explicit document assignment (cabinet section key) for this sheet
 
-        // Print document (Step 10) — separate from loadedDoc (the Configure-tab doc).
+        // Print documents (Step 10) — separate from loadedDoc (the Configure-tab doc).
         // The print path needs a page set whose base name matches the SHEET being printed,
-        // which may differ from whatever is open in Configure. Same golden rule: blob URLs
-        // only, revoked on close / new load.
-        let printDoc = null;        // { sheetId, pages: [{ url, wPx, hPx }] } | null
+        // which may differ from whatever is open in Configure. One per sheet (user request 2026-11-11:
+        // the Docs folder loads every form at once). Same golden rule: blob URLs only, revoked on
+        // close, or when that sheet's document loads again.
+        const printDocs = new Map();   // sheetId → { sheetId, pages: [{ url, wPx, hPx, file }], from? }
 
         function letterPageSize(isLandscape) {
             return isLandscape
@@ -30906,9 +31183,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             loadedDoc = null;
         }
 
-        function revokePrintDoc() {
-            printDoc?.pages.forEach(p => URL.revokeObjectURL(p.url));
-            printDoc = null;
+        function revokePrintDoc(sheetId) {
+            printDocs.get(sheetId)?.pages.forEach(p => URL.revokeObjectURL(p.url));
+            printDocs.delete(sheetId);
+        }
+        function revokePrintDocs() {
+            for (const id of [...printDocs.keys()]) revokePrintDoc(id);
         }
 
         // ---- Page zoom (Step 3b) ----
@@ -31069,7 +31349,6 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 alert(`No sheet configured with id "${parsed.baseName}".\n\nConfigure the sheet first (Configure Sheets tab), then load its page set here.`);
                 return false;
             }
-            revokePrintDoc(); // lifecycle: a new print doc replaces the old one
             let pages;
             try {
                 pages = await loadPageImages(parsed.pages);
@@ -31077,10 +31356,65 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 alert(err.message);
                 return false;
             }
-            printDoc = { sheetId: parsed.baseName, pages };
+            revokePrintDoc(parsed.baseName); // lifecycle: a sheet's new print doc replaces its old one (the others stay)
+            printDocs.set(parsed.baseName, { sheetId: parsed.baseName, pages });
             renderAll();
             showToast(`Print document "${parsed.baseName}" loaded (${pages.length} page${pages.length > 1 ? 's' : ''})`);
             return true;
+        }
+
+        // 📁 Folder mode (user request 2026-11-11): every form's page images in the open database folder's "Docs" subfolder
+        // (any capitals, its own subfolders too) load by themselves, as 📂 Load document loads one — when PaperWizard opens and
+        // when a database folder opens while it's open. Each page set named for a configured sheet is ready to print, every
+        // form at once, and Configure Sheets opens a saved sheet with its pages. Read from the folder, held as blob URLs like
+        // any loaded document, never stored (the Golden Rule). A sheet set up later comes in with the next update.
+        const DOCS_FOLDER = 'Docs';
+        const folderDocs = new Map();   // base name → its page files in order, from the Docs folder
+        let docsFrom = null;            // the folder they were read from while PaperWizard has been open
+        async function loadFolderDocs() {
+            const folder = Hub.folder?.();
+            if (!folder) return;
+            if (docsFrom === folder) { await readyFolderDocs(); return; }
+            docsFrom = folder;
+            const files = ((await Hub.folderFiles?.(DOCS_FOLDER)) || []).filter(f => /\.webp$/i.test(f.name));
+            folderDocs.clear();
+            const byBase = new Map(), problems = [];
+            for (const f of files) {
+                const m = f.name.match(PAGE_IMG_RE);
+                if (m) (byBase.get(m[1]) || byBase.set(m[1], []).get(m[1])).push(f);
+                else problems.push(`"${f.name}" isn't named <form>-pN.webp`);
+            }
+            for (const [base, list] of byBase) {
+                try { folderDocs.set(base, parsePageFiles(list).pages); } catch (err) { problems.push(`${base}: ${err.message}`); }
+            }
+            const ready = await readyFolderDocs();
+            if (!files.length) return;
+            const notSheets = [...folderDocs.keys()].filter(b => !DB.paperWizard?.sheets?.[b]).length;
+            showToast(`📁 ${DOCS_FOLDER} folder: ${ready.length} document${ready.length === 1 ? '' : 's'} ready to print` +
+                (notSheets ? ` · ${notSheets} not set up as a sheet yet` : '') + (problems.length ? ` · ⚠️ ${problems.join(' · ')}` : ''));
+        }
+        // The folder's page sets of configured sheets not loaded yet → ready to print (a document loaded by hand stays)
+        async function readyFolderDocs() {
+            const ready = [];
+            for (const [base, files] of folderDocs) {
+                if (!DB.paperWizard?.sheets?.[base] || printDocs.has(base)) continue;
+                let pages;
+                try { pages = await loadPageImages(files); } catch (err) { showToast(`${base}: ${err.message}`); continue; }
+                if (!Hub.open || printDocs.has(base)) { pages.forEach(p => URL.revokeObjectURL(p.url)); continue; }   // closed, or loaded meanwhile
+                printDocs.set(base, { sheetId: base, pages, from: DOCS_FOLDER });
+                ready.push(base);
+            }
+            if (ready.length) renderAll();
+            return ready;
+        }
+        // The cabinet's chip: the page sets loaded for the print popup this session
+        function printDocsChip() {
+            const docs = [...printDocs.values()];
+            if (!docs.length) return `<span class="cab-printdoc none" title="No page set loaded — print buttons stay locked">📄 no document</span>`;
+            if (docs.length === 1) return `<span class="cab-printdoc" title="Page set loaded for the print popup">📄 ${escapeHtml(docs[0].sheetId)} · ${docs[0].pages.length}p</span>`;
+            const list = docs.map(d => `${d.sheetId} · ${d.pages.length}p`).sort().join('\n');
+            const folder = docs.some(d => d.from) ? ` (📁 ${DOCS_FOLDER} folder)` : '';
+            return `<span class="cab-printdoc" title="${escapeHtml(`Page sets loaded for the print popup${folder}:\n${list}`)}">📄 ${docs.length} documents</span>`;
         }
 
         // ---- Box placement editor + field properties (Step 3) ----
@@ -36274,7 +36608,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         function printBlockers(sheetId, key, inst, lotId) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
             if (!sheet) return ['Sheet not configured'];
-            if (!printDoc || printDoc.sheetId !== sheetId) return [`Document "${sheetId}" not loaded this session`];
+            if (!printDocs.has(sheetId)) return [`Document "${sheetId}" not loaded this session`];
             if (!inst) return ['No entry yet — fill it first'];
             const out = [];
             // Informational (daily-weekly only): unset constant values print N/A — printing is
@@ -36418,11 +36752,12 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
         // per page at physical size, %-positioned overlays, signature + strike-out as SVG.
         function openPrintPopup(lotId, sheetId, key) {
             const sheet = DB.paperWizard?.sheets?.[sheetId];
-            if (!sheet || !printDoc || printDoc.sheetId !== sheetId) { showToast('Load the matching document first'); return; }
+            const doc = printDocs.get(sheetId);
+            if (!sheet || !doc) { showToast('Load the matching document first'); return; }
             const inst = pageStore(lotId)?.[sheetId]?.instances?.[key];
             if (!inst) { showToast('No entry to print yet'); return; }
 
-            const isLandscape = printDoc.pages[0].wPx > printDoc.pages[0].hPx;
+            const isLandscape = doc.pages[0].wPx > doc.pages[0].hPx;
             const { widthIn: W, heightIn: H } = letterPageSize(isLandscape);
             const wiz = wizardForSheet(sheetId);
             const dayRows = sheet.cadence === 'daily-weekly' ? dayRowsFromGroups(sheet) : null;
@@ -36438,7 +36773,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 for (const [fid, slot] of t.slotOf) slotInfo.set(fid, { rows: tableRows[i], perPage: t.perPage, slot });
                 copiesOf.set(t.page, Math.max(copiesOf.get(t.page) || 1, tableCopies(t, tableRows[i].length)));
             });
-            const pageCount = printDoc.pages.reduce((sum, _, i) => sum + (copiesOf.get(i + 1) || 1), 0);
+            const pageCount = doc.pages.reduce((sum, _, i) => sum + (copiesOf.get(i + 1) || 1), 0);
             const sd = pageStore(lotId)?.[sheetId] || null;
             // A deleted entry's initials and date print once, after the value in the row's right-most text box
             const voidTail = new Set();
@@ -36577,7 +36912,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             // A repeating table's page prints its copies in a row (page 3, 3, 3 …), then the pages after it.
             let printed = 0;
-            const pages = printDoc.pages.map((pg, i) => {
+            const pages = doc.pages.map((pg, i) => {
                 const n = i + 1;
                 const times = copiesOf.get(n) || 1;
                 let out = '';
@@ -36664,7 +36999,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             try {
                 const own = new Map();
                 win.document.querySelectorAll('img[data-pg]').forEach(img => {
-                    const f = printDoc.pages[Number(img.dataset.pg)]?.file;
+                    const f = doc.pages[Number(img.dataset.pg)]?.file;
                     if (!f) return;
                     if (!own.has(img.dataset.pg)) own.set(img.dataset.pg, win.URL.createObjectURL(f));
                     img.src = own.get(img.dataset.pg);
@@ -36896,9 +37231,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
 
             const strain = lot?.strain ? ` ${escapeHtml(lot.strain)}` : '';
             // Print-document status chip: which sheet's page set is loaded this session.
-            const printDocChip = printDoc
-                ? `<span class="cab-printdoc" title="Page set loaded for the print popup">📄 ${escapeHtml(printDoc.sheetId)} · ${printDoc.pages.length}p</span>`
-                : `<span class="cab-printdoc none" title="No page set loaded — print buttons stay locked">📄 no document</span>`;
+            const printDocChip = printDocsChip();
             // Initialize paperwork button — shown when any daily-weekly sheet for this lot has
             // constant fields (set once per lot, printed on every page of the chain). A ⚠️ marks
             // that some values are still unset.
@@ -37013,9 +37346,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             }
             const sectionHtml = sections.map(sec => sec.html.replace('__OPEN__', (sec.key in wasOpen ? wasOpen[sec.key] : true) ? ' open' : '')).join('');
 
-            const printDocChip = printDoc
-                ? `<span class="cab-printdoc" title="Page set loaded for the print popup">📄 ${escapeHtml(printDoc.sheetId)} · ${printDoc.pages.length}p</span>`
-                : `<span class="cab-printdoc none" title="No page set loaded — print buttons stay locked">📄 no document</span>`;
+            const printDocChip = printDocsChip();
             const nChanges = lotChangeRecords(activeLotId).length;
             const ownRo = lotElsewhere(ownId);
             const what = kind === 'facility' ? '🏭 Facility form' : '🏢 Building form';
@@ -37659,6 +37990,15 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             cfgQuestionSel = null;
             renderConfigure();
             showToast(`Opened "${sheetId}" for editing`);
+            // 📁 Its pages from the Docs folder, when they're there (else the stage asks for them, as before)
+            if (!loadedDoc && folderDocs.has(sheetId)) {
+                loadPageImages(folderDocs.get(sheetId)).then(pages => {
+                    if (configSheetId !== sheetId || loadedDoc || !Hub.open) { pages.forEach(p => URL.revokeObjectURL(p.url)); return; }
+                    loadedDoc = { name: sheetId, baseName: sheetId, pageCount: pages.length, pages };
+                    renderConfigure();
+                    showToast(`Opened "${sheetId}" for editing, with its pages from the ${DOCS_FOLDER} folder`);
+                }, err => showToast(`${sheetId}: ${err.message}`));
+            }
         }
 
         // ---- Save / delete sheet (Step 4) ----
@@ -38051,6 +38391,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
                 applyDeviceView();
                 renderAll(); // the cabinet behind any open dialog — dialogs are separate overlays
             }
+            loadFolderDocs();   // 📁 a database folder open: its Docs page sets, once per folder (and sheets set up since)
         }
 
         // ---- Init ----
@@ -38085,7 +38426,7 @@ ${supplies ? `<h2>Supplies</h2><table><thead><tr><th>Supply</th><th>Quantity</th
             // Page-image blob lifecycle: revoke both the Configure doc and the print doc on close.
             window.addEventListener('beforeunload', () => {
                 revokeLoadedDoc();
-                revokePrintDoc();
+                revokePrintDocs();
                 if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
             });
 

@@ -229,7 +229,7 @@ export async function run(b, BASE) {
 
     // ---- Print: 1, 2, 2, 3, 3 ----
     const before = new Set((await b.contexts()).map(c => c.context));
-    await b.run(pw, `printDoc = { sheetId: 'harv', pages: loadedDoc.pages }; openPrintPopup('L100', 'harv', '${T}');`, { user: true });
+    await b.run(pw, `printDocs.set('harv', { sheetId: 'harv', pages: loadedDoc.pages }); openPrintPopup('L100', 'harv', '${T}');`, { user: true });
     let pop = null;
     for (let i = 0; i < 40 && !pop; i++) { await b.sleep(100); pop = (await b.contexts()).find(c => !before.has(c.context))?.context || null; }
     const pages = pop ? await b.run(pop, `return [...document.querySelectorAll('.pp-page')].map(p => ({
@@ -244,7 +244,7 @@ export async function run(b, BASE) {
     check('page number / count follow the printout (4 of 5, 5 of 5)', w1.text[0] === '4' && w1.text[1] === '5' && w2.text[0] === '5' && w2.text[1] === '5', `${w1.text.slice(0, 2)} / ${w2.text.slice(0, 2)}`);
     // The popup has its own links to the page images, so loading another document or closing PaperWizard (which
     // revokes PaperWizard's links) doesn't break an open print (review D11)
-    const pwUrls = await b.run(pw, `return printDoc.pages.map(p => p.url);`);
+    const pwUrls = await b.run(pw, `return printDocs.get('harv').pages.map(p => p.url);`);
     const own = pop ? await b.run(pop, `const srcs = [...document.querySelectorAll('img[data-pg]')].map(i => i.src);
         const ok = await Promise.all(srcs.map(u => fetch(u).then(r => r.ok, () => false)));
         return { srcs, ok: ok.every(Boolean) };`) : null;

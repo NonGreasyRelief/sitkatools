@@ -17,8 +17,9 @@ Two tabs:
 - Images load just in time through **Load document** (a multi-file `<input type="file" accept=".webp,image/webp" multiple>`, in both tabs): in Configure Sheets before any box can be placed, and at print time.
 - **Naming:** `<base>-pN.webp`, numbered from 1 with no gaps; the base name is the sheet id. `parsePageFiles` rejects, with an error naming the file: non-WebP files, mixed base names, missing or duplicate page numbers. A mismatch means the wrong form revision.
 - In Configure, loading a new base name starts a new sheet; one matching a saved sheet opens it (confirm if it already has fields).
-- Files are held in memory only, as blob URLs. They are revoked when the tool closes, a new document loads, or the popup closes.
-- A sheet with no page set loaded this session shows "⚠️ needs document" in the cabinet, and its Print is disabled.
+- **📁 From the database folder** (user request 2026-11-11: laptops open the database in 📁 folder mode): every page set in the database folder's **Docs** subfolder (any capitals; its own subfolders too) loads by itself, as Load document loads one (`loadFolderDocs`, through `Hub.folderFiles`): when PaperWizard opens and when a database folder opens while it's open. Each page set named for a configured sheet is ready to print, every form at once (a sheet set up later comes in with the next update); Configure Sheets opens a saved sheet with its pages from there. "📁 Docs folder: N documents ready to print", with the page sets not set up as a sheet yet and the ones `parsePageFiles` refuses (named, not loaded). Out of folder mode nothing is read.
+- Files are held in memory only, as blob URLs, one page set per sheet for printing (`printDocs`). They are revoked when the tool closes, when that sheet's document loads again (a document loaded by hand replaces only its own sheet's), or the popup closes.
+- A sheet with no page set loaded this session shows "⚠️ needs document" in the cabinet, and its Print is disabled. The cabinet's 📄 chip names the page set loaded, or counts them ("📄 3 documents", listed in its tooltip).
 
 ## Core Concepts
 

@@ -1,7 +1,8 @@
-// 📷 Take picture / 🎥 Record training video (user request 2026-10-29): in ✏️ edit mode each step of a DailyWizard task
-// opens the tablet's camera. What it takes shows on the step at once (this window), and is offered to save under the
-// step's name ({code}_{n}.jpg / .mp4), with the instruction to put it in the "Pictures and Videos" folder on SharePoint.
-// (The camera itself can't be driven headless: the test hands the file input what the camera would.)
+// 📷 Take picture / 🎥 Take video and 🖼 Upload picture / 🎞 Upload video (user requests 2026-10-29, 2026-11-11): in ✏️ edit
+// mode each step of a DailyWizard task opens the tablet's camera (Take, on a touch device) or picks a file (Upload). What
+// comes back shows on the step at once (this window), and is offered to save under the step's name ({code}_{n}.jpg / .mp4),
+// with the instruction to put it in the database folder's "Media" folder on SharePoint. (The camera itself can't be driven
+// headless: the test hands the file input what the camera would. The laptop's webcam is tests/step-webcam.)
 import { fixtureDb, makeChecker, fresh, openSitka, loadSingle, openTool, withFloorManager, dwBuilding, dwUnlock } from './lib/helpers.mjs';
 
 export const title = 'DailyWizard: a step\'s picture or training video from the tablet\'s camera, saved under its name';
@@ -24,10 +25,18 @@ export async function run(b, BASE) {
     check('locked: no camera buttons on the steps', btns.length === 2 && btns.every(r => r.length === 0), JSON.stringify(btns));
     await dwUnlock(b, dw);
     btns = await buttons();
-    check('edit mode: every step has 📷 Take picture and 🎥 Record training video', btns.length === 2 && btns.every(r => r.join() === '📷 Take picture,🎥 Record training video'), JSON.stringify(btns));
+    check('edit mode: every step has 📷 Take picture, 🎥 Take video, 🖼 Upload picture and 🎞 Upload video',
+        btns.length === 2 && btns.every(r => r.join() === '📷 Take picture,🎥 Take video,🖼 Upload picture,🎞 Upload video'), JSON.stringify(btns));
+
+    // A touch device (a tablet): 📷 Take opens its camera app
+    await b.run(main, `window.__realMM = window.matchMedia; window.matchMedia = q => /pointer:\\s*coarse/.test(q) ? { matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} } : window.__realMM(q);`);
+    await b.run(dw, `window.__capIn = null; document.querySelectorAll('#stepsList .step-row')[1].querySelector('.capture-btn[data-act="take"][data-kind="pic"]').click();`, { user: true });
+    const cam = await b.run(main, `const i = window.__capIn; return i ? { accept: i.accept, capture: i.getAttribute('capture') } : null;`);
+    check('on a tablet, 📷 Take picture opens the back camera', cam?.accept === 'image/*' && cam.capture === 'environment', JSON.stringify(cam));
+    await b.run(main, `window.__capIn?.remove(); window.matchMedia = window.__realMM;`);
 
     const tap = (step, kind) => b.run(dw, `window.__capIn = null;
-        document.querySelectorAll('#stepsList .step-row')[${step - 1}].querySelector('.capture-btn[data-kind="${kind}"]').click();`, { user: true })
+        document.querySelectorAll('#stepsList .step-row')[${step - 1}].querySelector('.capture-btn[data-act="upload"][data-kind="${kind}"]').click();`, { user: true })
         .then(() => b.run(main, `const i = window.__capIn; return i ? { accept: i.accept, capture: i.getAttribute('capture') } : null;`));
     const give = (makeFile) => b.run(main, `const f = await (${makeFile})(); const dt = new DataTransfer(); dt.items.add(f);
         window.__capIn.files = dt.files; window.__capIn.dispatchEvent(new Event('change'));`)
@@ -39,13 +48,13 @@ export async function run(b, BASE) {
 
     // ---- 📷 A picture for step 2 ----
     let input = await tap(2, 'pic');
-    check('📷 opens the back camera for a picture', input?.accept === 'image/*' && input.capture === 'environment', JSON.stringify(input));
+    check('🖼 Upload picture picks a picture file (no camera)', input?.accept === 'image/*' && input.capture === null, JSON.stringify(input));
     await give(`async () => { const c = document.createElement('canvas'); c.width = 2000; c.height = 1000; const x = c.getContext('2d'); x.fillStyle = '#c33'; x.fillRect(0, 0, 2000, 1000);
         const blob = await new Promise(r => c.toBlob(r, 'image/png')); return new File([blob], 'IMG_0001.png', { type: 'image/png' }); }`);
     let d = await dialog();
     check('…a dialog: "📷 Step 2’s picture", to save as wat1_2.jpg', d.open && d.title === '📷 Step 2’s picture' && d.file === 'wat1_2.jpg' && d.save === '📤 Save wat1_2.jpg' && /^blob:/.test(d.href), JSON.stringify(d));
-    check('…telling them to put it in "Pictures and Videos" on SharePoint, next to the database folder',
-        d.text === 'It shows on this step in this window now. To keep it for every tablet, save it as wat1_2.jpg and put it in the “Pictures and Videos” folder on SharePoint, next to the database folder.', d.text);
+    check('…telling them to put it in the database folder\'s "Media" folder on SharePoint',
+        d.text === 'It shows on this step in this window now. To keep it for every tablet, save it as wat1_2.jpg and put it in the database folder’s “Media” folder on SharePoint.', d.text);
     const img = await b.run(dw, `const blob = await (await fetch(document.getElementById('captureSaveLink').href)).blob(); const bm = await createImageBitmap(blob);
         return { type: blob.type, w: bm.width, h: bm.height };`);
     check('…made a JPEG of at most 1280 px', img.type === 'image/jpeg' && img.w === 1280 && img.h === 640, JSON.stringify(img));
@@ -53,13 +62,13 @@ export async function run(b, BASE) {
         return row.querySelector('.step-img')?.getAttribute('src') === document.getElementById('captureSaveLink').getAttribute('href') && uploadedPics.get('wat1_2')?.file === 'wat1_2.jpg';`));
     await b.run(dw, `const a = document.getElementById('captureSaveLink'); const stop = e => e.preventDefault(); window.addEventListener('click', stop, true);
         a.click(); window.removeEventListener('click', stop, true);`, { user: true });
-    check('📤 Save (a PC: the download) says where to put it', await b.run(dw, `return document.getElementById('toast').textContent;`) === 'Saved wat1_2.jpg — now put it in “Pictures and Videos” on SharePoint');
+    check('📤 Save (a PC: the download) says where to put it', await b.run(dw, `return document.getElementById('toast').textContent;`) === 'Saved wat1_2.jpg — now put it in “Media” on SharePoint');
     await b.run(dw, `document.getElementById('captureDoneBtn').click();`, { user: true });
     check('Done closes it; the picture stays on the step', await b.run(dw, `return document.getElementById('captureAsk').hidden && !!document.querySelectorAll('#stepsList .step-row')[1].querySelector('.step-img');`));
 
     // ---- 🎥 A training video for step 1 ----
     input = await tap(1, 'vid');
-    check('🎥 opens the back camera for a video', input?.accept === 'video/*' && input.capture === 'environment', JSON.stringify(input));
+    check('🎞 Upload video picks a video file', input?.accept === 'video/*' && input.capture === null, JSON.stringify(input));
     await give(`async () => new File([new Uint8Array(2 * 1048576).fill(7)], 'VID_0001.mp4', { type: 'video/mp4' })`);
     d = await dialog();
     check('…"🎥 Step 1’s training video", to save as wat1_1.mp4, with its size', d.open && d.title === '🎥 Step 1’s training video' && d.file === 'wat1_1.mp4' &&

@@ -145,7 +145,7 @@ export async function run(b, BASE) {
     // ---- Print: subtotals per copy, the running subtotal starting again, the copy number, cross-sheet values ----
     const printTexts = async () => {
         const before = new Set((await b.contexts()).map(c => c.context));
-        await b.run(pw, `printDoc = { sheetId: 'cure', pages: loadedDoc.pages }; openPrintPopup('L100', 'cure', '${T}');`, { user: true });
+        await b.run(pw, `printDocs.set('cure', { sheetId: 'cure', pages: loadedDoc.pages }); openPrintPopup('L100', 'cure', '${T}');`, { user: true });
         let pop = null;
         for (let i = 0; i < 40 && !pop; i++) { await b.sleep(100); pop = (await b.contexts()).find(c => !before.has(c.context))?.context || null; }
         const out = pop ? await b.run(pop, `return [...document.querySelectorAll('.pp-page')].map(p => ({
