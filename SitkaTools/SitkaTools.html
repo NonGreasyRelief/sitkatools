@@ -10358,16 +10358,41 @@
                 return true;
             },
 
-            // Pick a folder with the browser's folder picker, then open it
-            async choose() {
+            // Open a remembered folder from a click (the start screen's 📁 Open "…", the 📁 menu). As choose() does, the
+            // start screen is put away first, so the browser's "let this site edit files?" question isn't asked behind it,
+            // and nothing fails silently (user bug 2026-11-25: in Edge the start screen's button did nothing, while
+            // Choose a different folder… worked): a folder the browser won't hand back (moved, renamed, its permission
+            // question refused to show) says why and goes on to the folder picker, started at that folder.
+            async reopen(dir) {
                 const overlayWasOpen = !dbOverlay.classList.contains('hidden');
+                hideOverlay();
+                let opened = false;
+                try {
+                    opened = await this.open(dir);
+                } catch (err) {
+                    console.warn(`[SitkaTools] couldn't reopen "${dir.name}"`, err);
+                    showWarningToast(`Couldn't reopen "${dir.name}" by itself (${err.message || err.name}) — pick the folder again`);
+                    return this.choose(dir, overlayWasOpen);
+                }
+                if (!opened && overlayWasOpen && !DB.fileName) showOverlay();
+            },
+
+            // Pick a folder with the browser's folder picker, then open it
+            async choose(startIn = null, overlayWasOpen = !dbOverlay.classList.contains('hidden')) {
                 hideOverlay(); // Edge can hang if a native picker opens behind a full-screen overlay
                 try {
-                    const dir = await window.showDirectoryPicker({ id: 'sitkaDbFolder', mode: 'readwrite' });
+                    const opts = { id: 'sitkaDbFolder', mode: 'readwrite' };
+                    let dir;
+                    try {
+                        dir = await window.showDirectoryPicker(startIn ? { ...opts, startIn } : opts);
+                    } catch (err) {
+                        if (!startIn || err.name === 'AbortError' || err.name === 'SecurityError') throw err;
+                        dir = await window.showDirectoryPicker(opts);   // the remembered folder is gone: the picker's own start
+                    }
                     const opened = await this.open(dir);
-                    if (!opened && overlayWasOpen && !DB.data) showOverlay();
+                    if (!opened && overlayWasOpen && !DB.fileName) showOverlay();
                 } catch (err) {
-                    if (overlayWasOpen && !DB.data) showOverlay();
+                    if (overlayWasOpen && !DB.fileName) showOverlay();
                     if (err.name !== 'AbortError') alert('Could not open the folder: ' + err.message);
                 }
             },
@@ -10552,7 +10577,7 @@
             };
             if (DbFolder.active && DbFolder.handle) {
                 label('Open folder');
-                folderMenu.appendChild(folderMenuButton(`🔄 Reload newest from "${DbFolder.handle.name}"`, 'Re-open the latest saved database', () => DbFolder.open(DbFolder.handle)));
+                folderMenu.appendChild(folderMenuButton(`🔄 Reload newest from "${DbFolder.handle.name}"`, 'Re-open the latest saved database', () => DbFolder.reopen(DbFolder.handle)));
                 folderMenu.appendChild(folderMenuButton('⏏ Stop using this folder', 'Go back to 📂 Load DB / 💾 Save DB files', () => DbFolder.deactivate()));
             }
             const recent = await FolderStore.list();
@@ -10564,7 +10589,7 @@
             if (others.length > 0) {
                 label('Recent folders');
                 for (const row of others) {
-                    folderMenu.appendChild(folderMenuButton(`📁 ${row.name}`, `Last used ${new Date(row.lastUsed).toLocaleDateString()}`, () => DbFolder.open(row.handle)));
+                    folderMenu.appendChild(folderMenuButton(`📁 ${row.name}`, `Last used ${new Date(row.lastUsed).toLocaleDateString()}`, () => DbFolder.reopen(row.handle)));
                 }
             }
             label(others.length || DbFolder.active ? 'Other' : 'Database folder');
@@ -10580,7 +10605,7 @@
                 openBtn.className = 'btn-load-db';
                 openBtn.id = 'overlayOpenRecentBtn';
                 openBtn.textContent = `📁 Open "${recent[0].name}"`;
-                openBtn.addEventListener('click', () => DbFolder.open(recent[0].handle));
+                openBtn.addEventListener('click', () => DbFolder.reopen(recent[0].handle));
                 overlayFolder.appendChild(openBtn);
             }
             const chooseBtn = document.createElement('button');
